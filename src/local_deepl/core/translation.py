@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, TypedDict
 
+from local_deepl.core.llm_client import call_llm
 from local_deepl.core.translation_config import (
     AsyncTranslationUnavailable,
     TranslationSettings,
@@ -184,10 +187,19 @@ def translate_node(state: TranslationState) -> dict[str, str | int]:
     return {"translated_chunk": translated, "attempts": state.get("attempts", 0) + 1}
 
 
-def evaluate_node(state: TranslationState) -> dict[str, float | str]:
-    """Evaluates the translation quality."""
-    # Simplified mock evaluator.
-    # In a full production system, this would be another LLM call checking if glossary terms were used.
+async def evaluate_node(state: TranslationState) -> dict[str, float | str]:
+    """Evaluates translation quality using the configured LLM.
+
+    Fast paths (no LLM call):
+    - Translation API failure → score 0.0 with retry feedback (or 1.0 if max attempts reached).
+    - Max attempts reached → force accept 1.0 to break the loop.
+    - Source has no letters or is < 5 chars → score 1.0 (deterministic, no point asking).
+    - Length ratio below ``MIN_TRANSLATION_LENGTH_RATIO`` → score 0.0 (deterministic sanity check).
+
+    Real path: ask the configured LLM to score the translation 0.0-1.0 and return
+    JSON ``{score, feedback, issues}``. If the LLM call fails or the response is
+    unrecoverable, fall back to ``(1.0, "")`` so the graph doesn't loop forever.
+    """
     attempts = state.get("attempts", 0)
 
     translated = state.get("translated_chunk", "")
@@ -200,7 +212,6 @@ def evaluate_node(state: TranslationState) -> dict[str, float | str]:
         # Force accept after N tries to prevent infinite loops
         return {"evaluation_score": 1.0, "feedback": ""}
 
-    # If the source chunk has no letters or is extremely short, skip length ratio check
     source = state.get("source_chunk", "")
     has_letters = any(c.isalpha() for c in source)
     if not has_letters or len(source.strip()) < 5:
@@ -212,7 +223,159 @@ def evaluate_node(state: TranslationState) -> dict[str, float | str]:
             "feedback": "Translation too short. Ensure you translate the entire chunk.",
         }
 
-    return {"evaluation_score": 1.0, "feedback": "Looks good"}
+    # Real LLM-based evaluation. Fall back to "looks good" if the call fails
+    # so a transient LLM outage doesn't trap us in a retry loop.
+    try:
+        score, feedback = await _llm_evaluate_translation(state)
+    except Exception as exc:
+        logger.warning("LLM evaluation failed; accepting as-is: %s", exc)
+        return {"evaluation_score": 1.0, "feedback": ""}
+
+    return {"evaluation_score": score, "feedback": feedback}
+
+
+async def _llm_evaluate_translation(state: TranslationState) -> tuple[float, str]:
+    """Run the configured LLM to score a translation and parse the JSON response.
+
+    Returns ``(score, feedback)``. Raises on LLM error so the caller can decide
+    on a fallback; JSON-parse failures are caught inside ``parse_evaluation_response``
+    and converted to the same fallback pair.
+    """
+    settings = _state_settings(state)
+    prompt = build_evaluation_prompt(
+        source=state["source_chunk"],
+        translation=state["translated_chunk"],
+        target_language=state["target_language"],
+        rag_context=list(state.get("rag_context") or []),
+    )
+
+    content = await call_llm(
+        model=settings.model,
+        api_base=settings.api_base,
+        api_key=settings.api_key,
+        temperature=0.1,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    return parse_evaluation_response(content)
+
+
+def build_evaluation_prompt(
+    *,
+    source: str,
+    translation: str,
+    target_language: str,
+    rag_context: list[str],
+) -> str:
+    """Build the prompt asking the LLM to score a translation.
+
+    The expected response shape is a JSON object::
+
+        {"score": <float 0.0-1.0>, "feedback": "<str>", "issues": [<str>, ...]}
+
+    Anything else falls back to ``(1.0, "")`` in :func:`parse_evaluation_response`.
+    """
+    parts: list[str] = [
+        "You are a translation quality evaluator. Score the translation below "
+        f"into {target_language} on a 0.0-1.0 scale and explain any issues.\n",
+        "SCORING RUBRIC:\n"
+        "- 1.0: Faithful translation. No meaning loss. All glossary terms used correctly.\n"
+        "- 0.7-0.9: Minor issues (one term missing, slight stylistic differences).\n"
+        "- 0.4-0.6: Moderate issues (multiple terms missing, awkward phrasing, partial translation).\n"
+        "- 0.0-0.3: Major issues (untranslated, mistranslated, missing significant content).\n",
+    ]
+
+    if rag_context:
+        parts.append(
+            "GLOSSARY (use these terms correctly):\n"
+            + "\n".join(f"- {term}" for term in rag_context)
+            + "\n"
+        )
+
+    parts.append(
+        "OUTPUT FORMAT:\n"
+        "Respond with a single JSON object and nothing else:\n"
+        '{"score": <float 0.0-1.0>, "feedback": "<one sentence>", '
+        '"issues": ["<issue>", ...]}\n\n'
+        f"SOURCE:\n{source}\n\n"
+        f"TRANSLATION ({target_language}):\n{translation}"
+    )
+
+    return "".join(parts)
+
+
+_FENCED_JSON_RE = re.compile(r"\A```(?:json)?\s*(.*?)\s*```\s*\Z", re.DOTALL | re.I)
+
+
+def parse_evaluation_response(content: str) -> tuple[float, str]:
+    """Parse the LLM's evaluation JSON into ``(score, feedback)``.
+
+    Tolerant of fenced blocks and embedded objects. Behavior:
+
+    - No parseable dict at all → ``(1.0, "")`` (LLM didn't speak JSON).
+    - Valid numeric score → clamp to ``[0, 1]`` and pair with feedback if any.
+    - Missing or wrong-type score → ``(1.0, feedback)`` (default-accept; the
+      LLM gave us partial info and we'd rather surface it than lose it).
+      ``bool`` is explicitly rejected as a score even though it subclasses
+      ``int`` in Python, otherwise JSON ``true`` would silently pass as 1.0.
+    """
+    stripped = content.strip()
+    if not stripped:
+        return 1.0, ""
+
+    parsed = _extract_json_object(stripped)
+    feedback = ""
+    if parsed is not None:
+        raw_feedback = parsed.get("feedback")
+        if isinstance(raw_feedback, str):
+            feedback = raw_feedback.strip()
+
+    if parsed is None:
+        return 1.0, feedback
+
+    raw_score = parsed.get("score")
+    # bool is a subclass of int — guard against it coercing to 1.0 silently.
+    if (
+        raw_score is not None
+        and not isinstance(raw_score, bool)
+        and isinstance(raw_score, (int, float))
+    ):
+        return max(0.0, min(1.0, float(raw_score))), feedback
+
+    # Score missing or wrong-type → default-accept, preserve any feedback.
+    return 1.0, feedback
+
+
+def _extract_json_object(text: str) -> dict[str, Any] | None:
+    """Find the first parseable JSON object in ``text``.
+
+    Tries fenced code blocks first, then the raw text, then walks every ``{``
+    index looking for a parseable object — same pattern as
+    ``services.ai.parse_extraction_json`` but kept local to avoid cross-layer
+    coupling between ``api.services`` and ``core``.
+    """
+    fenced = _FENCED_JSON_RE.match(text)
+    candidates = [fenced.group(1).strip()] if fenced else []
+    candidates.append(text)
+
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+
+    decoder = json.JSONDecoder()
+    for start in (i for i, ch in enumerate(text) if ch == "{"):
+        try:
+            parsed, _end = decoder.raw_decode(text[start:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+
+    return None
 
 
 def should_refine(state: TranslationState) -> str:

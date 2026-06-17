@@ -86,7 +86,7 @@ def test_evaluate_node_minimal_input_skips_loop():
         "attempts": 1,
     }
 
-    result = evaluate_node(punctuation_state)
+    result = asyncio.run(evaluate_node(punctuation_state))
     assert result["evaluation_score"] == 1.0
     assert result["feedback"] == "Looks good"
 
@@ -103,7 +103,7 @@ def test_evaluate_node_normal_input_fails_correctly():
         "attempts": 1,
     }
 
-    result = evaluate_node(bad_state)
+    result = asyncio.run(evaluate_node(bad_state))
     assert result["evaluation_score"] == 0.0
     assert "too short" in result["feedback"]
 

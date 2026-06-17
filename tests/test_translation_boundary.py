@@ -12,6 +12,7 @@ from local_deepl.core.translation_config import TranslationSettings
 
 def test_translation_base_imports_do_not_require_async_extras():
     script = """
+import asyncio
 import importlib.abc
 import sys
 
@@ -29,7 +30,7 @@ from local_deepl.api.tasks import process_translation_task
 from local_deepl.core.translation import chunk_text, evaluate_node
 
 assert chunk_text("hello") == ["hello"]
-assert evaluate_node({"source_chunk": ".", "translated_chunk": "", "attempts": 1})["evaluation_score"] == 1.0
+assert asyncio.run(evaluate_node({"source_chunk": ".", "translated_chunk": "", "attempts": 1}))["evaluation_score"] == 1.0
 assert process_translation_task.__name__ == "process_translation_task"
 """
     env = os.environ.copy()

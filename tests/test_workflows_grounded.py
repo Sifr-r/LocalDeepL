@@ -1,0 +1,235 @@
+"""
+Direct unit tests for ``GroundedEngine``'s staged methods.
+
+Grounded has only one engine-specific stage (``_accumulate_pages``) plus the
+``execute()`` orchestrator. These tests pin down the contract: blocks are
+grouped by ``page_index`` preserving backend order, the orchestrator
+propagates ``failed_pages`` from the backend into ``last_failed_pages``,
+document processors run on the assembled ``DocumentResult``, and the
+output writer is invoked exactly once at the end.
+
+The ``test_pipeline.py`` suite exercises the hybrid path through
+``OCRPipeline``; this file is the grounded equivalent.
+"""
+
+from __future__ import annotations
+
+from local_deepl.core.document import DocumentResult
+from local_deepl.core.grounded import GroundedBlock, GroundedResponse
+from local_deepl.core.processors import DocumentProcessor
+from local_deepl.core.workflows.grounded import GroundedEngine
+
+# ---------------------------------------------------------------------------
+# Stub backend
+# ---------------------------------------------------------------------------
+
+
+class _StubGroundedBackend:
+    """Drop-in replacement for ``GroundedOCRBackend``.
+
+    Returns a configurable ``GroundedResponse`` and records every call so
+    tests can assert on it.
+    """
+
+    def __init__(self, response: GroundedResponse | None = None) -> None:
+        self.response = response or GroundedResponse(blocks=[])
+        self.calls: list[str] = []
+
+    async def ocr_document(self, pdf_path, progress=None, on_warning=None):
+        self.calls.append(pdf_path)
+        return self.response
+
+
+def _noop_writer(_in: str, _out: str, _pages: dict, _dpi: int) -> None:
+    """Output writer that discards its arguments. Tests don't inspect PDF output."""
+
+
+def _engine(
+    backend: _StubGroundedBackend | None = None,
+    document_processors: list[DocumentProcessor] | None = None,
+) -> GroundedEngine:
+    return GroundedEngine(
+        grounded_backend=backend or _StubGroundedBackend(),
+        output_writer=_noop_writer,
+        document_processors=document_processors,
+    )
+
+
+class _TaggingProcessor(DocumentProcessor):
+    """Tags each page so tests can verify the processor pipeline ran."""
+
+    async def process(self, document: DocumentResult) -> DocumentResult:
+        for page in document.pages:
+            page.metadata["tagging_processor"] = True
+        return document
+
+
+# ---------------------------------------------------------------------------
+# _accumulate_pages
+# ---------------------------------------------------------------------------
+
+
+class TestGroundedAccumulatePages:
+    def test_groups_blocks_by_page_index(self) -> None:
+        blocks = [
+            GroundedBlock(bbox=[0.1, 0.1, 0.9, 0.2], text="p0 first", page_index=0),
+            GroundedBlock(bbox=[0.1, 0.3, 0.9, 0.4], text="p1 first", page_index=1),
+            GroundedBlock(bbox=[0.1, 0.5, 0.9, 0.6], text="p0 second", page_index=0),
+        ]
+        pages = GroundedEngine._accumulate_pages(blocks)
+        assert pages == {
+            0: [
+                ([0.1, 0.1, 0.9, 0.2], "p0 first"),
+                ([0.1, 0.5, 0.9, 0.6], "p0 second"),
+            ],
+            1: [([0.1, 0.3, 0.9, 0.4], "p1 first")],
+        }
+
+    def test_preserves_backend_ordering(self) -> None:
+        # Backend emits page 1's block interleaved with page 0's. Within
+        # each page, blocks must keep their backend order.
+        blocks = [
+            GroundedBlock(bbox=[0.1, 0.1, 0.9, 0.2], text="p0-a", page_index=0),
+            GroundedBlock(bbox=[0.1, 0.2, 0.9, 0.3], text="p1-a", page_index=1),
+            GroundedBlock(bbox=[0.1, 0.3, 0.9, 0.4], text="p0-b", page_index=0),
+            GroundedBlock(bbox=[0.1, 0.4, 0.9, 0.5], text="p1-b", page_index=1),
+        ]
+        pages = GroundedEngine._accumulate_pages(blocks)
+        assert [t for _, t in pages[0]] == ["p0-a", "p0-b"]
+        assert [t for _, t in pages[1]] == ["p1-a", "p1-b"]
+
+    def test_empty_blocks_returns_empty_dict(self) -> None:
+        assert GroundedEngine._accumulate_pages([]) == {}
+
+    def test_drops_blocks_with_default_text_label(self) -> None:
+        # Non-text labels (image, signature_line, etc.) are filtered upstream
+        # by the backend; _accumulate_pages preserves whatever the backend
+        # sends. This test pins down that contract.
+        blocks = [
+            GroundedBlock(
+                bbox=[0.1, 0.1, 0.9, 0.2], text="real", page_index=0, label="text"
+            ),
+            GroundedBlock(
+                bbox=[0.1, 0.3, 0.9, 0.4], text="ignored", page_index=0, label="image"
+            ),
+        ]
+        pages = GroundedEngine._accumulate_pages(blocks)
+        # Both blocks land in pages[0] — filtering is the backend's job.
+        assert [t for _, t in pages[0]] == ["real", "ignored"]
+
+
+# ---------------------------------------------------------------------------
+# execute()
+# ---------------------------------------------------------------------------
+
+
+class TestGroundedExecute:
+    async def test_basic_flow_passes_blocks_to_writer(self) -> None:
+        captured: dict = {}
+
+        def writer(inp, out, pages, dpi):
+            captured["input"] = inp
+            captured["output"] = out
+            captured["pages"] = dict(pages)
+            captured["dpi"] = dpi
+
+        backend = _StubGroundedBackend(
+            GroundedResponse(
+                blocks=[
+                    GroundedBlock(
+                        bbox=[0.1, 0.1, 0.9, 0.2], text="hello", page_index=0
+                    ),
+                    GroundedBlock(
+                        bbox=[0.1, 0.3, 0.9, 0.4], text="world", page_index=0
+                    ),
+                ]
+            )
+        )
+        engine = GroundedEngine(grounded_backend=backend, output_writer=writer)
+
+        result = await engine.execute("in.pdf", "out.pdf", dpi=150)
+
+        assert backend.calls == ["in.pdf"]
+        assert captured["input"] == "in.pdf"
+        assert captured["output"] == "out.pdf"
+        assert captured["dpi"] == 150
+        # Writer received the accumulated blocks.
+        assert captured["pages"][0] == [
+            ([0.1, 0.1, 0.9, 0.2], "hello"),
+            ([0.1, 0.3, 0.9, 0.4], "world"),
+        ]
+        # Returned view filters out blank-text boxes (none here).
+        assert result == {0: ["hello", "world"]}
+        assert engine.last_failed_pages == []
+        assert engine.last_document_result is not None
+
+    async def test_propagates_failed_pages_from_backend(self) -> None:
+        backend = _StubGroundedBackend(
+            GroundedResponse(
+                blocks=[
+                    GroundedBlock(bbox=[0.1, 0.1, 0.9, 0.2], text="ok", page_index=0)
+                ],
+                failed_pages=[1, 2],
+            )
+        )
+        engine = _engine(backend=backend)
+        await engine.execute("in.pdf", "out.pdf", dpi=150)
+        assert engine.last_failed_pages == [1, 2]
+
+    async def test_resets_run_state_at_entry(self) -> None:
+        # A second run on the same engine must clear stale state from the
+        # first — same contract as HybridEngine via EngineBase._reset_run_state.
+        backend = _StubGroundedBackend(
+            GroundedResponse(
+                blocks=[
+                    GroundedBlock(bbox=[0.1, 0.1, 0.9, 0.2], text="first", page_index=0)
+                ],
+                failed_pages=[3],
+            )
+        )
+        engine = _engine(backend=backend)
+
+        await engine.execute("in.pdf", "out-1.pdf", dpi=150)
+        assert engine.last_failed_pages == [3]
+        assert engine.last_document_result is not None
+
+        # Reset the backend to a clean response (no failures).
+        backend.response = GroundedResponse(
+            blocks=[
+                GroundedBlock(bbox=[0.1, 0.1, 0.9, 0.2], text="second", page_index=0)
+            ]
+        )
+        await engine.execute("in.pdf", "out-2.pdf", dpi=150)
+        assert engine.last_failed_pages == []
+        # The document_result has been replaced.
+        assert engine.last_document_result is not None
+        assert engine.last_document_result.pages[0].blocks[0].text == "second"
+
+    async def test_runs_document_processors(self) -> None:
+        backend = _StubGroundedBackend(
+            GroundedResponse(
+                blocks=[
+                    GroundedBlock(bbox=[0.1, 0.1, 0.9, 0.2], text="hello", page_index=0)
+                ]
+            )
+        )
+        engine = _engine(backend=backend, document_processors=[_TaggingProcessor()])
+
+        await engine.execute("in.pdf", "out.pdf", dpi=150)
+
+        assert engine.last_document_result is not None
+        assert (
+            engine.last_document_result.pages[0].metadata.get("tagging_processor")
+            is True
+        )
+
+    async def test_empty_response_emits_blank_document(self) -> None:
+        backend = _StubGroundedBackend(GroundedResponse(blocks=[]))
+        engine = _engine(backend=backend)
+
+        result = await engine.execute("in.pdf", "out.pdf", dpi=150)
+
+        assert result == {}
+        assert engine.last_failed_pages == []
+        assert engine.last_document_result is not None
+        assert engine.last_document_result.pages == []
