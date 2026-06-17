@@ -13,6 +13,17 @@ import cv2
 import numpy as np
 from PIL import Image, ImageOps
 
+# CLAHE contrast normalisation defaults. `clip_limit=2.0` is the
+# widely-cited sweet spot for scanned-document text — higher values
+# amplify noise, lower values lose the contrast boost.
+CLAHE_CLIP_LIMIT = 2.0
+CLAHE_TILE_GRID = 8
+
+# Skip the deskew rotation when the detected angle is below this
+# threshold; tiny angles are usually noise from the line-detection
+# step and the warp would only soften the image.
+DESKEW_MIN_ANGLE_DEGREES = 0.1
+
 
 @dataclass(frozen=True, slots=True)
 class PagePreprocessingOptions:
@@ -126,7 +137,9 @@ def _normalize_contrast(array: np.ndarray) -> np.ndarray:
     # shaves ~32% of the function's wall time (~3.6ms/page measured).
     # Output is bit-identical to the previous implementation.
     lab = cv2.cvtColor(array, cv2.COLOR_RGB2LAB)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    clahe = cv2.createCLAHE(
+        clipLimit=CLAHE_CLIP_LIMIT, tileGridSize=(CLAHE_TILE_GRID, CLAHE_TILE_GRID)
+    )
     lab[:, :, 0] = clahe.apply(lab[:, :, 0])
     return cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
 
@@ -141,7 +154,7 @@ def _deskew(array: np.ndarray) -> tuple[np.ndarray, float]:
     angle = cv2.minAreaRect(coords)[-1]
     if angle < -45:
         angle = 90 + angle
-    if not math.isfinite(angle) or abs(angle) < 0.1:
+    if not math.isfinite(angle) or abs(angle) < DESKEW_MIN_ANGLE_DEGREES:
         return array, 0.0
 
     height, width = array.shape[:2]

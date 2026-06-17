@@ -8,7 +8,10 @@ from collections.abc import Sequence
 
 from PIL import Image
 
+from local_deepl.core.aligner import HybridAligner
 from local_deepl.core.document import DocumentResult
+from local_deepl.core.ocr import OCRProcessor
+from local_deepl.core.pdf import PDFHandler
 from local_deepl.core.preprocessing import PagePreprocessingOptions, PagePreprocessor
 from local_deepl.core.processors import DocumentProcessor, run_document_processors
 from local_deepl.core.routing import QualityRoutingOptions, QualityRoutingPolicy
@@ -20,6 +23,12 @@ from local_deepl.core.workflows.base import (
     notify,
 )
 from local_deepl.utils.image import crop_for_ocr_from_image
+
+# A bbox is "refinable" if it has enough normalized area to be worth a
+# per-crop re-OCR pass; below these sizes the LLM round-trip costs more
+# than it gains.
+REFINABLE_MIN_WIDTH = 0.03
+REFINABLE_MIN_HEIGHT = 0.008
 
 
 def parse_page_range(page_str: str, total_pages: int) -> list[int]:
@@ -83,19 +92,19 @@ def _drop_refined_duplicates(
 def _is_refinable(bbox: list[float]) -> bool:
     width = bbox[2] - bbox[0]
     height = bbox[3] - bbox[1]
-    return width > 0.03 and height > 0.008
+    return width > REFINABLE_MIN_WIDTH and height > REFINABLE_MIN_HEIGHT
 
 
 class HybridEngine(EngineBase):
     def __init__(
         self,
-        aligner,
-        ocr_processor,
-        pdf_handler,
+        aligner: HybridAligner,
+        ocr_processor: OCRProcessor,
+        pdf_handler: PDFHandler,
         output_writer: OutputWriter,
         document_processors: Sequence[DocumentProcessor] | None = None,
         page_preprocessor: PagePreprocessor | None = None,
-    ):
+    ) -> None:
         self.aligner = aligner
         self.ocr_processor = ocr_processor
         self.pdf_handler = pdf_handler
@@ -208,7 +217,9 @@ class HybridEngine(EngineBase):
         semaphore = asyncio.Semaphore(max(1, concurrency))
         total = len(page_nums)
 
-        async def process_page(p_num: int):
+        async def process_page(
+            p_num: int,
+        ) -> tuple[int, list[str], list[tuple[list[float], str]], Exception | None]:
             try:
                 if p_num in per_box_pages:
                     aligned = await self._ocr_per_box(
@@ -330,7 +341,7 @@ class HybridEngine(EngineBase):
     ) -> list[tuple[list[float], str]]:
         page_image = await asyncio.to_thread(_decode_page_image, image_b64)
 
-        async def ocr_one(idx: int, bbox: list[float]):
+        async def ocr_one(idx: int, bbox: list[float]) -> tuple[int, str]:
             try:
                 async with semaphore:
                     if not _is_refinable(bbox):
@@ -397,7 +408,9 @@ class HybridEngine(EngineBase):
                 _decode_page_image, images_dict[p_num]
             )
 
-        async def refine_one(p_num: int, idx: int, bbox: list[float]):
+        async def refine_one(
+            p_num: int, idx: int, bbox: list[float]
+        ) -> tuple[int, int, str]:
             try:
                 async with semaphore:
                     crop_b64 = await asyncio.to_thread(

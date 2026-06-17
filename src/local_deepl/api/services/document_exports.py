@@ -51,26 +51,30 @@ def build_document_export(
     # other value, so the Literal type remains the source of truth for
     # what's actually supported.
     format_name = _coerce_format(export_format)
-    if format_name == "text":
-        return _plain_text(page_text)
-    if format_name == "markdown":
-        return _markdown(page_text)
-    if format_name == "json":
-        return {"pages": _pages_json(page_text), "metadata": metadata}
-    if format_name == "docling":
-        return {
-            "schema": "docling_compatible",
-            "document": _pages_json(page_text),
-            "metadata": metadata,
-        }
-    if format_name == "mineru":
-        return {
-            "schema": "mineru_compatible",
-            "pages": _pages_json(page_text),
-            "metadata": metadata,
-        }
-    # Unreachable — _coerce_format raises first.
-    raise InvalidArtifactPayloadError(f"Unsupported export format: {format_name}")
+    match format_name:
+        case "text":
+            return _plain_text(page_text)
+        case "markdown":
+            return _markdown(page_text)
+        case "json":
+            return {"pages": _pages_json(page_text), "metadata": metadata}
+        case "docling":
+            return {
+                "schema": "docling_compatible",
+                "document": _pages_json(page_text),
+                "metadata": metadata,
+            }
+        case "mineru":
+            return {
+                "schema": "mineru_compatible",
+                "pages": _pages_json(page_text),
+                "metadata": metadata,
+            }
+        case _:
+            # Unreachable — _coerce_format raises first.
+            raise InvalidArtifactPayloadError(
+                f"Unsupported export format: {format_name}"
+            )
 
 
 def write_document_export_atomic(

@@ -16,6 +16,7 @@ from local_deepl.api.services.ai import (
     translate_text as translate_document_text,
 )
 from local_deepl.api.services.security import SERVER_ERROR_MESSAGE
+from local_deepl.core.translation_config import AsyncTranslationUnavailable
 
 from .common import _stable_server_error
 from .config import _config
@@ -59,19 +60,32 @@ async def extract_data(body: ExtractionRequest):
 
 @router.post("/api/translate/async")
 async def translate_text_async(body: dict[str, Any]):
-    """Trigger a background translation job via Celery."""
+    """Trigger a background translation job via Celery.
+
+    Returns 503 if the optional async-translation extras are not installed.
+    """
     from local_deepl.api.tasks import process_translation_task
+
+    if not isinstance(body, dict):
+        return JSONResponse(
+            status_code=422, content={"error": "Invalid request parameters."}
+        )
 
     raw_document_id = body.get("document_id") or uuid.uuid4().hex
     document_id = str(raw_document_id).strip() or uuid.uuid4().hex
     raw_text = body.get("text", "")
     text = raw_text if isinstance(raw_text, str) else ""
+    if not isinstance(document_id, str) or not document_id.strip():
+        return JSONResponse(
+            status_code=422,
+            content={"error": "document_id must be a non-empty string."},
+        )
 
     try:
         task = process_translation_task.delay(document_id, text)
-    except Exception:
-        logger.exception("Async translation dispatch failed")
-        return _stable_server_error()
+    except AsyncTranslationUnavailable as exc:
+        return JSONResponse(status_code=503, content={"error": str(exc)})
+
     return {"job_id": task.id, "status": "Processing"}
 
 
@@ -82,6 +96,10 @@ async def get_translation_status(job_id: str):
 
     try:
         task = celery_app.AsyncResult(job_id)
+    except AsyncTranslationUnavailable as exc:
+        return JSONResponse(status_code=503, content={"error": str(exc)})
+
+    try:
         response: dict[str, Any] = {
             "job_id": job_id,
             "state": task.state,

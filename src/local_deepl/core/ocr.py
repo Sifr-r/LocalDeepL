@@ -357,7 +357,7 @@ class OCRProcessor:
             image_bytes = base64.b64decode(image_base64)
             img = Image.open(io.BytesIO(image_bytes))
             # Fallback to multiple common languages (or just Arabic/English for this workload)
-            draft = pytesseract.image_to_string(img, lang="ara+eng")
+            draft: str = pytesseract.image_to_string(img, lang="ara+eng")
             return draft.strip()
         except Exception:
             return ""

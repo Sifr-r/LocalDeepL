@@ -60,7 +60,7 @@ class PDFHandler:
 
     def convert_to_images(
         self,
-        pdf_path,
+        pdf_path: str | Path,
         dpi: int = 150,
         max_image_dim: int = 1024,
     ) -> dict[int, str]:
@@ -117,7 +117,7 @@ class PDFHandler:
         return max(72, min(requested_dpi, safe_dpi))
 
     @staticmethod
-    def _images_from_image_file(path, max_image_dim: int) -> dict[int, str]:
+    def _images_from_image_file(path: str | Path, max_image_dim: int) -> dict[int, str]:
         """Load a JPEG/PNG/TIFF/BMP; multi-frame TIFFs become multiple pages."""
         images: dict[int, str] = {}
         with Image.open(path) as src:
@@ -228,7 +228,13 @@ class PDFHandler:
             new_doc.close()
 
     @staticmethod
-    def _draw_invisible_text(page, rect_coords, text, page_width, page_height):
+    def _draw_invisible_text(
+        page: "fitz.Page",
+        rect_coords: list[float],
+        text: str,
+        page_width: float,
+        page_height: float,
+    ) -> None:
         """
         Embed invisible `text` so its glyph bboxes span the *full width* of
         the source bbox — selecting anywhere inside the bbox in a PDF viewer

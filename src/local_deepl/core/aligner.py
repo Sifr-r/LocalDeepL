@@ -34,7 +34,7 @@ class HybridAligner:
     attached to the nearest matched box so no text is lost.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.detection_predictor = DetectionPredictor()
 
     def get_detected_boxes_batch(
@@ -86,7 +86,7 @@ class HybridAligner:
     def align_text(
         self,
         structured_data: list[tuple[BBox, str]],
-        llm_text,
+        llm_text: str | list[str],
     ) -> list[tuple[BBox, str]]:
         """
         Bind LLM text to detected boxes via Needleman-Wunsch line-to-box DP.
@@ -263,7 +263,7 @@ def _reading_order_sort(boxes: list[BBox]) -> list[BBox]:
     return [boxes[i] for i in _reading_order_indices(boxes)]
 
 
-def _normalize_lines(llm_text) -> list[str]:
+def _normalize_lines(llm_text: str | list[str]) -> list[str]:
     """Accept str or list[str]; return non-empty stripped lines."""
     if not llm_text:
         return []

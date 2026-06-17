@@ -19,11 +19,9 @@ from local_deepl.api.routers import (
     ai,
     artifacts,
     config,
-    extraction,
     jobs,
     ocr,
     state,
-    translation,
     websocket,
 )
 from local_deepl.api.services.artifacts import TextArtifactStore
@@ -56,8 +54,6 @@ def _api_client() -> TestClient:
     app.include_router(websocket.router)
     app.include_router(jobs.router)
     app.include_router(artifacts.router)
-    app.include_router(translation.router)
-    app.include_router(extraction.router)
     return TestClient(app)
 
 
@@ -100,22 +96,27 @@ def _pdf_upload() -> tuple[str, bytes, str]:
 
 
 def test_ssrf_fails_closed_and_requires_explicit_local_allowance():
+    import asyncio
+
     with patch.dict(os.environ, {}, clear=True):
         with patch("local_deepl.utils.security.socket.getaddrinfo") as getaddrinfo:
             getaddrinfo.side_effect = _public_dns
-            assert is_ssrf_target("http://api.openai.com/v1") is False
-            assert is_ssrf_target("localhost:1234/v1") is True
-            assert is_ssrf_target("ftp://api.openai.com/v1") is True
-            assert is_ssrf_target(None) is True
+            assert asyncio.run(is_ssrf_target("http://api.openai.com/v1")) is False
+            assert asyncio.run(is_ssrf_target("localhost:1234/v1")) is True
+            assert asyncio.run(is_ssrf_target("ftp://api.openai.com/v1")) is True
+            assert asyncio.run(is_ssrf_target(None)) is True
 
     with patch.dict(os.environ, {}, clear=True):
         with patch("local_deepl.utils.security.socket.getaddrinfo") as getaddrinfo:
             getaddrinfo.side_effect = socket.gaierror(-2, "Name or service not known")
-            assert is_ssrf_target("http://does-not-resolve.example/v1") is True
+            assert (
+                asyncio.run(is_ssrf_target("http://does-not-resolve.example/v1"))
+                is True
+            )
 
     with patch.dict(os.environ, {"ALLOW_SSRF_LOCAL": "true"}, clear=True):
-        assert is_ssrf_target("http://127.0.0.1:1234/v1") is False
-        assert is_ssrf_target("http://metadata.google.internal/v1") is True
+        assert asyncio.run(is_ssrf_target("http://127.0.0.1:1234/v1")) is False
+        assert asyncio.run(is_ssrf_target("http://metadata.google.internal/v1")) is True
 
 
 def test_config_update_rejects_string_booleans_and_local_api_base():

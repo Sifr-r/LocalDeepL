@@ -114,14 +114,14 @@ class DictionaryPostProcessor:
         clean_lang = self.lang.split("-")[0].lower().strip()
         self.tess_lang = _ISO_639_MAP.get(clean_lang, clean_lang)
 
-    async def ensure_loaded(self):
+    async def ensure_loaded(self) -> None:
         """Lazy load the dictionary."""
         if self.spell is not None:
             return
 
         await self._init_spellchecker()
 
-    async def _init_spellchecker(self):
+    async def _init_spellchecker(self) -> None:
         if util.find_spec("spellchecker") is None:
             logger.warning("pyspellchecker is not installed. Skipping spellcheck.")
             self.spell = None
@@ -274,7 +274,7 @@ class DictionaryPostProcessor:
         if spell is None:
             return text
 
-        def replace_word(match):
+        def replace_word(match: re.Match[str]) -> str:
             word = match.group(0)
 
             # Clean Unicode Nonspacing Marks (Harakat, stress marks) to check if purely alphabetic

@@ -268,7 +268,7 @@ async def process_pdf(
     except ValidationError as exc:
         return _validation_error_response(exc)
 
-    if is_ssrf_target(settings.api_base):
+    if await is_ssrf_target(settings.api_base):
         return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
 
     try:

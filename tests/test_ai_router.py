@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -30,7 +30,10 @@ def test_translate_provider_error_response_is_stable():
 
     client = _api_client()
     with (
-        patch("local_deepl.api.services.ai.is_ssrf_target", return_value=False),
+        patch(
+            "local_deepl.api.services.ai.is_ssrf_target",
+            new=AsyncMock(return_value=False),
+        ),
         patch("litellm.acompletion", fail_completion),
     ):
         response = client.post(
@@ -56,7 +59,10 @@ def test_extract_invalid_json_returns_empty_object():
 
     client = _api_client()
     with (
-        patch("local_deepl.api.services.ai.is_ssrf_target", return_value=False),
+        patch(
+            "local_deepl.api.services.ai.is_ssrf_target",
+            new=AsyncMock(return_value=False),
+        ),
         patch("litellm.acompletion", invalid_json_completion),
     ):
         response = client.post(

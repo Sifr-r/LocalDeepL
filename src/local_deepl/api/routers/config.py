@@ -108,7 +108,7 @@ async def update_config(body: ConfigUpdate):
             and ("..." in val or val == "********")
         ):
             continue
-        if key == "api_base" and is_ssrf_target(val):
+        if key == "api_base" and await is_ssrf_target(val):
             return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
         _config[key] = val.value if hasattr(val, "value") else val
     return await get_config()
@@ -124,7 +124,7 @@ async def list_models():
 
     Uses the current ``api_base`` from the config store.
     """
-    if is_ssrf_target(_config["api_base"]):
+    if await is_ssrf_target(_config["api_base"]):
         return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
     try:
         from openai import AsyncOpenAI

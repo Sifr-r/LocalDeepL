@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import os
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, TypedDict
 
 from local_deepl.core.translation_config import (
@@ -10,6 +12,20 @@ from local_deepl.core.translation_config import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Resolve the ChromaDB directory once. Default lives next to the package root
+# (legacy layout); override with `LOCAL_DEEPL_CHROMA_DB` for embedded use.
+_DEFAULT_CHROMA_DB = Path(__file__).resolve().parent.parent.parent / "chroma_db"
+CHROMA_COLLECTION_NAME = "lanes_lexicon"
+EMBEDDING_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
+
+# --- Quality thresholds ----------------------------------------------------
+# Tunables for the translate/evaluate loop. Names so the loop reads
+# literally rather than as a string of magic numbers.
+LEXICON_RESULT_COUNT = 3
+MAX_TRANSLATION_ATTEMPTS = 3
+MIN_TRANSLATION_LENGTH_RATIO = 0.1
+TRANSLATION_ACCEPTANCE_SCORE = 0.8
 
 
 # ---------------------------------------------------------------------------
@@ -29,9 +45,6 @@ class TranslationState(TypedDict, total=False):
 # ---------------------------------------------------------------------------
 # Graph Nodes
 # ---------------------------------------------------------------------------
-db_client: Any | None = None
-emb_fn: Any | None = None
-_translation_app: Any | None = None
 
 
 def _optional_dependency_message(package: str) -> str:
@@ -39,6 +52,11 @@ def _optional_dependency_message(package: str) -> str:
         f"Async translation requires optional dependency '{package}'. "
         "Install the async translation extras to enable this feature."
     )
+
+
+def _chroma_db_path() -> Path:
+    override = os.getenv("LOCAL_DEEPL_CHROMA_DB")
+    return Path(override).expanduser().resolve() if override else _DEFAULT_CHROMA_DB
 
 
 def _get_chroma_modules() -> tuple[Any, Any] | None:
@@ -50,25 +68,53 @@ def _get_chroma_modules() -> tuple[Any, Any] | None:
     return chromadb, embedding_functions
 
 
-def get_chroma_collection() -> Any | None:
+@lru_cache(maxsize=1)
+def _chroma_client() -> Any | None:
+    """Lazy-built persistent ChromaDB client. Cached for the process lifetime."""
     modules = _get_chroma_modules()
     if modules is None:
         return None
-    chromadb, embedding_functions = modules
+    chromadb, _embedding_functions = modules
 
-    db_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "chroma_db")
-    if not os.path.exists(db_path):
+    db_path = _chroma_db_path()
+    if not db_path.exists():
         return None
 
-    global db_client, emb_fn
     try:
-        if db_client is None:
-            db_client = chromadb.PersistentClient(path=db_path)
-        if emb_fn is None:
-            emb_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name="paraphrase-multilingual-MiniLM-L12-v2"
-            )
-        return db_client.get_collection(name="lanes_lexicon", embedding_function=emb_fn)
+        return chromadb.PersistentClient(path=str(db_path))
+    except Exception as exc:
+        logger.warning("Unable to open ChromaDB at %s: %s", db_path, exc)
+        return None
+
+
+@lru_cache(maxsize=1)
+def _chroma_embedding_fn() -> Any | None:
+    """Lazy-built sentence-transformer embedding function. Cached for lifetime."""
+    modules = _get_chroma_modules()
+    if modules is None:
+        return None
+    _chromadb, embedding_functions = modules
+    try:
+        return embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name=EMBEDDING_MODEL_NAME
+        )
+    except Exception as exc:
+        logger.warning(
+            "Unable to load embedding model %s: %s", EMBEDDING_MODEL_NAME, exc
+        )
+        return None
+
+
+def get_chroma_collection() -> Any | None:
+    """Return the cached ChromaDB collection, or None if unavailable."""
+    client = _chroma_client()
+    emb_fn = _chroma_embedding_fn()
+    if client is None or emb_fn is None:
+        return None
+    try:
+        return client.get_collection(
+            name=CHROMA_COLLECTION_NAME, embedding_function=emb_fn
+        )
     except Exception as exc:
         logger.warning("Unable to load translation lexicon from ChromaDB: %s", exc)
         return None
@@ -81,7 +127,9 @@ def retrieve_lexicon_context(state: TranslationState) -> dict[str, list[str]]:
 
     if collection:
         try:
-            results = collection.query(query_texts=[state["source_chunk"]], n_results=3)
+            results = collection.query(
+                query_texts=[state["source_chunk"]], n_results=LEXICON_RESULT_COUNT
+            )
             if results and results.get("documents") and results["documents"][0]:
                 context = results["documents"][0]
         except Exception as exc:
@@ -144,12 +192,12 @@ def evaluate_node(state: TranslationState) -> dict[str, float | str]:
 
     translated = state.get("translated_chunk", "")
     if translated.startswith("[Translation Error"):
-        if attempts >= 3:
+        if attempts >= MAX_TRANSLATION_ATTEMPTS:
             return {"evaluation_score": 1.0, "feedback": "Failed after max attempts."}
         return {"evaluation_score": 0.0, "feedback": "Translation API call failed."}
 
-    if attempts >= 3:
-        # Force accept after 3 tries to prevent infinite loops
+    if attempts >= MAX_TRANSLATION_ATTEMPTS:
+        # Force accept after N tries to prevent infinite loops
         return {"evaluation_score": 1.0, "feedback": ""}
 
     # If the source chunk has no letters or is extremely short, skip length ratio check
@@ -158,7 +206,7 @@ def evaluate_node(state: TranslationState) -> dict[str, float | str]:
     if not has_letters or len(source.strip()) < 5:
         return {"evaluation_score": 1.0, "feedback": "Looks good"}
 
-    if len(translated) < len(source) * 0.1:
+    if len(translated) < len(source) * MIN_TRANSLATION_LENGTH_RATIO:
         return {
             "evaluation_score": 0.0,
             "feedback": "Translation too short. Ensure you translate the entire chunk.",
@@ -169,7 +217,7 @@ def evaluate_node(state: TranslationState) -> dict[str, float | str]:
 
 def should_refine(state: TranslationState) -> str:
     """Router logic for conditional edge."""
-    if state.get("evaluation_score", 1.0) < 0.8:
+    if state.get("evaluation_score", 1.0) < TRANSLATION_ACCEPTANCE_SCORE:
         return "translate"
     return "end"
 
@@ -179,11 +227,9 @@ def should_refine(state: TranslationState) -> str:
 # ---------------------------------------------------------------------------
 
 
+@lru_cache(maxsize=1)
 def get_translation_app() -> Any:
     """Return the compiled LangGraph app, building it only when invoked."""
-    global _translation_app
-    if _translation_app is not None:
-        return _translation_app
 
     try:
         from langgraph.graph import END, START, StateGraph
@@ -204,8 +250,7 @@ def get_translation_app() -> Any:
         "evaluate", should_refine, {"translate": "translate", "end": END}
     )
 
-    _translation_app = workflow.compile()
-    return _translation_app
+    return workflow.compile()
 
 
 class _LazyTranslationApp:

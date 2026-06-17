@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import socket
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -48,20 +46,20 @@ def test_is_ssrf_target_defaults():
 
             mock_getaddrinfo.side_effect = side_effect
 
-            assert is_ssrf_target("http://localhost:1234/v1") is True
-            assert is_ssrf_target("http://127.0.0.1/v1") is True
-            assert is_ssrf_target("http://192.168.1.1/v1") is True
-            assert is_ssrf_target("http://10.0.0.1/v1") is True
-            assert is_ssrf_target("http://127.0.0.1.nip.io/v1") is True
+            assert asyncio.run(is_ssrf_target("http://localhost:1234/v1")) is True
+            assert asyncio.run(is_ssrf_target("http://127.0.0.1/v1")) is True
+            assert asyncio.run(is_ssrf_target("http://192.168.1.1/v1")) is True
+            assert asyncio.run(is_ssrf_target("http://10.0.0.1/v1")) is True
+            assert asyncio.run(is_ssrf_target("http://127.0.0.1.nip.io/v1")) is True
             # Public resources should pass cleanly
-            assert is_ssrf_target("http://api.openai.com/v1") is False
+            assert asyncio.run(is_ssrf_target("http://api.openai.com/v1")) is False
 
 
 def test_is_ssrf_target_allowed():
     # If ALLOW_SSRF_LOCAL is explicitly set to true
     with patch.dict(os.environ, {"ALLOW_SSRF_LOCAL": "true"}):
-        assert is_ssrf_target("http://localhost:1234/v1") is False
-        assert is_ssrf_target("http://127.0.0.1/v1") is False
+        assert asyncio.run(is_ssrf_target("http://localhost:1234/v1")) is False
+        assert asyncio.run(is_ssrf_target("http://127.0.0.1/v1")) is False
 
 
 def test_translation_chunking_preserves_size():
@@ -127,42 +125,22 @@ def test_celery_task_raises_value_error_on_translation_error():
 
 
 def test_extract_data_robust_json_parsing():
-    pytest.importorskip("fastapi")
-    from local_deepl.api.routers import extraction
+    """`parse_extraction_json` returns {} on unrecoverable JSON, never raises."""
+    from local_deepl.api.services import ai
 
-    # Verify our custom regex fallback in extraction.py doesn't crash when JSON matches are missing or fail
-    async def mock_acompletion(*args, **kwargs):
-        return SimpleNamespace(
-            choices=[
-                SimpleNamespace(
-                    message=SimpleNamespace(content="Bad model output with no JSON")
-                )
-            ]
-        )
+    # Direct object — happy path
+    assert ai.parse_extraction_json('{"vendor": "Acme"}') == {"vendor": "Acme"}
 
-    with (
-        patch.object(extraction.json, "loads") as mock_loads,
-        patch.object(extraction.re, "search") as mock_search,
-        patch("litellm.acompletion", mock_acompletion),
-    ):
-        mock_loads.side_effect = json.JSONDecodeError("JSON Decode Error", "", 0)
-        mock_search.return_value = None  # No matching bracket/braces found
+    # Fenced block (```json ... ```) — also happy path
+    assert ai.parse_extraction_json('```json\n{"vendor": "Acme"}\n```') == {
+        "vendor": "Acme"
+    }
 
-        # We call the FastAPI handler synchronously via standard coroutine run
-        with patch("local_deepl.utils.security.socket.getaddrinfo") as mock_getaddrinfo:
-            mock_getaddrinfo.return_value = [
-                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("104.18.3.161", 443))
-            ]
-            response = asyncio.run(
-                extraction.extract_data(
-                    {
-                        "text": "Hello World",
-                        "template": "invoice",
-                        "api_base": "http://api.openai.com/v1",
-                        "api_key": "test-key",
-                        "model": "openai/test-model",
-                    },
-                )
-            )
+    # Embedded object in surrounding prose
+    assert ai.parse_extraction_json('prefix text {"x": 1} suffix') == {"x": 1}
 
-        assert response == {"extracted_data": {}}
+    # Unrecoverable garbage returns {} instead of raising
+    assert ai.parse_extraction_json("not json at all, no brackets here") == {}
+
+    # Top-level array (not a dict) is rejected gracefully
+    assert ai.parse_extraction_json("[1, 2, 3]") == {}
