@@ -17,16 +17,11 @@ from local_deepl.api.services.ai import (
 )
 from local_deepl.api.services.security import SERVER_ERROR_MESSAGE
 
+from .common import _stable_server_error
 from .config import _config
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-
-def _stable_server_error(status_code: int = 500) -> JSONResponse:
-    return JSONResponse(
-        status_code=status_code, content={"error": SERVER_ERROR_MESSAGE}
-    )
 
 
 def _ai_error_response(exc: AIServiceError) -> JSONResponse:

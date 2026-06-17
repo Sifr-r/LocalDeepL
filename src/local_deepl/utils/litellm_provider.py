@@ -19,6 +19,6 @@ LITELLM_KNOWN_PREFIXES = (
 
 
 def resolve_custom_provider(model: str) -> str | None:
-    if any(model.startswith(p) for p in LITELLM_KNOWN_PREFIXES):
+    if model.startswith(LITELLM_KNOWN_PREFIXES):
         return None
     return "openai"

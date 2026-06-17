@@ -5,29 +5,32 @@ import os
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
+from local_deepl.api.schemas.requests import DocumentExportFormat
 from local_deepl.api.services.artifacts import (
     InvalidArtifactPayloadError,
     InvalidArtifactReferenceError,
     is_opaque_artifact_id,
 )
 
-DocumentExportFormat = Literal["json", "markdown", "text", "docling", "mineru"]
+# Re-export so callers that historically imported it from this module keep working.
+__all__ = ["EXPORT_MEDIA_TYPES", "DocumentExportFormat", "build_document_export"]
+
+# Typed as `dict[str, str]` (not `dict[DocumentExportFormat, str]`) so callers
+# can look up by string literal — the enum members are str subclasses, so
+# hash-equal lookup works at runtime either way.
 EXPORT_MEDIA_TYPES: dict[str, str] = {
-    "json": "application/json",
-    "markdown": "text/markdown; charset=utf-8",
-    "text": "text/plain; charset=utf-8",
-    "docling": "application/json",
-    "mineru": "application/json",
+    DocumentExportFormat.JSON: "application/json",
+    DocumentExportFormat.MARKDOWN: "text/markdown; charset=utf-8",
+    DocumentExportFormat.TEXT: "text/plain; charset=utf-8",
+    DocumentExportFormat.DOCLING: "application/json",
+    DocumentExportFormat.MINERU: "application/json",
 }
 
-# Runtime whitelist used when validating free-form string input. Keeps
-# the public DocumentExportFormat Literal honest as a documentation aid
-# while still letting callers pass an already-validated str.
-_SUPPORTED_FORMATS: frozenset[str] = frozenset(
-    {"json", "markdown", "text", "docling", "mineru"}
-)
+# Runtime whitelist derived from the canonical StrEnum so the schema
+# (requests.py) stays the single source of truth.
+_SUPPORTED_FORMATS: frozenset[str] = frozenset(DocumentExportFormat)
 
 
 def _coerce_format(value: str) -> str:

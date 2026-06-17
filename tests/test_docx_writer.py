@@ -63,6 +63,7 @@ def test_export_docx_endpoint():
     app = FastAPI()
     app.include_router(ocr.router)
     from local_deepl.api.routers import artifacts
+
     app.include_router(artifacts.router)
     client = TestClient(app)
 

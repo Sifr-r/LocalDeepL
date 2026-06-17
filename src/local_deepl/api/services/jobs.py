@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
 JobStatus = Literal["complete", "error", "rejected"]
@@ -62,7 +62,7 @@ class JobHistory:
         if not isinstance(max_jobs, int) or max_jobs < 1:
             raise ValueError("max_jobs must be a positive integer.")
         self._records: deque[JobRecord] = deque(maxlen=max_jobs)
-        self._now = now or (lambda: datetime.now(timezone.utc))
+        self._now = now or (lambda: datetime.now(UTC))
 
     @property
     def max_jobs(self) -> int:
@@ -106,8 +106,8 @@ def _current_timestamp(now: Callable[[], datetime]) -> str:
     if not isinstance(timestamp, datetime):
         raise TypeError("now must return a datetime.")
     if timestamp.tzinfo is None:
-        timestamp = timestamp.replace(tzinfo=timezone.utc)
-    return timestamp.astimezone(timezone.utc).isoformat()
+        timestamp = timestamp.replace(tzinfo=UTC)
+    return timestamp.astimezone(UTC).isoformat()
 
 
 def _clean_required_text(value: str, field_name: str) -> str:

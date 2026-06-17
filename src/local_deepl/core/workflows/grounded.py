@@ -12,7 +12,7 @@ from local_deepl.core.workflows.base import (
     OutputWriter,
     ProgressCallback,
     WarningCallback,
-    _notify,
+    notify,
 )
 
 
@@ -78,9 +78,9 @@ class GroundedEngine(EngineBase):
         for p in page_nums:
             pages_text[p] = [text for _, text in pages_data[p] if text.strip()]
 
-        await _notify(progress, "embed", 0, 1, "Writing output...")
+        await notify(progress, "embed", 0, 1, "Writing output...")
         await asyncio.to_thread(
             self.output_writer, input_path, output_path, dict(pages_data), dpi
         )
-        await _notify(progress, "embed", 1, 1, "Done.")
+        await notify(progress, "embed", 1, 1, "Done.")
         return dict(pages_text)

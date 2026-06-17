@@ -170,7 +170,7 @@ class TestDPAlign:
         assert len(mapping) == 4
         # Each box got text in increasing box-index order (monotonic).
         for i in range(4):
-            assert i in mapping and mapping[i]
+            assert mapping.get(i)
 
     def test_cost_increases_with_order_mismatch(self):
         # Heterogeneous box sizes + line lengths so that the DP cost

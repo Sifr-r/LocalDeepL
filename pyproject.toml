@@ -54,13 +54,6 @@ async-translation = [
     "chromadb>=0.5.0",
     "sentence-transformers>=5.5.1",
 ]
-translation = [
-    "celery>=5.4.0",
-    "redis>=5.0.0",
-    "langgraph>=0.1.0",
-    "chromadb>=0.5.0",
-    "sentence-transformers>=5.5.1",
-]
 
 [project.scripts]
 local-deepl-server = "local_deepl.server:main"
@@ -123,7 +116,7 @@ filterwarnings = [
 
 [tool.ruff]
 line-length = 88
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = [
@@ -134,10 +127,38 @@ select = [
     "B",   # flake8-bugbear
     "C4",  # flake8-comprehensions
     "UP",  # pyupgrade
+    "SIM", # flake8-simplify (ternary, match, etc.)
+    "RUF", # ruff-specific rules
+    "G",   # flake8-logging-format (catches f-strings in logger.*)
 ]
 ignore = [
     "E501", # line too long (handled by formatter)
     "B008", # do not perform function calls in argument defaults (standard in FastAPI)
+    "G004", # f-strings in logging — too noisy in this codebase's existing style
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Pre-existing violations surfaced when SIM/RUF/G were enabled. Each entry
+# defers the cleanup to a follow-up PR so the new rules stay active for new
+# code without bundling unrelated fixes into this commit.
+"src/local_deepl/api/routers/config.py" = ["RUF003"]
+"src/local_deepl/api/routers/extraction.py" = ["SIM105"]
+"src/local_deepl/api/routers/ocr.py" = ["RUF003"]
+"src/local_deepl/api/services/security.py" = ["SIM115"]
+"src/local_deepl/core/grounded.py" = ["SIM113"]
+# RUF001 in core/ocr.py: the curly quotes in `_trim` are intentional —
+# OCR can emit curly quotes that need stripping, not ASCII apostrophes.
+"src/local_deepl/core/ocr.py" = ["RUF001"]
+"src/local_deepl/core/processors.py" = ["RUF002", "RUF005"]
+"src/local_deepl/evaluation.py" = ["RUF002"]
+"tests/**/*.py" = [
+    "RUF002", # × in docstring comments
+    "RUF003", # × in inline comments
+    "RUF005", # list concatenation in test fixture builders
+    "RUF007", # pairwise() in helper loops
+    "RUF012", # mutable class defaults in test stub classes
+    "RUF015", # single-element slice patterns in fixture lookups
+    "SIM117", # nested `with` statements in test setup
 ]
 
 [tool.mypy]

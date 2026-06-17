@@ -17,7 +17,7 @@ from local_deepl.core.workflows.base import (
     OutputWriter,
     ProgressCallback,
     WarningCallback,
-    _notify,
+    notify,
 )
 from local_deepl.utils.image import crop_for_ocr_from_image
 
@@ -133,10 +133,10 @@ class HybridEngine(EngineBase):
             raise ValueError(
                 f"dense_mode must be one of 'auto', 'always', 'never'; got {dense_mode!r}"
             )
-        
+
         self.last_failed_pages = []
 
-        await _notify(progress, "convert", 0, 1, "Converting PDF to images...")
+        await notify(progress, "convert", 0, 1, "Converting PDF to images...")
         images_dict = await asyncio.to_thread(
             self.pdf_handler.convert_to_images, input_path, dpi, max_image_dim
         )
@@ -156,7 +156,7 @@ class HybridEngine(EngineBase):
             and preprocessing_options is not None
             and preprocessing_options.enabled
         ):
-            await _notify(
+            await notify(
                 progress, "convert", 0, 1, f"Preprocessing {len(page_nums)} pages..."
             )
             preprocessing_result = await asyncio.to_thread(
@@ -166,10 +166,10 @@ class HybridEngine(EngineBase):
             )
             images_dict = preprocessing_result.images
             preprocessing_metadata = preprocessing_result.metadata
-        await _notify(progress, "convert", 1, 1, f"Converted {total_pages} pages.")
+        await notify(progress, "convert", 1, 1, f"Converted {total_pages} pages.")
 
         # --- Phase 1: batch layout detection ---
-        await _notify(
+        await notify(
             progress, "detect", 0, 1, f"Detecting layout for {len(page_nums)} pages..."
         )
 
@@ -182,7 +182,7 @@ class HybridEngine(EngineBase):
                 self.aligner.get_detected_boxes_batch, chunk_bytes
             )
             batch_boxes.extend(chunk_boxes)
-            await _notify(
+            await notify(
                 progress,
                 "detect",
                 min(i + chunk_size, len(page_nums)),
@@ -193,7 +193,7 @@ class HybridEngine(EngineBase):
         pages_structured: dict[int, list] = {
             p: [(box, "") for box in batch_boxes[i]] for i, p in enumerate(page_nums)
         }
-        await _notify(progress, "detect", 1, 1, "Layout detection complete.")
+        await notify(progress, "detect", 1, 1, "Layout detection complete.")
 
         per_box_pages: set[int] = set()
         for p_num in page_nums:
@@ -247,7 +247,7 @@ class HybridEngine(EngineBase):
             if not per_box_pages
             else f"OCR ({len(per_box_pages)} dense / {total - len(per_box_pages)} sparse)"
         )
-        await _notify(progress, "ocr", 0, total, f"{ocr_label} (0/{total})...")
+        await notify(progress, "ocr", 0, total, f"{ocr_label} (0/{total})...")
         async with asyncio.TaskGroup() as tg:
             tasks = [tg.create_task(process_page(p)) for p in page_nums]
             for coro in asyncio.as_completed(tasks):
@@ -256,7 +256,7 @@ class HybridEngine(EngineBase):
                 pages_text[p_num] = llm_lines
                 pages_structured[p_num] = aligned
                 completed += 1
-                await _notify(
+                await notify(
                     progress,
                     "ocr",
                     completed,
@@ -312,11 +312,11 @@ class HybridEngine(EngineBase):
             pages_text[p] = [text for _, text in pages_structured[p] if text.strip()]
 
         # --- Phase 5: write output ---
-        await _notify(progress, "embed", 0, 1, "Writing output...")
+        await notify(progress, "embed", 0, 1, "Writing output...")
         await asyncio.to_thread(
             self.output_writer, input_path, output_path, pages_structured, dpi
         )
-        await _notify(progress, "embed", 1, 1, "Done.")
+        await notify(progress, "embed", 1, 1, "Done.")
         return pages_text
 
     async def _ocr_per_box(
@@ -386,7 +386,7 @@ class HybridEngine(EngineBase):
             return
 
         total = len(targets)
-        await _notify(
+        await notify(
             progress, "refine", 0, total, f"Refining {total} uncertain boxes..."
         )
 
@@ -430,7 +430,7 @@ class HybridEngine(EngineBase):
                 sparse_structured[p_num][idx] = (bbox_cur, text.strip())
                 refined_indices[p_num].add(idx)
                 completed += 1
-                await _notify(
+                await notify(
                     progress,
                     "refine",
                     completed,

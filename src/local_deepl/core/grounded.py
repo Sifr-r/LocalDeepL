@@ -114,7 +114,10 @@ def _rasterize_to_jpeg_pages(
     import fitz
     from PIL import Image, ImageSequence
 
-    from local_deepl.core.pdf import _is_image_path
+    from local_deepl.core.pdf import (
+        VLM_JPEG_QUALITY_GROUNDED,
+        _is_image_path,
+    )
 
     page_imgs: list[tuple[str, int, int]] = []
 
@@ -122,7 +125,7 @@ def _rasterize_to_jpeg_pages(
         img = img.convert("RGB")
         img.thumbnail((max_image_dim, max_image_dim))
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=80)
+        img.save(buf, format="JPEG", quality=VLM_JPEG_QUALITY_GROUNDED)
         page_imgs.append(
             (base64.b64encode(buf.getvalue()).decode(), img.width, img.height)
         )

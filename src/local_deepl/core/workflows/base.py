@@ -7,7 +7,7 @@ WarningCallback = Callable[[int, BaseException], Awaitable[None]]
 OutputWriter = Callable[[str, str, dict, int], None]
 
 
-async def _notify(
+async def notify(
     cb: ProgressCallback | None, stage: str, current: int, total: int, message: str
 ) -> None:
     if cb is not None:

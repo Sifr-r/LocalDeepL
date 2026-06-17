@@ -15,7 +15,17 @@ pytest.importorskip("fastapi")
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from local_deepl.api.routers import ai, config, ocr, websocket, jobs, artifacts, translation, extraction, state
+from local_deepl.api.routers import (
+    ai,
+    artifacts,
+    config,
+    extraction,
+    jobs,
+    ocr,
+    state,
+    translation,
+    websocket,
+)
 from local_deepl.api.services.artifacts import TextArtifactStore
 from local_deepl.api.services.security import (
     UploadValidationError,

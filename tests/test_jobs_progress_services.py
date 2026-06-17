@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -20,7 +20,7 @@ class Clock:
 
     def __call__(self) -> datetime:
         self.value += 1
-        return datetime(2026, 1, 1, 0, 0, self.value, tzinfo=timezone.utc)
+        return datetime(2026, 1, 1, 0, 0, self.value, tzinfo=UTC)
 
 
 def test_job_history_caps_fifo_and_lists_newest_first() -> None:

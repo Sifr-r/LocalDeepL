@@ -4,19 +4,28 @@ import hmac
 import re
 import secrets
 from dataclasses import dataclass
-from typing import Final, Literal
+from enum import StrEnum
+from typing import Final, cast
 
-Stage = Literal["convert", "detect", "ocr", "refine", "embed"]
+
+class Stage(StrEnum):
+    CONVERT = "convert"
+    DETECT = "detect"
+    OCR = "ocr"
+    REFINE = "refine"
+    EMBED = "embed"
+
+
 CHANNEL_TOKEN_BYTES: Final = 24
 SESSION_TOKEN_BYTES: Final = 32
 _TOKEN_RE: Final = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
 _DISPLAY_ID_RE: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 _STAGE_WEIGHTS: Final[dict[Stage, tuple[int, int]]] = {
-    "convert": (0, 15),
-    "detect": (15, 25),
-    "ocr": (25, 75),
-    "refine": (75, 90),
-    "embed": (90, 100),
+    Stage.CONVERT: (0, 15),
+    Stage.DETECT: (15, 25),
+    Stage.OCR: (25, 75),
+    Stage.REFINE: (75, 90),
+    Stage.EMBED: (90, 100),
 }
 
 
@@ -69,7 +78,7 @@ def stage_to_percent(stage: str, current: int, total: int) -> int:
     """Map a pipeline stage + sub-progress into a 0-100 overall percent."""
     clean_stage = _clean_stage(stage)
     if clean_stage in _STAGE_WEIGHTS:
-        lo, hi = _STAGE_WEIGHTS[clean_stage]
+        lo, hi = _STAGE_WEIGHTS[cast(Stage, clean_stage)]
     else:
         lo, hi = (0, 100)
     clean_total = _clean_progress_count(total, "total")
@@ -83,7 +92,7 @@ def validate_stage(stage: str) -> Stage:
     clean_stage = _clean_stage(stage)
     if clean_stage not in _STAGE_WEIGHTS:
         raise ValueError("stage must be one of: convert, detect, ocr, refine, embed.")
-    return clean_stage
+    return Stage(clean_stage)
 
 
 def sanitize_display_client_id(client_id: str | None) -> str | None:

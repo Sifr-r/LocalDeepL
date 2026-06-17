@@ -28,6 +28,19 @@ IMAGE_EXTENSIONS = frozenset(
     }
 )
 
+# --- JPEG quality constants -------------------------------------------------
+# Two distinct concerns:
+#   * VLM upload:  base64 JPEG sent to the model — smaller = faster upload.
+#   * PDF embed:   background image inside the output PDF — higher = readable.
+# `pdf.py` and `core.grounded._rasterize_to_jpeg_pages` historically picked
+# different VLM values (50 vs 80). The names below let each call site opt in
+# to the intent rather than the raw value; unifying the values is a separate,
+# behavior-changing decision worth its own PR.
+VLM_JPEG_QUALITY_PDF_PATH: int = 50
+VLM_JPEG_QUALITY_GROUNDED: int = 80
+EMBED_JPEG_QUALITY_PDF: int = 80
+EMBED_JPEG_QUALITY_IMAGE: int = 85
+
 
 def _is_image_path(path: str | Path) -> bool:
     return Path(path).suffix.lower() in IMAGE_EXTENSIONS
@@ -82,7 +95,7 @@ class PDFHandler:
                 img.thumbnail((max_image_dim, max_image_dim))
 
                 buffer = io.BytesIO()
-                img.save(buffer, format="JPEG", quality=50)
+                img.save(buffer, format="JPEG", quality=VLM_JPEG_QUALITY_PDF_PATH)
                 images[page_num] = base64.b64encode(buffer.getvalue()).decode("utf-8")
         finally:
             doc.close()
@@ -125,7 +138,7 @@ class PDFHandler:
                 img = frame.convert("RGB")
                 img.thumbnail((max_image_dim, max_image_dim))
                 buffer = io.BytesIO()
-                img.save(buffer, format="JPEG", quality=50)
+                img.save(buffer, format="JPEG", quality=VLM_JPEG_QUALITY_PDF_PATH)
                 images[page_num] = base64.b64encode(buffer.getvalue()).decode("utf-8")
         return images
 
@@ -167,7 +180,7 @@ class PDFHandler:
 
                 safe_dpi = self._calculate_safe_dpi(width, height, dpi)
                 pix = old_page.get_pixmap(dpi=safe_dpi)
-                img_data = pix.tobytes("jpg", jpg_quality=80)
+                img_data = pix.tobytes("jpg", jpg_quality=EMBED_JPEG_QUALITY_PDF)
 
                 new_page = new_doc.new_page(width=width, height=height)
                 new_page.insert_image(new_page.rect, stream=img_data)
@@ -200,7 +213,7 @@ class PDFHandler:
                     width, height = float(img.width), float(img.height)
 
                     buf = io.BytesIO()
-                    img.save(buf, format="JPEG", quality=85)
+                    img.save(buf, format="JPEG", quality=EMBED_JPEG_QUALITY_IMAGE)
                     img_data = buf.getvalue()
 
                     new_page = new_doc.new_page(width=width, height=height)
