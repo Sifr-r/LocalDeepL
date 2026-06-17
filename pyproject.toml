@@ -180,11 +180,3 @@ module = "local_deepl.core.*"
 disallow_untyped_defs = true
 check_untyped_defs = true
 
-[[tool.mypy.overrides]]
-# Pre-existing errors in `pipeline.py` (`EngineBase` lacks the
-# `last_document_result` and `last_failed_pages` attributes) — fixed by
-# lifting the state into `EngineBase` itself in the structural-decomposition
-# PR (report item #4). Suppress for now.
-module = "local_deepl.pipeline"
-ignore_errors = true
-

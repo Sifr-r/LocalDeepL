@@ -9,15 +9,16 @@ from collections.abc import Sequence
 from PIL import Image
 
 from local_deepl.core.aligner import HybridAligner
-from local_deepl.core.document import DocumentResult
 from local_deepl.core.ocr import OCRProcessor
 from local_deepl.core.pdf import PDFHandler
 from local_deepl.core.preprocessing import PagePreprocessingOptions, PagePreprocessor
-from local_deepl.core.processors import DocumentProcessor, run_document_processors
+from local_deepl.core.processors import DocumentProcessor
 from local_deepl.core.routing import QualityRoutingOptions, QualityRoutingPolicy
 from local_deepl.core.workflows.base import (
     EngineBase,
     OutputWriter,
+    PageBoxes,
+    PagesData,
     ProgressCallback,
     WarningCallback,
     notify,
@@ -29,6 +30,10 @@ from local_deepl.utils.image import crop_for_ocr_from_image
 # than it gains.
 REFINABLE_MIN_WIDTH = 0.03
 REFINABLE_MIN_HEIGHT = 0.008
+
+# Surya layout detection is batched; this chunk size keeps memory + GPU pressure
+# predictable without dominating the detect stage wall clock.
+DETECT_CHUNK_SIZE = 10
 
 
 def parse_page_range(page_str: str, total_pages: int) -> list[int]:
@@ -63,7 +68,7 @@ def _normalize_for_dedup(text: str) -> str:
 
 
 def _drop_refined_duplicates(
-    page_boxes: list[tuple[list[float], str]],
+    page_boxes: PageBoxes,
     refined_indices: set[int],
     *,
     radius: int = 4,
@@ -105,16 +110,14 @@ class HybridEngine(EngineBase):
         document_processors: Sequence[DocumentProcessor] | None = None,
         page_preprocessor: PagePreprocessor | None = None,
     ) -> None:
+        super().__init__(
+            output_writer=output_writer,
+            document_processors=document_processors,
+        )
         self.aligner = aligner
         self.ocr_processor = ocr_processor
         self.pdf_handler = pdf_handler
-        self.output_writer = output_writer
-        self.document_processors = tuple(document_processors or ())
         self.page_preprocessor = page_preprocessor
-
-        # State populated after a run
-        self.last_document_result: DocumentResult | None = None
-        self.last_failed_pages: list[int] = []
 
     async def execute(
         self,
@@ -143,8 +146,87 @@ class HybridEngine(EngineBase):
                 f"dense_mode must be one of 'auto', 'always', 'never'; got {dense_mode!r}"
             )
 
-        self.last_failed_pages = []
+        self._reset_run_state()
 
+        # --- Phase 1: convert + optional preprocessing ---
+        images_dict, page_nums, preprocessing_metadata = await self._convert_pages(
+            input_path=input_path,
+            dpi=dpi,
+            max_image_dim=max_image_dim,
+            pages=pages,
+            preprocessing_options=preprocessing_options,
+            progress=progress,
+        )
+
+        # --- Phase 2: batched layout detection ---
+        pages_structured = await self._detect_layout(
+            images_dict=images_dict,
+            page_nums=page_nums,
+            progress=progress,
+        )
+
+        # Decide which pages should take the dense (per-box) path before we
+        # fan out the OCR tasks — it determines how each page is dispatched.
+        per_box_pages = self._select_dense_pages(
+            pages_structured=pages_structured,
+            page_nums=page_nums,
+            dense_mode=dense_mode,
+            dense_threshold=dense_threshold,
+        )
+
+        # --- Phase 3: concurrent OCR (sparse + dense) ---
+        await self._ocr_pages(
+            images_dict=images_dict,
+            pages_structured=pages_structured,
+            page_nums=page_nums,
+            per_box_pages=per_box_pages,
+            concurrency=concurrency,
+            self_correction=self_correction,
+            binarize=binarize,
+            dual_engine=dual_engine,
+            progress=progress,
+            on_warning=on_warning,
+        )
+
+        # --- Phase 4: refine empty boxes on the sparse pages ---
+        if refine:
+            await self._refine_pages(
+                pages_structured=pages_structured,
+                images_dict=images_dict,
+                page_nums=page_nums,
+                per_box_pages=per_box_pages,
+                concurrency=concurrency,
+                self_correction=self_correction,
+                binarize=binarize,
+                dual_engine=dual_engine,
+                progress=progress,
+            )
+
+        # --- Phase 5: assemble, post-process, route, emit ---
+        return await self._finalize(
+            input_path=input_path,
+            output_path=output_path,
+            pages_structured=pages_structured,
+            page_nums=page_nums,
+            preprocessing_metadata=preprocessing_metadata,
+            spellcheck=spellcheck,
+            cross_page=cross_page,
+            quality_routing_options=quality_routing_options,
+            dpi=dpi,
+            progress=progress,
+        )
+
+    async def _convert_pages(
+        self,
+        *,
+        input_path: str,
+        dpi: int,
+        max_image_dim: int,
+        pages: str | None,
+        preprocessing_options: PagePreprocessingOptions | None,
+        progress: ProgressCallback | None,
+    ) -> tuple[dict[int, str], list[int], dict[int, dict[str, object]]]:
+        """Render the input to per-page images and apply optional preprocessing."""
         await notify(progress, "convert", 0, 1, "Converting PDF to images...")
         images_dict = await asyncio.to_thread(
             self.pdf_handler.convert_to_images, input_path, dpi, max_image_dim
@@ -177,15 +259,23 @@ class HybridEngine(EngineBase):
             preprocessing_metadata = preprocessing_result.metadata
         await notify(progress, "convert", 1, 1, f"Converted {total_pages} pages.")
 
-        # --- Phase 1: batch layout detection ---
+        return images_dict, page_nums, preprocessing_metadata
+
+    async def _detect_layout(
+        self,
+        *,
+        images_dict: dict[int, str],
+        page_nums: Sequence[int],
+        progress: ProgressCallback | None,
+    ) -> dict[int, PageBoxes]:
+        """Run batched Surya layout detection and seed each page with empty text."""
         await notify(
             progress, "detect", 0, 1, f"Detecting layout for {len(page_nums)} pages..."
         )
 
-        batch_boxes = []
-        chunk_size = 10
-        for i in range(0, len(page_nums), chunk_size):
-            chunk_pages = page_nums[i : i + chunk_size]
+        batch_boxes: list[list[list[float]]] = []
+        for i in range(0, len(page_nums), DETECT_CHUNK_SIZE):
+            chunk_pages = page_nums[i : i + DETECT_CHUNK_SIZE]
             chunk_bytes = [base64.b64decode(images_dict[p]) for p in chunk_pages]
             chunk_boxes = await asyncio.to_thread(
                 self.aligner.get_detected_boxes_batch, chunk_bytes
@@ -194,16 +284,26 @@ class HybridEngine(EngineBase):
             await notify(
                 progress,
                 "detect",
-                min(i + chunk_size, len(page_nums)),
+                min(i + DETECT_CHUNK_SIZE, len(page_nums)),
                 len(page_nums),
-                f"Detecting layout ({min(i + chunk_size, len(page_nums))}/{len(page_nums)})...",
+                f"Detecting layout ({min(i + DETECT_CHUNK_SIZE, len(page_nums))}/{len(page_nums)})...",
             )
 
-        pages_structured: dict[int, list] = {
+        pages_structured: dict[int, PageBoxes] = {
             p: [(box, "") for box in batch_boxes[i]] for i, p in enumerate(page_nums)
         }
         await notify(progress, "detect", 1, 1, "Layout detection complete.")
+        return pages_structured
 
+    def _select_dense_pages(
+        self,
+        *,
+        pages_structured: PagesData,
+        page_nums: Sequence[int],
+        dense_mode: str,
+        dense_threshold: int,
+    ) -> set[int]:
+        """Decide which pages take the per-box OCR path (vs full-page OCR)."""
         per_box_pages: set[int] = set()
         for p_num in page_nums:
             n_boxes = len(pages_structured[p_num])
@@ -211,15 +311,29 @@ class HybridEngine(EngineBase):
                 dense_mode == "auto" and n_boxes > dense_threshold
             ):
                 per_box_pages.add(p_num)
+        return per_box_pages
 
-        # --- Phase 2: concurrent OCR ---
-        pages_text: dict[int, list[str]] = {}
+    async def _ocr_pages(
+        self,
+        *,
+        images_dict: dict[int, str],
+        pages_structured: dict[int, PageBoxes],
+        page_nums: Sequence[int],
+        per_box_pages: set[int],
+        concurrency: int,
+        self_correction: bool,
+        binarize: bool,
+        dual_engine: bool,
+        progress: ProgressCallback | None,
+        on_warning: WarningCallback | None,
+    ) -> None:
+        """Fan out OCR across pages, dispatching sparse vs dense per page."""
         semaphore = asyncio.Semaphore(max(1, concurrency))
         total = len(page_nums)
 
         async def process_page(
             p_num: int,
-        ) -> tuple[int, list[str], list[tuple[list[float], str]], Exception | None]:
+        ) -> tuple[int, PageBoxes, Exception | None]:
             try:
                 if p_num in per_box_pages:
                     aligned = await self._ocr_per_box(
@@ -230,8 +344,7 @@ class HybridEngine(EngineBase):
                         binarize,
                         dual_engine,
                     )
-                    llm_lines = [t for _, t in aligned if t]
-                    return p_num, llm_lines, aligned, None
+                    return p_num, aligned, None
                 async with semaphore:
                     llm_lines = await self.ocr_processor.perform_ocr(
                         images_dict[p_num],
@@ -245,12 +358,12 @@ class HybridEngine(EngineBase):
                         )
                     else:
                         aligned = pages_structured[p_num]
-                    return p_num, llm_lines, aligned, None
+                    return p_num, aligned, None
             except Exception as e:
                 import logging
 
                 logging.warning(f"OCR failed for page {p_num}: {type(e).__name__}: {e}")
-                return p_num, [], pages_structured[p_num], e
+                return p_num, pages_structured[p_num], e
 
         completed = 0
         ocr_label = (
@@ -262,9 +375,8 @@ class HybridEngine(EngineBase):
         async with asyncio.TaskGroup() as tg:
             tasks = [tg.create_task(process_page(p)) for p in page_nums]
             for coro in asyncio.as_completed(tasks):
-                p_num, llm_lines, aligned, page_error = await coro
+                p_num, aligned, page_error = await coro
 
-                pages_text[p_num] = llm_lines
                 pages_structured[p_num] = aligned
                 completed += 1
                 await notify(
@@ -279,66 +391,85 @@ class HybridEngine(EngineBase):
                     if on_warning is not None:
                         await on_warning(p_num, page_error)
 
-        # --- Phase 3: per-box crop re-OCR ---
-        if refine:
-            sparse_structured = {
-                p: pages_structured[p] for p in page_nums if p not in per_box_pages
-            }
-            if sparse_structured:
-                await self._refine_uncertain(
-                    sparse_structured,
-                    images_dict,
-                    semaphore,
-                    progress,
-                    self_correction,
-                    binarize,
-                    dual_engine,
-                )
+    async def _refine_pages(
+        self,
+        *,
+        pages_structured: dict[int, PageBoxes],
+        images_dict: dict[int, str],
+        page_nums: Sequence[int],
+        per_box_pages: set[int],
+        concurrency: int,
+        self_correction: bool,
+        binarize: bool,
+        dual_engine: bool,
+        progress: ProgressCallback | None,
+    ) -> None:
+        """Crop-and-re-OCR empty boxes on the sparse pages, then dedup nearby matches."""
+        sparse_structured = {
+            p: pages_structured[p] for p in page_nums if p not in per_box_pages
+        }
+        if not sparse_structured:
+            return
 
-        # --- Phase 4: post-processing ---
-        if cross_page:
-            self._cross_page_merge(pages_structured, page_nums)
-
-        if spellcheck and spellcheck != "none":
-            await self._run_spellcheck(pages_structured, page_nums, spellcheck)
-
-        document_result = DocumentResult.from_pages_data(
-            pages_structured, source_path=input_path, source_processor="hybrid"
+        await self._refine_uncertain(
+            sparse_structured,
+            images_dict,
+            asyncio.Semaphore(max(1, concurrency)),
+            progress,
+            self_correction,
+            binarize,
+            dual_engine,
         )
-        for page in document_result.pages:
-            metadata = preprocessing_metadata.get(page.page_index)
-            if metadata:
-                page.metadata["preprocessing"] = metadata
-        self.last_document_result = await run_document_processors(
-            document_result, self.document_processors
+
+    async def _finalize(
+        self,
+        *,
+        input_path: str,
+        output_path: str,
+        pages_structured: dict[int, PageBoxes],
+        page_nums: Sequence[int],
+        preprocessing_metadata: dict[int, dict[str, object]],
+        spellcheck: str,
+        cross_page: bool,
+        quality_routing_options: QualityRoutingOptions | None,
+        dpi: int,
+        progress: ProgressCallback | None,
+    ) -> dict[int, list[str]]:
+        """Post-process, run document processors, apply hybrid-only quality routing, emit."""
+        document_result = await self._build_document_result(
+            pages_data=pages_structured,
+            page_nums=page_nums,
+            source_path=input_path,
+            source_processor="hybrid",
+            spellcheck=spellcheck,
+            cross_page=cross_page,
+            page_metadata_overlays=preprocessing_metadata,
         )
+
+        # Quality routing is a hybrid-only post-processor; runs after document
+        # processors and before emission so it sees the cleaned-up document.
         if quality_routing_options is not None and quality_routing_options.enabled:
-            self.last_document_result = QualityRoutingPolicy().apply(
-                self.last_document_result, quality_routing_options
+            document_result = QualityRoutingPolicy().apply(
+                document_result, quality_routing_options
             )
-        pages_structured = self.last_document_result.to_pages_data()
-        page_nums = sorted(pages_structured)
 
-        for p in page_nums:
-            pages_text[p] = [text for _, text in pages_structured[p] if text.strip()]
-
-        # --- Phase 5: write output ---
-        await notify(progress, "embed", 0, 1, "Writing output...")
-        await asyncio.to_thread(
-            self.output_writer, input_path, output_path, pages_structured, dpi
+        return await self._emit(
+            input_path=input_path,
+            output_path=output_path,
+            document_result=document_result,
+            dpi=dpi,
+            progress=progress,
         )
-        await notify(progress, "embed", 1, 1, "Done.")
-        return pages_text
 
     async def _ocr_per_box(
         self,
         image_b64: str,
-        structured: list[tuple[list[float], str]],
+        structured: PageBoxes,
         semaphore: asyncio.Semaphore,
         self_correction: bool = False,
         binarize: bool = False,
         dual_engine: bool = False,
-    ) -> list[tuple[list[float], str]]:
+    ) -> PageBoxes:
         page_image = await asyncio.to_thread(_decode_page_image, image_b64)
 
         async def ocr_one(idx: int, bbox: list[float]) -> tuple[int, str]:
@@ -379,7 +510,7 @@ class HybridEngine(EngineBase):
 
     async def _refine_uncertain(
         self,
-        sparse_structured: dict[int, list[tuple[list[float], str]]],
+        sparse_structured: dict[int, PageBoxes],
         images_dict: dict[int, str],
         semaphore: asyncio.Semaphore,
         progress: ProgressCallback | None,

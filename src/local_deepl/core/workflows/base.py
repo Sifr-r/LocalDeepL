@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+import asyncio
+from collections.abc import Awaitable, Callable, Sequence
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from local_deepl.core.document import DocumentResult
+    from local_deepl.core.processors import DocumentProcessor
 
 ProgressCallback = Callable[[str, int, int, str], Awaitable[None]]
 WarningCallback = Callable[[int, BaseException], Awaitable[None]]
@@ -14,26 +20,64 @@ async def notify(
         await cb(stage, current, total, message)
 
 
+PageBoxes = list[tuple[list[float], str]]
+PagesData = dict[int, PageBoxes]
+
+
 class EngineBase:
     """
     Base class for OCR workflows (Hybrid and Grounded).
-    Provides shared post-processing orchestration such as cross-page merges,
-    spellcheck, document-processor execution, and output writing.
+
+    Provides three pieces of shared machinery:
+
+    1. Run-scoped state (``last_document_result``, ``last_failed_pages``) reset
+       at the top of every ``execute`` call via :meth:`_reset_run_state`.
+    2. Text-only post-processing helpers (``_cross_page_merge``,
+       ``_run_spellcheck``).
+    3. The post-process → assemble → emit pipeline (:meth:`_build_document_result`
+       and :meth:`_emit`) that both engines route their final pages through so
+       the output-writing code path lives in exactly one place.
+
+    Subclasses are expected to accept ``output_writer`` and
+    ``document_processors`` in their ``__init__`` and forward them via
+    ``super().__init__(...)``.
     """
+
+    def __init__(
+        self,
+        output_writer: OutputWriter,
+        document_processors: Sequence[DocumentProcessor] | None = None,
+    ) -> None:
+        self.output_writer = output_writer
+        self.document_processors: tuple[DocumentProcessor, ...] = tuple(
+            document_processors or ()
+        )
+
+        # State populated after a run. Reset by ``_reset_run_state`` at the top
+        # of each ``execute``; lifting into the base keeps ``OCRPipeline`` honest
+        # about which attributes belong to the engine contract.
+        self.last_document_result: DocumentResult | None = None
+        self.last_failed_pages: list[int] = []
+
+    def _reset_run_state(self) -> None:
+        """Clear run-scoped state. Call at the top of every ``execute``."""
+        self.last_document_result = None
+        self.last_failed_pages = []
 
     def _cross_page_merge(
         self,
-        pages_structured: dict[int, list[tuple[list[float], str]]],
-        page_nums: list[int],
+        pages_structured: PagesData,
+        page_nums: Sequence[int],
     ) -> None:
         """
         Post-processing step that inspects the end of each page and merges
         trailing sentences without terminal punctuation into the first line of the
         subsequent page.
         """
-        for i in range(len(page_nums) - 1):
-            p1 = page_nums[i]
-            p2 = page_nums[i + 1]
+        page_list = list(page_nums)
+        for i in range(len(page_list) - 1):
+            p1 = page_list[i]
+            p2 = page_list[i + 1]
 
             p1_boxes = pages_structured.get(p1, [])
             last_idx = -1
@@ -62,8 +106,8 @@ class EngineBase:
 
     async def _run_spellcheck(
         self,
-        pages_structured: dict[int, list[tuple[list[float], str]]],
-        page_nums: list[int],
+        pages_structured: PagesData,
+        page_nums: Sequence[int],
         lang: str,
     ) -> None:
         """
@@ -74,10 +118,79 @@ class EngineBase:
         processor = DictionaryPostProcessor(lang)
         await processor.ensure_loaded()
         for p in page_nums:
-            corrected = []
+            corrected: PageBoxes = []
             for bbox, text in pages_structured[p]:
                 if text:
                     corrected.append((bbox, processor.correct_text(text)))
                 else:
                     corrected.append((bbox, text))
             pages_structured[p] = corrected
+
+    async def _build_document_result(
+        self,
+        *,
+        pages_data: PagesData,
+        page_nums: Sequence[int],
+        source_path: str,
+        source_processor: str,
+        spellcheck: str,
+        cross_page: bool,
+        page_metadata_overlays: dict[int, dict[str, object]] | None = None,
+    ) -> DocumentResult:
+        """Apply text-only post-processing and run document processors.
+
+        Returns the resulting :class:`DocumentResult`. The caller is responsible
+        for any engine-specific mutations (e.g. hybrid's quality-routing step)
+        before handing the result to :meth:`_emit`.
+        """
+        from local_deepl.core.document import DocumentResult
+        from local_deepl.core.processors import run_document_processors
+
+        # Text-only passes first — they mutate ``pages_data`` in place.
+        if cross_page:
+            self._cross_page_merge(pages_data, page_nums)
+
+        if spellcheck and spellcheck != "none":
+            await self._run_spellcheck(pages_data, page_nums, spellcheck)
+
+        document_result = DocumentResult.from_pages_data(
+            pages_data, source_path=source_path, source_processor=source_processor
+        )
+
+        if page_metadata_overlays:
+            for page in document_result.pages:
+                metadata = page_metadata_overlays.get(page.page_index)
+                if metadata:
+                    page.metadata.update(metadata)
+
+        return await run_document_processors(document_result, self.document_processors)
+
+    async def _emit(
+        self,
+        *,
+        input_path: str,
+        output_path: str,
+        document_result: DocumentResult,
+        dpi: int,
+        progress: ProgressCallback | None,
+    ) -> dict[int, list[str]]:
+        """Write the final PDF and return the ``{page: [lines]}`` view.
+
+        This is the single place where ``last_document_result`` is assigned and
+        the output writer is invoked; both engines route through it so the
+        end-of-pipeline contract lives in exactly one method.
+        """
+        self.last_document_result = document_result
+        pages_data = document_result.to_pages_data()
+        page_nums = sorted(pages_data)
+
+        pages_text: dict[int, list[str]] = {}
+        for p in page_nums:
+            pages_text[p] = [text for _, text in pages_data[p] if text.strip()]
+
+        await notify(progress, "embed", 0, 1, "Writing output...")
+        await asyncio.to_thread(
+            self.output_writer, input_path, output_path, pages_data, dpi
+        )
+        await notify(progress, "embed", 1, 1, "Done.")
+        return pages_text
