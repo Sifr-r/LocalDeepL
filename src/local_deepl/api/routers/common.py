@@ -1,5 +1,6 @@
 import os
 
+from fastapi import Header, Query
 from fastapi.responses import JSONResponse
 
 from local_deepl.api.services.security import SERVER_ERROR_MESSAGE, cleanup_files
@@ -22,6 +23,13 @@ def _extract_bearer_token(authorization: str | None) -> str | None:
     if scheme.lower() != "bearer" or not token.strip():
         return None
     return token.strip()
+
+
+def get_access_token(
+    token: str | None = Query(default=None),
+    authorization: str | None = Header(default=None),
+) -> str | None:
+    return _extract_bearer_token(authorization) or token
 
 
 def _path_exists(path: str) -> bool:

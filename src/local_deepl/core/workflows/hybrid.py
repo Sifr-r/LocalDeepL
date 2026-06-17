@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from PIL import Image
 
 from local_deepl.core.aligner import HybridAligner
+from local_deepl.core.document import DenseMode, SpellcheckMode
 from local_deepl.core.ocr import OCRProcessor
 from local_deepl.core.pdf import PDFHandler
 from local_deepl.core.preprocessing import PagePreprocessingOptions, PagePreprocessor
@@ -130,20 +131,20 @@ class HybridEngine(EngineBase):
         refine: bool = True,
         max_image_dim: int = 1024,
         dense_threshold: int = 60,
-        dense_mode: str = "auto",
+        dense_mode: DenseMode = DenseMode.AUTO,
         self_correction: bool = False,
         binarize: bool = False,
         dual_engine: bool = False,
-        spellcheck: str = "none",
+        spellcheck: SpellcheckMode = SpellcheckMode.NONE,
         cross_page: bool = False,
         preprocessing_options: PagePreprocessingOptions | None = None,
         quality_routing_options: QualityRoutingOptions | None = None,
         progress: ProgressCallback | None = None,
         on_warning: WarningCallback | None = None,
     ) -> dict[int, list[str]]:
-        if dense_mode not in ("auto", "always", "never"):
+        if dense_mode not in DenseMode:
             raise ValueError(
-                f"dense_mode must be one of 'auto', 'always', 'never'; got {dense_mode!r}"
+                f"dense_mode must be one of {list(DenseMode)}; got {dense_mode!r}"
             )
 
         self._reset_run_state()
@@ -429,7 +430,7 @@ class HybridEngine(EngineBase):
         pages_structured: dict[int, PageBoxes],
         page_nums: Sequence[int],
         preprocessing_metadata: dict[int, dict[str, object]],
-        spellcheck: str,
+        spellcheck: SpellcheckMode,
         cross_page: bool,
         quality_routing_options: QualityRoutingOptions | None,
         dpi: int,

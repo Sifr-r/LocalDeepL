@@ -18,7 +18,7 @@ tqdm_patch.apply()
 from PIL import Image  # noqa: E402
 from surya.detection import DetectionPredictor  # noqa: E402
 
-BBox = list[float]  # [nx0, ny0, nx1, ny1], normalized to 0..1
+from local_deepl.core.document import BBox  # noqa: E402
 
 
 class HybridAligner:

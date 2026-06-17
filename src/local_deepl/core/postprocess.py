@@ -17,7 +17,7 @@ import os
 import re
 import unicodedata
 from importlib import resources, util
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from spellchecker import SpellChecker
@@ -127,6 +127,37 @@ class DictionaryPostProcessor:
             self.spell = None
             return
 
+        (
+            packaged_dict,
+            dictionaries_dir,
+            primary_dict_path,
+            fallback_dict_path,
+            langdata_dir,
+            fallback_dictionaries_dir,
+        ) = self._get_resource_paths()
+
+        async with _compile_lock:
+            # Strategy 1: Try packaged dictionary
+            if await self._try_packaged_dict(packaged_dict):
+                return
+
+            # Strategy 2: Check compiled dictionary and Strategy 3: Compile from wordlist
+            dict_path = await self._try_compiled_or_compile(
+                primary_dict_path=primary_dict_path,
+                fallback_dict_path=fallback_dict_path,
+                langdata_dir=langdata_dir,
+                dictionaries_dir=dictionaries_dir,
+                fallback_dictionaries_dir=fallback_dictionaries_dir,
+            )
+
+            # Strategy 4: Load from the resolved dict_path
+            if dict_path and await self._try_load_custom_dict(dict_path):
+                return
+
+        # Strategy 5: Fallback to builtin dict
+        await self._try_builtin_dict()
+
+    def _get_resource_paths(self) -> tuple[Any, str, str, str, str, str]:
         # Resolve file paths in workspace
         if self._custom_resources_dir:
             resources_dir = self._custom_resources_dir
@@ -140,91 +171,101 @@ class DictionaryPostProcessor:
             langdata_dir = os.path.join(resources_dir, "langdata")
             dictionaries_dir = os.path.join(resources_dir, "dictionaries")
 
-        # Fallback cache directories (if project root is read-only)
         fallback_resources_dir = os.path.join(os.path.expanduser("~"), ".local-deepl")
         fallback_dictionaries_dir = os.path.join(fallback_resources_dir, "dictionaries")
 
-        # Determine target dictionary file paths
         dict_filename = f"{self.tess_lang}.json.gz"
-        if self._custom_resources_dir:
-            packaged_dict = None
-        else:
+        if not self._custom_resources_dir:
             packaged_dict = resources.files("local_deepl").joinpath(
                 "resources", "dictionaries", dict_filename
             )
+        else:
+            packaged_dict = None
+
         primary_dict_path = os.path.join(dictionaries_dir, dict_filename)
         fallback_dict_path = os.path.join(fallback_dictionaries_dir, dict_filename)
 
-        async with _compile_lock:
-            if packaged_dict is not None and packaged_dict.is_file():
-                try:
-                    with resources.as_file(packaged_dict) as packaged_dict_path:
-                        self.spell = await asyncio.to_thread(
-                            _load_custom_dictionary,
-                            str(packaged_dict_path),
-                        )
-                    logger.info(
-                        f"Successfully loaded packaged Tesseract dictionary for '{self.tess_lang}' (Distance: 1)."
-                    )
-                    return
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to load packaged dictionary for '{self.tess_lang}': {e}"
-                    )
+        return (
+            packaged_dict,
+            dictionaries_dir,
+            primary_dict_path,
+            fallback_dict_path,
+            langdata_dir,
+            fallback_dictionaries_dir,
+        )
 
-            # Check if compiled dictionary already exists
-            dict_path: str | None = None
-            if os.path.exists(primary_dict_path):
-                dict_path = primary_dict_path
-            elif os.path.exists(fallback_dict_path):
-                dict_path = fallback_dict_path
-            else:
-                # Compile dictionary from raw Tesseract wordlist if available
-                wordlist_filename = f"{self.tess_lang}.wordlist"
-                raw_wordlist_path = os.path.join(
-                    langdata_dir, self.tess_lang, wordlist_filename
-                )
-
-                if os.path.exists(raw_wordlist_path):
-                    # Try writing to primary dictionaries dir first, fallback if read-only
-                    try:
-                        os.makedirs(dictionaries_dir, exist_ok=True)
-                        target_dict_path = primary_dict_path
-                    except Exception:
-                        os.makedirs(fallback_dictionaries_dir, exist_ok=True)
-                        target_dict_path = fallback_dict_path
-
-                    logger.info(
-                        f"Compiling raw Tesseract wordlist for '{self.tess_lang}' to {target_dict_path}..."
-                    )
-
-                    # Run compilation in a thread pool to avoid blocking asyncio
-                    success = await asyncio.to_thread(
-                        self._compile_wordlist, raw_wordlist_path, target_dict_path
-                    )
-                    if success:
-                        dict_path = target_dict_path
-                else:
-                    logger.debug(
-                        f"Raw Tesseract wordlist not found at: {raw_wordlist_path}"
-                    )
-
-            # Initialize spellchecker (offloaded — SpellChecker constructor
-            # and load_dictionary both read/unzip files from disk).
-            if dict_path:
-                try:
+    async def _try_packaged_dict(self, packaged_dict: Any) -> bool:
+        if packaged_dict is not None and packaged_dict.is_file():
+            try:
+                with resources.as_file(packaged_dict) as packaged_dict_path:
                     self.spell = await asyncio.to_thread(
                         _load_custom_dictionary,
-                        dict_path,
+                        str(packaged_dict_path),
                     )
-                    logger.info(
-                        f"Successfully loaded custom Tesseract dictionary for '{self.tess_lang}' (Distance: 1)."
-                    )
-                    return
-                except Exception as e:
-                    logger.warning(f"Failed to load custom dictionary {dict_path}: {e}")
+                logger.info(
+                    f"Successfully loaded packaged Tesseract dictionary for '{self.tess_lang}' (Distance: 1)."
+                )
+                return True
+            except Exception as e:
+                logger.warning(
+                    f"Failed to load packaged dictionary for '{self.tess_lang}': {e}"
+                )
+        return False
 
-        # Fallback to pyspellchecker default dictionary (supports en, es, de, fr, pt, ru, ar)
+    async def _try_compiled_or_compile(
+        self,
+        primary_dict_path: str,
+        fallback_dict_path: str,
+        langdata_dir: str,
+        dictionaries_dir: str,
+        fallback_dictionaries_dir: str,
+    ) -> str | None:
+        if os.path.exists(primary_dict_path):
+            return primary_dict_path
+        if os.path.exists(fallback_dict_path):
+            return fallback_dict_path
+
+        wordlist_filename = f"{self.tess_lang}.wordlist"
+        raw_wordlist_path = os.path.join(
+            langdata_dir, self.tess_lang, wordlist_filename
+        )
+
+        if os.path.exists(raw_wordlist_path):
+            try:
+                os.makedirs(dictionaries_dir, exist_ok=True)
+                target_dict_path = primary_dict_path
+            except Exception:
+                os.makedirs(fallback_dictionaries_dir, exist_ok=True)
+                target_dict_path = fallback_dict_path
+
+            logger.info(
+                f"Compiling raw Tesseract wordlist for '{self.tess_lang}' to {target_dict_path}..."
+            )
+
+            success = await asyncio.to_thread(
+                self._compile_wordlist, raw_wordlist_path, target_dict_path
+            )
+            if success:
+                return target_dict_path
+        else:
+            logger.debug(f"Raw Tesseract wordlist not found at: {raw_wordlist_path}")
+        return None
+
+    async def _try_load_custom_dict(self, dict_path: str) -> bool:
+        try:
+            self.spell = await asyncio.to_thread(
+                _load_custom_dictionary,
+                dict_path,
+            )
+            logger.info(
+                f"Successfully loaded custom Tesseract dictionary for '{self.tess_lang}' (Distance: 1)."
+            )
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to load custom dictionary {dict_path}: {e}")
+        return False
+
+    async def _try_builtin_dict(self) -> None:
         base_lang = self.lang.split("-")[0].lower()
         try:
             self.spell = await asyncio.to_thread(

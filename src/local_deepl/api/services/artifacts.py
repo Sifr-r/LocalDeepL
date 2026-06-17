@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import secrets
 import tempfile
@@ -10,6 +9,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from local_deepl.utils import write_atomic
 
 DEFAULT_ARTIFACT_TTL_SECONDS = 60 * 60
 DEFAULT_MAX_ARTIFACT_ENTRIES = 256
@@ -248,30 +249,10 @@ def write_page_text_atomic(
     _validate_artifact_id(artifact_id)
 
     artifact_dir = Path(directory or tempfile.gettempdir()).resolve()
-    artifact_dir.mkdir(parents=True, exist_ok=True)
     target = artifact_dir / f"text_{artifact_id}.json"
     payload = _normalize_page_text(page_text)
-    tmp_path: str | None = None
 
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=artifact_dir,
-            prefix=f".text_{artifact_id}.",
-            suffix=".tmp",
-            delete=False,
-        ) as tmp:
-            tmp_path = tmp.name
-            json.dump(payload, tmp, ensure_ascii=False, sort_keys=True)
-            tmp.flush()
-            os.fsync(tmp.fileno())
-        os.replace(tmp_path, target)
-    except Exception:
-        if tmp_path is not None:
-            _delete_file(Path(tmp_path))
-        raise
-
+    write_atomic(target, payload, prefix=f".text_{artifact_id}.")
     return str(target)
 
 

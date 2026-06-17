@@ -10,6 +10,28 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from enum import StrEnum
+
+
+class PipelineMode(StrEnum):
+    HYBRID = "hybrid"
+    GROUNDED = "grounded"
+
+
+class DenseMode(StrEnum):
+    AUTO = "auto"
+    ALWAYS = "always"
+    NEVER = "never"
+
+
+class SpellcheckMode(StrEnum):
+    NONE = "none"
+    AR = "ar"
+    EN_US = "en-US"
+    DE = "de"
+    ES = "es"
+    FR = "fr"
+
 
 BBox = list[float]
 

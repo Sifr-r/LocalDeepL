@@ -169,6 +169,175 @@ def _record_job(
 # ---- PDF / image processing ----------------------------------------------
 
 
+def _resolve_process_settings(
+    api_base: str | None,
+    api_key: str | None,
+    model: str | None,
+    pipeline_mode: str | None,
+    dpi: str | None,
+    concurrency: str | None,
+    dense_mode: str | None,
+    dense_threshold: str | None,
+    pages: str | None,
+    refine: str | None,
+    max_image_dim: str | None,
+    self_correction: str | None,
+    binarize: str | None,
+    dual_engine: str | None,
+    spellcheck: str | None,
+    cross_page: str | None,
+    preprocess_pages: str | None,
+    orientation_detection: str | None,
+    deskew: str | None,
+    denoise: str | None,
+    normalize_contrast: str | None,
+    crop_cleanup: str | None,
+    quality_routing: str | None,
+    document_processors: str | None,
+) -> ProcessSettings:
+    form_params = {
+        "api_base": api_base,
+        "api_key": api_key,
+        "model": model,
+        "pipeline_mode": pipeline_mode,
+        "dpi": dpi,
+        "concurrency": concurrency,
+        "dense_mode": dense_mode,
+        "dense_threshold": dense_threshold,
+        "refine": refine,
+        "max_image_dim": max_image_dim,
+        "self_correction": self_correction,
+        "binarize": binarize,
+        "dual_engine": dual_engine,
+        "spellcheck": spellcheck,
+        "cross_page": cross_page,
+        "preprocess_pages": preprocess_pages,
+        "orientation_detection": orientation_detection,
+        "deskew": deskew,
+        "denoise": denoise,
+        "normalize_contrast": normalize_contrast,
+        "crop_cleanup": crop_cleanup,
+        "quality_routing": quality_routing,
+        "document_processors": document_processors,
+    }
+    merged = {
+        k: v if v is not None else cast(dict[str, Any], _config)[k]
+        for k, v in form_params.items()
+    }
+    # pages is a special override, don't fallback to config
+    merged["pages"] = pages
+    return ProcessSettings.model_validate(merged)
+
+
+def _build_pipeline(settings: ProcessSettings) -> tuple[OCRPipeline, Any]:
+    processors = build_document_processors(
+        processor.value for processor in settings.document_processors
+    )
+    preprocessing_options = PagePreprocessingOptions(
+        enabled=settings.preprocess_pages,
+        orientation_detection=settings.orientation_detection,
+        deskew=settings.deskew,
+        denoise=settings.denoise,
+        normalize_contrast=settings.normalize_contrast,
+        crop_cleanup=settings.crop_cleanup,
+    )
+    page_preprocessor = (
+        LocalPagePreprocessor() if preprocessing_options.enabled else None
+    )
+
+    if settings.pipeline_mode == "grounded":
+        backend = PromptedGroundedOCR(
+            api_base=settings.api_base,
+            api_key=settings.api_key,
+            model=settings.model,
+            max_image_dim=settings.max_image_dim,
+            concurrency=settings.concurrency,
+        )
+        pipeline = OCRPipeline(
+            pdf_handler=PDFHandler(),
+            grounded_backend=backend,
+            document_processors=processors,
+            page_preprocessor=page_preprocessor,
+        )
+    else:
+        backend = OCRProcessor(
+            api_base=settings.api_base,
+            api_key=settings.api_key,
+            model=settings.model,
+        )
+        pipeline = OCRPipeline(
+            aligner=HybridAligner(),
+            ocr_processor=backend,
+            pdf_handler=PDFHandler(),
+            document_processors=processors,
+            page_preprocessor=page_preprocessor,
+        )
+    return pipeline, backend
+
+
+async def _verify_backend_model(backend: Any, model: str) -> None:
+    verify = _config.get("verify_model", True)
+    is_cloud = (
+        any(
+            model.startswith(prefix)
+            for prefix in (
+                "openai/",
+                "anthropic/",
+                "gemini/",
+                "deepseek/",
+                "groq/",
+                "vertex_ai/",
+            )
+        )
+        or "api.openai.com" in backend.api_base
+    )
+    if is_cloud:
+        verify = False
+
+    if verify:
+        await backend.ensure_model_loaded()
+
+
+def _build_file_response(
+    pipeline: OCRPipeline,
+    settings: ProcessSettings,
+    output_path: str,
+    input_path: str,
+    artifact_handle: TextArtifactHandle,
+    metadata_handle: TextArtifactHandle | None,
+    filename: str,
+    failed_pages: list[int],
+) -> FileResponse:
+    response = FileResponse(
+        output_path,
+        media_type="application/pdf",
+        filename=f"ocr_{filename}",
+        background=BackgroundTask(_cleanup, input_path, output_path),
+    )
+    response.headers["X-Text-Artifact-Id"] = artifact_handle.artifact_id
+    if failed_pages:
+        response.headers["X-Failed-Pages"] = ",".join(str(p) for p in failed_pages)
+    response.headers["X-Text-Artifact-Token"] = artifact_handle.token
+    response.headers["X-Document-Workflow"] = json.dumps(
+        build_workflow_summary(settings), separators=(",", ":"), sort_keys=True
+    )
+    if metadata_handle is not None:
+        response.headers["X-Document-Metadata-Artifact-Id"] = (
+            metadata_handle.artifact_id
+        )
+        response.headers["X-Document-Metadata-Artifact-Token"] = metadata_handle.token
+    quality_header = _document_quality_header(pipeline)
+    if quality_header is not None:
+        response.headers["X-Document-Quality"] = quality_header
+    structure_header = _document_structure_header(pipeline)
+    if structure_header is not None:
+        response.headers["X-Document-Structure"] = structure_header
+    sections_header = _document_sections_header(pipeline)
+    if sections_header is not None:
+        response.headers["X-Document-Sections"] = sections_header
+    return response
+
+
 @router.post("/process")
 async def process_pdf(
     file: UploadFile = File(...),
@@ -207,63 +376,31 @@ async def process_pdf(
     not supplied by the caller.
     """
     try:
-        settings = ProcessSettings.model_validate(
-            {
-                "api_base": api_base if api_base is not None else _config["api_base"],
-                "api_key": api_key if api_key is not None else _config["api_key"],
-                "model": model if model is not None else _config["model"],
-                "pipeline_mode": pipeline_mode
-                if pipeline_mode is not None
-                else _config["pipeline_mode"],
-                "dpi": dpi if dpi is not None else _config["dpi"],
-                "concurrency": concurrency
-                if concurrency is not None
-                else _config["concurrency"],
-                "dense_mode": dense_mode
-                if dense_mode is not None
-                else _config["dense_mode"],
-                "dense_threshold": dense_threshold
-                if dense_threshold is not None
-                else _config["dense_threshold"],
-                "pages": pages,
-                "refine": refine if refine is not None else _config["refine"],
-                "max_image_dim": max_image_dim
-                if max_image_dim is not None
-                else _config["max_image_dim"],
-                "self_correction": self_correction
-                if self_correction is not None
-                else _config["self_correction"],
-                "binarize": binarize if binarize is not None else _config["binarize"],
-                "dual_engine": dual_engine
-                if dual_engine is not None
-                else _config["dual_engine"],
-                "spellcheck": spellcheck
-                if spellcheck is not None
-                else _config["spellcheck"],
-                "cross_page": cross_page
-                if cross_page is not None
-                else _config["cross_page"],
-                "preprocess_pages": preprocess_pages
-                if preprocess_pages is not None
-                else _config["preprocess_pages"],
-                "orientation_detection": orientation_detection
-                if orientation_detection is not None
-                else _config["orientation_detection"],
-                "deskew": deskew if deskew is not None else _config["deskew"],
-                "denoise": denoise if denoise is not None else _config["denoise"],
-                "normalize_contrast": normalize_contrast
-                if normalize_contrast is not None
-                else _config["normalize_contrast"],
-                "crop_cleanup": crop_cleanup
-                if crop_cleanup is not None
-                else _config["crop_cleanup"],
-                "quality_routing": quality_routing
-                if quality_routing is not None
-                else _config["quality_routing"],
-                "document_processors": document_processors
-                if document_processors is not None
-                else _config["document_processors"],
-            }
+        settings = _resolve_process_settings(
+            api_base=api_base,
+            api_key=api_key,
+            model=model,
+            pipeline_mode=pipeline_mode,
+            dpi=dpi,
+            concurrency=concurrency,
+            dense_mode=dense_mode,
+            dense_threshold=dense_threshold,
+            pages=pages,
+            refine=refine,
+            max_image_dim=max_image_dim,
+            self_correction=self_correction,
+            binarize=binarize,
+            dual_engine=dual_engine,
+            spellcheck=spellcheck,
+            cross_page=cross_page,
+            preprocess_pages=preprocess_pages,
+            orientation_detection=orientation_detection,
+            deskew=deskew,
+            denoise=denoise,
+            normalize_contrast=normalize_contrast,
+            crop_cleanup=crop_cleanup,
+            quality_routing=quality_routing,
+            document_processors=document_processors,
         )
     except ValidationError as exc:
         return _validation_error_response(exc)
@@ -290,85 +427,8 @@ async def process_pdf(
     try:
         await manager.send_progress(progress_target, "Initializing...", 5, stage="init")
 
-        # -- Build the pipeline based on the selected mode -------------------
-        processors = build_document_processors(
-            processor.value for processor in settings.document_processors
-        )
-        preprocessing_options = PagePreprocessingOptions(
-            enabled=settings.preprocess_pages,
-            orientation_detection=settings.orientation_detection,
-            deskew=settings.deskew,
-            denoise=settings.denoise,
-            normalize_contrast=settings.normalize_contrast,
-            crop_cleanup=settings.crop_cleanup,
-        )
-        page_preprocessor = (
-            LocalPagePreprocessor() if preprocessing_options.enabled else None
-        )
-        quality_routing_options = QualityRoutingOptions(
-            enabled=settings.quality_routing
-        )
-        backend: Any
-        if settings.pipeline_mode == "grounded":
-            # Grounded path: the backend returns (bbox, text) pairs directly,
-            # so we do NOT need HybridAligner (which loads Surya's detection
-            # model — ~hundreds of MB on first call) or a per-page OCRProcessor
-            # (which the pipeline never invokes in grounded mode). Building
-            # them here is pure waste and a known tech-debt wart; the grounded
-            # branch now mirrors the hybrid branch's structure 1:1.
-            backend = PromptedGroundedOCR(
-                api_base=settings.api_base,
-                api_key=settings.api_key,
-                model=settings.model,
-                max_image_dim=settings.max_image_dim,
-                concurrency=settings.concurrency,
-            )
-            pipeline = OCRPipeline(
-                pdf_handler=PDFHandler(),
-                grounded_backend=backend,
-                document_processors=processors,
-                page_preprocessor=page_preprocessor,
-            )
-        else:
-            # Default: hybrid mode — Surya detect + LLM OCR + DP alignment.
-            backend = OCRProcessor(
-                api_base=settings.api_base,
-                api_key=settings.api_key,
-                model=settings.model,
-            )
-            pipeline = OCRPipeline(
-                aligner=HybridAligner(),
-                ocr_processor=backend,
-                pdf_handler=PDFHandler(),
-                document_processors=processors,
-                page_preprocessor=page_preprocessor,
-            )
-
-        # Verify model
-        verify = _config.get("verify_model", True)
-
-        # Automatically skip verification for cloud models since /v1/models
-        # is an LM Studio/Ollama extension.
-        # LiteLLM prefixes or known cloud hosts indicate it's not a local server.
-        is_cloud = (
-            any(
-                settings.model.startswith(prefix)
-                for prefix in (
-                    "openai/",
-                    "anthropic/",
-                    "gemini/",
-                    "deepseek/",
-                    "groq/",
-                    "vertex_ai/",
-                )
-            )
-            or "api.openai.com" in settings.api_base
-        )
-        if is_cloud:
-            verify = False
-
-        if verify:
-            await backend.ensure_model_loaded()
+        pipeline, backend = _build_pipeline(settings)
+        await _verify_backend_model(backend, settings.model)
 
         # -- Progress callback -----------------------------------------------
         async def on_progress(stage, current, total, message):
@@ -380,21 +440,10 @@ async def process_pdf(
             )
 
         # -- Per-page warning callback --------------------------------------
-        # The pipeline catches per-page exceptions and continues; we
-        # surface the failure both as a WebSocket warning frame (so the
-        # UI can flag the page in real time) and on the final response /
-        # job record. Status stays "complete" because the pipeline
-        # degrades gracefully — the PDF is still written, with empty
-        # searchable text on the failed page.
         async def on_warning(page_index, exc):
             warning_message = (
                 f"OCR failed for page {page_index + 1}: {type(exc).__name__}"
             )
-            # We don't know the current OCR percent at the moment of
-            # failure without plumbing it through the pipeline; pass 0
-            # so the warning frame doesn't push the progress bar
-            # backward. The frontend renders the warning text and is
-            # free to ignore ``percent`` on warning frames.
             await manager.send_progress(
                 progress_target,
                 warning_message,
@@ -419,8 +468,17 @@ async def process_pdf(
             dual_engine=settings.dual_engine,
             spellcheck=settings.spellcheck,
             cross_page=settings.cross_page,
-            preprocessing_options=preprocessing_options,
-            quality_routing_options=quality_routing_options,
+            preprocessing_options=PagePreprocessingOptions(
+                enabled=settings.preprocess_pages,
+                orientation_detection=settings.orientation_detection,
+                deskew=settings.deskew,
+                denoise=settings.denoise,
+                normalize_contrast=settings.normalize_contrast,
+                crop_cleanup=settings.crop_cleanup,
+            ),
+            quality_routing_options=QualityRoutingOptions(
+                enabled=settings.quality_routing
+            ),
             progress=on_progress,
             on_warning=on_warning,
         )
@@ -459,36 +517,16 @@ async def process_pdf(
                 progress_target, "Done! Preparing download...", 100, stage="complete"
             )
 
-        response = FileResponse(
-            output_path,
-            media_type="application/pdf",
-            filename=f"ocr_{file.filename}",
-            background=BackgroundTask(_cleanup, input_path, output_path),
+        return _build_file_response(
+            pipeline=pipeline,
+            settings=settings,
+            output_path=output_path,
+            input_path=input_path,
+            artifact_handle=artifact_handle,
+            metadata_handle=metadata_handle,
+            filename=file.filename or "unknown",
+            failed_pages=failed_pages,
         )
-        response.headers["X-Text-Artifact-Id"] = artifact_handle.artifact_id
-        if failed_pages:
-            response.headers["X-Failed-Pages"] = ",".join(str(p) for p in failed_pages)
-        response.headers["X-Text-Artifact-Token"] = artifact_handle.token
-        response.headers["X-Document-Workflow"] = json.dumps(
-            build_workflow_summary(settings), separators=(",", ":"), sort_keys=True
-        )
-        if metadata_handle is not None:
-            response.headers["X-Document-Metadata-Artifact-Id"] = (
-                metadata_handle.artifact_id
-            )
-            response.headers["X-Document-Metadata-Artifact-Token"] = (
-                metadata_handle.token
-            )
-        quality_header = _document_quality_header(pipeline)
-        if quality_header is not None:
-            response.headers["X-Document-Quality"] = quality_header
-        structure_header = _document_structure_header(pipeline)
-        if structure_header is not None:
-            response.headers["X-Document-Structure"] = structure_header
-        sections_header = _document_sections_header(pipeline)
-        if sections_header is not None:
-            response.headers["X-Document-Sections"] = sections_header
-        return response
 
     except ValueError as ve:
         duration_s = time.monotonic() - t_start

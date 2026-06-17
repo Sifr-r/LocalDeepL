@@ -13,6 +13,7 @@ from local_deepl.api.services.artifacts import (
     InvalidArtifactReferenceError,
     is_opaque_artifact_id,
 )
+from local_deepl.utils import write_atomic
 
 # Re-export so callers that historically imported it from this module keep working.
 __all__ = ["EXPORT_MEDIA_TYPES", "DocumentExportFormat", "build_document_export"]
@@ -91,7 +92,6 @@ def write_document_export_atomic(
 
     format_name = _coerce_format(export_format)
     artifact_dir = Path(directory or tempfile.gettempdir()).resolve()
-    artifact_dir.mkdir(parents=True, exist_ok=True)
     suffix = (
         "md"
         if format_name == "markdown"
@@ -100,30 +100,8 @@ def write_document_export_atomic(
         else "json"
     )
     target = artifact_dir / f"export_{artifact_id}.{suffix}"
-    tmp_path: str | None = None
 
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=artifact_dir,
-            prefix=f".export_{artifact_id}.",
-            suffix=".tmp",
-            delete=False,
-        ) as tmp:
-            tmp_path = tmp.name
-            if isinstance(payload, str):
-                tmp.write(payload)
-            else:
-                json.dump(payload, tmp, ensure_ascii=False, sort_keys=True)
-            tmp.flush()
-            os.fsync(tmp.fileno())
-        os.replace(tmp_path, target)
-    except Exception:
-        if tmp_path is not None:
-            Path(tmp_path).unlink(missing_ok=True)
-        raise
-
+    write_atomic(target, payload, prefix=f".export_{artifact_id}.")
     return str(target)
 
 

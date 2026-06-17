@@ -13,7 +13,7 @@ from local_deepl.api.schemas.requests import (
     TranslationRequest,
 )
 from local_deepl.api.services.security import SAFE_API_BASE_ERROR, SERVER_ERROR_MESSAGE
-from local_deepl.utils.litellm_provider import resolve_custom_provider
+from local_deepl.core.llm_client import call_llm
 from local_deepl.utils.security import is_ssrf_target
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,6 @@ class AIRequestSettings:
     api_base: str
     api_key: str
     model: str
-    custom_provider: str | None
 
 
 async def resolve_ai_settings(
@@ -79,7 +78,6 @@ async def resolve_ai_settings(
         api_base=resolved_api_base,
         api_key=resolved_api_key,
         model=resolved_model,
-        custom_provider=resolve_custom_provider(resolved_model),
     )
 
 
@@ -226,17 +224,14 @@ async def _complete_text(
     context: str,
 ) -> str:
     try:
-        import litellm
-
-        response = await litellm.acompletion(
+        content = await call_llm(
             model=settings.model,
-            custom_llm_provider=settings.custom_provider,
             api_base=settings.api_base,
             api_key=settings.api_key,
             temperature=temperature,
             messages=[{"role": "user", "content": prompt}],
         )
-        return _response_content(response).strip()
+        return content.strip()
     except Exception as exc:
         logger.exception("AI %s request failed", context)
         raise AIProviderError from exc
@@ -254,15 +249,6 @@ def _resolve_setting(
     if not isinstance(config_value, str) or not config_value.strip():
         raise AISettingsError
     return config_value.strip()
-
-
-def _response_content(response: Any) -> str:
-    choices = getattr(response, "choices", None)
-    if not choices:
-        return ""
-    message = getattr(choices[0], "message", None)
-    content = getattr(message, "content", None)
-    return content if isinstance(content, str) else ""
 
 
 def _loads_json_object(candidate: str) -> JsonObject | None:

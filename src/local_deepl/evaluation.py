@@ -30,8 +30,7 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
 
-BBox = list[float]
-
+from local_deepl.core.document import BBox
 
 # --- data classes ----------------------------------------------------------
 

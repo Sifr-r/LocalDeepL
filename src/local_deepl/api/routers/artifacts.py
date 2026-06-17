@@ -3,14 +3,14 @@ import logging
 import os
 from typing import Any, cast
 
-from fastapi import APIRouter, Header, Query
+from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from local_deepl.api.routers import state
 from local_deepl.api.routers.common import (
-    _extract_bearer_token,
     _path_exists,
     _stable_server_error,
+    get_access_token,
 )
 from local_deepl.api.schemas import DocumentExportRequest, ExportDocxRequest
 from local_deepl.api.services.artifacts import (
@@ -32,10 +32,8 @@ logger = logging.getLogger(__name__)
 @router.get("/text/{artifact_id}")
 async def get_text(
     artifact_id: str,
-    token: str | None = Query(default=None),
-    authorization: str | None = Header(default=None),
+    access_token: str | None = Depends(get_access_token),
 ):
-    access_token = _extract_bearer_token(authorization) or token
     if not access_token:
         return JSONResponse(status_code=403, content={"error": "Text access denied"})
 
@@ -58,10 +56,8 @@ async def get_text(
 @router.get("/metadata/{artifact_id}")
 async def get_document_metadata(
     artifact_id: str,
-    token: str | None = Query(default=None),
-    authorization: str | None = Header(default=None),
+    access_token: str | None = Depends(get_access_token),
 ):
-    access_token = _extract_bearer_token(authorization) or token
     if not access_token:
         return JSONResponse(
             status_code=403, content={"error": "Document metadata access denied"}
@@ -137,10 +133,8 @@ async def create_document_export(body: DocumentExportRequest):
 @router.get("/export/{artifact_id}")
 async def get_document_export(
     artifact_id: str,
-    token: str | None = Query(default=None),
-    authorization: str | None = Header(default=None),
+    access_token: str | None = Depends(get_access_token),
 ):
-    access_token = _extract_bearer_token(authorization) or token
     if not access_token:
         return JSONResponse(status_code=403, content={"error": "Export access denied"})
 

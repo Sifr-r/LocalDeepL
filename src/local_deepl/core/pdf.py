@@ -259,17 +259,34 @@ class PDFHandler:
         """
         text = (text or "").strip()
         if not text:
-            return  # empty box — nothing to embed
+            return
 
+        # Phase 1: Handle full-page fallback detection
+        if PDFHandler._handle_fullpage_fallback(
+            page, rect_coords, text, page_width, page_height
+        ):
+            return
+
+        # Phase 2: Handle multi-line block detection and splitting
+        if PDFHandler._split_and_draw_lines(
+            page, rect_coords, text, page_width, page_height
+        ):
+            return
+
+        # Phase 3: Single-line drawing
+        PDFHandler._draw_single_line_text(
+            page, rect_coords, text, page_width, page_height
+        )
+
+    @staticmethod
+    def _handle_fullpage_fallback(
+        page: "fitz.Page",
+        rect_coords: list[float],
+        text: str,
+        page_width: float,
+        page_height: float,
+    ) -> bool:
         nx0, ny0, nx1, ny1 = rect_coords
-
-        # Detect the aligner's full-page fallback by bbox (covers the
-        # whole normalized page, [0,0,1,1]) rather than by the presence
-        # of "\n" in text. A grounded VLM that emits multi-line content
-        # for a real bbox must NOT be redirected to the full-page
-        # fallback rect — that would shift the text to the page top and
-        # clobber other bboxes' search positions, surfacing as
-        # "following lines moved up" in the rendered output.
         is_full_page_fallback = (
             nx0 <= 0.001
             and ny0 <= 0.001
@@ -288,13 +305,18 @@ class PDFHandler:
                 color=(0, 0, 0),
                 align=0,
             )
-            return
+            return True
+        return False
 
-        # A real bbox with multi-line content: split by line and recurse
-        # to place each line at its own vertical sub-slice of the bbox.
-        # Handles grounded-VLM outputs that joined visual lines into one
-        # element with an embedded "\n" — search/selection still land at
-        # the right y position instead of being shifted off-page.
+    @staticmethod
+    def _split_and_draw_lines(
+        page: "fitz.Page",
+        rect_coords: list[float],
+        text: str,
+        page_width: float,
+        page_height: float,
+    ) -> bool:
+        nx0, ny0, nx1, ny1 = rect_coords
         if "\n" in text:
             lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
             if len(lines) > 1:
@@ -307,8 +329,8 @@ class PDFHandler:
                         page_width,
                         page_height,
                     )
-                return
-            text = lines[0] if lines else text  # only one non-empty line
+                return True
+            text = lines[0] if lines else text
 
         pdf_rect = fitz.Rect(
             nx0 * page_width,
@@ -316,41 +338,11 @@ class PDFHandler:
             nx1 * page_width,
             ny1 * page_height,
         )
-
         box_width = pdf_rect.width
         box_height = pdf_rect.height
         if box_width <= 0 or box_height <= 0:
-            return
+            return True
 
-        font = fitz.Font("helv")
-
-        # Size so the full glyph extent (ascender - descender in em-units)
-        # fits exactly inside the box height. For Helvetica this works out
-        # to ~box_height/1.374 ≈ box_height * 0.728 — tighter than the old
-        # 0.85 constant, and eliminates the ascender overshoot we used to
-        # tolerate at the top edge.
-        ascender = getattr(font, "ascender", 1.075)  # Helvetica fallback
-        descender = getattr(font, "descender", -0.299)
-        extent_em = max(0.01, ascender - descender)  # descender is negative
-        fontsize = max(3.0, min(72.0, box_height / extent_em))
-
-        # Multi-line bbox detection: Surya occasionally groups visually
-        # adjacent handwritten lines into one detection (e.g. "schwache
-        # Grenzen / im Kopf"). The DP then matches the LLM's joined
-        # string to that one tall bbox, and the embed would render the
-        # whole phrase at one y (the bottom of the bbox), leaving the
-        # upper visual line empty in the searchable text layer.
-        #
-        # Heuristic: distinguish a multi-line region from a single tall-
-        # but-still-one-line bbox. Aspect alone confuses handwritten
-        # "Typen 23" (one line, aspect ≈ 0.28 due to padding around the
-        # glyphs) with a real two-line region (aspect ≈ 0.27-0.35).
-        # Combine signals — the bbox must be tall in the absolute sense
-        # (norm height > 7% of page) AND have multi-line aspect ratio.
-        # Single visual lines on Letter-size pages take ~4-6% of page
-        # height even with generous padding, so the combined gate
-        # catches the 2-line case without over-splitting padded single
-        # lines.
         words = text.split()
         norm_height = ny1 - ny0
         aspect = box_height / max(0.01, box_width)
@@ -371,29 +363,40 @@ class PDFHandler:
                     page_width,
                     page_height,
                 )
-            return
+            return True
+        return False
+
+    @staticmethod
+    def _draw_single_line_text(
+        page: "fitz.Page",
+        rect_coords: list[float],
+        text: str,
+        page_width: float,
+        page_height: float,
+    ) -> None:
+        nx0, ny0, nx1, ny1 = rect_coords
+        pdf_rect = fitz.Rect(
+            nx0 * page_width,
+            ny0 * page_height,
+            nx1 * page_width,
+            ny1 * page_height,
+        )
+        box_width = pdf_rect.width
+        box_height = pdf_rect.height
+
+        font = fitz.Font("helv")
+        ascender = getattr(font, "ascender", 1.075)
+        descender = getattr(font, "descender", -0.299)
+        extent_em = max(0.01, ascender - descender)
+        fontsize = max(3.0, min(72.0, box_height / extent_em))
 
         natural_width = font.text_length(text, fontsize=fontsize)
         if natural_width <= 0:
-            return  # nothing measurable to draw (e.g. all-whitespace)
+            return
 
-        # Horizontal scale so extracted word bbox spans the full box width
-        # (minus a hairline margin so we don't butt up against neighbours).
-        # scale_x > 1 stretches; scale_x < 1 compresses — both correctly
-        # size the word's bounding box, which is what selection uses.
-        # We cap scale_x at 50.0 so impossibly thin boxes don't overflow the page.
         target_width = max(1.0, box_width * 0.98)
         scale_x = min(50.0, target_width / natural_width)
-
-        # Place baseline at box bottom, shifted up by the descender so tails
-        # of "g"/"p"/"y" sit inside the box and the glyph tops land on the
-        # box top (since ascender*fontsize + |descender|*fontsize = box_height
-        # by construction).
         baseline = fitz.Point(pdf_rect.x0, pdf_rect.y1 + descender * fontsize)
-
-        # Morph pivot = baseline. Matrix scales x around that pivot so
-        # the text's starting x stays at pdf_rect.x0 and the end x lands
-        # at pdf_rect.x0 + target_width.
         morph = (baseline, fitz.Matrix(scale_x, 1.0))
         page.insert_text(
             baseline,

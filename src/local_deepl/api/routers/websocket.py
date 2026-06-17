@@ -3,10 +3,10 @@ from __future__ import annotations
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
-from local_deepl.api.services.progress import ProgressService
+from local_deepl.api.routers import state
 
 router = APIRouter()
-_progress_service = ProgressService()
+_progress_service = state.progress_service
 
 
 class ConnectionManager:

@@ -36,10 +36,9 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import httpx
-import litellm
 from dotenv import load_dotenv
 
-from local_deepl.utils.litellm_provider import resolve_custom_provider
+from local_deepl.core.llm_client import call_llm
 
 load_dotenv()
 
@@ -508,18 +507,14 @@ class PromptedGroundedOCR:
         sem = asyncio.Semaphore(max(1, self.concurrency))
         total_pages = len(page_imgs)
 
-        litellm_model = self.model
-        custom_provider = resolve_custom_provider(litellm_model)
-
         async def run_one(
             page_idx: int,
         ) -> tuple[int, list[GroundedBlock], BaseException | None]:
             b64, w, h = page_imgs[page_idx]
             async with sem:
                 try:
-                    resp = await litellm.acompletion(
-                        model=litellm_model,
-                        custom_llm_provider=custom_provider,
+                    text = await call_llm(
+                        model=self.model,
                         api_base=self.api_base,
                         api_key=self.api_key,
                         temperature=0.0,
@@ -540,7 +535,7 @@ class PromptedGroundedOCR:
                             }
                         ],
                     )
-                    text = (resp.choices[0].message.content or "").strip()
+                    text = text.strip()
                     return page_idx, _parse_grounded_json(text, page_idx, w, h), None
                 except Exception as e:
                     # Per-page isolation: log the failure and return zero

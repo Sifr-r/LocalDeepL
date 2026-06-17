@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from local_deepl.core.document import DocumentResult
+    from local_deepl.core.document import DocumentResult, SpellcheckMode
     from local_deepl.core.processors import DocumentProcessor
 
 ProgressCallback = Callable[[str, int, int, str], Awaitable[None]]
@@ -133,7 +133,7 @@ class EngineBase:
         page_nums: Sequence[int],
         source_path: str,
         source_processor: str,
-        spellcheck: str,
+        spellcheck: SpellcheckMode,
         cross_page: bool,
         page_metadata_overlays: dict[int, dict[str, object]] | None = None,
     ) -> DocumentResult:

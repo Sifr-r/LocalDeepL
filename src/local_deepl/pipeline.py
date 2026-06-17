@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import cast
 
+from local_deepl.core.document import DenseMode, SpellcheckMode
 from local_deepl.core.grounded import GroundedOCRBackend
 from local_deepl.core.preprocessing import PagePreprocessingOptions, PagePreprocessor
 from local_deepl.core.processors import DocumentProcessor
@@ -87,11 +88,11 @@ class OCRPipeline:
         refine: bool = True,
         max_image_dim: int = 1024,
         dense_threshold: int = 60,
-        dense_mode: str = "auto",
+        dense_mode: DenseMode = DenseMode.AUTO,
         self_correction: bool = False,
         binarize: bool = False,
         dual_engine: bool = False,
-        spellcheck: str = "none",
+        spellcheck: SpellcheckMode = SpellcheckMode.NONE,
         cross_page: bool = False,
         preprocessing_options: PagePreprocessingOptions | None = None,
         quality_routing_options: QualityRoutingOptions | None = None,

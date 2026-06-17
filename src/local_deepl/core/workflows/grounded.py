@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
+from local_deepl.core.document import SpellcheckMode
 from local_deepl.core.grounded import GroundedBlock, GroundedOCRBackend
 from local_deepl.core.processors import DocumentProcessor
 from local_deepl.core.workflows.base import (
@@ -32,7 +33,7 @@ class GroundedEngine(EngineBase):
         output_path: str,
         *,
         dpi: int,
-        spellcheck: str = "none",
+        spellcheck: SpellcheckMode = SpellcheckMode.NONE,
         cross_page: bool = False,
         progress: ProgressCallback | None = None,
         on_warning: WarningCallback | None = None,

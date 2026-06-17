@@ -11,11 +11,10 @@ import logging
 import os
 import re
 
-import litellm
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
-from local_deepl.utils.litellm_provider import resolve_custom_provider
+from local_deepl.core.llm_client import call_llm
 
 load_dotenv()
 
@@ -298,13 +297,9 @@ class OCRProcessor:
         timeout: float,
         max_tokens: int,
     ) -> str:
-        litellm_model = self.model
-        custom_provider = resolve_custom_provider(litellm_model)
-
         try:
-            response = await litellm.acompletion(
-                model=litellm_model,
-                custom_llm_provider=custom_provider,
+            content = await call_llm(
+                model=self.model,
                 api_base=self.api_base,
                 api_key=self.api_key,
                 temperature=0.1,
@@ -325,7 +320,7 @@ class OCRProcessor:
                     }
                 ],
             )
-            return (response.choices[0].message.content or "").strip()
+            return content.strip()
         except Exception as e:
             err_msg = str(e)
             if any(

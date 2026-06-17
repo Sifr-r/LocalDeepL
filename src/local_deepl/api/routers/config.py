@@ -1,6 +1,7 @@
 # ruff: noqa: E402
 import logging
 import os
+from typing import Any, TypedDict, cast
 
 from dotenv import load_dotenv
 
@@ -41,10 +42,37 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
+class RuntimeConfigDict(TypedDict):
+    api_base: str
+    api_key: str
+    model: str
+    concurrency: int
+    dpi: int
+    dense_mode: str
+    dense_threshold: int
+    max_image_dim: int
+    refine: bool
+    verify_model: bool
+    pipeline_mode: str
+    self_correction: bool
+    binarize: bool
+    dual_engine: bool
+    spellcheck: str
+    cross_page: bool
+    preprocess_pages: bool
+    orientation_detection: bool
+    deskew: bool
+    denoise: bool
+    normalize_contrast: bool
+    crop_cleanup: bool
+    quality_routing: bool
+    document_processors: list[str]
+
+
 # ---------------------------------------------------------------------------
 # In-memory configuration store – initialised from environment variables
 # ---------------------------------------------------------------------------
-_config: dict = {
+_config: RuntimeConfigDict = {
     "api_base": os.getenv("LLM_API_BASE", DEFAULT_TRANSLATION_API_BASE),
     "api_key": os.getenv("LLM_API_KEY", DEFAULT_TRANSLATION_API_KEY),
     "model": os.getenv("LLM_MODEL", DEFAULT_TRANSLATION_MODEL),
@@ -110,7 +138,7 @@ async def update_config(body: ConfigUpdate):
             continue
         if key == "api_base" and await is_ssrf_target(val):
             return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
-        _config[key] = val.value if hasattr(val, "value") else val
+        cast(dict[str, Any], _config)[key] = val.value if hasattr(val, "value") else val
     return await get_config()
 
 

@@ -6,25 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
-class PipelineMode(StrEnum):
-    HYBRID = "hybrid"
-    GROUNDED = "grounded"
-
-
-class DenseMode(StrEnum):
-    AUTO = "auto"
-    ALWAYS = "always"
-    NEVER = "never"
-
-
-class SpellcheckMode(StrEnum):
-    NONE = "none"
-    AR = "ar"
-    EN_US = "en-US"
-    DE = "de"
-    ES = "es"
-    FR = "fr"
+from local_deepl.core.document import DenseMode, PipelineMode, SpellcheckMode
 
 
 class DocumentProcessorName(StrEnum):
@@ -77,6 +59,14 @@ def _reject_string_for_config_bool(value: Any) -> Any:
 def _non_empty_string(value: Any) -> Any:
     if not isinstance(value, str) or not value.strip():
         raise ValueError("must be a non-empty string")
+    return value.strip()
+
+
+def _validate_optional_string(value: Any) -> Any:
+    if value is None:
+        return value
+    if not isinstance(value, str):
+        raise ValueError("must be a string")
     return value.strip()
 
 
@@ -235,11 +225,7 @@ class TranslationRequest(BaseModel):
     )
     @classmethod
     def validate_optional_strings(cls, value: Any) -> Any:
-        if value is None:
-            return value
-        if not isinstance(value, str):
-            raise ValueError("must be a string")
-        return value.strip()
+        return _validate_optional_string(value)
 
 
 class ExtractionRequest(BaseModel):
@@ -257,11 +243,7 @@ class ExtractionRequest(BaseModel):
     )
     @classmethod
     def validate_optional_strings(cls, value: Any) -> Any:
-        if value is None:
-            return value
-        if not isinstance(value, str):
-            raise ValueError("must be a string")
-        return value.strip()
+        return _validate_optional_string(value)
 
 
 class ExportDocxRequest(BaseModel):
@@ -272,11 +254,7 @@ class ExportDocxRequest(BaseModel):
     @field_validator("text", mode="before")
     @classmethod
     def validate_optional_strings(cls, value: Any) -> Any:
-        if value is None:
-            return value
-        if not isinstance(value, str):
-            raise ValueError("must be a string")
-        return value.strip()
+        return _validate_optional_string(value)
 
 
 class DocumentExportRequest(BaseModel):

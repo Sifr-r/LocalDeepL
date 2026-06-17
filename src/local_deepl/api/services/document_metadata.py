@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import math
 import os
 import tempfile
@@ -13,6 +12,7 @@ from local_deepl.api.services.artifacts import (
     InvalidArtifactReferenceError,
     is_opaque_artifact_id,
 )
+from local_deepl.utils import write_atomic
 
 if TYPE_CHECKING:
     from local_deepl.core.document import DocumentBlock, DocumentResult
@@ -94,29 +94,11 @@ def write_document_metadata_atomic(
 
     payload = _json_safe_mapping(report)
     artifact_dir = Path(directory or tempfile.gettempdir()).resolve()
-    artifact_dir.mkdir(parents=True, exist_ok=True)
     target = artifact_dir / f"{DOCUMENT_METADATA_ARTIFACT_PREFIX}_{artifact_id}.json"
-    tmp_path: str | None = None
 
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=artifact_dir,
-            prefix=f".{DOCUMENT_METADATA_ARTIFACT_PREFIX}_{artifact_id}.",
-            suffix=".tmp",
-            delete=False,
-        ) as tmp:
-            tmp_path = tmp.name
-            json.dump(payload, tmp, ensure_ascii=False, sort_keys=True)
-            tmp.flush()
-            os.fsync(tmp.fileno())
-        os.replace(tmp_path, target)
-    except Exception:
-        if tmp_path is not None:
-            Path(tmp_path).unlink(missing_ok=True)
-        raise
-
+    write_atomic(
+        target, payload, prefix=f".{DOCUMENT_METADATA_ARTIFACT_PREFIX}_{artifact_id}."
+    )
     return str(target)
 
 
