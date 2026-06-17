@@ -44,6 +44,12 @@ window.addEventListener('DOMContentLoaded', async () => {
     // Wire up AI workstation right sidebar tabs
     setupAIWorkstationTabs();
     
+    // Wire up top-level app shell tabs (Workstation / Translation)
+    setupAppShellTabs();
+    
+    // Wire up the dedicated Translation tab
+    setupTranslationTab();
+    
     // Wire up AI translation & structured data extraction events
     setupAIFeatures();
     
@@ -493,6 +499,333 @@ function setupAIFeatures() {
             downloadBlobFile(refs.extractedJsonRaw.value, 'structured_data.json', 'application/json');
         }
     });
+}
+
+// 6b. Top-level app shell (Workstation / Translation views)
+function switchAppView(viewId) {
+    if (!viewId) return;
+    refs.appTabBtns.forEach(btn => {
+        const isActive = btn.dataset.appView === viewId;
+        btn.classList.toggle('active', isActive);
+        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+    refs.appViews.forEach(view => {
+        const isActive = view.dataset.appView === viewId;
+        view.classList.toggle('active', isActive);
+        if (isActive) {
+            view.removeAttribute('hidden');
+        } else {
+            view.setAttribute('hidden', '');
+        }
+    });
+    if (window.location.hash !== `#${viewId}`) {
+        // Use replaceState to avoid spamming history on every tab click
+        try { window.history.replaceState(null, '', `#${viewId}`); } catch (_) {}
+    }
+}
+
+function setupAppShellTabs() {
+    refs.appTabBtns.forEach(btn => {
+        btn.addEventListener('click', () => switchAppView(btn.dataset.appView));
+    });
+    // Reflect #view-* on initial load
+    const initial = (window.location.hash || '').replace(/^#/, '');
+    if (initial && Array.from(refs.appViews).some(v => v.dataset.appView === initial)) {
+        switchAppView(initial);
+    } else {
+        switchAppView('view-workstation');
+    }
+
+    // Workstation Translator "Open in Translation tab" link
+    refs.openTranslationTabBtn?.addEventListener('click', () => {
+        // Pre-populate the translation source from the latest OCR result
+        const sourceText = state.rawTextResult || '';
+        if (sourceText.trim() && refs.translationSourceText) {
+            refs.translationSourceText.value = sourceText;
+        }
+        // Mirror the language selection
+        if (refs.translateLangSelect && refs.translationTabLangSelect) {
+            refs.translationTabLangSelect.value = refs.translateLangSelect.value;
+        }
+        // Force source mode to paste since we're carrying text
+        setTranslationSourceMode('paste');
+        switchAppView('view-translation');
+    });
+
+    // React to hash changes (e.g. user uses browser back/forward)
+    window.addEventListener('hashchange', () => {
+        const next = (window.location.hash || '').replace(/^#/, '');
+        if (next && Array.from(refs.appViews).some(v => v.dataset.appView === next)) {
+            switchAppView(next);
+        }
+    });
+}
+
+// 6c. Dedicated Translation tab logic
+function setTranslationSourceMode(mode) {
+    refs.translationSourceTabBtns.forEach(btn => {
+        const isActive = btn.dataset.sourceMode === mode;
+        btn.classList.toggle('active', isActive);
+        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+    if (refs.translationSourcePanePaste) {
+        if (mode === 'paste') refs.translationSourcePanePaste.removeAttribute('hidden');
+        else refs.translationSourcePanePaste.setAttribute('hidden', '');
+    }
+    if (refs.translationSourcePaneUpload) {
+        if (mode === 'upload') refs.translationSourcePaneUpload.removeAttribute('hidden');
+        else refs.translationSourcePaneUpload.setAttribute('hidden', '');
+    }
+}
+
+function setTranslationOcrProgress(stage, percent) {
+    if (!refs.translationOcrProgress) return;
+    if (stage === null) {
+        refs.translationOcrProgress.classList.add('hidden');
+        return;
+    }
+    refs.translationOcrProgress.classList.remove('hidden');
+    if (refs.translationOcrStage) refs.translationOcrStage.textContent = stage;
+    const pct = Math.max(0, Math.min(100, percent || 0));
+    if (refs.translationOcrPercent) refs.translationOcrPercent.textContent = `${Math.round(pct)}%`;
+    if (refs.translationOcrBar) refs.translationOcrBar.style.width = `${pct}%`;
+}
+
+function setTranslationFileInfo(file, status) {
+    if (!refs.translationFileInfo) return;
+    if (file) {
+        refs.translationFileInfo.classList.remove('hidden');
+        if (refs.translationFileName) refs.translationFileName.textContent = file.name;
+        if (refs.translationFileStatus) refs.translationFileStatus.textContent = status || 'Ready';
+    } else {
+        refs.translationFileInfo.classList.add('hidden');
+    }
+}
+
+function clearTranslationTab() {
+    if (refs.translationSourceText) refs.translationSourceText.value = '';
+    if (refs.translationFileInput) refs.translationFileInput.value = '';
+    setTranslationFileInfo(null);
+    setTranslationOcrProgress(null, 0);
+    if (refs.translationTabOutput) {
+        refs.translationTabOutput['inner' + 'HTML'] = '';
+    }
+    state.translationTabResult = '';
+}
+
+function getTranslationTabSourceText() {
+    // If the upload pane has a file but no extracted text yet, the caller
+    // will need to run OCR first; the click handler does that path.
+    if (refs.translationSourceText) {
+        const t = refs.translationSourceText.value;
+        if (t && t.trim()) return t;
+    }
+    return '';
+}
+
+// One-shot: run OCR on the uploaded file, fetch the extracted markdown,
+// then immediately translate it into the selected language.
+async function runTranslationTabOcrAndTranslate(file, lang) {
+    if (!file) return;
+    setTranslationFileInfo(file, 'Uploading & OCR…');
+    setTranslationOcrProgress('Uploading', 5);
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('client_id', clientId);
+    await ensureProgressSession();
+    formData.append('progress_channel', state.progressChannelId);
+    formData.append('progress_token', state.progressSessionToken);
+
+    const settings = getFormSettings();
+    Object.entries(settings).forEach(([k, v]) => {
+        formData.append(k, v);
+    });
+
+    let response;
+    try {
+        response = await fetch('/process', {
+            method: 'POST',
+            body: formData
+        });
+    } catch (e) {
+        setTranslationOcrProgress(null, 0);
+        setTranslationFileInfo(file, 'Upload failed');
+        showToast(`OCR upload failed: ${e.message}`, 'error');
+        return;
+    }
+
+    if (!response.ok) {
+        setTranslationOcrProgress(null, 0);
+        setTranslationFileInfo(file, 'OCR failed');
+        let errMsg = 'OCR processing failed';
+        try { const err = await response.json(); errMsg = err.error || errMsg; } catch (_) {}
+        showToast(errMsg, 'error');
+        return;
+    }
+
+    const artifactId = response.headers.get('X-Text-Artifact-Id');
+    const artifactToken = response.headers.get('X-Text-Artifact-Token');
+    if (!artifactId || !artifactToken) {
+        setTranslationOcrProgress(null, 0);
+        setTranslationFileInfo(file, 'Artifact missing');
+        showToast('OCR completed but text artifact metadata was missing.', 'error');
+        return;
+    }
+
+    setTranslationOcrProgress('Extracting text', 60);
+
+    let markdown = '';
+    try {
+        const textResp = await fetch(`/text/${encodeURIComponent(artifactId)}?t=${Date.now()}`, {
+            headers: { Authorization: `Bearer ${artifactToken}` }
+        });
+        if (!textResp.ok) throw new Error('Could not fetch extracted text');
+        const textMap = await textResp.json();
+        for (const [page, lines] of Object.entries(textMap)) {
+            markdown += `## Page ${parseInt(page) + 1}\n\n`;
+            markdown += lines.join('\n\n') + "\n\n";
+        }
+    } catch (e) {
+        setTranslationOcrProgress(null, 0);
+        setTranslationFileInfo(file, 'Text fetch failed');
+        showToast(`Text fetch failed: ${e.message}`, 'error');
+        return;
+    }
+
+    if (!markdown.trim()) {
+        setTranslationOcrProgress(null, 0);
+        setTranslationFileInfo(file, 'No text found');
+        showToast('OCR did not return any text. Try a different file or settings.', 'error');
+        return;
+    }
+
+    // Mirror the OCR'd text into the paste textarea so the user can edit before re-translating
+    if (refs.translationSourceText) refs.translationSourceText.value = markdown;
+
+    setTranslationOcrProgress('Translating', 85);
+    setTranslationFileInfo(file, 'Translating…');
+
+    try {
+        const translated = await translateText(markdown, lang);
+        state.translationTabResult = translated;
+        if (refs.translationTabOutput) {
+            refs.translationTabOutput['inner' + 'HTML'] = renderMarkdownToHtml(translated);
+        }
+        setTranslationOcrProgress('Done', 100);
+        setTranslationFileInfo(file, `Translated to ${lang}`);
+        showToast(`Document translated to ${lang}!`, 'success');
+    } catch (e) {
+        setTranslationOcrProgress(null, 0);
+        setTranslationFileInfo(file, 'Translation failed');
+        showToast(`Translation failed: ${e.message}`, 'error');
+    }
+}
+
+function setupTranslationTab() {
+    if (!refs.translationTabTranslateBtn) return;
+
+    // Source-mode tab toggle
+    refs.translationSourceTabBtns.forEach(btn => {
+        btn.addEventListener('click', () => setTranslationSourceMode(btn.dataset.sourceMode));
+    });
+
+    // Drop zone -> file input
+    if (refs.translationDropZone && refs.translationFileInput) {
+        const dz = refs.translationDropZone;
+        dz.addEventListener('click', (e) => {
+            // Don't double-fire if user clicked the input itself
+            if (e.target instanceof HTMLInputElement) return;
+            refs.translationFileInput.click();
+        });
+        ['dragenter', 'dragover'].forEach(evt =>
+            dz.addEventListener(evt, e => { e.preventDefault(); dz.classList.add('dragover'); })
+        );
+        ['dragleave', 'drop'].forEach(evt =>
+            dz.addEventListener(evt, e => { e.preventDefault(); dz.classList.remove('dragover'); })
+        );
+        dz.addEventListener('drop', e => {
+            const file = e.dataTransfer?.files?.[0];
+            if (file) {
+                refs.translationFileInput.files = e.dataTransfer.files;
+                setTranslationFileInfo(file, 'Ready');
+            }
+        });
+        refs.translationFileInput.addEventListener('change', e => {
+            const file = e.target.files?.[0];
+            if (file) setTranslationFileInfo(file, 'Ready');
+        });
+        refs.translationFileClearBtn?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            refs.translationFileInput.value = '';
+            setTranslationFileInfo(null);
+            setTranslationOcrProgress(null, 0);
+        });
+    }
+
+    // Main translate action
+    refs.translationTabTranslateBtn.addEventListener('click', async () => {
+        const lang = refs.translationTabLangSelect?.value || 'English';
+        // If a file is staged, run OCR + translate
+        const stagedFile = refs.translationFileInput?.files?.[0];
+        if (stagedFile) {
+            await runTranslationTabOcrAndTranslate(stagedFile, lang);
+            return;
+        }
+        // Otherwise, translate whatever's in the source textarea
+        const text = getTranslationTabSourceText();
+        if (!text) {
+            showToast('Paste some text or upload a file first.', 'error');
+            return;
+        }
+        refs.translationTabTranslateBtn.disabled = true;
+        const originalLabel = refs.translationTabTranslateBtn.innerText;
+        refs.translationTabTranslateBtn.innerText = 'Translating…';
+        if (refs.translationTabOutput) {
+            refs.translationTabOutput['inner' + 'HTML'] =
+                '<span class="text-muted" style="font-style:italic;">AI is translating. Please wait…</span>';
+        }
+        try {
+            const translated = await translateText(text, lang);
+            state.translationTabResult = translated;
+            if (refs.translationTabOutput) {
+                refs.translationTabOutput['inner' + 'HTML'] = renderMarkdownToHtml(translated);
+            }
+            showToast(`Translated to ${lang}!`, 'success');
+        } catch (e) {
+            if (refs.translationTabOutput) {
+                refs.translationTabOutput['inner' + 'HTML'] = `<span class="error-text">Error: ${e.message}</span>`;
+            }
+            showToast(`Translation failed: ${e.message}`, 'error');
+        } finally {
+            refs.translationTabTranslateBtn.disabled = false;
+            refs.translationTabTranslateBtn.innerText = originalLabel;
+        }
+    });
+
+    // Copy / download translated output
+    refs.translationTabCopyBtn?.addEventListener('click', () => {
+        const text = state.translationTabResult;
+        if (text && text.trim()) {
+            navigator.clipboard.writeText(text).then(() => showToast('Translation copied!', 'success'));
+        }
+    });
+    refs.translationTabDlMdBtn?.addEventListener('click', () => {
+        const text = state.translationTabResult;
+        if (text && text.trim()) {
+            const lang = (refs.translationTabLangSelect?.value || 'Translated').toLowerCase();
+            downloadBlobFile(text, `translated_${lang}.md`, 'text/markdown');
+        }
+    });
+    refs.translationTabDlDocxBtn?.addEventListener('click', () => {
+        const text = state.translationTabResult;
+        if (text && text.trim()) {
+            const lang = (refs.translationTabLangSelect?.value || 'Translated').toLowerCase();
+            downloadDocxFile(text, `translated_${lang}.docx`);
+        }
+    });
+
+    refs.translationClearBtn?.addEventListener('click', clearTranslationTab);
 }
 
 function renderExtractedVisualCards(json) {

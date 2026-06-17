@@ -1,20 +1,25 @@
 """
-OCRPipeline - Shared orchestration for CLI and web entry points.
+OCRPipeline - Web entry point and in-process programmatic orchestration.
 
-This module exposes the `OCRPipeline` class which acts as an orchestration
-facade. Internally, it delegates execution to either `GroundedEngine` or
-`HybridEngine` based on the configured components.
+The user-facing `local-deepl` CLI script has been deprecated; the supported
+product workflow is the FastAPI Web UI and API (see `local_deepl.server`).
+`OCRPipeline` remains importable for in-process programmatic use, e.g.
+embedding OCR in another application or a custom worker.
+
+Internally, `OCRPipeline` is a thin facade that delegates execution to either
+`GroundedEngine` or `HybridEngine` (in `local_deepl.core.workflows`) based on
+the configured components.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import cast
 
 from local_deepl.core.grounded import GroundedOCRBackend
 from local_deepl.core.preprocessing import PagePreprocessingOptions, PagePreprocessor
 from local_deepl.core.processors import DocumentProcessor
 from local_deepl.core.routing import QualityRoutingOptions
-from typing import cast
 from local_deepl.core.workflows import (
     EngineBase,
     GroundedEngine,

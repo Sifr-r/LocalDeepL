@@ -1,0 +1,437 @@
+version: 1
+plan:
+  name: 'scout Anything-to-MD, schema/table extraction, and AI OCR vision models for LocalDeepL'
+  max_concurrency: 4
+  max_consecutive_failures: 2
+  max_cycles: 6
+  auto_reject_retries: 1
+  verifier_config:
+    default_verifiers: [verifier]
+    audit_sample_rate: 0.0
+tasks:
+  - id: track-md
+    title: 'scout Anything-to-Markdown and rich-text converter landscape'
+    prompt: |
+      Scout the "anything-to-Markdown / rich text" landscape as of 2026, with depth sufficient
+      to inform a product plan for LocalDeepL (a local OCR + structured-extraction FastAPI
+      service at C:\Users\rahin\LocalDeepL). Focus on the big players and the serious
+      open-source projects, with both product docs and GitHub code in evidence.
+
+      SCOPE (cover all):
+      - Microsoft: Markitdown (github.com/microsoft/markitdown), markitdown[docx|pdf|...]
+        extras, Azure Document Intelligence markdown output, Microsoft 365 Copilot parsing
+        pipeline (publicly documented parts only).
+      - Google: Document AI processors (Form Parser, Document OCR with layout), Gemini
+        structured output / Document Understanding, NotebookLM-style ingest.
+      - Adobe: Acrobat Extract API, Adobe Sensei structured extraction, PDF Services API
+        markdown/export.
+      - Apple / others as relevant: macOS Vision/shortcuts, Apple Notes import.
+      - Open-source converters: Pandoc, Mammoth (docx), Marko, Docling (IBM), Unstructured
+        (Unstructured.io), Marker (VikParuchuri/marker), PDFMiner, PyMuPDF4LLM,
+        markitdown's own ecosystem.
+
+      FOR EACH entry produce (with sources):
+      - Name, vendor, license, primary output formats.
+      - Input coverage: PDF, docx, pptx, xlsx, html, epub, images, audio/video transcripts.
+      - Quality claims: layout fidelity (headings, lists, tables, code, images, math),
+        language coverage, RTL/CJK, footnotes, hyperlinks.
+      - Execution mode: pure-local CPU/GPU, cloud-only, hybrid, self-host.
+      - Architecture / pipeline summary: how the converter is structured (read 2-3 files
+        per project on GitHub; cite file_path:line_number for the claim).
+      - Documented strengths AND documented limitations / known issues.
+      - Pricing / quota (for cloud).
+      - GitHub stats worth noting: stars, last release date, maintainer activity (only
+        if you actually fetched them — don't guess).
+
+      METHOD REQUIREMENTS:
+      - Use web_search + webfetch. Try to hit each project's primary GitHub repo, the
+        official product docs, and at least one independent benchmark or comparison.
+      - Every factual claim MUST have an inline source: [Org, page, date] or [URL, fetched YYYY-MM-DD].
+      - Distinguish [F] facts from [A] analysis.
+      - If a source conflicts, surface it — do not pick a side silently.
+      - Save raw notes to C:\Users\rahin\LocalDeepL\.mavis\plans\scout\track-md-evidence.md
+        (evidence inventory) and the main deliverable to
+        C:\Users\rahin\LocalDeepL\.mavis\plans\scout\track-md.md
+        with structure: Executive Summary, Players (by tier), Feature Matrix, Pipeline Patterns
+        Common to Leaders, Open-Source Quality Tier, Gaps LocalDeepL Could Fill, References.
+    assigned_to: general
+    verified_by: verifier
+    verify_prompt: |
+      Verify the Anything-to-MD track deliverable at
+      C:\Users\rahin\LocalDeepL\.mavis\plans\scout\track-md.md
+      against the original sources. Do NOT trust the producer's summary.
+
+      Re-derive at least 5 claims by going back to the original GitHub repos or vendor
+      docs yourself (open the URL, read the README or key file). Confirm:
+      1. Each player listed actually exists and the role description is correct.
+      2. Every factual claim has an inline source; flag any orphan claims.
+      3. Architecture summaries match the cited file_path:line_number — open the file
+         yourself to confirm.
+      4. Dates (release dates, doc dates) are from the current fetched page, not stale.
+      5. Open-source vs cloud distinctions are accurate.
+      6. Gaps section actually compares to LocalDeepL's existing extension points
+         (grounded_backend, document_processors, aligner, ocr_processor,
+         page_preprocessor — see AGENTS.md).
+
+      Fail the verification if: more than 2 orphan claims, any architectural claim
+      mis-attributed, or gaps section is generic / not specific to LocalDeepL.
+    timeout_ms: 1800000
+
+  - id: track-schema-tables
+    title: 'scout schema and table extraction landscape'
+    prompt: |
+      Scout the "schema and table extraction from documents" landscape as of 2026, with
+      depth sufficient to inform a product plan for LocalDeepL. Focus on big-player
+      products and serious open-source projects, with both docs and GitHub code in
+      evidence.
+
+      SCOPE (cover all):
+      - Cloud incumbents: Google Document AI Form Parser / Custom Extractor / Schema API,
+        Azure Document Intelligence prebuilt-layout / custom models / Studio,
+        AWS Textract (Forms, Tables, Queries), AWS Bedrock Data Automation,
+        IBM watsonx Discovery / Datacap, Abbyy Vantage / FlexiCapture.
+      - Open-source table & form extractors: Microsoft Table Transformer (TATR),
+        Camelot, Tabula, pdfplumber, PP-Structure / PaddleOCR table models,
+        Docling (IBM) table extraction, Unstructured (Unstructured.io) partitioning,
+        Marker tables, surya/layout models, docx-html-table libraries.
+      - Schema / structured-output tooling: OpenAI Structured Outputs / JSON mode,
+        Anthropic tool use, Google Gemini function calling + JSON schema,
+        JSON Schema Draft 2020-12, Pydantic / Instructor / Outline / Outlines,
+        docTR, Marker-PDF schema options.
+      - Benchmarks: PubTabNet, PubTables-1M, TableBank, FinTabNet, DocVQA, FUNSD,
+        CORD, Kleister-NDA, RoFuDa, the latest ExtEval, OmniTab benchmarks.
+
+      FOR EACH entry produce (with sources):
+      - Name, vendor, license.
+      - Input format coverage and which document classes it handles well.
+      - Output schema: HTML, CSV, XLSX, JSON, Markdown, native structured (Camel/Pydantic).
+      - Accuracy / F1 on a public benchmark — quote the number with the benchmark name
+        and the citation, do not paraphrase. If multiple benchmarks exist, name the best,
+        worst, and median.
+      - Execution mode (local CPU/GPU vs cloud), self-hostable, latency tier.
+      - Architecture: how it represents tables internally, how it handles nested /
+        spanning cells, multi-line headers, financial tables, scientific tables, RTL.
+      - Documented failure modes and edge cases.
+      - GitHub: at least one file_path:line_number citation per major OSS project.
+
+      METHOD REQUIREMENTS:
+      - Use web_search + webfetch against primary sources (arXiv, paperswithcode, GitHub
+        README, vendor docs, benchmark leaderboards).
+      - For each major OSS project, open the repo, read the README plus one core file,
+        and cite file_path:line_number.
+      - For each benchmark, confirm the dataset exists and the number is from a 2024-2026
+        publication (or the most recent version), not a stale blog post.
+      - Inline sources: [Org, page, date] or [URL, fetched YYYY-MM-DD].
+      - Mark [F] vs [A] explicitly where it matters.
+      - Save evidence to
+        C:\Users\rahin\LocalDeepL\.mavis\plans\scout\track-schema-evidence.md
+        and the deliverable to
+        C:\Users\rahin\LocalDeepL\.mavis\plans\scout\track-schema.md
+        with: Executive Summary, Players (by tier), Feature Matrix, Benchmark Table
+        (with raw numbers + citations), Pipeline Patterns, Gaps LocalDeepL Could Fill,
+        References.
+    assigned_to: general
+    verified_by: verifier
+    verify_prompt: |
+      Verify the schema/table extraction track at
+      C:\Users\rahin\LocalDeepL\.mavis\plans\scout\track-schema.md.
+
+      Re-derive at least 5 numerical / benchmark claims by going back to the original
+      paper, GitHub README, or benchmark leaderboard. Open the file_path:line_number
+      citations yourself and confirm the claim.
+
+      Fail the verification if:
+      - Any benchmark number is from a 2022-era paper presented as current state-of-art.
+      - More than 2 orphan claims.
+      - Benchmark table mis-states dataset / metric name.
+      - Open-source / cloud distinction is wrong for any project.
+      - Gaps section is generic and not grounded in LocalDeepL's existing `table_extraction`
+        document processor and `layout_enrichment` processor (see src/local_deepl/core/processors.py).
+    timeout_ms: 1800000
+
+  - id: track-ocr-vision
+    title: 'scout AI OCR vision models from Google, Microsoft, NVIDIA, and serious OSS'
+    prompt: |
+      Scout the "AI OCR vision models" landscape as of 2026, with depth sufficient to
+      inform a product plan for LocalDeepL (which already uses a Surya-detection +
+      VLM-OCR hybrid pipeline, with a grounded-OCR alternative). The user wants
+      execution docs and GitHub code, not just marketing.
+
+      SCOPE (cover all, with execution + GitHub code evidence):
+      - Google: Gemini 2.x family (Flash/Pro) for OCR / document understanding; Document
+        AI OCR processors; PaliGemma / PaliGemma 2; the latest Document AI layout parser.
+        Pull from ai.google.dev, cloud.google.com/document-ai, and the relevant
+        GoogleResearch / google-deepmind GitHub repos.
+      - Microsoft: Florence-2, Florence-VL, Phi-3.5-Vision / Phi-4 multimodal, the
+        Azure AI Document Intelligence "Read" / "Layout" prebuilt models, and the
+        table-transformer / layoutlmv3 family on GitHub. Pull from azure.microsoft.com
+        and github.com/microsoft.
+      - NVIDIA: NV-OCR-1.0 / newer NV-OCR, NIM vision LLM endpoints, NeMo Retriever
+        parse / ingest pipelines, the nvlm / nemotron-OCR family, Cosmos-OCR as
+        applicable, VISTA-3D and other vision specifics. Pull from build.nvidia.com,
+        developer.nvidia.com, and github.com/NVIDIA.
+      - Meta: Nougat, SAM 2 / SAM 2.1, Llama 3.2 Vision, and the latest academic
+        document-AI models.
+      - Mistral: Pixtral / Pixtral 12B / 124B.
+      - Open-source OCR/VLMs: Surya (already used by LocalDeepL — include a brief
+        state-of-the-Note), GOT-OCR, OlmOCR, dots.ocr, Qwen2-VL / Qwen2.5-VL,
+        InternVL 2.x / 3, SmolVLM, Tesseract 5 LSTM, EasyOCR, PaddleOCR (PP-OCRv4 /
+        PP-StructureV2), docTR, Chandra-OCR-v1, DeepSeek-OCR, LightOnOCR-2,
+        Mimo-7B-OCR, etc. Pick the 8-12 most relevant.
+
+      FOR EACH entry produce (with sources):
+      - Name, vendor, license, model size / variant, release date.
+      - Architecture summary — what kind of OCR / VLM is it (encoder-decoder vs
+        decoder-only VLM; whether it does bbox grounding; whether it does layout
+        detection or assumes external).
+      - Input: pages, crops, images, handwriting, math/formulas, code, tables.
+      - Output: plain text, markdown, HTML, structured JSON, bounding boxes.
+      - Execution: which inference servers / formats (vLLM, TRT-LLM, NIM, TGI, llama.cpp,
+        ollama, on-device), min VRAM, supported precisions, ONNX export where relevant.
+        Include the exact run command or docker snippet from the official docs / README.
+      - License constraints that matter for a commercial local product.
+      - Documented strengths + limitations; published benchmark numbers (DocVQA,
+        OmniDocBench, OCRBench, ChartQA, etc.) with citations.
+      - GitHub: at least one file_path:line_number citation per major project for
+        the architecture / inference claim.
+
+      METHOD REQUIREMENTS:
+      - Use web_search + webfetch against official docs, official GitHub repos, and
+        arXiv / paperswithcode for benchmark numbers. Do not rely on second-hand blogs
+        for benchmark claims.
+      - Run a real `webfetch` on each major GitHub README so you can cite line numbers.
+      - Inline sources: [Org, page, date] or [URL, fetched YYYY-MM-DD].
+      - Mark [F] vs [A] explicitly where the claim is interpretive.
+      - Save evidence to
+        C:\Users\rahin\LocalDeepL\.mavis\plans\scout\track-ocr-evidence.md
+        and the deliverable to
+        C:\Users\rahin\LocalDeepL\.mavis\plans\scout\track-ocr.md
+        with: Executive Summary, Players (by company), Execution / Deployment Matrix,
+        Benchmark Table, Architecture Patterns, License Constraints, LocalDeepL
+        Gaps and Opportunities, References.
+    assigned_to: general
+    verified_by: verifier
+    verify_prompt: |
+      Verify the AI OCR vision-models track at
+      C:\Users\rahin\LocalDeepL\.mavis\plans\scout\track-ocr.md.
+
+      Re-derive at least 6 claims by going back to the original sources. Specifically:
+      1. For NVIDIA entries, open the official NIM / model card on build.nvidia.com
+         and confirm the run command / endpoint format. Do not paraphrase.
+      2. For Google Gemini / Document AI, open the official docs page and confirm
+         the API call shape and the OCR-specific processor names.
+      3. For Microsoft Florence-2 / Phi-Vision, open the GitHub README and confirm
+         the inference command and VRAM tier. Cite file_path:line_number.
+      4. For open-source VLMs (Qwen2.5-VL, InternVL 3, OlmOCR, GOT-OCR, dots.ocr,
+         Chandra-OCR-v1, etc.), open the repo and confirm the license, the model
+         size, and the OCR-specific benchmark claim.
+      5. For benchmark numbers (DocVQA, OCRBench, OmniDocBench, ChartQA), confirm
+         the number traces to a 2024-2026 publication or leaderboard entry, not a
+         stale blog.
+      6. Confirm Surya's section accurately reflects what LocalDeepL already uses
+         (see src/local_deepl/core/aligner.py and core/workflows/hybrid.py).
+
+      Fail the verification if:
+      - More than 2 orphan claims.
+      - Any benchmark number cannot be traced to its source.
+      - License is mis-stated for any model (this is a commercial-local product;
+        AGPL/GPL claims matter).
+      - NVIDIA NIM run command is paraphrased rather than quoted.
+      - LocalDeepL gaps section does not distinguish grounded vs hybrid paths
+        (grounded_backend vs OCRPipeline HybridEngine).
+    timeout_ms: 1800000
+
+  - id: track-localdeepl-state
+    title: 'inventory LocalDeepL current architecture, extension points, and gaps'
+    prompt: |
+      Produce a precise internal-state map of LocalDeepL (C:\Users\rahin\LocalDeepL)
+      so the cross-track synthesis task has ground truth about what exists today.
+
+      DO NOT do external research. DO read the repo.
+
+      Required inputs (read these and cite file_path:line_number for every claim):
+      - AGENTS.md (top-level project map)
+      - ARCHITECTURE.md
+      - src/local_deepl/pipeline.py
+      - src/local_deepl/core/workflows/hybrid.py
+      - src/local_deepl/core/workflows/grounded.py
+      - src/local_deepl/core/aligner.py (just the entry point + class list, not the
+        full body)
+      - src/local_deepl/core/ocr.py (provider list + main config knobs)
+      - src/local_deepl/core/grounded.py (which backends exist, the parser contract)
+      - src/local_deepl/core/processors.py (which document processors exist, the
+        processor contract)
+      - src/local_deepl/core/preprocessing.py (which preprocessors exist)
+      - src/local_deepl/core/document.py (DocumentResult IR surface)
+      - src/local_deepl/api/schemas/requests.py (the public API surface for
+        ProcessSettings, document_processors, PipelineMode, etc.)
+      - src/local_deepl/api/routers/ocr.py (one scan, just to map the route surface)
+      - pyproject.toml (deps, extras)
+      - scripts/confidence_eval.py and scripts/confidence_image.py (what they measure)
+
+      DELIVER (in C:\Users\rahin\LocalDeepL\.mavis\plans\scout\track-localdeepl.md):
+      1. Executive Summary (3-5 sentences).
+      2. Architecture Map — module-by-module, what each owns, public contract.
+      3. Pipeline Paths in detail (both hybrid and grounded), with stage names, file
+         owners, and the data structure passed between stages.
+      4. Extension Points — list every `OCRPipeline(..., component=)` slot, what the
+         current default is, and which backends/processors are wired.
+      5. Document Processors — list every registered processor, what it produces,
+         and the schemas it emits (table_extraction, layout_enrichment, etc.).
+      6. Public API Surface — every route that takes settings/processors, and the
+         settings that exist.
+      7. Known Tech Debt — copy from AGENTS.md and add anything else you noticed.
+      8. Quality Measurement — how the team currently measures OCR / extraction
+         quality (scripts/confidence_*, test fixtures in examples/).
+      9. Gaps and Friction — concrete things that look thin, missing, or would
+         break under production load. Cite evidence.
+
+      Inline source: [path:line] for every architectural claim. No external links.
+    assigned_to: coder
+    verified_by: verifier
+    verify_prompt: |
+      Verify the LocalDeepL state-inventory at
+      C:\Users\rahin\LocalDeepL\.mavis\plans\scout\track-localdeepl.md
+      against the actual repo. Open each cited file_path:line_number yourself and
+      confirm the claim. The verifier should be able to:
+      1. Spot-check 8 random [path:line] citations — every one must be correct.
+      2. Confirm the list of extension points matches what OCRPipeline actually
+         accepts in src/local_deepl/pipeline.py.
+      3. Confirm the document processor list matches the enum in
+         src/local_deepl/api/schemas/requests.py.
+      4. Confirm the public API surface matches the routers under src/local_deepl/api/.
+      5. Confirm the "known tech debt" section is consistent with the actual code
+         (e.g. ocr.py mixing routes, ZAIHostedOCR being experimental, etc.).
+
+      Fail the verification if:
+      - More than 1 wrong [path:line] citation.
+      - A processor is listed that doesn't exist, or one is missing.
+      - A route is listed that doesn't exist in the routers.
+      - The Gaps section contains claims that contradict the code.
+    timeout_ms: 1500000
+
+  - id: synthesize-plan
+    title: 'synthesize cross-track findings into a "make LocalDeepL the best possible" plan'
+    prompt: |
+      Synthesize the four upstream tracks (Anything-to-MD, schema/table extraction,
+      AI OCR vision models, and the LocalDeepL internal state map) into a single
+      concrete product plan. The user wants to know how to make LocalDeepL "the
+      best possible" — produce evidence-backed recommendations tied to actual
+      LocalDeepL extension points.
+
+      INPUTS (read all four in full before writing):
+      - C:\Users\rahin\LocalDeepL\.mavis\plans\scout\track-md.md
+      - C:\Users\rahin\LocalDeepL\.mavis\plans\scout\track-schema.md
+      - C:\Users\rahin\LocalDeepL\.mavis\plans\scout\track-ocr.md
+      - C:\Users\rahin\LocalDeepL\.mavis\plans\scout\track-localdeepl.md
+
+      DEPTH CONTRACT (deep-report, audience = solo maintainer building a production
+      local OCR service):
+      - main_report: dense, multi-section, not a tidy overview. 8-15 sections.
+      - appendices: full coverage matrix + source index + raw evidence inventory
+        pointers (no need to re-include every fact, but every claim must trace to
+        a track or a file_path:line_number).
+      - must_include:
+        - Coverage matrix mapping each upstream track to the recommendation sections
+          where its evidence was used.
+        - Per-recommendation evidence chain: evidence, trigger/condition, impact,
+          confidence, verification path, mitigation if any.
+        - Contradictions and open questions from the upstream tracks — do NOT
+          silently resolve them.
+        - Source index with file_path:line_number, URL, or dataset name.
+        - Phasing / sequencing — what to do first, second, third, with rough effort
+          estimates (S/M/L or days).
+      - compression_policy: executive summary is allowed but must not replace the
+        body. All upstream findings are preserved in body or appendix; do not
+        collapse them.
+      - verification:
+        - factual correctness: every recommendation traces to upstream evidence
+        - completeness: every upstream track is consumed
+        - depth: at the deep-report level, not an overview
+
+      DELIVERABLE FILE:
+      C:\Users\rahin\LocalDeepL\.mavis\plans\scout\PLAN.md
+
+      REQUIRED SECTIONS (in this order, adapt as needed):
+      1. Executive Summary (1 page max)
+      2. Scope and Methodology
+      3. Coverage Matrix (track -> section -> contribution)
+      4. Where LocalDeepL Stands Today
+         4.1 Strengths (cite code)
+         4.2 Gaps (cite code + competitor evidence)
+      5. What "Best Possible" Means Here (define the bar — quality, latency,
+         format coverage, structured output, UX — with measurable targets where
+         possible)
+      6. Recommendations, grouped by LocalDeepL extension point:
+         6.1 grounded_backend
+         6.2 document_processors (table_extraction, layout_enrichment, new ones)
+         6.3 aligner / detector swap
+         6.4 ocr_processor (provider selection, fallback chain)
+         6.5 page_preprocessor
+         6.6 Output writers (docx_writer, new ones: xlsx, html, jats-xml)
+         6.7 Anything-to-MD richness (heading/list/table/code/math fidelity)
+         6.8 Schema / structured extraction (Pydantic, JSON Schema round-trip)
+         6.9 Routing / quality scoring
+         6.10 Eval / regression harness
+      7. Sequenced Roadmap (Phase 1 / 2 / 3, each with effort estimate and
+         acceptance criteria)
+      8. Risks and Mitigations
+      9. Open Questions and Contradictions (lifted from upstream tracks)
+      10. Appendix A — Source Index
+      11. Appendix B — Coverage Matrix
+      12. Appendix C — Per-Recommendation Evidence Chains
+
+      HARD RULES:
+      - Every recommendation MUST cite at least one upstream track section and/or
+        a file_path:line_number in LocalDeepL.
+      - If a recommendation is "adopt a competitor's pattern", name the competitor
+        and the doc/repo you read, with the URL and date.
+      - Do not invent features. If something is speculation, mark [A] vs [F].
+      - Do not silently drop a track. If a track had no relevant findings for a
+        section, say so explicitly.
+      - Phasing must be implementable by the solo maintainer; do not propose a
+        10-person team.
+
+      Before writing the body, read references/report.md at
+      C:\Users\rahin\.mavis\agents\mavis\.builtin-skills\mavis-team\references\report.md
+      and follow its Hard Principles (Traceability, Synthesis, Contradictions,
+      Fact vs Analysis markers, Executive Summary first).
+    assigned_to: general
+    depends_on: [track-md, track-schema-tables, track-ocr-vision, track-localdeepl-state]
+    verified_by: verifier
+    verify_prompt: |
+      Two-part verification on
+      C:\Users\rahin\LocalDeepL\.mavis\plans\scout\PLAN.md.
+
+      PART 1 — FACTUAL CORRECTNESS:
+      Pick 10 specific recommendations from the plan. For each one, find the
+      upstream evidence (track-md.md / track-schema.md / track-ocr.md / track-localdeepl.md)
+      and confirm the recommendation is supported. Flag any recommendation with
+      weak / missing evidence. Confirm every cited file_path:line_number in
+      LocalDeepL is real by opening the file.
+
+      PART 2 — DEPTH / COMPLETENESS:
+      a) Coverage matrix must show every upstream track mapped to at least one
+         recommendation section. If a track was dropped, that is a fail.
+      b) Per-recommendation evidence chains must be present and follow the
+         evidence -> trigger -> impact -> confidence -> verification pattern.
+      c) Open questions / contradictions section must include the actual
+         contradictions from the upstream tracks, not a generic "more research
+         needed" line.
+      d) Source index must be present and complete.
+      e) The plan must distinguish grounded vs hybrid paths (LocalDeepL supports
+         both via OCRPipeline) and not blur them.
+      f) The plan must address AT LEAST these dimensions: OCR quality,
+         Anything-to-MD fidelity, schema/table extraction, output formats,
+         eval harness, and deployment / execution mode.
+
+      Fail the verification if:
+      - More than 1 recommendation lacks upstream evidence.
+      - Any [path:line] in LocalDeepL is wrong.
+      - Coverage matrix is missing a track.
+      - Plan reads like an overview of the upstream tracks instead of a synthesis
+        with cross-references and trade-offs.
+      - Sequencing is missing or not implementable by a solo maintainer.
+      - The plan is thin (e.g. under ~4 pages of body content) despite the deep
+        contract — that is an over-compression failure.
+    timeout_ms: 1800000

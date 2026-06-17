@@ -16,7 +16,8 @@ const state = {
     resultFilename: null,
     rawTextResult: null,
     translatedText: "",
-    extractedJson: null
+    extractedJson: null,
+    translationTabResult: ""
 };
 
 // Workspace rendering state
@@ -137,6 +138,33 @@ const refs = {
     copyTransBtn: document.getElementById('copy-trans-btn'),
     dlTransBtn: document.getElementById('dl-trans-btn'),
     dlTransDocxBtn: document.getElementById('dl-trans-docx-btn'),
+    openTranslationTabBtn: document.getElementById('open-translation-tab-btn'),
+
+    // Top-level app shell + Translation view
+    appTabBtns: document.querySelectorAll('.app-tab-btn'),
+    appViews: document.querySelectorAll('.app-view'),
+    // Translation tab
+    translationSourceTabBtns: document.querySelectorAll('.translation-source-tab-btn'),
+    translationSourcePanePaste: document.getElementById('translation-source-pane-paste'),
+    translationSourcePaneUpload: document.getElementById('translation-source-pane-upload'),
+    translationSourceText: document.getElementById('translation-source-text'),
+    translationDropZone: document.getElementById('translation-drop-zone'),
+    translationFileInput: document.getElementById('translation-file-input'),
+    translationFileInfo: document.getElementById('translation-file-info'),
+    translationFileName: document.getElementById('translation-file-name'),
+    translationFileStatus: document.getElementById('translation-file-status'),
+    translationFileClearBtn: document.getElementById('translation-file-clear-btn'),
+    translationOcrProgress: document.getElementById('translation-ocr-progress'),
+    translationOcrStage: document.getElementById('translation-ocr-stage'),
+    translationOcrPercent: document.getElementById('translation-ocr-percent'),
+    translationOcrBar: document.getElementById('translation-ocr-bar'),
+    translationTabLangSelect: document.getElementById('translation-tab-lang-select'),
+    translationTabTranslateBtn: document.getElementById('translation-tab-translate-btn'),
+    translationTabOutput: document.getElementById('translation-tab-output'),
+    translationTabCopyBtn: document.getElementById('translation-tab-copy-btn'),
+    translationTabDlMdBtn: document.getElementById('translation-tab-dl-md-btn'),
+    translationTabDlDocxBtn: document.getElementById('translation-tab-dl-docx-btn'),
+    translationClearBtn: document.getElementById('translation-clear-btn'),
     
     // Structured Data extraction features
     extractorTemplateSelect: document.getElementById('extractor-template-select'),

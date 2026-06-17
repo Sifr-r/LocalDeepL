@@ -21,33 +21,60 @@ PDF/image -> grounded bbox-native VLM OCR -> optional post-process -> DocumentRe
 | Path | Single Responsibility |
 | --- | --- |
 | `src/local_deepl/__init__.py` | Lazy package-level public exports that avoid loading OCR or web dependencies during unrelated submodule imports |
-| `src/local_deepl/server.py` | Lazy optional-web dependency loading, FastAPI application setup, and server entry point |
-| `src/local_deepl/pipeline.py` | Shared hybrid and grounded OCR orchestration |
+| `src/local_deepl/server.py` | Lazy optional-web dependency loading, FastAPI application setup, CLI argument parsing for `--host/--port/--reload`, and `local-deepl-server` script entry point |
+| `src/local_deepl/pipeline.py` | `OCRPipeline` facade — thin orchestration layer that delegates to `HybridEngine` or `GroundedEngine` based on injected components |
+| `src/local_deepl/evaluation.py` | Package-root confidence evaluator: GLM-OCR fixture loader, greedy IoU matching, and per-document `ConfidenceReport` for the `scripts/confidence_*.py` tooling |
 | `src/local_deepl/core/document.py` | Normalized `DocumentResult` IR, pages, blocks, spans, text aggregation, and legacy pages-data adapter |
-| `src/local_deepl/core/processors.py` | Local deterministic document processor protocol, registry, reading-order processor, quality-analysis processor, and user-facing processor builder |
+| `src/local_deepl/core/processors.py` | Local deterministic document processor protocol, registry, six built-in processors, and the user-facing name-to-factory builder |
 | `src/local_deepl/core/aligner.py` | Surya detection and DP text-to-box alignment |
 | `src/local_deepl/core/ocr.py` | OpenAI-compatible VLM calls, prompts, limits, and OCR response filters |
 | `src/local_deepl/core/pdf.py` | PDF/image conversion and searchable PDF embedding |
 | `src/local_deepl/core/grounded.py` | Grounded OCR backends and bbox-native response parsing |
 | `src/local_deepl/core/postprocess.py` | Dictionary-based spellcheck post-processing |
+| `src/local_deepl/core/preprocessing.py` | Local hybrid-path page preprocessing (orientation detection, deskew, denoise, contrast normalization, crop cleanup) |
+| `src/local_deepl/core/routing.py` | Quality routing recommendation metadata and policy recorder |
+| `src/local_deepl/core/evaluation.py` | Lightweight `EvaluationMetrics` dataclass and `evaluate_document` helper for in-process processor result scoring |
+| `src/local_deepl/core/docx_writer.py` | Markdown → `.docx` converter used by the docx export route |
 | `src/local_deepl/core/translation_config.py` | Core-owned typed settings and optional-feature errors for async translation |
 | `src/local_deepl/core/translation.py` | Optional LangGraph translation workflow |
+| `src/local_deepl/core/workflows/base.py` | `EngineBase`, `OutputWriter`, `ProgressCallback`, `WarningCallback` shared by both engines |
+| `src/local_deepl/core/workflows/hybrid.py` | `HybridEngine` — Surya detect → VLM OCR (sparse/dense) → DP align → optional refine → post-process → processors → output |
+| `src/local_deepl/core/workflows/grounded.py` | `GroundedEngine` — single bbox-native VLM call → post-process → processors → output |
+| `src/local_deepl/core/workflows/__init__.py` | Re-exports `EngineBase`, `HybridEngine`, `GroundedEngine`, and the callback type aliases |
 | `src/local_deepl/resources/dictionaries/` | Packaged compiled spellcheck dictionaries loaded before legacy repository-root dictionaries |
-| `src/local_deepl/api/routers/ocr.py` | OCR, translation, extraction, and asynchronous job routes |
-| `src/local_deepl/api/routers/config.py` | Runtime configuration and model discovery |
+| `src/local_deepl/api/routers/config.py` | Runtime configuration and model discovery routes (`GET/POST /api/config`) |
+| `src/local_deepl/api/routers/ocr.py` | OCR upload, process, and synchronous AI routes |
 | `src/local_deepl/api/routers/websocket.py` | Token-bound WebSocket progress transport and progress session issuance |
-| `src/local_deepl/api/schemas/` | Typed FastAPI boundary schemas for runtime configuration, OCR form settings, translation, and extraction requests |
+| `src/local_deepl/api/routers/jobs.py` | `GET/DELETE /api/jobs` — recent job history and clear-all |
+| `src/local_deepl/api/routers/artifacts.py` | Token-bound artifact download routes for text, metadata, and document exports |
+| `src/local_deepl/api/routers/translation.py` | Synchronous `POST /api/translate` and async `POST /api/translate/async` |
+| `src/local_deepl/api/routers/extraction.py` | `POST /api/extract` — structured data extraction over OCR text using a built-in template or custom prompt |
+| `src/local_deepl/api/routers/state.py` | Module-level singletons: `text_artifacts`, `metadata_artifacts`, `export_artifacts`, `job_history`, `progress_service` |
+| `src/local_deepl/api/routers/common.py` | Shared router helpers: `_stable_server_error`, `_extract_bearer_token`, `_path_exists`, `_cleanup` |
+| `src/local_deepl/api/routers/ai.py` | Underlying AI service module — `extract_structured_data`, `translate_text`, and the `AIServiceError` base; consumed by `extraction.py` and `translation.py` |
+| `src/local_deepl/api/schemas/__init__.py` | Re-exports the typed request models and StrEnums |
+| `src/local_deepl/api/schemas/requests.py` | `ConfigUpdate`, `ProcessSettings`, `TranslationRequest`, `ExtractionRequest`, `ExtractionTemplate`, `DocumentExportRequest`, `DocumentExportFormat`, `ExportDocxRequest`; enums: `PipelineMode`, `DenseMode`, `SpellcheckMode`, `DocumentProcessorName` |
+| `src/local_deepl/api/services/security.py` | API upload validation, stable error constants, temporary-file cleanup, and opaque text artifact IDs |
+| `src/local_deepl/api/services/artifacts.py` | `TextArtifactStore`, `PageText`, `TextArtifactHandle`, and the opaque artifact-id / token primitives shared by text, metadata, and export stores |
+| `src/local_deepl/api/services/jobs.py` | `JobHistory`, `JobRecord`, `JobStatus` — durable job history with per-page failure tracking |
+| `src/local_deepl/api/services/progress.py` | `ProgressService`, `ProgressChannel`, stage weights, channel/session token validation |
 | `src/local_deepl/api/services/document_metadata.py` | Compact JSON report builder and atomic writer for token-bound `DocumentResult` metadata artifacts |
 | `src/local_deepl/api/services/document_exports.py` | Token-bound JSON, Markdown, text, Docling-compatible, and MinerU-compatible export artifact builder |
 | `src/local_deepl/api/services/workflow.py` | Deterministic Web/API workflow summary builder |
-| `src/local_deepl/api/services/security.py` | API upload validation, stable error constants, temporary-file cleanup, and opaque text artifact IDs |
+| `src/local_deepl/api/services/ai.py` | AI service module backing `POST /api/extract` and `POST /api/translate` — OpenAI-compatible calls with fenced-JSON parsing, retry, and stable error mapping |
+| `src/local_deepl/api/celery_app.py` | Guarded Celery imports and import-safe fallback task facade when async extras are not installed |
 | `src/local_deepl/api/tasks.py` | Optional Celery translation task execution |
 | `src/local_deepl/utils/image.py` | Image crop, blank-region detection, and crop encoding helpers |
 | `src/local_deepl/utils/security.py` | SSRF target validation |
 | `src/local_deepl/utils/litellm_provider.py` | LiteLLM provider selection |
 | `src/local_deepl/utils/tqdm_patch.py` | Surya progress-bar suppression |
-| `src/local_deepl/static/` | Browser workstation assets |
+| `src/local_deepl/static/` | Browser workstation assets (`index.html`, CSS, JS modules) |
+| `scripts/` | Repo-root developer utilities: confidence eval, fixture builder, debug/inspection scripts, bbox visualizers |
+| `examples/` | Sample PDFs and images used by `tests/`, `test_ui.py`, and the confidence scripts |
 | `tests/` | Unit, integration, security, and slow-path validation |
+| `install.bat` / `install.ps1` | Windows one-click install: `uv` bootstrap, `uv sync --extra web`, Docker check, Desktop/Start-Menu shortcuts |
+| `start_app.vbs` / `stop_app.bat` | Windows hidden-start and stop-launcher for Redis + Celery + uvicorn |
+| `test_ui.py` | Headless Playwright smoke test against the running web UI |
 
 ## Extension Points
 
@@ -59,8 +86,11 @@ in `[x0, y0, x1, y1]` form until embedding.
 Document processors receive a mutable `DocumentResult` after OCR cleanup,
 spellcheck, and cross-page merge but before PDF embedding. The web/API surface
 can select built-in local processors by name through `document_processors`.
-Current built-ins are `reading_order`, `quality_analysis`, and
-`structure_analysis`, and `section_analysis`.
+The current six built-ins (in registration order) are `reading_order`,
+`quality_analysis`, `structure_analysis`, `section_analysis`,
+`layout_enrichment`, and `table_extraction`. Selection is off by default; the
+list can be passed via `ConfigUpdate.document_processors` or the multipart OCR
+`document_processors` field.
 
 ## Performance Notes
 
@@ -69,7 +99,84 @@ Current built-ins are `reading_order`, `quality_analysis`, and
 - Grounded PDF rasterization converts PyMuPDF pixmaps directly into Pillow
   images before producing the final thumbnail JPEG.
 
+## Shared State and Artifacts
+
+Process-local singletons live in `src/local_deepl/api/routers/state.py` and are
+imported by every router that needs them. Three independent `TextArtifactStore`
+instances back the three artifact surfaces:
+
+| Singleton | Surface | Token-bound header | Read endpoint |
+| --- | --- | --- | --- |
+| `text_artifacts` | Per-job searchable text | `X-Text-Artifact-Id` / `X-Text-Artifact-Token` | `GET /text/{artifact_id}` |
+| `metadata_artifacts` | Compact `DocumentResult` page/block metadata | `X-Document-Metadata-Artifact-Id` / `X-Document-Metadata-Artifact-Token` | `GET /metadata/{artifact_id}` |
+| `export_artifacts` | JSON / Markdown / text / Docling / MinerU exports | `X-Document-Export-Artifact-Id` / `X-Document-Export-Artifact-Token` | `GET /exports/{artifact_id}` |
+
+`job_history` (`JobHistory`) and `progress_service` (`ProgressService`) round
+out the shared state. The store implementation lives in
+`api/services/artifacts.py` and the token format is the same opaque
+hex-id / bearer-token pair across all three surfaces.
+
+## Web API Surface (non-exhaustive)
+
+| Method | Path | Router | Notes |
+| --- | --- | --- | --- |
+| `GET` | `/api/config` | `config` | Current runtime config (api_base, model, spellcheck, …) |
+| `POST` | `/api/config` | `config` | `ConfigUpdate` — typed config edits |
+| `POST` | `/api/ocr` | `ocr` | Multipart OCR; returns a sandwich PDF + token-bound headers |
+| `POST` | `/api/translate` | `translation` | Synchronous translation over OCR text |
+| `POST` | `/api/translate/async` | `translation` | Celery + Redis job (requires `async-translation` extra) |
+| `POST` | `/api/extract` | `extraction` | Structured extraction using `ExtractionTemplate` (`invoice`, `resume`, `academic`, `custom`) |
+| `GET` / `DELETE` | `/api/jobs` | `jobs` | Recent job history; `DELETE` clears history and text artifacts |
+| `GET` | `/text/{artifact_id}` | `artifacts` | Text artifact body (token in `Authorization: Bearer …`) |
+| `GET` | `/metadata/{artifact_id}` | `artifacts` | Metadata artifact body |
+| `GET` | `/exports/{artifact_id}` | `artifacts` | Export artifact body |
+| `WS` | `/ws/progress/{channel_id}?token=…` | `websocket` | Token-bound per-job progress stream |
+| `POST` | `/api/export/document` | `extraction` | Build a token-bound export artifact |
+| `POST` | `/api/export/docx` | `extraction` | Build a `.docx` from Markdown page text |
+
 ## Change Blueprint
+
+### 2026-06-14: Engine split — `core/workflows/` package
+
+| File | Responsibility |
+| --- | --- |
+| `src/local_deepl/core/workflows/base.py` | New `EngineBase` plus `OutputWriter`, `ProgressCallback`, `WarningCallback`, and `_notify` helpers shared by both engines |
+| `src/local_deepl/core/workflows/hybrid.py` | New `HybridEngine` — extract the existing hybrid orchestration from `pipeline.py` (Surya detect → VLM OCR → DP align → refine → post-process → processors → output) |
+| `src/local_deepl/core/workflows/grounded.py` | New `GroundedEngine` — single bbox-native VLM call → post-process → processors → output |
+| `src/local_deepl/core/workflows/__init__.py` | Re-export the engines and callback aliases |
+| `src/local_deepl/pipeline.py` | Shrink `OCRPipeline` to a facade that picks `HybridEngine` or `GroundedEngine` based on injected components |
+| `ARCHITECTURE.md` | Document the new sub-package and the facade pattern in `pipeline.py` |
+
+### 2026-06-14: DOCX export route + `core/docx_writer.py`
+
+| File | Responsibility |
+| --- | --- |
+| `src/local_deepl/core/docx_writer.py` | New `convert_markdown_to_docx(markdown_text: str) -> io.BytesIO` helper |
+| `src/local_deepl/api/schemas/requests.py` | New `ExportDocxRequest` typed schema |
+| `src/local_deepl/api/routers/extraction.py` | New `POST /api/export/docx` route that streams the generated `.docx` |
+| `pyproject.toml` | Already lists `python-docx>=1.1.0` (no change required) |
+| `ARCHITECTURE.md` | Document the docx export in the directory table and the Web API surface |
+
+### 2026-06-14: Confidence evaluation scripts and root-level `evaluation.py`
+
+| File | Responsibility |
+| --- | --- |
+| `src/local_deepl/evaluation.py` | New package-root module: `GTBlock`, `BlockMatch`, `ConfidenceReport`, `load_ground_truth`, `text_similarity`, `compute_report`, `iou` (auto-detects `[x0,y0,x1,y1]` vs `[y0,x0,y1,x1]` fixture axis order) |
+| `scripts/confidence_eval.py` | New developer script — runs hybrid and grounded paths against `examples/*.pdf` and reports per-document block recall, IoU, and text similarity |
+| `scripts/confidence_image.py` | New developer script — same comparison on a single image, defaults to `examples/image.avif` |
+| `examples/` | New sample inputs (`dense.pdf`, `digital.pdf`, `handwritten.pdf`, `hybrid.pdf`, `image.png`, `image.avif`, `notes.pdf`) |
+| `tests/test_evaluation.py` | Cover fixture loading, axis-order detection, and `ConfidenceReport` aggregation |
+| `ARCHITECTURE.md` | Document the root-level confidence eval vs the lightweight `core/evaluation.py` processor-metrics helper |
+
+### 2026-06-14: `POST /api/extract` and `ExtractionTemplate` enum
+
+| File | Responsibility |
+| --- | --- |
+| `src/local_deepl/api/schemas/requests.py` | New `ExtractionTemplate` StrEnum (`invoice`, `resume`, `academic`, `custom`) and the `ExtractionRequest` model with `template` and `custom_prompt` fields |
+| `src/local_deepl/api/routers/ai.py` | New `extract_structured_data` service with fenced-JSON parsing, retry, and stable error mapping |
+| `src/local_deepl/api/routers/extraction.py` | New router that wires the schema, the AI service, and the SSRF guard for `api_base` |
+| `tests/test_extraction.py` | Cover template dispatch, custom-prompt fallback, and SSRF fail-closed behavior |
+| `ARCHITECTURE.md` | Document the new router and the four extraction templates in the Web API surface |
 
 ### 2026-06-09: Local document processors exposed to web/API
 
@@ -113,7 +220,7 @@ Current built-ins are `reading_order`, `quality_analysis`, and
 
 | File | Responsibility |
 | --- | --- |
-| `pyproject.toml` | Remove the `local-deepl` CLI script and CLI-only `rich` dependency; keep `local-deepl-server` |
+| `pyproject.toml` | Deprecate the user-facing `local-deepl` CLI script and drop the CLI-only `rich` dependency; keep `local-deepl-server`. `OCRPipeline` is still importable for in-process programmatic use. |
 | `src/local_deepl/core/preprocessing.py` | Add opt-in local page preprocessing diagnostics for the hybrid image path |
 | `src/local_deepl/core/processors.py` | Add `layout_enrichment` and `table_extraction` deterministic processors |
 | `src/local_deepl/api/services/document_exports.py` | Add token-bound JSON, Markdown, text, Docling-compatible, and MinerU-compatible exports |

@@ -4,7 +4,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-Web_UI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![License](https://img.shields.io/badge/License-MIT-purple?style=for-the-badge)](LICENSE)
 
-LocalDeepL turns scanned PDFs and images into searchable, selectable PDFs using local vision language models. The supported product workflow is the FastAPI Web UI and API; the previous command-line OCR entrypoint has been removed so advanced document intelligence can stay centered on the easier browser experience.
+LocalDeepL turns scanned PDFs and images into searchable, selectable PDFs using local vision language models. The supported product workflow is the FastAPI Web UI and API; the previous user-facing command-line OCR entrypoint has been deprecated, and advanced document intelligence stays centered on the browser experience. The `OCRPipeline` class is still importable for in-process programmatic use, but no `local-deepl` script entry is shipped.
 
 ## Features
 
@@ -37,7 +37,11 @@ Real OCR requires an OpenAI-compatible VLM endpoint. The local-development defau
 uv run local-deepl-server --port 8000
 ```
 
-Open `http://localhost:8000`. The browser interface is the supported user workflow. Advanced document intelligence is exposed through Web UI controls and FastAPI request fields, not through a CLI.
+Open `http://localhost:8000`. The browser interface is the supported user workflow. Advanced document intelligence is exposed through Web UI controls and FastAPI request fields; the user-facing CLI script has been deprecated.
+
+### Windows quick-start
+
+If you are on Windows, double-click `install.bat` (elevates and runs `install.ps1`) to install `uv`, sync the web extra, and create Desktop / Start-Menu shortcuts. `start_app.vbs` starts Redis + Celery + uvicorn hidden and opens the browser. `stop_app.bat` terminates them. `test_ui.py` runs a headless Playwright smoke test against `examples/dense.pdf`.
 
 The Advanced Configuration panel includes:
 
@@ -50,7 +54,11 @@ The Advanced Configuration panel includes:
 - **Table Extraction** for deterministic table reconstruction from OCR boxes.
 - **Quality Routing** for recording local routing recommendations from quality findings.
 
-OCR responses include token-bound text artifact headers. When processor metadata exists, responses also include `X-Document-Metadata-Artifact-Id` and `X-Document-Metadata-Artifact-Token`; fetch `GET /metadata/{artifact_id}` with the token to retrieve compact page/block metadata. Use `POST /api/export/document` to create token-bound JSON, Markdown, plain text, Docling-compatible, or MinerU-compatible export artifacts.
+OCR responses include token-bound text artifact headers. When processor metadata exists, responses also include `X-Document-Metadata-Artifact-Id` and `X-Document-Metadata-Artifact-Token`; fetch `GET /metadata/{artifact_id}` with the token to retrieve compact page/block metadata. Use `POST /api/export/document` to create token-bound JSON, Markdown, plain text, Docling-compatible, or MinerU-compatible export artifacts. `POST /api/export/docx` produces a `.docx` from Markdown page text. `POST /api/extract` runs structured data extraction against OCR text using a built-in template (`invoice`, `resume`, `academic`) or a custom prompt.
+
+### Confidence scripts
+
+`scripts/confidence_eval.py` runs the hybrid and grounded paths against the `examples/` PDFs and reports per-document block recall, IoU, and text similarity against hand-built ground-truth fixtures. `scripts/confidence_image.py` does the same for a single image (defaults to `examples/image.avif`). Both assume LM Studio / Ollama is serving the target model at `--api-base`.
 
 ## Async Translation
 
