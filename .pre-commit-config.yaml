@@ -1,0 +1,26 @@
+# Pre-commit hooks for LocalDeepL.
+#
+# Install once after cloning: `uv tool run pre-commit install`.
+# The `uv lock` hook keeps ``uv.lock`` in sync with ``pyproject.toml``
+# when dependency-affecting files change; the ruff hooks enforce the
+# lint / format gates locally so CI doesn't surprise you.
+#
+# Ruff is pinned to a recent stable version matching the ``>=0.3.0``
+# dev requirement in ``pyproject.toml``. Bump both in lockstep.
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.13.0
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.8.7
+    hooks:
+      - id: uv-lock
+        # Keep ``uv.lock`` and ``pyproject.toml`` consistent. Slow but
+        # bounded - the install environment is intentionally empty
+        # so the lock step doesn't try to fetch huge optional stacks.
+        args: ["--frozen=false"]

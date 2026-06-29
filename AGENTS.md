@@ -123,6 +123,9 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 - Web runtime settings are initialized in `api/routers/config.py`.
 - **Windows quick-start**: run `install.bat` to install `uv`, sync the web extra, and create Desktop / Start-Menu shortcuts. `start_app.vbs` boots Redis + Celery + uvicorn hidden and opens the browser. `stop_app.bat` terminates them. `test_ui.py` is the headless Playwright smoke test against `examples/dense.pdf`.
 - **Developer scripts** live in `scripts/`. The most useful for OCR quality work are `scripts/confidence_eval.py` (hybrid + grounded vs the `examples/*.pdf` fixtures) and `scripts/confidence_image.py` (single-image confidence). The rest are debug/inspection/visualization tools.
+- **Docker**: `Dockerfile` builds a `python:3.12-slim` runtime with the `web` and `async-translation` extras. `compose.yaml` runs `api` + `redis` by default; add `--profile async` to also start a Celery worker. Image exposes port 8000; bind `LLM_API_BASE` to `http://host.docker.internal:1234/v1` to talk to a host-side LM Studio.
+- **Pre-commit**: `.pre-commit-config.yaml` runs ruff (check + format) and `uv-lock` on every commit. Enable with `uv tool run pre-commit install` after cloning.
+- **Nightly slow tests**: `.github/workflows/nightly.yml` runs `pytest -m slow` at 03:00 UTC with cached HF Hub snapshots, catching Surya-path regressions the fast tier skips.
 
 ## Known Tech Debt
 
