@@ -88,6 +88,8 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/local_deepl/api/routers/ai.py` | AI service module consumed by `extraction.py` and `translation.py` |
 | `src/local_deepl/api/schemas/requests.py` | `ConfigUpdate`, `ProcessSettings`, `TranslationRequest`, `ExtractionRequest`, `ExtractionTemplate`, `DocumentExportRequest`, `DocumentExportFormat`, `ExportDocxRequest`; enums: `PipelineMode`, `DenseMode`, `SpellcheckMode`, `DocumentProcessorName` |
 | `src/local_deepl/api/services/security.py` | API upload validation, stable error constants, temporary-file cleanup, opaque text artifact IDs |
+| `src/local_deepl/api/services/security_config.py` | `SecuritySettings.from_env()` — env-driven knobs for `LOCAL_DEEPL_AUTH_TOKEN`, `_CORS_ORIGINS`, `_MAX_UPLOAD_MB`, `_RATE_LIMIT_PER_MIN` |
+| `src/local_deepl/api/services/security_middleware.py` | ASGI middlewares wired by `server.create_app()`: `BearerAuthMiddleware` (constant-time `secrets.compare_digest`), `MaxUploadSizeMiddleware` (rejects on `Content-Length`), `RateLimitMiddleware` (per-IP 60s sliding window, in-memory). WebSocket handshake auth is still enforced per-channel in `routers/websocket.py` |
 | `src/local_deepl/api/services/artifacts.py` | `TextArtifactStore`, `PageText`, `TextArtifactHandle`, opaque id / token primitives |
 | `src/local_deepl/api/services/jobs.py` | `JobHistory`, `JobRecord`, `JobStatus` |
 | `src/local_deepl/api/services/progress.py` | `ProgressService`, `ProgressChannel`, stage weights |
@@ -116,11 +118,14 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 ## Web Notes
 
 - Browser translation and structured extraction use synchronous endpoints and do not require Redis.
-- `/api/translate/async` uses Celery, Redis, and LangGraph from the `async-translation` extra.
+- `/api/translate/async` uses Celery, Redis, and LangGraph from the `async-translation` extra. The translation module degrades gracefully when ChromaDB is not installed (no lexicon retrieval); install the separate `memory` extra (ChromaDB + sentence-transformers) for the lexicon-backed RAG feature.
 - `ALLOW_SSRF_LOCAL=true` is the local-development default. Set it to `false` when exposing the server to untrusted users.
 - Web runtime settings are initialized in `api/routers/config.py`.
 - **Windows quick-start**: run `install.bat` to install `uv`, sync the web extra, and create Desktop / Start-Menu shortcuts. `start_app.vbs` boots Redis + Celery + uvicorn hidden and opens the browser. `stop_app.bat` terminates them. `test_ui.py` is the headless Playwright smoke test against `examples/dense.pdf`.
 - **Developer scripts** live in `scripts/`. The most useful for OCR quality work are `scripts/confidence_eval.py` (hybrid + grounded vs the `examples/*.pdf` fixtures) and `scripts/confidence_image.py` (single-image confidence). The rest are debug/inspection/visualization tools.
+- **Docker**: `Dockerfile` builds a `python:3.12-slim` runtime with the `web` and `async-translation` extras. `compose.yaml` runs `api` + `redis` by default; add `--profile async` to also start a Celery worker. Image exposes port 8000; bind `LLM_API_BASE` to `http://host.docker.internal:1234/v1` to talk to a host-side LM Studio.
+- **Pre-commit**: `.pre-commit-config.yaml` runs ruff (check + format) and `uv-lock` on every commit. Enable with `uv tool run pre-commit install` after cloning.
+- **Nightly slow tests**: `.github/workflows/nightly.yml` runs `pytest -m slow` at 03:00 UTC with cached HF Hub snapshots, catching Surya-path regressions the fast tier skips.
 
 ## Known Tech Debt
 

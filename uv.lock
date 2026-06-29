@@ -1561,9 +1561,11 @@ dependencies = [
 [package.optional-dependencies]
 async-translation = [
     { name = "celery" },
-    { name = "chromadb" },
     { name = "langgraph" },
     { name = "redis" },
+]
+memory = [
+    { name = "chromadb" },
     { name = "sentence-transformers" },
 ]
 web = [
@@ -1578,13 +1580,14 @@ dev = [
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "pyyaml" },
     { name = "ruff" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "celery", marker = "extra == 'async-translation'", specifier = ">=5.4.0" },
-    { name = "chromadb", marker = "extra == 'async-translation'", specifier = ">=0.5.0" },
+    { name = "chromadb", marker = "extra == 'memory'", specifier = ">=0.5.0" },
     { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.124.4" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "langgraph", marker = "extra == 'async-translation'", specifier = ">=0.1.0" },
@@ -1599,7 +1602,7 @@ requires-dist = [
     { name = "python-multipart", marker = "extra == 'web'", specifier = ">=0.0.20" },
     { name = "redis", marker = "extra == 'async-translation'", specifier = ">=5.0.0" },
     { name = "requests", specifier = ">=2.31" },
-    { name = "sentence-transformers", marker = "extra == 'async-translation'", specifier = ">=5.5.1" },
+    { name = "sentence-transformers", marker = "extra == 'memory'", specifier = ">=5.5.1" },
     { name = "surya-ocr", specifier = ">=0.17.0" },
     { name = "torch", specifier = ">=2.0.0" },
     { name = "torchvision", specifier = ">=0.15.0" },
@@ -1607,13 +1610,14 @@ requires-dist = [
     { name = "uvicorn", marker = "extra == 'web'", specifier = ">=0.38.0" },
     { name = "websockets", marker = "extra == 'web'", specifier = ">=10.0,<14.0" },
 ]
-provides-extras = ["web", "async-translation"]
+provides-extras = ["web", "async-translation", "memory"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "mypy", specifier = ">=1.9.0" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.23" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "ruff", specifier = ">=0.3.0" },
 ]
 

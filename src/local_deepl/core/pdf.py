@@ -10,10 +10,35 @@ a PDF wrap step first. AVIF support is provided natively by Pillow ≥
 
 import base64
 import io
+import logging
 from pathlib import Path
 
 import fitz  # PyMuPDF
 from PIL import Image, ImageSequence
+
+# PyMuPDF (Artifex Software) is dual-licensed under AGPL-3.0 and a commercial
+# license. The library is bundled with LocalDeepL (MIT) for the convenience of
+# local + open-source use; end users who distribute a non-AGPL product that
+# includes PyMuPDF (or that contains a derived work linking against it) must
+# acquire a commercial license from Artifex. Emit a one-shot warning the first
+# time this module handles a PDF, so that downstream operators can't claim they
+# weren't told. See README "Third-Party Software Notices".
+_LOGGER = logging.getLogger(__name__)
+_PYMUPDF_AGPL_NOTICE_EMITTED = False
+
+
+def _emit_pymupdf_agpl_notice() -> None:
+    global _PYMUPDF_AGPL_NOTICE_EMITTED
+    if _PYMUPDF_AGPL_NOTICE_EMITTED:
+        return
+    _PYMUPDF_AGPL_NOTICE_EMITTED = True
+    _LOGGER.warning(
+        "LocalDeepL is built on PyMuPDF (Artifex Software). PyMuPDF is "
+        "AGPL-3.0; if you distribute this binary or a non-AGPL derivative "
+        "to anyone outside your organization you may owe Artifex a "
+        "commercial license. See README > Third-Party Software Notices."
+    )
+
 
 IMAGE_EXTENSIONS = frozenset(
     {
@@ -82,6 +107,8 @@ class PDFHandler:
         """
         if _is_image_path(pdf_path):
             return self._images_from_image_file(pdf_path, max_image_dim)
+
+        _emit_pymupdf_agpl_notice()
 
         images: dict[int, str] = {}
         doc = fitz.open(pdf_path)
@@ -168,6 +195,8 @@ class PDFHandler:
         if _is_image_path(input_pdf_path):
             self._embed_from_image_input(input_pdf_path, output_pdf_path, pages_data)
             return
+
+        _emit_pymupdf_agpl_notice()
 
         doc = fitz.open(input_pdf_path)
         new_doc = fitz.open()

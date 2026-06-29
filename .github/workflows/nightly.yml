@@ -1,0 +1,65 @@
+name: Nightly slow
+
+# Slow-tier validation. Loads Surya (~500MB first run from HF Hub) and
+# runs `pytest -m slow` end-to-end. Catches:
+#   * Regressions in the hybrid / grounded OCR pipelines that the fast
+#     tier can't see (it skips `slow` to keep PR-cycle latency down).
+#   * PyMuPDF rendering path regressions that only show on large PDFs.
+#
+# Cadence: nightly cron at 03:00 UTC plus manual dispatch. Caches the
+# HF Hub snapshot across runs so we don't re-download on every night.
+#
+# Live-LLM tests (`-m live_llm`) are still skipped - they need a real
+# OpenAI-compatible endpoint we don't run in CI.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+jobs:
+  slow:
+    name: pytest (py${{ matrix.python }}, slow tier)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python }}
+
+      - name: Sync deps (web + async-translation extras)
+        run: uv sync --extra web --extra async-translation
+
+      - name: Cache HF Hub snapshot
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/huggingface
+          key: hf-surya-${{ matrix.python }}
+          restore-keys: |
+            hf-surya-
+
+      - name: Run slow tests
+        # `force_run: slow` overrides the default skip of slow markers
+        # so the nightly run picks them up. Live-LLM is still skipped
+        # since CI has no model server.
+        run: uv run pytest -m slow --no-header -v
+
+      - name: Upload results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-slow-results
+          path: |
+            .pytest_cache/v/cache/lastfailed
+          if-no-original-found: ignore

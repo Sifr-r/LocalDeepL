@@ -1,0 +1,74 @@
+# Local docker-compose stack for LocalDeepL.
+#
+# Services:
+#   * ``api``    - FastAPI web app (port 8000). Always-on.
+#   * ``worker`` - Celery worker for async translation. Optional; only
+#                  starts when ``--profile async`` is passed.
+#   * ``redis``  - Broker + result backend for Celery. Always-on so
+#                  ``api`` can publish jobs even if no worker is up.
+#
+# Usage:
+#   docker compose up             # api + redis only
+#   docker compose --profile async up --build
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: local-deepl:app
+    ports:
+      - "8000:8000"
+    environment:
+      # Hosts running the LM Studio / Ollama endpoint should override
+      # ``LLM_API_BASE`` (and ``LLM_API_KEY`` if needed). The default
+      # below targets the host network gateway that Docker Desktop
+      # exposes the LM Studio server on.
+      LLM_API_BASE: http://host.docker.internal:1234/v1
+      # Recommended security defaults. See README "Security" section.
+      LOCAL_DEEPL_MAX_UPLOAD_MB: "100"
+      LOCAL_DEEPL_RATE_LIMIT_PER_MIN: "60"
+      # Uncomment and regenerate a strong secret to enable auth.
+      # LOCAL_DEEPL_AUTH_TOKEN: change-me-in-prod
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: ["default"]
+
+  worker:
+    image: local-deepl:app
+    command: ["celery", "-A", "local_deepl.api.tasks", "worker", "--loglevel=info", "--pool=solo"]
+    environment:
+      LLM_API_BASE: http://host.docker.internal:1234/v1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: ["async"]
+
+  redis:
+    image: redis:7-alpine
+    # ``AOF every second`` is the standard production trade-off; for a
+    # single-host personal stack, ``--save ""`` (no snapshots) is fine
+    # and avoids disk pressure. Override with command: when needed.
+    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    profiles: ["default", "async"]
+
+volumes:
+  redis-data:
+    name: local-deepl-redis-data
