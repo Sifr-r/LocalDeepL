@@ -47,13 +47,21 @@ web = [
     "websockets>=10.0,<14.0",
     "python-multipart>=0.0.20",
 ]
+# Async translation: the LLM-driven translation workflow. ``chromadb`` and
+# ``sentence-transformers`` are intentionally kept out so this extra is
+# light (no torch / torch-multiprocessing). Install ``memory`` alongside
+# for the lexicon-backed RAG feature; the translation module degrades
+# gracefully when the lexicon store is unavailable.
 async-translation = [
     "celery>=5.4.0",
     "redis>=5.0.0",
     "langgraph>=0.1.0",
+]
+memory = [
     "chromadb>=0.5.0",
     "sentence-transformers>=5.5.1",
 ]
+
 
 [project.scripts]
 local-deepl-server = "local_deepl.server:main"
@@ -90,6 +98,7 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.3.0",
     "mypy>=1.9.0",
+    "pyyaml>=6.0",
 ]
 
 [tool.uv]

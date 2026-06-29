@@ -29,6 +29,15 @@ For asynchronous translation:
 uv sync --extra web --extra async-translation
 ```
 
+If you also want the translation lexicon (ChromaDB-backed RAG for
+domain terminology), add the `memory` extra. The async-translation
+extra alone does **not** install ChromaDB or sentence-transformers,
+so it stays light (no torch / no multi-GB ML stack):
+
+```bash
+uv sync --extra web --extra async-translation --extra memory
+```
+
 Real OCR requires an OpenAI-compatible VLM endpoint. The local-development default is LM Studio at `http://localhost:1234/v1`.
 
 ## Web Workspace
