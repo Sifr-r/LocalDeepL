@@ -73,8 +73,38 @@ def create_app() -> ASGIApplication:
         ocr,
         websocket,
     )
+    from local_deepl.api.services.security_config import SecuritySettings
+    from local_deepl.api.services.security_middleware import (
+        BearerAuthMiddleware,
+        MaxUploadSizeMiddleware,
+        RateLimitMiddleware,
+    )
 
     web_app = fastapi.FastAPI()
+    security = SecuritySettings.from_env()
+
+    if security.cors_origins:
+        cors = _load_optional_module("fastapi.middleware.cors")
+        web_app.add_middleware(
+            cors.CORSMiddleware,
+            allow_origins=security.cors_origins,
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+    # Security middlewares wrap the inner app. Starlette applies them
+    # in REVERSE add-order (last added is outermost), so to produce
+    # request flow "Auth → Size → RateLimit → app" we add innermost
+    # first. Outer-most first means a 401 doesn't burn a rate-limit
+    # slot and a 413 likewise doesn't count against the bucket.
+    if security.rate_limit_enabled:
+        web_app.add_middleware(
+            RateLimitMiddleware, per_minute=security.rate_limit_per_minute
+        )
+    web_app.add_middleware(MaxUploadSizeMiddleware, max_bytes=security.max_upload_bytes)
+    web_app.add_middleware(BearerAuthMiddleware, expected_token=security.auth_token)
+
     web_app.mount(
         "/static",
         staticfiles.StaticFiles(directory=str(_STATIC_DIR)),

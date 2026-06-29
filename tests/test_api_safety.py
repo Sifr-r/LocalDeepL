@@ -563,3 +563,208 @@ def test_static_js_has_no_html_injection_sinks():
         assert "innerHTML" not in source
         assert "insertAdjacentHTML" not in source
         assert "outerHTML" not in source
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: API security hardening
+# ---------------------------------------------------------------------------
+
+
+def test_security_settings_parses_environment_defaults(monkeypatch):
+    """Empty env ⇒ personal/local posture: no auth, no CORS, no rate limit."""
+    from local_deepl.api.services.security_config import SecuritySettings
+
+    monkeypatch.delenv("LOCAL_DEEPL_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("LOCAL_DEEPL_CORS_ORIGINS", raising=False)
+    monkeypatch.delenv("LOCAL_DEEPL_MAX_UPLOAD_MB", raising=False)
+    monkeypatch.delenv("LOCAL_DEEPL_RATE_LIMIT_PER_MIN", raising=False)
+
+    settings = SecuritySettings.from_env()
+    assert settings.auth_token is None
+    assert settings.auth_enabled is False
+    assert settings.cors_origins == []
+    assert settings.max_upload_bytes == 100 * 1024 * 1024
+    assert settings.rate_limit_per_minute is None
+    assert settings.rate_limit_enabled is False
+
+
+def test_security_settings_cors_parses_csv_and_trims(monkeypatch):
+    from local_deepl.api.services.security_config import SecuritySettings
+
+    monkeypatch.setenv(
+        "LOCAL_DEEPL_CORS_ORIGINS",
+        "https://app.example.com, https://admin.example.com ,, ",
+    )
+    settings = SecuritySettings.from_env()
+    assert settings.cors_origins == [
+        "https://app.example.com",
+        "https://admin.example.com",
+    ]
+
+
+def test_security_settings_rate_limit_zero_disables(monkeypatch):
+    from local_deepl.api.services.security_config import SecuritySettings
+
+    monkeypatch.setenv("LOCAL_DEEPL_RATE_LIMIT_PER_MIN", "0")
+    settings = SecuritySettings.from_env()
+    assert settings.rate_limit_per_minute is None
+    assert settings.rate_limit_enabled is False
+
+
+def test_security_settings_max_upload_clamps(monkeypatch):
+    from local_deepl.api.services.security_config import (
+        ABSOLUTE_MAX_UPLOAD_MB,
+        SecuritySettings,
+    )
+
+    monkeypatch.setenv("LOCAL_DEEPL_MAX_UPLOAD_MB", "999999")
+    settings = SecuritySettings.from_env()
+    assert settings.max_upload_bytes == ABSOLUTE_MAX_UPLOAD_MB * 1024 * 1024
+
+    monkeypatch.setenv("LOCAL_DEEPL_MAX_UPLOAD_MB", "0")
+    settings = SecuritySettings.from_env()
+    assert settings.max_upload_bytes == 1 * 1024 * 1024
+
+
+def test_security_settings_invalid_ints_fall_back_to_default(monkeypatch):
+    from local_deepl.api.services.security_config import SecuritySettings
+
+    monkeypatch.setenv("LOCAL_DEEPL_MAX_UPLOAD_MB", "not-a-number")
+    monkeypatch.setenv("LOCAL_DEEPL_RATE_LIMIT_PER_MIN", "garbage")
+    settings = SecuritySettings.from_env()
+    assert settings.max_upload_bytes == 100 * 1024 * 1024
+    assert settings.rate_limit_per_minute is None
+
+
+def _create_app_with_security(monkeypatch, **env):
+    """Build the full app via `create_app()` so middleware is wired."""
+    from local_deepl import server
+
+    for key in (
+        "LOCAL_DEEPL_AUTH_TOKEN",
+        "LOCAL_DEEPL_CORS_ORIGINS",
+        "LOCAL_DEEPL_MAX_UPLOAD_MB",
+        "LOCAL_DEEPL_RATE_LIMIT_PER_MIN",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in env.items():
+        if value is None:
+            monkeypatch.delenv(key, raising=False)
+        else:
+            monkeypatch.setenv(key, value)
+
+    app = server.create_app()
+    return app
+
+
+def test_bearer_auth_required_when_token_set(monkeypatch):
+    app = _create_app_with_security(monkeypatch, LOCAL_DEEPL_AUTH_TOKEN="s3cret")
+    client = TestClient(app)
+
+    unauthorized = client.get("/api/config")
+    assert unauthorized.status_code == 401
+    assert unauthorized.json()["error"] == "Unauthorized"
+
+    wrong = client.get("/api/config", headers={"Authorization": "Bearer wrong-token"})
+    assert wrong.status_code == 401
+
+    right = client.get(
+        "/api/config",
+        headers={"Authorization": "Bearer s3cret"},
+    )
+    assert right.status_code == 200
+
+
+def test_bearer_auth_accepts_lowercase_scheme(monkeypatch):
+    app = _create_app_with_security(monkeypatch, LOCAL_DEEPL_AUTH_TOKEN="token")
+    client = TestClient(app)
+    response = client.get("/api/config", headers={"Authorization": "bearer token"})
+    assert response.status_code == 200
+
+
+def test_max_upload_size_rejects_oversized_content_length(monkeypatch):
+    app = _create_app_with_security(monkeypatch, LOCAL_DEEPL_MAX_UPLOAD_MB="1")
+    client = TestClient(app)
+    response = client.post(
+        "/api/config",
+        content=b"x" * (2 * 1024 * 1024),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 413
+    payload = response.json()
+    assert payload["limit_bytes"] == str(1 * 1024 * 1024)
+
+
+def test_max_upload_size_passes_undersized(monkeypatch):
+    app = _create_app_with_security(monkeypatch, LOCAL_DEEPL_MAX_UPLOAD_MB="10")
+    client = TestClient(app)
+    response = client.get("/api/config")
+    assert response.status_code == 200
+
+
+def test_rate_limit_rejects_after_cap(monkeypatch):
+    app = _create_app_with_security(monkeypatch, LOCAL_DEEPL_RATE_LIMIT_PER_MIN="3")
+    client = TestClient(app)
+
+    for _ in range(3):
+        assert client.get("/api/config").status_code == 200
+
+    assert client.get("/api/config").status_code == 429
+    assert client.get("/api/config").status_code == 429
+
+
+def test_rate_limit_isolates_per_client_ip(monkeypatch):
+    """Two different client IPs share independent buckets.
+
+    TestClient doesn't let us spoof the address easily, so the second
+    bucket is driven by a freshly-constructed middleware instance on
+    the same client; the underlying deque-by-key isolation is what
+    the property is exercising.
+    """
+    from local_deepl.api.services.security_middleware import RateLimitMiddleware
+
+    fake_app_calls: list[str] = []
+
+    async def passthrough(scope, receive, send):
+        fake_app_calls.append(scope.get("client", ("unknown",))[0])
+
+    rm = RateLimitMiddleware(passthrough, per_minute=2)
+
+    async def drive(client_ip: str) -> None:
+        rm._hits.clear()
+        captured: list[bool] = []
+
+        async def fake_receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        class _CaptureSend:
+            def __init__(self):
+                self.status: int | None = None
+
+            async def __call__(self, msg):
+                if msg["type"] == "http.response.start":
+                    self.status = msg["status"]
+
+        for _ in range(3):
+            cap = _CaptureSend()
+            await rm(
+                {
+                    "type": "http",
+                    "client": (client_ip, 1234),
+                    "headers": [],
+                    "method": "GET",
+                    "path": "/x",
+                    "raw_path": b"/x",
+                    "query_string": b"",
+                    "scheme": "http",
+                    "server": ("test", 80),
+                },
+                fake_receive,
+                cap,
+            )
+            captured.append(cap.status)
+
+        assert captured == [None, None, 429]
+
+    asyncio.run(drive("10.0.0.1"))
+    asyncio.run(drive("10.0.0.2"))

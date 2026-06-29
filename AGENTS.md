@@ -88,6 +88,8 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/local_deepl/api/routers/ai.py` | AI service module consumed by `extraction.py` and `translation.py` |
 | `src/local_deepl/api/schemas/requests.py` | `ConfigUpdate`, `ProcessSettings`, `TranslationRequest`, `ExtractionRequest`, `ExtractionTemplate`, `DocumentExportRequest`, `DocumentExportFormat`, `ExportDocxRequest`; enums: `PipelineMode`, `DenseMode`, `SpellcheckMode`, `DocumentProcessorName` |
 | `src/local_deepl/api/services/security.py` | API upload validation, stable error constants, temporary-file cleanup, opaque text artifact IDs |
+| `src/local_deepl/api/services/security_config.py` | `SecuritySettings.from_env()` — env-driven knobs for `LOCAL_DEEPL_AUTH_TOKEN`, `_CORS_ORIGINS`, `_MAX_UPLOAD_MB`, `_RATE_LIMIT_PER_MIN` |
+| `src/local_deepl/api/services/security_middleware.py` | ASGI middlewares wired by `server.create_app()`: `BearerAuthMiddleware` (constant-time `secrets.compare_digest`), `MaxUploadSizeMiddleware` (rejects on `Content-Length`), `RateLimitMiddleware` (per-IP 60s sliding window, in-memory). WebSocket handshake auth is still enforced per-channel in `routers/websocket.py` |
 | `src/local_deepl/api/services/artifacts.py` | `TextArtifactStore`, `PageText`, `TextArtifactHandle`, opaque id / token primitives |
 | `src/local_deepl/api/services/jobs.py` | `JobHistory`, `JobRecord`, `JobStatus` |
 | `src/local_deepl/api/services/progress.py` | `ProgressService`, `ProgressChannel`, stage weights |
