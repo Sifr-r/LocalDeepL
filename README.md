@@ -84,3 +84,23 @@ Slow tests load Surya and may download its model on the first run.
 ## Architecture
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for pipeline details, extension points, and staged document-intelligence notes.
+
+## Third-Party Software Notices
+
+LocalDeepL is released under the [MIT License](LICENSE). It depends on
+PyMuPDF (Artifex Software) for PDF rendering and sandwich-PDF embedding.
+PyMuPDF is dual-licensed under AGPL-3.0 and a commercial license; the
+upstream library itself is AGPL-3.0. The bundled PyMuPDF is for use by
+end users — internal OCR, personal use, and AGPL-compatible use cases.
+
+**If you distribute LocalDeepL (or a derived product) outside your
+organization in a way that is *not* AGPL-3.0-compatible, you are
+responsible for obtaining a commercial PyMuPDF license from Artifex
+Software.** A one-time warning is also logged the first time this
+package processes a PDF, as an in-product reminder. See
+<https://artifex.com/licensing/> for license details.
+
+If you want a license-clean default for closed-source distribution,
+swap to the Apache-2.0 `pypdfium2` backend and stop importing
+`pymupdf`; the OCR pipeline's render-and-embed call sites use a small
+PDF-handling surface that pypdfium2 covers with feature parity.
