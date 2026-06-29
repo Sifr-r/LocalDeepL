@@ -118,7 +118,7 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 ## Web Notes
 
 - Browser translation and structured extraction use synchronous endpoints and do not require Redis.
-- `/api/translate/async` uses Celery, Redis, and LangGraph from the `async-translation` extra.
+- `/api/translate/async` uses Celery, Redis, and LangGraph from the `async-translation` extra. The translation module degrades gracefully when ChromaDB is not installed (no lexicon retrieval); install the separate `memory` extra (ChromaDB + sentence-transformers) for the lexicon-backed RAG feature.
 - `ALLOW_SSRF_LOCAL=true` is the local-development default. Set it to `false` when exposing the server to untrusted users.
 - Web runtime settings are initialized in `api/routers/config.py`.
 - **Windows quick-start**: run `install.bat` to install `uv`, sync the web extra, and create Desktop / Start-Menu shortcuts. `start_app.vbs` boots Redis + Celery + uvicorn hidden and opens the browser. `stop_app.bat` terminates them. `test_ui.py` is the headless Playwright smoke test against `examples/dense.pdf`.
