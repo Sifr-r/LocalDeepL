@@ -142,9 +142,9 @@ class HybridEngine(EngineBase):
         progress: ProgressCallback | None = None,
         on_warning: WarningCallback | None = None,
     ) -> dict[int, list[str]]:
-        if dense_mode not in DenseMode:
+        if dense_mode not in [m.value for m in DenseMode]:
             raise ValueError(
-                f"dense_mode must be one of {list(DenseMode)}; got {dense_mode!r}"
+                f"dense_mode must be one of {[m.value for m in DenseMode]}; got {dense_mode!r}"
             )
 
         self._reset_run_state()
