@@ -115,6 +115,39 @@ class TestRunStateLifecycle:
 
 
 class TestBuildDocumentResult:
+    async def test_applies_spellcheck_in_place(self, monkeypatch) -> None:
+        class _StubSpellchecker:
+            def __init__(self, lang):
+                self.lang = lang
+
+            async def ensure_loaded(self):
+                pass
+
+            def correct_text(self, text):
+                return text + " [corrected " + self.lang + "]"
+
+        monkeypatch.setattr(
+            "local_deepl.core.postprocess.DictionaryPostProcessor", _StubSpellchecker
+        )
+
+        engine = _engine()
+        pages_data: dict[int, list[tuple[list[float], str]]] = {
+            0: [([0.0, 0.0, 1.0, 0.1], "teh"), ([0.0, 0.0, 1.0, 0.1], "")],
+        }
+
+        result = await engine._build_document_result(
+            pages_data=pages_data,
+            page_nums=[0],
+            source_path="in.pdf",
+            source_processor="test",
+            spellcheck="en-US",
+            cross_page=False,
+        )
+
+        assert pages_data[0][0][1] == "teh [corrected en-US]"
+        assert pages_data[0][1][1] == ""  # empty text is unchanged
+        assert result.pages[0].blocks[0].text == "teh [corrected en-US]"
+
     async def test_applies_cross_page_merge_in_place(self) -> None:
         engine = _engine()
         pages_data: dict[int, list[tuple[list[float], str]]] = {
