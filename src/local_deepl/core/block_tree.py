@@ -64,6 +64,19 @@ class Span:
             "code": self.code,
         }
 
+    # Phase D (review M4) — `from_dict` mirrors `to_dict`. Keep the
+    # two in sync when adding fields. Used by the JSON-based tree
+    # artifact (see `api/services/tree_artifact.py`) — replaces the
+    # previous pickle round-trip.
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Span":
+        return cls(
+            text=data["text"],
+            bold=bool(data.get("bold", False)),
+            italic=bool(data.get("italic", False)),
+            code=bool(data.get("code", False)),
+        )
+
 
 @dataclass(slots=True)
 class BlockNode:
@@ -104,6 +117,28 @@ class BlockNode:
             d["children"] = [c.to_dict() for c in self.children]
         return d
 
+    # Phase D (review M4) — see Span.from_dict for the contract.
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "BlockNode":
+        return cls(
+            block_type=BlockType(data["block_type"]),
+            bbox=[float(v) for v in data["bbox"]],
+            text=data["text"],
+            page_idx=int(data["page_idx"]),
+            block_id=data.get("block_id") or _new_block_id(),
+            confidence=(
+                float(data["confidence"])
+                if data.get("confidence") is not None
+                else None
+            ),
+            children=[BlockNode.from_dict(c) for c in data.get("children", [])],
+            parent_id=data.get("parent_id"),
+            level=int(data.get("level", 0)),
+            section_hierarchy=list(data.get("section_hierarchy", [])),
+            spans=[Span.from_dict(s) for s in data.get("spans", [])],
+            metadata=dict(data.get("metadata", {})),
+        )
+
 
 @dataclass(slots=True)
 class PageTree:
@@ -121,6 +156,17 @@ class PageTree:
             "children": [c.to_dict() for c in self.children],
             "metadata": dict(self.metadata),
         }
+
+    # Phase D (review M4) — see Span.from_dict for the contract.
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "PageTree":
+        return cls(
+            page_idx=int(data["page_idx"]),
+            width=(int(data["width"]) if data.get("width") is not None else None),
+            height=(int(data["height"]) if data.get("height") is not None else None),
+            children=[BlockNode.from_dict(c) for c in data.get("children", [])],
+            metadata=dict(data.get("metadata", {})),
+        )
 
 
 @dataclass(slots=True)
@@ -142,9 +188,30 @@ class Section:
             "children": [c.to_dict() for c in self.children],
         }
 
+    # Phase D (review M4) — see Span.from_dict for the contract.
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Section":
+        return cls(
+            title=data["title"],
+            level=int(data["level"]),
+            start_page=int(data["start_page"]),
+            children=[Section.from_dict(c) for c in data.get("children", [])],
+            block_id=data.get("block_id"),
+        )
+
 
 @dataclass(slots=True)
 class TableNode:
+    """A detected table on a page.
+
+    A TableNode is the structural parent of its cell BlockNodes; per-cell
+    text and per-cell block_type live on the child BlockNode, not on the
+    TableNode. ``rows`` and ``cols`` describe the grid shape; ``cells``
+    is ``rows`` lists of length ``cols``. ``bbox`` is the union of all
+    cell bboxes (used by the PDF embed step when the table has no
+    drawn border).
+    """
+
     rows: int
     cols: int
     page_idx: int
@@ -163,6 +230,21 @@ class TableNode:
             "cells": [[c.to_dict() for c in row] for row in self.cells],
         }
 
+    # Phase D (review M4) — see Span.from_dict for the contract.
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "TableNode":
+        return cls(
+            rows=int(data["rows"]),
+            cols=int(data["cols"]),
+            page_idx=int(data["page_idx"]),
+            bbox=[float(v) for v in data["bbox"]],
+            cells=[
+                [BlockNode.from_dict(c) for c in row]
+                for row in data.get("cells", [])
+            ],
+            block_id=data.get("block_id") or _new_block_id(),
+        )
+
 
 @dataclass(slots=True)
 class FigureNode:
@@ -173,7 +255,14 @@ class FigureNode:
     block_id: str = field(default_factory=_new_block_id)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        # Phase D (review M4) — `image_bytes` is base64-encoded for the
+        # JSON artifact so the payload stays pure UTF-8. `from_dict`
+        # decodes back to bytes. The round-trip preserves the bytes
+        # exactly (modulo base64 size expansion, which only matters
+        # for very large images).
+        import base64
+
+        d: dict[str, Any] = {
             "block_id": self.block_id,
             "block_type": "figure",
             "page_idx": self.page_idx,
@@ -181,6 +270,34 @@ class FigureNode:
             "has_image": self.image_bytes is not None,
             "caption": self.caption,
         }
+        if self.image_bytes is not None:
+            d["image_bytes_b64"] = base64.b64encode(self.image_bytes).decode("ascii")
+        return d
+
+    # Phase D (review M4) — see Span.from_dict for the contract.
+    # `image_bytes` is binary; the JSON artifact encodes it as a
+    # base64 string under the "image_bytes_b64" key (rather than
+    # trying to embed raw bytes). The reader decodes back to bytes
+    # so the in-memory FigureNode is indistinguishable from one
+    # constructed in-process.
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "FigureNode":
+        import base64
+
+        image_bytes: bytes | None = None
+        if data.get("image_bytes_b64"):
+            image_bytes = base64.b64decode(data["image_bytes_b64"])
+        elif data.get("image_bytes") is not None:
+            # Backward-compat: if the JSON still has raw bytes (older
+            # artifact or hand-edited), accept them as-is.
+            image_bytes = bytes(data["image_bytes"])
+        return cls(
+            page_idx=int(data["page_idx"]),
+            bbox=[float(v) for v in data["bbox"]],
+            image_bytes=image_bytes,
+            caption=str(data.get("caption", "")),
+            block_id=data.get("block_id") or _new_block_id(),
+        )
 
 
 @dataclass(slots=True)
@@ -198,6 +315,16 @@ class EquationNode:
             "bbox": list(self.bbox),
             "latex": self.latex,
         }
+
+    # Phase D (review M4) — see Span.from_dict for the contract.
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "EquationNode":
+        return cls(
+            page_idx=int(data["page_idx"]),
+            bbox=[float(v) for v in data["bbox"]],
+            latex=str(data.get("latex", "")),
+            block_id=data.get("block_id") or _new_block_id(),
+        )
 
 
 @dataclass(slots=True)
@@ -222,6 +349,23 @@ class DocumentTree:
             "source_path": self.source_path,
             "metadata": dict(self.metadata),
         }
+
+    # Phase D (review M4) — see Span.from_dict for the contract. The
+    # JSON artifact uses `DocumentTree.from_dict(tree.to_dict())` as
+    # the round-trip; pickle is no longer in this path.
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DocumentTree":
+        return cls(
+            pages=[PageTree.from_dict(p) for p in data.get("pages", [])],
+            sections=[Section.from_dict(s) for s in data.get("sections", [])],
+            tables=[TableNode.from_dict(t) for t in data.get("tables", [])],
+            figures=[FigureNode.from_dict(f) for f in data.get("figures", [])],
+            equations=[
+                EquationNode.from_dict(e) for e in data.get("equations", [])
+            ],
+            source_path=data.get("source_path"),
+            metadata=dict(data.get("metadata", {})),
+        )
 
     def iter_text_blocks(self) -> list[BlockNode]:
         """Yield every leaf text block in reading order."""

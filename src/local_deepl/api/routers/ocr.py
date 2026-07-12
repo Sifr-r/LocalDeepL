@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import pathlib
 import tempfile
 import time
 import uuid
@@ -34,9 +35,15 @@ from local_deepl.api.services.security import (
     save_validated_upload,
 )
 from local_deepl.api.services.workflow import build_workflow_summary
+# Phase A.3 (review M5) — `PagePreprocessor` was used as a type
+# annotation at line ~248 (`page_preprocessor: PagePreprocessor | None`)
+# without being imported. Worked only because `from __future__
+# import annotations` makes annotations lazy. Mypy caught the broken
+# symbol; lift the import to module top.
 from local_deepl.core.preprocessing import (
     LocalPagePreprocessor,
     PagePreprocessingOptions,
+    PagePreprocessor,
 )
 from local_deepl.core.routing import QualityRoutingOptions
 from local_deepl.utils import is_ssrf_target
@@ -233,7 +240,19 @@ def _resolve_process_settings(
     return ProcessSettings.model_validate(merged)
 
 
-def _build_pipeline(settings: ProcessSettings) -> tuple[OCRPipeline, Any]:
+def _build_pipeline(
+    settings: ProcessSettings,
+    progress_target: str | None = None,
+) -> tuple[OCRPipeline, Any]:
+    """Build the OCR pipeline for a request.
+
+    ``progress_target`` is the WebSocket channel_id this request is
+    bound to (or None if the caller did not open a progress channel).
+    The returned pipeline has its per-block / per-page observer hooks
+    wired to the WebSocket manager, so per-block events emitted by the
+    engine reach the live UI without the engine ever importing
+    `local_deepl.api`.
+    """
     processors = build_document_processors(
         processor.value for processor in settings.document_processors
     )
@@ -263,6 +282,43 @@ def _build_pipeline(settings: ProcessSettings) -> tuple[OCRPipeline, Any]:
         from local_deepl.core.preprocessing import LocalPagePreprocessor
         page_preprocessor = LocalPagePreprocessor()
 
+    # Phase B (review M2) — build the callback set that bridges the
+    # engine's per-block / per-page events to the WebSocket manager.
+    # The two inner closures are no-ops when no progress channel is
+    # bound (i.e. an API caller that did not open a WS gets the pure
+    # engine output, no per-block traffic).
+    from local_deepl.core.callbacks import BlockCallbackSet
+
+    async def _on_block(
+        page_idx: int,
+        block_idx: int,
+        bbox: list[float],
+        text: str,
+        kind: str,
+        confidence: float | None,
+    ) -> None:
+        if progress_target is None:
+            return
+        await manager.send_block(
+            progress_target,
+            page_idx=page_idx,
+            block_idx=block_idx,
+            bbox=bbox,
+            text=text,
+            kind=kind,
+            confidence=confidence,
+        )
+
+    async def _on_page_complete(page_idx: int) -> None:
+        if progress_target is None:
+            return
+        await manager.send_page_complete(progress_target, page_idx=page_idx)
+
+    block_callbacks = BlockCallbackSet(
+        on_block=_on_block,
+        on_page_complete=_on_page_complete,
+    )
+
     if settings.pipeline_mode == "grounded":
         backend = PromptedGroundedOCR(
             api_base=settings.api_base,
@@ -276,6 +332,7 @@ def _build_pipeline(settings: ProcessSettings) -> tuple[OCRPipeline, Any]:
             grounded_backend=backend,
             document_processors=processors,
             page_preprocessor=page_preprocessor,
+            block_callbacks=block_callbacks,
         )
     else:
         from local_deepl.core.trocr_engine import TrOCREngine
@@ -292,6 +349,7 @@ def _build_pipeline(settings: ProcessSettings) -> tuple[OCRPipeline, Any]:
             pdf_handler=PDFHandler(),
             document_processors=processors,
             page_preprocessor=page_preprocessor,
+            block_callbacks=block_callbacks,
         )
     return pipeline, backend
 
@@ -450,7 +508,7 @@ async def process_pdf(
     try:
         await manager.send_progress(progress_target, "Initializing...", 5, stage="init")
 
-        pipeline, backend = _build_pipeline(settings)
+        pipeline, backend = _build_pipeline(settings, progress_target=progress_target)
         await _verify_backend_model(backend, settings.model)
 
         # -- Progress callback -----------------------------------------------
@@ -516,10 +574,17 @@ async def process_pdf(
         
         doc_res = getattr(pipeline, "last_document_result", None)
         if doc_res and doc_res.tree:
-            import pathlib
-            import pickle
+            # Phase D (review M4) — tree artifact is JSON, not pickle.
+            # See `api/services/tree_artifact.py` for the rationale
+            # (debuggability + RCE surface). The synchronous write
+            # runs on a worker thread because json.dumps on a large
+            # tree (thousands of blocks) can take a few hundred ms.
+            from local_deepl.api.services.tree_artifact import write_tree_atomic
+
             def _write_tree() -> None:
-                pathlib.Path(f"{text_path}.tree.pkl").write_bytes(pickle.dumps(doc_res.tree))
+                write_tree_atomic(
+                    doc_res.tree, pathlib.Path(f"{text_path}.tree.json")
+                )
             await asyncio.to_thread(_write_tree)
 
         metadata_handle = await _create_document_metadata_artifact(pipeline)

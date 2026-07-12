@@ -112,73 +112,49 @@ async def translate_tree_endpoint(req: TreeTranslationRequest) -> dict[str, Any]
             if text:
                 memory.add_text(text)
 
+    # Phase C (review M1) — wire the WebSocket streaming through
+    # `translate_tree`'s `on_translate_chunk` parameter. The pre-fix
+    # code path duplicated `translate_tree`'s body (skip headers, build
+    # context, sliding window, LLM call, write-back) so the WS frame
+    # could be emitted per chunk. After the callback lands, the core
+    # does the work and the API layer only translates callback args
+    # into the right transport frame.
+    async def _on_translate_chunk(
+        chunk_idx: int,
+        source_chars: int,
+        translated_text: str,
+        target_language: str,
+    ) -> None:
+        # The channel_id auth check is the WS manager's responsibility
+        # (silently no-ops on an unbound / un-authorized channel). The
+        # routing contract: `channel_id` presence is the only
+        # "should I emit" signal this layer owns.
+        if not req.channel_id:
+            return
+        await manager.send_translate_chunk(
+            req.channel_id,
+            chunk_idx=chunk_idx,
+            source_chars=source_chars,
+            translated_text=translated_text,
+            target_language=target_language,
+        )
+
     if req.channel_id:
         await manager.send_progress(req.channel_id, "Translating...", 0, "translate")
 
-    # Translate with streaming if we have a channel.
-    if req.channel_id:
-        from local_deepl.core.translation_tree import (
-            _build_translation_prompt,
-            build_context_block,
-        )
+    await translate_tree(
+        tree,
+        target_language=req.target_language,
+        translator=_llm_translate,
+        glossary=glossary,
+        memory=memory,
+        second_translator=second,
+        on_translate_chunk=_on_translate_chunk,
+    )
 
-        last_window = ""
-        chunk_idx = 0
-        total_blocks = sum(
-            1
-            for page in tree.pages
-            for child in page.children
-            if child.text and child.text.strip()
-        )
-        for page in tree.pages:
-            for node in page.children:
-                if not node.text or not node.text.strip():
-                    continue
-                if node.block_type.value in (
-                    "page_header",
-                    "page_footer",
-                    "page_number",
-                    "figure",
-                ):
-                    continue
-                memory.add_text(node.text)
-                ctx = build_context_block(glossary, memory, last_window)
-                prompt = _build_translation_prompt(
-                    text=node.text,
-                    target_language=req.target_language,
-                    context=ctx,
-                    block_type=node.block_type.value,
-                )
-                translated = await _llm_translate(prompt, req.target_language)
-                node.text = translated
-                node.metadata["translation"] = translated
-                last_window = " ".join(translated.split()[-80:])
-                chunk_idx += 1
-                await manager.send_translate_chunk(
-                    req.channel_id,
-                    chunk_idx=chunk_idx,
-                    source_chars=len(node.text),
-                    translated_text=translated,
-                    target_language=req.target_language,
-                )
-                pct = int((chunk_idx / max(1, total_blocks)) * 100)
-                await manager.send_progress(
-                    req.channel_id,
-                    f"Translating chunk {chunk_idx}/{total_blocks}",
-                    pct,
-                    "translate",
-                )
+    if req.channel_id:
         await manager.send_progress(
             req.channel_id, "Translation complete.", 100, "translate"
-        )
-    else:
-        await translate_tree(
-            tree,
-            target_language=req.target_language,
-            translator=_llm_translate,
-            glossary=glossary,
-            memory=memory,
-            second_translator=second,
         )
 
     return {

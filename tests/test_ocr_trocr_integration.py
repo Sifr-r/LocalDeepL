@@ -1,0 +1,107 @@
+"""Smoke test for the TrOCR dual-engine path (review M3).
+
+Pre-fix, `OCRProcessor.perform_ocr_on_crop` called
+`self.trocr_engine.ocr(image_base64)`, but `TrOCREngine` only exposes
+`async def recognize(self, image_bytes: bytes) -> TrOCRResult`. The
+mismatch was swallowed by the surrounding `try/except` so the bug was
+invisible to the test suite. This test uses a fake TrOCREngine to
+verify the correct method and argument type are used.
+"""
+
+from __future__ import annotations
+
+import base64
+import io
+
+import pytest
+from PIL import Image
+
+from local_deepl.core.ocr import OCRProcessor
+from local_deepl.core.trocr_engine import TrOCRResult
+
+
+class _FakeTrOCREngine:
+    """Stand-in for TrOCREngine.records every call so the test can
+    assert that the OCRProcessor reaches into the engine the way the
+    real one expects."""
+
+    def __init__(self, result: TrOCRResult) -> None:
+        self._result = result
+        self.calls: list[bytes] = []
+
+    async def recognize(self, image_bytes: bytes) -> TrOCRResult:
+        self.calls.append(image_bytes)
+        return self._result
+
+
+def _tiny_png_base64() -> str:
+    """A 1x1 white PNG encoded as base64 — enough to round-trip through
+    b64decode and convince the OCRProcessor the crop is non-empty."""
+    img = Image.new("RGB", (1, 1), "white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+async def test_trocr_fallback_uses_recognize_with_raw_bytes(monkeypatch):
+    """When VLM confidence is low, OCRProcessor must call
+    `TrOCREngine.recognize(image_bytes)` — not the non-existent
+    `ocr(image_base64)` from the pre-fix code path."""
+
+    # Replace `call_llm` inside ocr.py's namespace (not llm_client.py)
+    # because OCRProcessor imports it directly: `from local_deepl.core
+    # .llm_client import call_llm`. Patching the source module won't
+    # affect the already-bound reference.
+    from local_deepl.core import ocr as ocr_module
+
+    async def _fake_call_llm(**kwargs) -> str:
+        return "x"
+
+    monkeypatch.setattr(ocr_module, "call_llm", _fake_call_llm)
+
+    trocr = _FakeTrOCREngine(TrOCRResult(text="hello", confidence=0.9))
+    processor = OCRProcessor(
+        api_base="http://localhost:0/v1",  # never actually called
+        handwriting_mode=True,
+        trocr_engine=trocr,  # type: ignore[arg-type]
+        confidence_threshold=0.75,
+    )
+
+    image_b64 = _tiny_png_base64()
+    await processor.perform_ocr_on_crop(image_b64)
+
+    # The TrOCR engine must have been called exactly once.
+    assert len(trocr.calls) == 1
+    # The argument must be raw bytes (decode of the base64 input), not
+    # the base64 string. Pre-fix passed the base64 string, which would
+    # have been rejected by the real `recognize` method.
+    assert isinstance(trocr.calls[0], bytes)
+    assert trocr.calls[0] == base64.b64decode(image_b64)
+
+
+async def test_trocr_fallback_swallows_engine_errors(monkeypatch):
+    """TrOCR is optional; an engine failure must not poison the OCR
+    result. Pre-fix this branch was never reached because the call
+    itself errored, so the error handling was untested."""
+
+    class _BrokenTrOCREngine:
+        async def recognize(self, image_bytes: bytes) -> TrOCRResult:
+            raise RuntimeError("synthetic TrOCR failure")
+
+    from local_deepl.core import ocr as ocr_module
+
+    async def _fake_call_llm(**kwargs) -> str:
+        return "x"
+
+    monkeypatch.setattr(ocr_module, "call_llm", _fake_call_llm)
+
+    processor = OCRProcessor(
+        api_base="http://localhost:0/v1",
+        handwriting_mode=True,
+        trocr_engine=_BrokenTrOCREngine(),  # type: ignore[arg-type]
+        confidence_threshold=0.75,
+    )
+
+    # No exception escapes; the VLM's "x" becomes the result.
+    result = await processor.perform_ocr_on_crop(_tiny_png_base64())
+    assert result == "x"

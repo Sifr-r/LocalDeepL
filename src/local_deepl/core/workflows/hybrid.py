@@ -5,6 +5,7 @@ import base64
 import io
 from collections import defaultdict
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from PIL import Image
 
@@ -25,6 +26,9 @@ from local_deepl.core.workflows.base import (
     notify,
 )
 from local_deepl.utils.image import crop_for_ocr_from_image
+
+if TYPE_CHECKING:
+    from local_deepl.core.callbacks import BlockCallbackSet
 
 
 # Lightweight per-crop confidence heuristic (no new deps).
@@ -134,10 +138,17 @@ class HybridEngine(EngineBase):
         output_writer: OutputWriter,
         document_processors: Sequence[DocumentProcessor] | None = None,
         page_preprocessor: PagePreprocessor | None = None,
+        block_callbacks: "BlockCallbackSet | None" = None,
     ) -> None:
+        # Phase B (review M2) — forward `block_callbacks` to the base
+        # so the per-block / per-page event hook reaches `_ocr_pages`.
+        # The default `None` keeps every existing call site working
+        # unchanged (the in-process `OCRPipeline` user, all the
+        # workflows tests).
         super().__init__(
             output_writer=output_writer,
             document_processors=document_processors,
+            block_callbacks=block_callbacks,
         )
         self.aligner = aligner
         self.ocr_processor = ocr_processor
@@ -404,37 +415,32 @@ class HybridEngine(EngineBase):
 
                 pages_structured[p_num] = aligned
                 completed += 1
-                # Emit per-page block events for the live bbox overlay.
-                for b_idx, (b_bbox, b_text) in enumerate(aligned):
-                    if b_text and b_text.strip():
-                        try:
-                            from local_deepl.api.routers.websocket import (
-                                manager as _ws_manager,
+                # Phase B (review M2) — emit per-block and per-page
+                # events through the injected callback set instead of
+                # importing the WebSocket manager. The engine no longer
+                # depends on `local_deepl.api`; the API layer is
+                # responsible for translating these callbacks into
+                # WebSocket frames (or any other transport).
+                #
+                # The emissions sit inside the `as_completed` loop on
+                # purpose: it gives the UI a strictly monotonic per-block
+                # ordering across pages, which the live bbox overlay
+                # assumes. If you reorder this loop, the live UI will
+                # start flashing blocks out of order.
+                cb = self.block_callbacks
+                if cb.on_block is not None:
+                    for b_idx, (b_bbox, b_text) in enumerate(aligned):
+                        if b_text and b_text.strip():
+                            await cb.on_block(
+                                p_num,
+                                b_idx,
+                                list(b_bbox),
+                                b_text,
+                                "text",
+                                _estimate_confidence(b_text),
                             )
-
-                            await _ws_manager.send_block(
-                                getattr(progress, "channel_id", None),
-                                page_idx=p_num,
-                                block_idx=b_idx,
-                                bbox=list(b_bbox),
-                                text=b_text,
-                                kind="text",
-                                confidence=_estimate_confidence(b_text),
-                            )
-                        except Exception:
-                            pass
-                
-                # Emit page complete event
-                try:
-                    from local_deepl.api.routers.websocket import (
-                        manager as _ws_manager,
-                    )
-                    await _ws_manager.send_page_complete(
-                        getattr(progress, "channel_id", None),
-                        page_idx=p_num,
-                    )
-                except Exception:
-                    pass
+                if cb.on_page_complete is not None:
+                    await cb.on_page_complete(p_num)
 
                 await notify(
                     progress,

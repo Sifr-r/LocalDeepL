@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING
 
 from local_deepl.core.document import SpellcheckMode
 from local_deepl.core.grounded import GroundedBlock, GroundedOCRBackend
@@ -13,6 +14,9 @@ from local_deepl.core.workflows.base import (
     WarningCallback,
 )
 
+if TYPE_CHECKING:
+    from local_deepl.core.callbacks import BlockCallbackSet
+
 
 class GroundedEngine(EngineBase):
     def __init__(
@@ -20,10 +24,19 @@ class GroundedEngine(EngineBase):
         grounded_backend: GroundedOCRBackend,
         output_writer: OutputWriter,
         document_processors: Sequence[DocumentProcessor] | None = None,
+        block_callbacks: "BlockCallbackSet | None" = None,
     ) -> None:
+        # Phase B (review M2) — the grounded path also accepts the
+        # callback set for symmetry with HybridEngine. The current
+        # execute() doesn't yet emit per-block events (only the
+        # generic `progress` callback); that parity work is a
+        # follow-up. Wiring the parameter through now means
+        # `OCRPipeline(grounded_backend=..., block_callbacks=...)`
+        # doesn't have to grow a special case.
         super().__init__(
             output_writer=output_writer,
             document_processors=document_processors,
+            block_callbacks=block_callbacks,
         )
         self.grounded_backend = grounded_backend
 

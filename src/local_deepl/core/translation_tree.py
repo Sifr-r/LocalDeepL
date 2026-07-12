@@ -18,6 +18,7 @@ from local_deepl.core.glossary import Glossary
 
 if TYPE_CHECKING:
     from local_deepl.core.block_tree import BlockNode, DocumentTree
+    from local_deepl.core.callbacks import TranslateChunkCallback
     from local_deepl.core.translation_config import TranslationSettings
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,7 @@ async def translate_tree(
     sliding_window_words: int = 80,
     dual_translate: bool = False,
     second_translator: TranslatorFn | None = None,
+    on_translate_chunk: "TranslateChunkCallback | None" = None,
 ) -> DocumentTree:
     """Translate every text-bearing block in a :class:`DocumentTree`.
 
@@ -87,11 +89,22 @@ async def translate_tree(
     - Builds a per-chunk prompt that injects glossary, entity memory, and
       the last ``sliding_window_words`` words of the previous translation
     - Writes the result back into ``block.text`` and ``block.metadata["translation"]``
+
+    If ``on_translate_chunk`` is supplied, it is invoked once per
+    successfully translated block with
+    ``(chunk_idx, source_chars, translated_text, target_language)``.
+    The callback fires only for blocks whose translation actually
+    replaced the source text (skipped / empty / page-header blocks
+    are silent). This is the contract the live UI subscribes to
+    through ``manager.send_translate_chunk``; programmatic callers
+    can pass any coroutine (e.g. a logging sink) or omit the kwarg
+    entirely to disable the observer.
     """
 
     glossary = glossary or Glossary()
     memory = memory or EntityMemory()
     last_window = ""
+    chunk_idx = 0
 
     for page in tree.pages:
         for node in page.children:
@@ -109,6 +122,20 @@ async def translate_tree(
             if translated_text is not None:
                 node.text = translated_text
                 node.metadata["translation"] = translated_text
+                if on_translate_chunk is not None:
+                    # The chunk index is a per-call counter, not a
+                    # global one — each translate_tree() invocation
+                    # restarts from 0. Consumers that need a
+                    # document-wide index can compute it from the
+                    # block's tree position.
+                    source_chars = len(node.text)
+                    await on_translate_chunk(
+                        chunk_idx,
+                        source_chars,
+                        translated_text,
+                        target_language,
+                    )
+                    chunk_idx += 1
     return tree
 
 

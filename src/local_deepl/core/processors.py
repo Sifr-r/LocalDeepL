@@ -507,14 +507,17 @@ class TableExtractionProcessor:
                             )
                             grid[r].append(empty_node)
 
+                    # Phase A.1 (review C1) — pre-fix passed `block_type=` and
+                    # `text=` kwargs, which TableNode does not accept
+                    # (its fields are rows, cols, page_idx, bbox, cells,
+                    # block_id). The cell text and block type live on the
+                    # child BlockNode, not on the table itself.
                     table_node = TableNode(
-                        block_type=BlockType.TABLE,
                         bbox=[min_x, min_y, max_x, max_y],
-                        text="",
                         page_idx=page.page_index,
                         rows=row_count,
                         cols=max_col + 1,
-                        cells=grid
+                        cells=grid,
                     )
                     tree.tables.append(table_node)
                     

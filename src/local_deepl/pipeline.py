@@ -14,7 +14,7 @@ the configured components.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from local_deepl.core.document import DenseMode, SpellcheckMode
 from local_deepl.core.grounded import GroundedOCRBackend
@@ -30,6 +30,9 @@ from local_deepl.core.workflows import (
     WarningCallback,
 )
 
+if TYPE_CHECKING:
+    from local_deepl.core.callbacks import BlockCallbackSet
+
 
 class OCRPipeline:
     def __init__(
@@ -41,18 +44,25 @@ class OCRPipeline:
         grounded_backend: GroundedOCRBackend | None = None,
         document_processors: Sequence[DocumentProcessor] | None = None,
         page_preprocessor: PagePreprocessor | None = None,
+        block_callbacks: "BlockCallbackSet | None" = None,
     ):
         self.grounded_backend = grounded_backend
         if pdf_handler is None:
             raise ValueError("pdf_handler is required (used for output writing)")
         output_writer = output_writer or pdf_handler.embed_structured_text
 
+        # Phase B (review M2) — `block_callbacks` is forwarded to the
+        # engine so the WebSocket-free per-block observer path reaches
+        # the inner `_ocr_pages` method. Default `None` keeps every
+        # existing call site (tests, in-process programmatic use)
+        # working unchanged.
         self._engine: EngineBase
         if self.grounded_backend is not None:
             self._engine = GroundedEngine(
                 grounded_backend=self.grounded_backend,
                 output_writer=output_writer,
                 document_processors=document_processors,
+                block_callbacks=block_callbacks,
             )
         else:
             if aligner is None or ocr_processor is None:
@@ -67,6 +77,7 @@ class OCRPipeline:
                 output_writer=output_writer,
                 document_processors=document_processors,
                 page_preprocessor=page_preprocessor,
+                block_callbacks=block_callbacks,
             )
 
     @property

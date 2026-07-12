@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from local_deepl.core.callbacks import BlockCallbackSet
     from local_deepl.core.document import DocumentResult, SpellcheckMode
     from local_deepl.core.processors import DocumentProcessor
 
@@ -47,10 +48,23 @@ class EngineBase:
         self,
         output_writer: OutputWriter,
         document_processors: Sequence[DocumentProcessor] | None = None,
+        block_callbacks: "BlockCallbackSet | None" = None,
     ) -> None:
         self.output_writer = output_writer
         self.document_processors: tuple[DocumentProcessor, ...] = tuple(
             document_processors or ()
+        )
+        # Phase B (review M2) — the engine no longer imports the
+        # WebSocket manager. Per-block / per-page events flow through
+        # the injected callback set; the API layer wires those to
+        # whatever transport the deployment uses. `None` means "no
+        # observers," which is the right default for in-process
+        # programmatic use of `OCRPipeline` (no WebSocket, no
+        # listeners, pure engine output).
+        from local_deepl.core.callbacks import BlockCallbackSet
+
+        self.block_callbacks: BlockCallbackSet = (
+            block_callbacks if block_callbacks is not None else BlockCallbackSet()
         )
 
         # State populated after a run. Reset by ``_reset_run_state`` at the top

@@ -32,15 +32,19 @@ router = APIRouter()
 def _load_tree_from_artifact(artifact_id: str, token: str) -> Any:
     try:
         path = state.text_artifacts.get(artifact_id, token)
-        
-        import os
-        import pickle
-        tree_path = f"{path}.tree.pkl"
-        if os.path.exists(tree_path):
-            with open(tree_path, "rb") as f:
-                return pickle.load(f)
 
-        # Fallback for legacy text artifacts
+        import os
+        from pathlib import Path
+
+        from local_deepl.api.services.tree_artifact import read_tree
+        # Phase D (review M4) — read the JSON tree artifact. Falls
+        # back to the legacy text-only artifact if the JSON sidecar
+        # is missing (older in-flight requests from before Phase D).
+        tree_path = f"{path}.tree.json"
+        if os.path.exists(tree_path):
+            return read_tree(Path(tree_path))
+
+        # Fallback for legacy text artifacts (no tree sidecar)
         with open(path, "r", encoding="utf-8") as f:
             raw_data = json.load(f)
         import typing
