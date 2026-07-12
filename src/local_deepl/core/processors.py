@@ -11,10 +11,32 @@ from __future__ import annotations
 import re
 from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
-from typing import Protocol
+from typing import Protocol, TypedDict
 
 from local_deepl.core.block_tree import BlockNode, BlockType, Section, TableNode
-from local_deepl.core.document import DocumentBlock, DocumentPage, DocumentResult
+from local_deepl.core.document import BBox, DocumentBlock, DocumentPage, DocumentResult
+
+
+# Phase E (review E.3) — TypedDicts narrow the per-cell and per-table
+# record shapes so mypy can check the consumers without an `object`
+# cascade. Used by `TableExtractionProcessor._extract_page_tables`
+# (the producer) and `TableExtractionProcessor.process` (the
+# consumer). The on-disk JSON representation is the same `dict` —
+# only the in-process type is tightened.
+class _TableCellRecord(TypedDict):
+    row_index: int
+    column_index: int
+    block_index: int
+    text: str
+    bbox: BBox
+
+
+class _TableRecord(TypedDict):
+    table_index: int
+    row_count: int
+    column_count: int
+    cells: list[_TableCellRecord]
+
 
 LOCAL_DOCUMENT_PROCESSOR_NAMES = (
     "reading_order",
@@ -188,7 +210,7 @@ class StructureAnalysisProcessor:
         for page_idx, page in enumerate(document.pages):
             counts: Counter[str] = Counter()
             tree_page = tree.pages[page_idx] if tree else None
-            
+
             for block_idx, block in enumerate(page.blocks):
                 kind, confidence, signals = self._classify(block)
                 block.kind = kind
@@ -198,7 +220,7 @@ class StructureAnalysisProcessor:
                     "signals": signals,
                 }
                 counts[kind] += 1
-                
+
                 if tree_page and block_idx < len(tree_page.children):
                     node = tree_page.children[block_idx]
                     if kind == "heading":
@@ -210,7 +232,7 @@ class StructureAnalysisProcessor:
                         node.block_type = BlockType.KEY_VALUE
                     elif kind == "table_candidate":
                         # Table processor will properly replace it later
-                        node.block_type = BlockType.PARAGRAPH 
+                        node.block_type = BlockType.PARAGRAPH
                     else:
                         node.block_type = BlockType.PARAGRAPH
 
@@ -283,10 +305,14 @@ class SectionAnalysisProcessor:
         for page_idx, page in enumerate(document.pages):
             page_headings: list[dict[str, object]] = []
             tree_page = tree.pages[page_idx] if tree else None
-            
+
             for block_index, block in enumerate(page.blocks):
-                node = tree_page.children[block_index] if tree_page and block_index < len(tree_page.children) else None
-                
+                node = (
+                    tree_page.children[block_index]
+                    if tree_page and block_index < len(tree_page.children)
+                    else None
+                )
+
                 if self._is_heading(block):
                     section_index += 1
                     title = _normalize_space(block.text)
@@ -301,9 +327,14 @@ class SectionAnalysisProcessor:
                         **current_section,
                         "role": "heading",
                     }
-                    
+
                     if tree and node:
-                        current_tree_section = Section(title=title, level=1, start_page=page.page_index, block_id=node.block_id)
+                        current_tree_section = Section(
+                            title=title,
+                            level=1,
+                            start_page=page.page_index,
+                            block_id=node.block_id,
+                        )
                         tree.sections.append(current_tree_section)
                         node.parent_id = current_tree_section.block_id
                         node.section_hierarchy = [title]
@@ -377,7 +408,7 @@ class LayoutEnrichmentProcessor:
         for page_idx, page in enumerate(document.pages):
             counts: Counter[str] = Counter()
             tree_page = tree.pages[page_idx] if tree else None
-            
+
             for block_idx, block in enumerate(page.blocks):
                 role, region, confidence, signals = self._classify(block)
                 block.metadata["layout"] = {
@@ -387,7 +418,7 @@ class LayoutEnrichmentProcessor:
                     "signals": signals,
                 }
                 counts[role] += 1
-                
+
                 if tree_page and block_idx < len(tree_page.children):
                     node = tree_page.children[block_idx]
                     if role == "header":
@@ -462,34 +493,49 @@ class TableExtractionProcessor:
             ]
             tables_data = self._extract_page_tables(page, candidate_indices)
             page.metadata["tables"] = tables_data
-            
+
             if tree and tree.pages[page_idx]:
                 tree_page = tree.pages[page_idx]
                 table_cell_indices = set()
-                
+
                 for table_data in tables_data:
                     row_count = table_data["row_count"]
                     cells_data = table_data["cells"]
-                    
+
                     # Create empty grid
                     max_col = max((c["column_index"] for c in cells_data), default=-1)
                     if max_col < 0:
                         continue
-                        
-                    grid = [[] for _ in range(row_count)]
-                    
-                    min_x, min_y, max_x, max_y = float('inf'), float('inf'), float('-inf'), float('-inf')
-                    
+
+                    # Phase E (review E.3) — `grid` is the
+                    # row-major cell matrix. The annotation is
+                    # explicit because mypy can't infer it from the
+                    # list-comprehension literal. Each row grows
+                    # by `.append` as cells are visited; rows are
+                    # padded below to `max_col + 1` columns.
+                    grid: list[list[BlockNode]] = [[] for _ in range(row_count)]
+
+                    min_x, min_y, max_x, max_y = (
+                        float("inf"),
+                        float("inf"),
+                        float("-inf"),
+                        float("-inf"),
+                    )
+
                     for cell in cells_data:
                         r_idx = cell["row_index"]
-                        c_idx = cell["column_index"]
+                        # `column_index` is intentionally not unpacked
+                        # here — the cell's column position is
+                        # implicit in its row+cell_index pair, and
+                        # `grid[r_idx].append(node)` already
+                        # preserves the cell's place in the row.
                         b_idx = cell["block_index"]
                         table_cell_indices.add(b_idx)
-                        
+
                         node = tree_page.children[b_idx]
                         node.block_type = BlockType.TABLE
                         grid[r_idx].append(node)
-                        
+
                         bbox = node.bbox
                         min_x = min(min_x, bbox[0])
                         min_y = min(min_y, bbox[1])
@@ -501,9 +547,9 @@ class TableExtractionProcessor:
                         while len(grid[r]) < max_col + 1:
                             empty_node = BlockNode(
                                 block_type=BlockType.TABLE,
-                                bbox=[min_x, min_y, max_x, max_y], # fallback bbox
+                                bbox=[min_x, min_y, max_x, max_y],  # fallback bbox
                                 text="",
-                                page_idx=page.page_index
+                                page_idx=page.page_index,
                             )
                             grid[r].append(empty_node)
 
@@ -520,11 +566,12 @@ class TableExtractionProcessor:
                         cells=grid,
                     )
                     tree.tables.append(table_node)
-                    
+
                 if table_cell_indices:
                     # Filter out the individual cell blocks from the page's children
                     tree_page.children = [
-                        node for i, node in enumerate(tree_page.children)
+                        node
+                        for i, node in enumerate(tree_page.children)
                         if i not in table_cell_indices
                     ]
 
@@ -575,7 +622,7 @@ class TableExtractionProcessor:
 
     def _extract_page_tables(
         self, page: DocumentPage, candidate_indices: list[int]
-    ) -> list[dict[str, object]]:
+    ) -> list[_TableRecord]:
         if not candidate_indices:
             return []
 
@@ -604,7 +651,7 @@ class TableExtractionProcessor:
         if len(rows) < 2 or max(len(row) for row in rows) < self.min_columns:
             return []
 
-        cells: list[dict[str, object]] = []
+        cells: list[_TableCellRecord] = []
         for row_index, row in enumerate(rows):
             for column_index, block_index in enumerate(row):
                 block = page.blocks[block_index]
@@ -680,6 +727,7 @@ async def run_document_processors(
 
     if document.tree is None:
         from local_deepl.core.block_tree import from_document_result
+
         document.tree = from_document_result(document)
 
     result = document

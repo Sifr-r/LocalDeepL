@@ -103,9 +103,7 @@ class NLLBEngine:
         NLLB code (e.g. ``"fra_Latn"``).
         """
         if not text or not text.strip():
-            return NLLBResult(
-                text="", source_lang="auto", target_lang=target_language
-            )
+            return NLLBResult(text="", source_lang="auto", target_lang=target_language)
         self._ensure_loaded()
         loop = asyncio.get_event_loop()
         target_code = resolve_nllb_code(target_language)

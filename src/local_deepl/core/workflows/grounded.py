@@ -24,7 +24,7 @@ class GroundedEngine(EngineBase):
         grounded_backend: GroundedOCRBackend,
         output_writer: OutputWriter,
         document_processors: Sequence[DocumentProcessor] | None = None,
-        block_callbacks: "BlockCallbackSet | None" = None,
+        block_callbacks: BlockCallbackSet | None = None,
     ) -> None:
         # Phase B (review M2) — the grounded path also accepts the
         # callback set for symmetry with HybridEngine. The current
@@ -66,10 +66,21 @@ class GroundedEngine(EngineBase):
         pages_data = self._accumulate_pages(response.blocks)
         page_nums = sorted(pages_data)
 
-        block_metadata_overlays = {}
+        # Phase E (review E.5) — `block_metadata_overlays` is the
+        # shape `EngineBase._build_document_result` expects for its
+        # `block_metadata_overlays` kwarg: a dict keyed by
+        # `page_index`, each value a list of per-block overlay dicts
+        # in the same order as the page's blocks. The grounded path
+        # produces this directly from the backend response instead of
+        # through the `_build_document_result` indirection; the
+        # annotation here is the only place the overlay shape is
+        # documented in the codebase.
+        block_metadata_overlays: dict[int, list[dict[str, object]]] = {}
         for block in response.blocks:
             page_overlays = block_metadata_overlays.setdefault(block.page_index, [])
-            page_overlays.append({"label": block.label, "image_bytes": block.image_bytes})
+            page_overlays.append(
+                {"label": block.label, "image_bytes": block.image_bytes}
+            )
 
         document_result = await self._build_document_result(
             pages_data=pages_data,

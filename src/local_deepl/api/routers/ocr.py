@@ -35,13 +35,13 @@ from local_deepl.api.services.security import (
     save_validated_upload,
 )
 from local_deepl.api.services.workflow import build_workflow_summary
+
 # Phase A.3 (review M5) — `PagePreprocessor` was used as a type
 # annotation at line ~248 (`page_preprocessor: PagePreprocessor | None`)
 # without being imported. Worked only because `from __future__
 # import annotations` makes annotations lazy. Mypy caught the broken
 # symbol; lift the import to module top.
 from local_deepl.core.preprocessing import (
-    LocalPagePreprocessor,
     PagePreprocessingOptions,
     PagePreprocessor,
 )
@@ -271,15 +271,16 @@ def _build_pipeline(
             HandwritingPagePreprocessor,
             LocalPagePreprocessor,
         )
+
         if preprocessing_options.enabled:
-            page_preprocessor = CompositePagePreprocessor([
-                HandwritingPagePreprocessor(),
-                LocalPagePreprocessor()
-            ])
+            page_preprocessor = CompositePagePreprocessor(
+                [HandwritingPagePreprocessor(), LocalPagePreprocessor()]
+            )
         else:
             page_preprocessor = HandwritingPagePreprocessor()
     elif preprocessing_options.enabled:
         from local_deepl.core.preprocessing import LocalPagePreprocessor
+
         page_preprocessor = LocalPagePreprocessor()
 
     # Phase B (review M2) — build the callback set that bridges the
@@ -336,6 +337,7 @@ def _build_pipeline(
         )
     else:
         from local_deepl.core.trocr_engine import TrOCREngine
+
         backend = OCRProcessor(
             api_base=settings.api_base,
             api_key=settings.api_key,
@@ -571,7 +573,7 @@ async def process_pdf(
             state.text_artifacts.create, cast(PageText, pages_text)
         )
         text_path = artifact_handle.path
-        
+
         doc_res = getattr(pipeline, "last_document_result", None)
         if doc_res and doc_res.tree:
             # Phase D (review M4) — tree artifact is JSON, not pickle.
@@ -582,9 +584,8 @@ async def process_pdf(
             from local_deepl.api.services.tree_artifact import write_tree_atomic
 
             def _write_tree() -> None:
-                write_tree_atomic(
-                    doc_res.tree, pathlib.Path(f"{text_path}.tree.json")
-                )
+                write_tree_atomic(doc_res.tree, pathlib.Path(f"{text_path}.tree.json"))
+
             await asyncio.to_thread(_write_tree)
 
         metadata_handle = await _create_document_metadata_artifact(pipeline)

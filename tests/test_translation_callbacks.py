@@ -16,8 +16,6 @@ After Phase C:
 
 from __future__ import annotations
 
-import pytest
-
 from local_deepl.core.block_tree import (
     BlockNode,
     BlockType,

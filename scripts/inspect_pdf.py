@@ -3,9 +3,10 @@
 Inspect PDF metadata and dimensions.
 """
 
-import fitz
 import os
 import sys
+
+import fitz
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -21,7 +22,7 @@ def inspect_pdf(filename):
     print(f"  MediaBox: {page.mediabox}")
     print(f"  CropBox:  {page.cropbox}")
     print(f"  Rect:     {page.rect}")
-    
+
     # Check image size
     pix = page.get_pixmap()
     print(f"  Pixmap:   {pix.width} x {pix.height}")

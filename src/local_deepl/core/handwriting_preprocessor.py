@@ -121,7 +121,10 @@ def estimate_slant(binary: np.ndarray) -> float:
     # Detect vertical strokes via horizontal Sobel.
     sobel_x = cv2.Sobel(inv, cv2.CV_32F, 1, 0, ksize=3)
     angle = cv2.fastNlMeansDenoising(
-        (sobel_x * 255 / max(sobel_x.max(), 1.0)).astype(np.uint8), h=5.0, templateWindowSize=7, searchWindowSize=21
+        (sobel_x * 255 / max(sobel_x.max(), 1.0)).astype(np.uint8),
+        h=5.0,
+        templateWindowSize=7,
+        searchWindowSize=21,
     )
     # Use HoughLines as a quick proxy; return the median angle of the top peaks.
     lines = cv2.HoughLinesP(

@@ -16,7 +16,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from local_deepl.core.document import DocumentResult
@@ -69,7 +69,7 @@ class Span:
     # artifact (see `api/services/tree_artifact.py`) — replaces the
     # previous pickle round-trip.
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Span":
+    def from_dict(cls, data: dict[str, Any]) -> Span:
         return cls(
             text=data["text"],
             bold=bool(data.get("bold", False)),
@@ -119,7 +119,7 @@ class BlockNode:
 
     # Phase D (review M4) — see Span.from_dict for the contract.
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "BlockNode":
+    def from_dict(cls, data: dict[str, Any]) -> BlockNode:
         return cls(
             block_type=BlockType(data["block_type"]),
             bbox=[float(v) for v in data["bbox"]],
@@ -159,7 +159,7 @@ class PageTree:
 
     # Phase D (review M4) — see Span.from_dict for the contract.
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "PageTree":
+    def from_dict(cls, data: dict[str, Any]) -> PageTree:
         return cls(
             page_idx=int(data["page_idx"]),
             width=(int(data["width"]) if data.get("width") is not None else None),
@@ -190,7 +190,7 @@ class Section:
 
     # Phase D (review M4) — see Span.from_dict for the contract.
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Section":
+    def from_dict(cls, data: dict[str, Any]) -> Section:
         return cls(
             title=data["title"],
             level=int(data["level"]),
@@ -232,15 +232,14 @@ class TableNode:
 
     # Phase D (review M4) — see Span.from_dict for the contract.
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "TableNode":
+    def from_dict(cls, data: dict[str, Any]) -> TableNode:
         return cls(
             rows=int(data["rows"]),
             cols=int(data["cols"]),
             page_idx=int(data["page_idx"]),
             bbox=[float(v) for v in data["bbox"]],
             cells=[
-                [BlockNode.from_dict(c) for c in row]
-                for row in data.get("cells", [])
+                [BlockNode.from_dict(c) for c in row] for row in data.get("cells", [])
             ],
             block_id=data.get("block_id") or _new_block_id(),
         )
@@ -281,7 +280,7 @@ class FigureNode:
     # so the in-memory FigureNode is indistinguishable from one
     # constructed in-process.
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "FigureNode":
+    def from_dict(cls, data: dict[str, Any]) -> FigureNode:
         import base64
 
         image_bytes: bytes | None = None
@@ -318,7 +317,7 @@ class EquationNode:
 
     # Phase D (review M4) — see Span.from_dict for the contract.
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "EquationNode":
+    def from_dict(cls, data: dict[str, Any]) -> EquationNode:
         return cls(
             page_idx=int(data["page_idx"]),
             bbox=[float(v) for v in data["bbox"]],
@@ -354,15 +353,13 @@ class DocumentTree:
     # JSON artifact uses `DocumentTree.from_dict(tree.to_dict())` as
     # the round-trip; pickle is no longer in this path.
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "DocumentTree":
+    def from_dict(cls, data: dict[str, Any]) -> DocumentTree:
         return cls(
             pages=[PageTree.from_dict(p) for p in data.get("pages", [])],
             sections=[Section.from_dict(s) for s in data.get("sections", [])],
             tables=[TableNode.from_dict(t) for t in data.get("tables", [])],
             figures=[FigureNode.from_dict(f) for f in data.get("figures", [])],
-            equations=[
-                EquationNode.from_dict(e) for e in data.get("equations", [])
-            ],
+            equations=[EquationNode.from_dict(e) for e in data.get("equations", [])],
             source_path=data.get("source_path"),
             metadata=dict(data.get("metadata", {})),
         )
@@ -421,25 +418,41 @@ def from_pages_data(
     return tree
 
 
-def from_document_result(document: "DocumentResult") -> DocumentTree:
+def from_document_result(document: DocumentResult) -> DocumentTree:
     """Initialize a DocumentTree from a DocumentResult."""
-    tree = DocumentTree(source_path=document.source_path, metadata=dict(document.metadata) if hasattr(document, 'metadata') else {})
+    tree = DocumentTree(
+        source_path=document.source_path,
+        metadata=dict(document.metadata) if hasattr(document, "metadata") else {},
+    )
     for page in document.pages:
         tree_page = PageTree(
             page_idx=page.page_index,
             width=page.width,
             height=page.height,
-            metadata=dict(page.metadata)
+            metadata=dict(page.metadata),
         )
         for block in page.blocks:
             # Prefer 'label' from metadata (Grounded path), then 'kind'
-            kind_str = block.metadata.get("label") or (block.kind if isinstance(block.kind, str) else "paragraph")
-            
+            # Phase E (review E.6) — `DocumentBlock.metadata` is typed
+            # `dict[str, object]`, so the `.get(...)` returns `object`
+            # unless we narrow here. The cast is safe because every
+            # producer of these keys (the grounded backend, the
+            # structure / layout / quality processors) puts a string
+            # under "label" and bytes-or-None under "image_bytes".
+            kind_str = str(
+                block.metadata.get("label")
+                or (block.kind if isinstance(block.kind, str) else "paragraph")
+            )
+
             if kind_str in ("image", "figure"):
+                # `bytes | None` cast mirrors the FigureNode dataclass
+                # shape; the producer is the GroundedEngine which
+                # either populates this from a real crop or leaves it
+                # as None.
                 fig_node = FigureNode(
                     page_idx=page.page_index,
                     bbox=list(block.bbox),
-                    image_bytes=block.metadata.get("image_bytes"),
+                    image_bytes=cast("bytes | None", block.metadata.get("image_bytes")),
                     caption=block.text,
                 )
                 tree.figures.append(fig_node)
@@ -450,9 +463,14 @@ def from_document_result(document: "DocumentResult") -> DocumentTree:
                     text=block.text,
                     page_idx=page.page_index,
                     confidence=block.confidence,
-                    metadata=dict(block.metadata)
+                    metadata=dict(block.metadata),
                 )
-                node.image_bytes = fig_node.image_bytes # For html_writer compatibility
+                # For html_writer compatibility — BlockNode doesn't
+                # declare `image_bytes` (it lives on FigureNode), but
+                # html_writer reads it off the block too. This is a
+                # deliberate cross-reference; suppressing the
+                # attr-defined check here is the right call.
+                node.image_bytes = fig_node.image_bytes  # type: ignore[attr-defined]
                 tree_page.children.append(node)
                 continue
 
@@ -460,14 +478,14 @@ def from_document_result(document: "DocumentResult") -> DocumentTree:
                 block_type = BlockType(kind_str)
             except ValueError:
                 block_type = BlockType.PARAGRAPH
-            
+
             node = BlockNode(
                 block_type=block_type,
                 bbox=list(block.bbox),
                 text=block.text,
                 page_idx=page.page_index,
                 confidence=block.confidence,
-                metadata=dict(block.metadata)
+                metadata=dict(block.metadata),
             )
             tree_page.children.append(node)
         tree.pages.append(tree_page)

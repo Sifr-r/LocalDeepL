@@ -350,6 +350,7 @@ class OCRProcessor:
         # AttributeError, so the bug was invisible to the fast test suite.
         if getattr(self, "handwriting_mode", False) and self.trocr_engine is not None:
             from local_deepl.core.trocr_engine import _heuristic_confidence
+
             vlm_conf = _heuristic_confidence(result)
             if vlm_conf < self.confidence_threshold:
                 try:
@@ -358,7 +359,9 @@ class OCRProcessor:
                     image_bytes = base64.b64decode(image_base64)
                     trocr_res = await self.trocr_engine.recognize(image_bytes)
                     if trocr_res.confidence > vlm_conf:
-                        correction_prompt = DUAL_ENGINE_CROP_PROMPT.replace("{draft_text}", trocr_res.text)
+                        correction_prompt = DUAL_ENGINE_CROP_PROMPT.replace(
+                            "{draft_text}", trocr_res.text
+                        )
                         vlm_corrected = await self._chat(
                             correction_prompt,
                             image_base64,
@@ -367,7 +370,9 @@ class OCRProcessor:
                         )
                         vlm_corrected_body = _strip_yaml_front_matter(vlm_corrected)
                         vlm_corrected_res = " ".join(
-                            line.strip() for line in vlm_corrected_body.split("\n") if line.strip()
+                            line.strip()
+                            for line in vlm_corrected_body.split("\n")
+                            if line.strip()
                         )
                         if _is_fallback_response(vlm_corrected_res):
                             vlm_corrected_res = ""

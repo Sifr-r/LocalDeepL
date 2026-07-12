@@ -138,7 +138,7 @@ class HybridEngine(EngineBase):
         output_writer: OutputWriter,
         document_processors: Sequence[DocumentProcessor] | None = None,
         page_preprocessor: PagePreprocessor | None = None,
-        block_callbacks: "BlockCallbackSet | None" = None,
+        block_callbacks: BlockCallbackSet | None = None,
     ) -> None:
         # Phase B (review M2) — forward `block_callbacks` to the base
         # so the per-block / per-page event hook reaches `_ocr_pages`.

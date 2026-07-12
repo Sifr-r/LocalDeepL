@@ -64,7 +64,7 @@ def _build_round_trip_tree() -> DocumentTree:
             BlockNode(
                 block_type=BlockType.PARAGRAPH,
                 bbox=[0.1, 0.2, 0.9, 0.4],
-                text="Some text with 𝕌nicode and éàcent.",
+                text="Some text with Ünicode and éàcent.",
                 page_idx=0,
                 confidence=0.92,
                 metadata={"section": {"section_index": 0}},
@@ -172,10 +172,9 @@ def test_round_trip_preserves_every_field(tmp_path: Path):
     assert loaded.figures[0].image_bytes is not None
     # The JSON file on disk has the base64 form, not the raw bytes.
     raw = json.loads(path.read_text(encoding="utf-8"))
-    assert (
-        raw["figures"][0]["image_bytes_b64"]
-        == base64.b64encode(original.figures[0].image_bytes).decode("ascii")
-    )
+    assert raw["figures"][0]["image_bytes_b64"] == base64.b64encode(
+        original.figures[0].image_bytes
+    ).decode("ascii")
 
 
 def test_write_is_atomic_no_partial_file_on_existing_target(tmp_path: Path):

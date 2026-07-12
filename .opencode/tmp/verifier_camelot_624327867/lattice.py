@@ -8,19 +8,23 @@ from typing import Any
 import cv2
 
 from ..backends import ImageConversionBackend
-from ..image_processing import _line_crossing
-from ..image_processing import adaptive_threshold
-from ..image_processing import find_contours
-from ..image_processing import find_joints
-from ..image_processing import find_joints_from_lines
-from ..image_processing import find_lines
-from ..image_processing import find_lines_from_layout
-from ..utils import bbox_from_str
-from ..utils import merge_close_lines
-from ..utils import scale_image
-from ..utils import scale_pdf
-from ..utils import segments_in_bbox
-from ..utils import text_in_bbox_per_axis
+from ..image_processing import (
+    _line_crossing,
+    adaptive_threshold,
+    find_contours,
+    find_joints,
+    find_joints_from_lines,
+    find_lines,
+    find_lines_from_layout,
+)
+from ..utils import (
+    bbox_from_str,
+    merge_close_lines,
+    scale_image,
+    scale_pdf,
+    segments_in_bbox,
+    text_in_bbox_per_axis,
+)
 from .base import BaseParser
 
 #: Reject a detected ruled grid whose cells are at least this percent empty.

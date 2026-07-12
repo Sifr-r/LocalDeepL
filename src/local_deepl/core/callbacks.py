@@ -18,7 +18,6 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import NamedTuple
 
-
 # Per-block event. Emitted once a block has OCR text attached. The
 # `kind` and `confidence` fields are advisory: the engine fills them
 # with conservative defaults ("text", a length-based heuristic) and
@@ -95,6 +94,6 @@ __all__ = [
     "BlockCallback",
     "BlockCallbackSet",
     "PageCompleteCallback",
-    "TranslateChunkCallback",
     "TranslateCallbacks",
+    "TranslateChunkCallback",
 ]

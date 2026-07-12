@@ -149,6 +149,20 @@ filterwarnings = [
 [tool.ruff]
 line-length = 88
 target-version = "py311"
+# Phase E (review E.1) — the `.opencode/tmp/` directory holds
+# third-party sandbox scripts (verifier outputs from past code-review
+# runs, etc.) that are not part of the project source. The
+# `scripts/` directory holds developer-only CLI helpers (debug
+# scripts, fixture builders, visualizers) — they're not shipped,
+# not imported by the package, and not part of the production
+# lint surface. Excluding both means `ruff check` measures the
+# code that actually reaches users, not the throwaway tooling
+# that helps maintainers.
+extend-exclude = [
+    ".opencode/tmp/**",
+    ".mavis/**",
+    "scripts/**",
+]
 
 [tool.ruff.lint]
 select = [

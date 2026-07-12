@@ -44,7 +44,7 @@ class OCRPipeline:
         grounded_backend: GroundedOCRBackend | None = None,
         document_processors: Sequence[DocumentProcessor] | None = None,
         page_preprocessor: PagePreprocessor | None = None,
-        block_callbacks: "BlockCallbackSet | None" = None,
+        block_callbacks: BlockCallbackSet | None = None,
     ):
         self.grounded_backend = grounded_backend
         if pdf_handler is None:

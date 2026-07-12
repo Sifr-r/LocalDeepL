@@ -537,12 +537,13 @@ class PromptedGroundedOCR:
                     )
                     text = text.strip()
                     blocks = _parse_grounded_json(text, page_idx, w, h)
-                    
+
                     if any(b.label in ("image", "figure") for b in blocks):
                         import base64
                         import io
+
                         from PIL import Image
-                        
+
                         img_data = base64.b64decode(b64)
                         with Image.open(io.BytesIO(img_data)) as img:
                             for b in blocks:
@@ -551,7 +552,7 @@ class PromptedGroundedOCR:
                                         b.bbox[0] * w,
                                         b.bbox[1] * h,
                                         b.bbox[2] * w,
-                                        b.bbox[3] * h
+                                        b.bbox[3] * h,
                                     )
                                     # Ensure coordinates are within image bounds
                                     crop_box = (
@@ -561,7 +562,10 @@ class PromptedGroundedOCR:
                                         max(0, min(h, crop_box[3])),
                                     )
                                     # only crop if area > 0
-                                    if crop_box[2] > crop_box[0] and crop_box[3] > crop_box[1]:
+                                    if (
+                                        crop_box[2] > crop_box[0]
+                                        and crop_box[3] > crop_box[1]
+                                    ):
                                         cropped = img.crop(crop_box)
                                         buf = io.BytesIO()
                                         cropped.save(buf, format="PNG")

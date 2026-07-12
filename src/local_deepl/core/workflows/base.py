@@ -48,7 +48,7 @@ class EngineBase:
         self,
         output_writer: OutputWriter,
         document_processors: Sequence[DocumentProcessor] | None = None,
-        block_callbacks: "BlockCallbackSet | None" = None,
+        block_callbacks: BlockCallbackSet | None = None,
     ) -> None:
         self.output_writer = output_writer
         self.document_processors: tuple[DocumentProcessor, ...] = tuple(
@@ -182,7 +182,12 @@ class EngineBase:
             for page in document_result.pages:
                 block_overlays = block_metadata_overlays.get(page.page_index)
                 if block_overlays:
-                    for block, meta in zip(page.blocks, block_overlays):
+                    # `strict=True`: the engine guarantees the
+                    # backend emits one overlay per block, so
+                    # length mismatches are a real bug and should
+                    # surface loudly rather than silently drop the
+                    # tail of either sequence.
+                    for block, meta in zip(page.blocks, block_overlays, strict=True):
                         block.metadata.update(meta)
 
         return await run_document_processors(document_result, self.document_processors)

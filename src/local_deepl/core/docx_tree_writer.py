@@ -10,13 +10,11 @@ from __future__ import annotations
 
 import contextlib
 import io
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from docx import Document
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.shared import Inches, Pt, RGBColor
-
-from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from local_deepl.core.block_tree import BlockNode, DocumentTree, TableNode
@@ -43,7 +41,7 @@ def convert_tree_to_docx(tree: DocumentTree) -> io.BytesIO:
     return out
 
 
-def _render_block(doc: Any, node: "BlockNode") -> None:
+def _render_block(doc: Any, node: BlockNode) -> None:
     bt = node.block_type.value
     if bt == "section_header":
         level = max(1, min(6, node.level or 1))
@@ -105,7 +103,7 @@ def _render_block(doc: Any, node: "BlockNode") -> None:
             p.add_run(node.text)
 
 
-def _render_table(doc: Any, table_node: "TableNode") -> None:
+def _render_table(doc: Any, table_node: TableNode) -> None:
     rows = max(1, table_node.rows)
     cols = max(1, table_node.cols)
     table = doc.add_table(rows=rows, cols=cols)

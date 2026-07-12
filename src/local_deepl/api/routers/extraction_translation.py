@@ -33,7 +33,8 @@ def _load_pages_from_artifact(artifact_id: str, token: str) -> dict:
     try:
         path = state.text_artifacts.get(artifact_id, token)
         import json
-        with open(path, "r", encoding="utf-8") as f:
+
+        with open(path, encoding="utf-8") as f:
             raw_data = json.load(f)
         pages_data = {
             int(p): [([0.0, 0.0, 0.0, 0.0], txt) for txt in lines]
@@ -67,7 +68,9 @@ async def translate_tree_endpoint(req: TreeTranslationRequest) -> dict[str, Any]
     result back. If ``channel_id`` is supplied, streams
     ``translate_chunk_complete`` events.
     """
-    pages_data = _load_pages_from_artifact(req.text_artifact_id, req.text_artifact_token)
+    pages_data = _load_pages_from_artifact(
+        req.text_artifact_id, req.text_artifact_token
+    )
     if not pages_data:
         return {"status": "empty", "translated_pages": {}}
 

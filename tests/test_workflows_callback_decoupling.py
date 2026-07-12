@@ -22,7 +22,6 @@ import pytest
 
 from local_deepl.core.callbacks import BlockCallbackSet
 
-
 # ---------------------------------------------------------------------------
 # 1. Static dependency-direction check
 # ---------------------------------------------------------------------------
@@ -125,16 +124,18 @@ def _build_minimal_ocr_processor_stub():
         return_value=[[[0.0, 0.0, 1.0, 0.1], [0.0, 0.2, 1.0, 0.3]]]
     )
     aligner.align_text = MagicMock(
-        side_effect=lambda boxes, lines: [(b, t) for (b, _), t in zip(boxes, lines)]
+        side_effect=lambda boxes, lines: [
+            (b, t) for (b, _), t in zip(boxes, lines, strict=True)
+        ]
     )
     ocr_processor = MagicMock()
-    ocr_processor.perform_ocr = AsyncMock(
-        return_value=["line one", "line two"]
-    )
+    ocr_processor.perform_ocr = AsyncMock(return_value=["line one", "line two"])
     ocr_processor.perform_ocr_on_crop = AsyncMock(return_value="crop text")
     pdf_handler = MagicMock()
     pdf_handler.convert_to_images = MagicMock(
-        return_value={0: b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="}
+        return_value={
+            0: b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+        }
     )
     pdf_handler.embed_structured_text = MagicMock()
     return aligner, ocr_processor, pdf_handler

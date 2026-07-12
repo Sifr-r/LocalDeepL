@@ -66,7 +66,7 @@ async def main(image_path: str, output_pdf: str) -> None:
 
     # Inspect text positions in the output PDF — word level (not block grouped)
     out = fitz.open(output_pdf)
-    print(f"\n=== Output PDF words ===")
+    print("\n=== Output PDF words ===")
     for pn, page in enumerate(out):
         print(f"page {pn} size={page.rect}")
         words = page.get_text("words")
@@ -77,7 +77,7 @@ async def main(image_path: str, output_pdf: str) -> None:
     # Run align_text directly to inspect post-DP mapping
     structured = [(b, "") for b in boxes]
     aligned = aligner.align_text(structured, pages_text[0])
-    print(f"\n=== Aligned (box, text) pairs (raw DP, no refine) ===")
+    print("\n=== Aligned (box, text) pairs (raw DP, no refine) ===")
     for i, (bbox, text) in enumerate(aligned):
         print(f"  [{i}] {bbox} -> {text!r}")
 

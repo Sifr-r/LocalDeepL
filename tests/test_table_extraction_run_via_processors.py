@@ -11,14 +11,11 @@ the bug; this test exercises the production path.
 
 from __future__ import annotations
 
-import pytest
-
 from local_deepl.core.document import DocumentResult
 from local_deepl.core.processors import (
     TableExtractionProcessor,
     run_document_processors,
 )
-
 
 # A 2x2 grid on page 0. Bboxes are normalized in 0..1 and the y
 # values place "Name"/"Total" in row 1 and "A"/"$1" in row 2, so

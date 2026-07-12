@@ -60,7 +60,7 @@ async def main() -> None:
     response = await backend.ocr_document(str(in_path))
 
     if not response.blocks:
-        print(f"  ERROR: grounded returned 0 blocks; refusing to write empty fixture")
+        print("  ERROR: grounded returned 0 blocks; refusing to write empty fixture")
         sys.exit(1)
 
     layout = []

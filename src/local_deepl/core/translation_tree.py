@@ -74,7 +74,7 @@ async def translate_tree(
     sliding_window_words: int = 80,
     dual_translate: bool = False,
     second_translator: TranslatorFn | None = None,
-    on_translate_chunk: "TranslateChunkCallback | None" = None,
+    on_translate_chunk: TranslateChunkCallback | None = None,
 ) -> DocumentTree:
     """Translate every text-bearing block in a :class:`DocumentTree`.
 

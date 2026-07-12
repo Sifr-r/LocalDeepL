@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import logging
-import uuid
 from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from local_deepl.api.schemas import ExtractionRequest, TranslationRequest, TreeTranslationRequest
+from local_deepl.api.schemas import (
+    ExtractionRequest,
+    TranslationRequest,
+    TreeTranslationRequest,
+)
 from local_deepl.api.services.ai import (
     AIServiceError,
     extract_structured_data,

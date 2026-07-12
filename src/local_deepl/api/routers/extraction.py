@@ -37,6 +37,7 @@ def _load_tree_from_artifact(artifact_id: str, token: str) -> Any:
         from pathlib import Path
 
         from local_deepl.api.services.tree_artifact import read_tree
+
         # Phase D (review M4) — read the JSON tree artifact. Falls
         # back to the legacy text-only artifact if the JSON sidecar
         # is missing (older in-flight requests from before Phase D).
@@ -45,14 +46,16 @@ def _load_tree_from_artifact(artifact_id: str, token: str) -> Any:
             return read_tree(Path(tree_path))
 
         # Fallback for legacy text artifacts (no tree sidecar)
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             raw_data = json.load(f)
         import typing
+
         pages_data: dict[int, typing.Sequence[tuple[typing.Sequence[float], str]]] = {
             int(p): [([0.0, 0.0, 0.0, 0.0], str(txt)) for txt in lines]
             for p, lines in raw_data.items()
         }
         from local_deepl.core.block_tree import from_pages_data
+
         return from_pages_data(pages_data)
     except Exception as exc:
         raise HTTPException(status_code=404, detail="text artifact not found") from exc
@@ -76,7 +79,6 @@ async def export_docx(req: ExportDocxRequest) -> Response:
 @router.post("/api/export/docx-tree")
 async def export_docx_tree(req: ExportBlockTreeRequest) -> Response:
     """Generate a structured .docx from a stored DocumentTree artifact."""
-    from local_deepl.core.block_tree import from_pages_data
     from local_deepl.core.docx_tree_writer import convert_tree_to_docx
 
     tree = _load_tree_from_artifact(req.text_artifact_id, req.text_artifact_token)
@@ -93,7 +95,6 @@ async def export_docx_tree(req: ExportBlockTreeRequest) -> Response:
 @router.post("/api/export/html")
 async def export_html(req: ExportHtmlRequest) -> Response:
     """Generate a structured HTML document from a text artifact."""
-    from local_deepl.core.block_tree import from_pages_data
     from local_deepl.core.html_writer import render_html
 
     tree = _load_tree_from_artifact(req.text_artifact_id, req.text_artifact_token)
@@ -108,15 +109,16 @@ async def export_html(req: ExportHtmlRequest) -> Response:
 @router.post("/api/export/blocktree")
 async def export_blocktree(req: ExportBlockTreeRequest) -> JSONResponse:
     """Return the block-tree JSON for a stored text artifact."""
-    from local_deepl.core.block_tree import from_pages_data
     from local_deepl.core.tree_export import export_json
 
     tree = _load_tree_from_artifact(req.text_artifact_id, req.text_artifact_token)
 
     if req.metadata_artifact_id and req.metadata_artifact_token:
         try:
-            meta_path = state.metadata_artifacts.get(req.metadata_artifact_id, req.metadata_artifact_token)
-            with open(meta_path, "r", encoding="utf-8") as f:
+            meta_path = state.metadata_artifacts.get(
+                req.metadata_artifact_id, req.metadata_artifact_token
+            )
+            with open(meta_path, encoding="utf-8") as f:
                 meta = json.load(f)
             tree.metadata["processor_report"] = meta
         except Exception as exc:

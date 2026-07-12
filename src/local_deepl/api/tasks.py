@@ -51,16 +51,19 @@ def process_translation_task(
     )
 
     from local_deepl.api.routers import state
+
     try:
         path = state.text_artifacts.get(artifact_id, token)
     except Exception as exc:
         raise ValueError(f"Could not load artifact {artifact_id}") from exc
 
     import os
+
     from local_deepl.api.services.tree_artifact import (
         TreeArtifactError,
         read_tree,
     )
+
     tree_path = f"{path}.tree.json"
     if not os.path.exists(tree_path):
         raise ValueError(f"DocumentTree not found at {tree_path}")
@@ -80,9 +83,9 @@ def process_translation_task(
         glossary = Glossary.from_dict({"entries": glossary_entries})
 
     # Initialize translation graph
-    from local_deepl.core.translation import run_translation
-
     import asyncio
+
+    from local_deepl.core.translation import run_translation
 
     async def translator_fn(prompt: str, lang: str) -> str:
         # Re-use run_translation wrapper for now (which is sync inside run_translation,
@@ -178,5 +181,5 @@ def process_translation_task(
     return {
         "artifact_id": artifact_id,
         "translated_tree_path": translated_tree_path,
-        "blocks_translated": len(translated_tree.pages)
+        "blocks_translated": len(translated_tree.pages),
     }

@@ -1,30 +1,29 @@
-from collections import OrderedDict, defaultdict
-import json
 import argparse
-import sys
-import xml.etree.ElementTree as ET
+import json
 import os
 import random
-import io
+import sys
+import xml.etree.ElementTree as ET
+from collections import OrderedDict, defaultdict
 
-import torch
-from torchvision import transforms
-from PIL import Image
-from fitz import Rect
-import numpy as np
-import pandas as pd
-import matplotlib
+import matplotlib.patches as patches
+
 #matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-from matplotlib.patches import Patch
-
-from main import get_model
+import numpy as np
+import pandas as pd
 import postprocess
+import torch
+from fitz import Rect
+from matplotlib.patches import Patch
+from PIL import Image
+from torchvision import transforms
+
 sys.path.append("../detr")
 from models import build_model
 
-class MaxResize(object):
+
+class MaxResize:
     def __init__(self, max_size=800):
         self.max_size = max_size
 
@@ -33,7 +32,7 @@ class MaxResize(object):
         current_max_size = max(width, height)
         scale = self.max_size / current_max_size
         resized_image = image.resize((int(round(scale*width)), int(round(scale*height))))
-        
+
         return resized_image
 
 detection_transform = transforms.Compose([
@@ -96,7 +95,7 @@ def get_args():
     parser.add_argument('--structure_model_path', help="The path to the structure model")
     parser.add_argument('--detection_config_path',
                         help="Filepath to the detection model config file")
-    parser.add_argument('--detection_model_path', help="The path to the detection model")                       
+    parser.add_argument('--detection_model_path', help="The path to the detection model")
     parser.add_argument('--detection_device', default="cuda")
     parser.add_argument('--structure_device', default="cuda")
     parser.add_argument('--crops', '-p', action='store_true',
@@ -138,11 +137,11 @@ def iob(bbox1, bbox2):
     Compute the intersection area over box area, for bbox1.
     """
     intersection = Rect(bbox1).intersect(bbox2)
-    
+
     bbox1_area = Rect(bbox1).get_area()
     if bbox1_area > 0:
         return intersection.get_area() / bbox1_area
-    
+
     return 0
 
 
@@ -154,7 +153,7 @@ def align_headers(headers, rows):
     For now, we are not supporting tables with multiple headers, so we need to
     eliminate anything besides the top-most header.
     """
-    
+
     aligned_headers = []
 
     for row in rows:
@@ -306,7 +305,7 @@ def objects_to_structures(objects, tokens, class_thresholds):
     for table in tables:
         table_objects = [obj for obj in objects if iob(obj['bbox'], table['bbox']) >= 0.5]
         table_tokens = [token for token in tokens if iob(token['bbox'], table['bbox']) >= 0.5]
-        
+
         structure = {}
 
         columns = [obj for obj in table_objects if obj['label'] == 'table column']
@@ -334,7 +333,7 @@ def objects_to_structures(objects, tokens, class_thresholds):
         row_rect = Rect()
         for obj in rows:
             row_rect.include_rect(obj['bbox'])
-        column_rect = Rect() 
+        column_rect = Rect()
         for obj in columns:
             column_rect.include_rect(obj['bbox'])
         table['row_column_bbox'] = [column_rect[0], row_rect[1], column_rect[2], row_rect[3]]
@@ -454,10 +453,10 @@ def structure_to_cells(table_structure, tokens):
     for cell, cell_span_nums in zip(cells, span_nums_by_cell):
         cell_spans = [tokens[num] for num in cell_span_nums]
         # TODO: Refine how text is extracted; should be character-based, not span-based;
-        # but need to associate 
+        # but need to associate
         cell['cell text'] = postprocess.extract_text_from_spans(cell_spans, remove_integer_superscripts=False)
         cell['spans'] = cell_spans
-        
+
     # Adjust the row, column, and cell bounding boxes to reflect the extracted text
     num_rows = len(rows)
     rows = postprocess.sort_objects_top_to_bottom(rows)
@@ -571,7 +570,7 @@ def visualize_detected_tables(img, det_tables, out_path):
     plt.imshow(img, interpolation="lanczos")
     plt.gcf().set_size_inches(20, 20)
     ax = plt.gca()
-    
+
     for det_table in det_tables:
         bbox = det_table['bbox']
 
@@ -589,14 +588,14 @@ def visualize_detected_tables(img, det_tables, out_path):
             hatch='//////'
         else:
             continue
- 
-        rect = patches.Rectangle(bbox[:2], bbox[2]-bbox[0], bbox[3]-bbox[1], linewidth=linewidth, 
+
+        rect = patches.Rectangle(bbox[:2], bbox[2]-bbox[0], bbox[3]-bbox[1], linewidth=linewidth,
                                     edgecolor='none',facecolor=facecolor, alpha=0.1)
         ax.add_patch(rect)
-        rect = patches.Rectangle(bbox[:2], bbox[2]-bbox[0], bbox[3]-bbox[1], linewidth=linewidth, 
+        rect = patches.Rectangle(bbox[:2], bbox[2]-bbox[0], bbox[3]-bbox[1], linewidth=linewidth,
                                     edgecolor=edgecolor,facecolor='none',linestyle='-', alpha=alpha)
         ax.add_patch(rect)
-        rect = patches.Rectangle(bbox[:2], bbox[2]-bbox[0], bbox[3]-bbox[1], linewidth=0, 
+        rect = patches.Rectangle(bbox[:2], bbox[2]-bbox[0], bbox[3]-bbox[1], linewidth=0,
                                     edgecolor=edgecolor,facecolor='none',linestyle='-', hatch=hatch, alpha=0.2)
         ax.add_patch(rect)
 
@@ -608,7 +607,7 @@ def visualize_detected_tables(img, det_tables, out_path):
                         Patch(facecolor=(0.95, 0.6, 0.1), edgecolor=(0.95, 0.6, 0.1),
                                 label='Table (rotated)', hatch='//////', alpha=0.3)]
     plt.legend(handles=legend_elements, bbox_to_anchor=(0.5, -0.02), loc='upper center', borderaxespad=0,
-                    fontsize=10, ncol=2)  
+                    fontsize=10, ncol=2)
     plt.gcf().set_size_inches(10, 10)
     plt.axis('off')
     plt.savefig(out_path, bbox_inches='tight', dpi=150)
@@ -620,7 +619,7 @@ def visualize_cells(img, cells, out_path):
     plt.imshow(img, interpolation="lanczos")
     plt.gcf().set_size_inches(20, 20)
     ax = plt.gca()
-    
+
     for cell in cells:
         bbox = cell['bbox']
 
@@ -642,14 +641,14 @@ def visualize_cells(img, cells, out_path):
             alpha = 0.3
             linewidth = 2
             hatch='\\\\\\\\\\\\'
- 
-        rect = patches.Rectangle(bbox[:2], bbox[2]-bbox[0], bbox[3]-bbox[1], linewidth=linewidth, 
+
+        rect = patches.Rectangle(bbox[:2], bbox[2]-bbox[0], bbox[3]-bbox[1], linewidth=linewidth,
                                     edgecolor='none',facecolor=facecolor, alpha=0.1)
         ax.add_patch(rect)
-        rect = patches.Rectangle(bbox[:2], bbox[2]-bbox[0], bbox[3]-bbox[1], linewidth=linewidth, 
+        rect = patches.Rectangle(bbox[:2], bbox[2]-bbox[0], bbox[3]-bbox[1], linewidth=linewidth,
                                     edgecolor=edgecolor,facecolor='none',linestyle='-', alpha=alpha)
         ax.add_patch(rect)
-        rect = patches.Rectangle(bbox[:2], bbox[2]-bbox[0], bbox[3]-bbox[1], linewidth=0, 
+        rect = patches.Rectangle(bbox[:2], bbox[2]-bbox[0], bbox[3]-bbox[1], linewidth=0,
                                     edgecolor=edgecolor,facecolor='none',linestyle='-', hatch=hatch, alpha=0.2)
         ax.add_patch(rect)
 
@@ -663,7 +662,7 @@ def visualize_cells(img, cells, out_path):
                         Patch(facecolor=(0.95, 0.6, 0.1), edgecolor=(0.95, 0.6, 0.1),
                                 label='Projected row header cell', hatch='//////', alpha=0.3)]
     plt.legend(handles=legend_elements, bbox_to_anchor=(0.5, -0.02), loc='upper center', borderaxespad=0,
-                    fontsize=10, ncol=3)  
+                    fontsize=10, ncol=3)
     plt.gcf().set_size_inches(10, 10)
     plt.axis('off')
     plt.savefig(out_path, bbox_inches='tight', dpi=150)
@@ -671,7 +670,7 @@ def visualize_cells(img, cells, out_path):
 
     return
 
-class TableExtractionPipeline(object):
+class TableExtractionPipeline:
     def __init__(self, det_device=None, str_device=None,
                  det_model=None, str_model=None,
                  det_model_path=None, str_model_path=None,
@@ -688,15 +687,15 @@ class TableExtractionPipeline(object):
         self.str_class_idx2name = {v:k for k, v in self.str_class_name2idx.items()}
         self.str_class_thresholds = structure_class_thresholds
 
-        if not det_config_path is None:
-            with open(det_config_path, 'r') as f:
+        if det_config_path is not None:
+            with open(det_config_path) as f:
                 det_config = json.load(f)
             det_args = type('Args', (object,), det_config)
             det_args.device = det_device
             self.det_model, _, _ = build_model(det_args)
             print("Detection model initialized.")
 
-            if not det_model_path is None:
+            if det_model_path is not None:
                 self.det_model.load_state_dict(torch.load(det_model_path,
                                                      map_location=torch.device(det_device)))
                 self.det_model.to(det_device)
@@ -705,15 +704,15 @@ class TableExtractionPipeline(object):
             else:
                 self.det_model = None
 
-        if not str_config_path is None:
-            with open(str_config_path, 'r') as f:
+        if str_config_path is not None:
+            with open(str_config_path) as f:
                 str_config = json.load(f)
             str_args = type('Args', (object,), str_config)
             str_args.device = str_device
             self.str_model, _, _ = build_model(str_args)
             print("Structure model initialized.")
 
-            if not str_model_path is None:
+            if str_model_path is not None:
                 self.str_model.load_state_dict(torch.load(str_model_path,
                                                      map_location=torch.device(str_device)))
                 self.str_model.to(str_device)
@@ -777,7 +776,7 @@ class TableExtractionPipeline(object):
         if not (out_cells or out_html or out_csv):
             return out_formats
 
-        # Further process the detected objects so they correspond to a consistent table 
+        # Further process the detected objects so they correspond to a consistent table
         tables_structure = objects_to_structures(objects, tokens, self.str_class_thresholds)
 
         # Enumerate all table cells: grid cells and spanning cells
@@ -792,7 +791,7 @@ class TableExtractionPipeline(object):
             tables_htmls = [cells_to_html(cells) for cells in tables_cells]
             out_formats['html'] = tables_htmls
 
-        # Convert cells to CSV, including flattening multi-row column headers to a single row 
+        # Convert cells to CSV, including flattening multi-row column headers to a single row
         if out_csv:
             tables_csvs = [cells_to_csv(cells) for cells in tables_cells]
             out_formats['csv'] = tables_csvs
@@ -835,14 +834,14 @@ def output_result(key, val, args, img, img_file):
         for idx, elem in enumerate(val):
             if key == 'crops':
                 for idx, cropped_table in enumerate(val):
-                    out_img_file = img_file.replace(".jpg", "_table_{}.jpg".format(idx))
+                    out_img_file = img_file.replace(".jpg", f"_table_{idx}.jpg")
                     cropped_table['image'].save(os.path.join(args.out_dir,
                                                                 out_img_file))
                     out_words_file = out_img_file.replace(".jpg", "_words.json")
                     with open(os.path.join(args.out_dir, out_words_file), 'w') as f:
                         json.dump(cropped_table['tokens'], f)
             elif key == 'cells':
-                out_file = img_file.replace(".jpg", "_{}_objects.json".format(idx))
+                out_file = img_file.replace(".jpg", f"_{idx}_objects.json")
                 with open(os.path.join(args.out_dir, out_file), 'w') as f:
                     json.dump(elem, f)
                 if args.verbose:
@@ -852,28 +851,28 @@ def output_result(key, val, args, img, img_file):
                     out_path = os.path.join(args.out_dir, out_file)
                     visualize_cells(img, elem, out_path)
             else:
-                out_file = img_file.replace(".jpg", "_{}.{}".format(idx, key))
+                out_file = img_file.replace(".jpg", f"_{idx}.{key}")
                 with open(os.path.join(args.out_dir, out_file), 'w') as f:
                     f.write(elem)
                 if args.verbose:
                     print(elem)
-                        
+
 
 def main():
     args = get_args()
     print(args.__dict__)
     print('-' * 100)
 
-    if not args.out_dir is None and not os.path.exists(args.out_dir):
+    if args.out_dir is not None and not os.path.exists(args.out_dir):
         os.makedirs(args.out_dir)
 
     # Create inference pipeline
     print("Creating inference pipeline")
     pipe = TableExtractionPipeline(det_device=args.detection_device,
                                    str_device=args.structure_device,
-                                   det_config_path=args.detection_config_path, 
+                                   det_config_path=args.detection_config_path,
                                    det_model_path=args.detection_model_path,
-                                   str_config_path=args.structure_config_path, 
+                                   str_config_path=args.structure_config_path,
                                    str_model_path=args.structure_model_path)
 
     # Load images
@@ -882,14 +881,14 @@ def main():
     random.shuffle(img_files)
 
     for count, img_file in enumerate(img_files):
-        print("({}/{})".format(count+1, num_files))
+        print(f"({count+1}/{num_files})")
         img_path = os.path.join(args.image_dir, img_file)
         img = Image.open(img_path)
         print("Image loaded.")
 
-        if not args.words_dir is None:
+        if args.words_dir is not None:
             tokens_path = os.path.join(args.words_dir, img_file.replace(".jpg", "_words.json"))
-            with open(tokens_path, 'r') as f:
+            with open(tokens_path) as f:
                 tokens = json.load(f)
 
                 # Handle dictionary format
@@ -900,11 +899,11 @@ def main():
                 # Need to be in a relative reading order
                 # If no order is provided, use current order
                 for idx, token in enumerate(tokens):
-                    if not 'span_num' in token:
+                    if 'span_num' not in token:
                         token['span_num'] = idx
-                    if not 'line_num' in token:
+                    if 'line_num' not in token:
                         token['line_num'] = 0
-                    if not 'block_num' in token:
+                    if 'block_num' not in token:
                         token['block_num'] = 0
         else:
             tokens = []
@@ -933,7 +932,7 @@ def main():
             for table_idx, extracted_table in enumerate(extracted_tables):
                 for key, val in extracted_table.items():
                     output_result(key, val, args, extracted_table['image'],
-                                  img_file.replace('.jpg', '_{}.jpg'.format(table_idx)))
+                                  img_file.replace('.jpg', f'_{table_idx}.jpg'))
 
 if __name__ == "__main__":
     main()
