@@ -48,7 +48,12 @@ async function loadWorkspaceDocument(file) {
                     
                     if (refs.ribbonTotalPages) refs.ribbonTotalPages.textContent = pdfDoc.numPages;
                     if (refs.ribbonCurrentPage) refs.ribbonCurrentPage.textContent = 1;
-                    
+
+                    // Build page thumbnail strip (Phase 5.1)
+                    if (typeof buildThumbnailStrip === 'function') {
+                        buildThumbnailStrip(pdfDoc.numPages);
+                    }
+
                     // Render page 1
                     await renderWorkspacePage(1);
                     showToast('PDF loaded successfully!', 'success');
@@ -68,7 +73,11 @@ async function loadWorkspaceDocument(file) {
         
         if (refs.ribbonTotalPages) refs.ribbonTotalPages.textContent = '1';
         if (refs.ribbonCurrentPage) refs.ribbonCurrentPage.textContent = 1;
-        
+
+        if (typeof buildThumbnailStrip === 'function') {
+            buildThumbnailStrip(1);
+        }
+
         await renderWorkspaceImage(file);
         showToast('Image loaded successfully!', 'success');
     }
@@ -98,6 +107,9 @@ async function renderWorkspacePage(pageNum) {
         };
 
         await page.render(renderContext).promise;
+
+        // Cache viewport for live bbox redraws (Phase 1.2)
+        workspaceState.lastViewport = viewport;
 
         // Bounding boxes rendering
         drawLayoutBboxes(workspaceState.currentPageIdx, viewport);
@@ -145,30 +157,71 @@ async function renderWorkspaceImage(file) {
     img.src = URL.createObjectURL(file);
 }
 
-// 4. Draw layout bounding boxes overlay
+// 4. Draw layout bounding boxes overlay (Phase 1.2 + Phase 5 heatmap)
 function drawLayoutBboxes(pageIdx, viewport) {
     if (!refs.workspaceBboxSvg) return;
     clearElementChildren(refs.workspaceBboxSvg);
-    
-    const bboxes = workspaceState.layoutBboxes ? workspaceState.layoutBboxes[pageIdx] : null;
-    if (!bboxes || !Array.isArray(bboxes)) return;
-    
-    bboxes.forEach(box => {
+
+    const entries = workspaceState.layoutBboxes ? workspaceState.layoutBboxes[pageIdx] : null;
+    if (!entries || !Array.isArray(entries)) return;
+
+    const heatmapOn = refs.workspaceBboxSvg.classList.contains('confidence-heatmap');
+
+    const colorForKind = (kind) => {
+        switch (kind) {
+            case 'heading':
+            case 'section_header': return 'rgba(59, 130, 246, 0.7)';      // blue
+            case 'table':           return 'rgba(16, 185, 129, 0.7)';      // green
+            case 'figure':          return 'rgba(168, 85, 247, 0.7)';      // violet
+            case 'equation':        return 'rgba(249, 115, 22, 0.7)';      // orange
+            case 'caption':         return 'rgba(168, 85, 247, 0.6)';
+            default:                return 'rgba(139, 92, 246, 0.6)';      // primary
+        }
+    };
+    const colorForConfidence = (c) => {
+        if (c == null) return 'rgba(139, 92, 246, 0.4)';
+        if (c >= 0.9) return 'rgba(16, 185, 129, 0.55)';   // green
+        if (c >= 0.75) return 'rgba(234, 179, 8, 0.55)';   // yellow
+        if (c >= 0.6) return 'rgba(249, 115, 22, 0.6)';    // orange
+        return 'rgba(239, 68, 68, 0.65)';                   // red
+    };
+
+    entries.forEach((entry) => {
+        // Accept both legacy [x0,y0,x1,y1] and rich {bbox, kind, text, confidence}
+        const box = Array.isArray(entry) ? entry : (entry && entry.bbox);
+        if (!box) return;
         const [nx0, ny0, nx1, ny1] = box;
         const x = nx0 * viewport.width;
         const y = ny0 * viewport.height;
         const width = (nx1 - nx0) * viewport.width;
         const height = (ny1 - ny0) * viewport.height;
-        
+
+        const kind = (entry && entry.kind) || 'text';
+        const confidence = entry && entry.confidence;
+
         const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         rect.setAttribute('x', x);
         rect.setAttribute('y', y);
         rect.setAttribute('width', width);
         rect.setAttribute('height', height);
-        rect.setAttribute('fill', 'transparent');
-        rect.setAttribute('stroke', 'rgba(139, 92, 246, 0.5)');
+        if (heatmapOn) {
+            const fill = colorForConfidence(confidence);
+            rect.setAttribute('fill', fill);
+            rect.setAttribute('stroke', fill);
+        } else {
+            rect.setAttribute('fill', 'transparent');
+            rect.setAttribute('stroke', colorForKind(kind));
+        }
         rect.setAttribute('stroke-width', '1.5');
-        
+        rect.setAttribute('data-confidence', String(confidence ?? ''));
+        rect.setAttribute('data-kind', kind);
+
+        if (entry && entry.text) {
+            const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+            title.textContent = `${kind}${confidence != null ? ` (conf ${confidence.toFixed(2)})` : ''}: ${entry.text}`;
+            rect.appendChild(title);
+        }
+
         refs.workspaceBboxSvg.appendChild(rect);
     });
 }

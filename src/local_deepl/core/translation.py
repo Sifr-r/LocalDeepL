@@ -43,6 +43,10 @@ class TranslationState(TypedDict, total=False):
     feedback: str
     attempts: int
     settings: TranslationSettings
+    # Phase 4 additions
+    glossary_prompt_block: str
+    entity_memory_prompt_block: str
+    sliding_window: str
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +155,17 @@ def _state_settings(state: TranslationState) -> TranslationSettings:
 
 
 def translate_node(state: TranslationState) -> dict[str, str | int]:
-    """Calls the LLM to translate the chunk, using RAG context."""
+    """Calls the LLM to translate the chunk, using RAG context.
+
+    Optional state fields (Phase 4 additions):
+
+    - ``glossary_prompt_block``: a DeepL-style ``style_rules`` block built
+      from a :class:`local_deepl.core.glossary.Glossary`.
+    - ``entity_memory_prompt_block``: a context block listing proper nouns
+      and dates from :class:`local_deepl.core.entity_memory.EntityMemory`.
+    - ``sliding_window``: a tail of the previous translation, used as
+      auxiliary consistency context.
+    """
     import litellm
 
     from local_deepl.utils.litellm_provider import resolve_custom_provider
@@ -160,11 +174,22 @@ def translate_node(state: TranslationState) -> dict[str, str | int]:
     custom_provider = resolve_custom_provider(settings.model)
 
     prompt = f"Translate the following text into {state['target_language']}.\n\n"
+    if state.get("glossary_prompt_block"):
+        prompt += state["glossary_prompt_block"] + "\n\n"
+    if state.get("entity_memory_prompt_block"):
+        prompt += state["entity_memory_prompt_block"] + "\n\n"
     if state.get("rag_context"):
         prompt += (
             "Use the following lexicon definitions to ensure correct terminology:\n"
         )
         prompt += "\n".join(state["rag_context"]) + "\n\n"
+
+    if state.get("sliding_window"):
+        prompt += (
+            "PREVIOUS CONTEXT (do not translate again, just stay consistent):\n"
+            + state["sliding_window"]
+            + "\n\n"
+        )
 
     if state.get("feedback"):
         prompt += f"Previous translation had issues. Feedback: {state['feedback']}\nPlease fix these issues.\n\n"

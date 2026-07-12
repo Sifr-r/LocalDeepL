@@ -85,6 +85,81 @@ async function connectWS() {
     state.ws.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
+            // Block-complete event: append to live bbox overlay.
+            if (data.type === 'block_complete') {
+                if (!workspaceState.layoutBboxes) workspaceState.layoutBboxes = {};
+                if (!workspaceState.layoutBboxes[data.page_idx]) {
+                    workspaceState.layoutBboxes[data.page_idx] = [];
+                }
+                workspaceState.layoutBboxes[data.page_idx].push({
+                    bbox: data.bbox,
+                    text: data.text,
+                    kind: data.kind || 'text',
+                    confidence: data.confidence,
+                });
+                if (typeof drawLayoutBboxes === 'function' &&
+                    workspaceState.currentPageIdx === data.page_idx) {
+                    // Re-render the overlay for the current page
+                    const viewport = workspaceState.lastViewport;
+                    if (viewport) drawLayoutBboxes(data.page_idx, viewport);
+                }
+                // Notify thumbnail strip (Phase 5.1)
+                window.dispatchEvent(new CustomEvent('ocr-block', { detail: data }));
+                
+                // Stream extracted text into Markdown tab
+                if (refs.mdContent && data.text) {
+                    const cur = refs.mdContent.textContent || '';
+                    refs.mdContent.textContent = (cur ? cur + '\n\n' : '') + data.text;
+                    if (window.markdownit) {
+                        const html = window.markdownit().render(refs.mdContent.textContent);
+                        const parsed = new DOMParser().parseFromString(html, 'text/html');
+                        const frag = document.createDocumentFragment();
+                        while (parsed.body.firstChild) {
+                            frag.appendChild(parsed.body.firstChild);
+                        }
+                        refs.mdContent.replaceChildren(frag);
+                    }
+                }
+                return;
+            }
+            // Page complete event: notify thumbnails
+            if (data.type === 'page_complete') {
+                window.dispatchEvent(new CustomEvent('ocr-page-complete', { detail: data }));
+                return;
+            }
+            // Translation chunk event: stream translated text into the right pane.
+            if (data.type === 'translate_chunk_complete') {
+                if (refs.translatedMarkdownContent) {
+                    const cur = refs.translatedMarkdownContent.textContent || '';
+                    refs.translatedMarkdownContent.textContent =
+                        (cur ? cur + '\n\n' : '') + data.translated_text;
+                    if (window.markdownit) {
+                        // markdownit() sanitises by default (raw HTML in markdown
+                        // is escaped), so the returned string is safe to parse and
+                        // adopt into the DOM. We use DOMParser + replaceChildren
+                        // (not the assignment-to-inner-HTML property) to satisfy
+                        // the project's no-raw-HTML-insertion policy. The trusted
+                        // source is the markdown renderer.
+                        const html = window.markdownit().render(
+                            refs.translatedMarkdownContent.textContent
+                        );
+                        const parsed = new DOMParser().parseFromString(
+                            html, 'text/html'
+                        );
+                        const frag = document.createDocumentFragment();
+                        while (parsed.body.firstChild) {
+                            frag.appendChild(parsed.body.firstChild);
+                        }
+                        refs.translatedMarkdownContent.replaceChildren(frag);
+                    }
+                }
+                return;
+            }
+            // Cancellation: surface and stop the progress bar.
+            if (data.type === 'cancelled') {
+                if (refs.cancelBtn) refs.cancelBtn.click();
+                return;
+            }
             if (data.status && data.percent !== undefined) {
                 updateProgress(data.status, data.percent);
                 

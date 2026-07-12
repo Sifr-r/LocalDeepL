@@ -49,6 +49,48 @@ class PagePreprocessor(Protocol):
     ) -> PagePreprocessingResult:
         """Return preprocessed base64 PNG pages plus page-level diagnostics."""
 
+class CompositePagePreprocessor:
+    """Runs a sequence of preprocessors in order."""
+    def __init__(self, preprocessors: list[PagePreprocessor]):
+        self.preprocessors = preprocessors
+
+    def preprocess(
+        self,
+        images: Mapping[int, str],
+        options: PagePreprocessingOptions,
+    ) -> PagePreprocessingResult:
+        current_images = dict(images)
+        all_metadata = {page_index: {} for page_index in current_images.keys()}
+        
+        for preprocessor in self.preprocessors:
+            result = preprocessor.preprocess(current_images, options)
+            current_images = result.images
+            for page_index, meta in result.metadata.items():
+                all_metadata[page_index].update(meta)
+                
+        return PagePreprocessingResult(images=current_images, metadata=all_metadata)
+
+class HandwritingPagePreprocessor:
+    """Applies handwriting-specific preprocessing before layout detection and OCR."""
+    def preprocess(
+        self,
+        images: Mapping[int, str],
+        options: PagePreprocessingOptions,
+    ) -> PagePreprocessingResult:
+        from local_deepl.core.handwriting_preprocessor import (
+            HandwritingOptions,
+            preprocess_for_ocr,
+        )
+        # Use default handwriting options, triggered by the handwriting mode
+        hw_opts = HandwritingOptions(enabled=True)
+        processed: dict[int, str] = {}
+        metadata: dict[int, dict[str, object]] = {}
+        for page_index, image_b64 in images.items():
+            processed[page_index] = preprocess_for_ocr(image_b64, hw_opts)
+            metadata[page_index] = {"handwriting_preprocessed": True}
+        return PagePreprocessingResult(images=processed, metadata=metadata)
+
+
 
 class LocalPagePreprocessor:
     """Deterministic local image cleanup built from OpenCV and Pillow."""

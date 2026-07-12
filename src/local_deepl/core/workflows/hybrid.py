@@ -26,6 +26,30 @@ from local_deepl.core.workflows.base import (
 )
 from local_deepl.utils.image import crop_for_ocr_from_image
 
+
+# Lightweight per-crop confidence heuristic (no new deps).
+def _estimate_confidence(text: str) -> float:
+    """Cheap confidence proxy for OCR output.
+
+    Returns a value in [0, 1] based on text quality signals:
+    - non-empty + alphabetic characters + multiple words => high
+    - single character or empty => low
+    - mostly punctuation or digits => medium
+    """
+    if not text or not text.strip():
+        return 0.0
+    stripped = text.strip()
+    alpha = sum(1 for c in stripped if c.isalpha())
+    if alpha == 0:
+        return 0.3
+    words = stripped.split()
+    if len(words) >= 3:
+        return 0.85
+    if len(words) >= 1 and alpha >= 3:
+        return 0.7
+    return 0.4
+
+
 # A bbox is "refinable" if it has enough normalized area to be worth a
 # per-crop re-OCR pass; below these sizes the LLM round-trip costs more
 # than it gains.
@@ -380,6 +404,38 @@ class HybridEngine(EngineBase):
 
                 pages_structured[p_num] = aligned
                 completed += 1
+                # Emit per-page block events for the live bbox overlay.
+                for b_idx, (b_bbox, b_text) in enumerate(aligned):
+                    if b_text and b_text.strip():
+                        try:
+                            from local_deepl.api.routers.websocket import (
+                                manager as _ws_manager,
+                            )
+
+                            await _ws_manager.send_block(
+                                getattr(progress, "channel_id", None),
+                                page_idx=p_num,
+                                block_idx=b_idx,
+                                bbox=list(b_bbox),
+                                text=b_text,
+                                kind="text",
+                                confidence=_estimate_confidence(b_text),
+                            )
+                        except Exception:
+                            pass
+                
+                # Emit page complete event
+                try:
+                    from local_deepl.api.routers.websocket import (
+                        manager as _ws_manager,
+                    )
+                    await _ws_manager.send_page_complete(
+                        getattr(progress, "channel_id", None),
+                        page_idx=p_num,
+                    )
+                except Exception:
+                    pass
+
                 await notify(
                     progress,
                     "ocr",

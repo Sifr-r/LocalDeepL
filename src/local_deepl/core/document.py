@@ -11,6 +11,10 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from local_deepl.core.block_tree import DocumentTree
 
 
 class PipelineMode(StrEnum):
@@ -80,6 +84,7 @@ class DocumentResult:
 
     pages: list[DocumentPage]
     source_path: str | None = None
+    tree: "DocumentTree | None" = None
 
     @classmethod
     def from_pages_data(

@@ -12,6 +12,7 @@ from .requests import (
     ProcessSettings,
     SpellcheckMode,
     TranslationRequest,
+    TreeTranslationRequest,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "ProcessSettings",
     "SpellcheckMode",
     "TranslationRequest",
+    "TreeTranslationRequest",
 ]

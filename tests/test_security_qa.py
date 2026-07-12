@@ -108,20 +108,12 @@ def test_evaluate_node_normal_input_fails_correctly():
     assert "too short" in result["feedback"]
 
 
-def test_celery_task_raises_value_error_on_translation_error():
-    # Task should raise ValueError on translation errors
-    # With bind=True, Celery's .run() method automatically binds the task instance to 'self'.
-    # We patch 'update_state' to prevent it from complaining about missing task context during test run.
-    with (
-        patch.object(process_translation_task, "update_state"),
-        patch(
-            "local_deepl.core.translation.run_translation",
-            return_value="[Translation Error: Connection refused]",
-        ),
-    ):
+def test_celery_task_raises_value_error_on_missing_artifact():
+    # Task should raise ValueError if artifact cannot be loaded
+    with patch.object(process_translation_task, "update_state"):
         with pytest.raises(ValueError) as exc_info:
-            process_translation_task.run("doc_123", "Hello World")
-        assert "Translation failed" in str(exc_info.value)
+            process_translation_task.run("missing_doc", "token123", "French", [])
+        assert "Could not load artifact" in str(exc_info.value)
 
 
 def test_extract_data_robust_json_parsing():

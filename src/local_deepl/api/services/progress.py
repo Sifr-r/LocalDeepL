@@ -1,3 +1,14 @@
+"""Token-bound progress channel + per-block events.
+
+The protocol now supports two frame kinds, both sent over the same WebSocket:
+
+1. Progress frame (legacy): ``{"status", "percent", "stage", "warning?"}``
+2. Block frame (new): ``{"type": "block_complete", "page_idx", "block_idx",
+   "bbox", "text", "kind", "confidence"}``
+3. Translation frame (new): ``{"type": "translate_chunk_complete",
+   "chunk_idx", "source_chars", "translated_text"}``
+"""
+
 from __future__ import annotations
 
 import hmac
@@ -5,7 +16,7 @@ import re
 import secrets
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Final, cast
+from typing import Any, Final, cast
 
 
 class Stage(StrEnum):
@@ -14,6 +25,15 @@ class Stage(StrEnum):
     OCR = "ocr"
     REFINE = "refine"
     EMBED = "embed"
+    TRANSLATE = "translate"
+
+
+class FrameType(StrEnum):
+    PROGRESS = "progress"
+    BLOCK = "block_complete"
+    PAGE = "page_complete"
+    TRANSLATE_CHUNK = "translate_chunk_complete"
+    CANCELLED = "cancelled"
 
 
 CHANNEL_TOKEN_BYTES: Final = 24
@@ -26,6 +46,7 @@ _STAGE_WEIGHTS: Final[dict[Stage, tuple[int, int]]] = {
     Stage.OCR: (25, 75),
     Stage.REFINE: (75, 90),
     Stage.EMBED: (90, 100),
+    Stage.TRANSLATE: (0, 100),  # translation is a separate job, full 0..100
 }
 
 
@@ -39,7 +60,7 @@ class ProgressChannel:
 
 
 class ProgressService:
-    """Progress math and opaque channel validation."""
+    """Progress math, channel validation, and frame builders."""
 
     def stage_to_percent(self, stage: str, current: int, total: int) -> int:
         return stage_to_percent(stage, current, total)
@@ -73,6 +94,80 @@ class ProgressService:
             token, expected_token
         )
 
+    # ---- frame builders ---------------------------------------------------
+    @staticmethod
+    def build_progress_frame(
+        message: str, percent: int, stage: str = "", warning: bool = False
+    ) -> dict[str, Any]:
+        # Legacy progress frame: no `type` field, just {status, percent, stage}
+        # (optionally warning=True). This preserves backward compatibility with
+        # the existing UI which routes on shape (no `type` => progress).
+        # The new block / translate-chunk / cancelled frames add a `type`
+        # discriminator; progress frames stay legacy on purpose.
+        frame: dict[str, Any] = {
+            "status": message,
+            "percent": percent,
+            "stage": stage,
+        }
+        if warning:
+            frame["warning"] = True
+        return frame
+
+    @staticmethod
+    def build_block_frame(
+        *,
+        page_idx: int,
+        block_idx: int,
+        bbox: list[float],
+        text: str,
+        kind: str = "text",
+        confidence: float | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "type": FrameType.BLOCK.value,
+            "page_idx": page_idx,
+            "block_idx": block_idx,
+            "bbox": list(bbox),
+            "text": text,
+            "kind": kind,
+            "confidence": confidence,
+        }
+
+    @staticmethod
+    def build_page_complete_frame(
+        *,
+        page_idx: int,
+    ) -> dict[str, Any]:
+        return {
+            "type": FrameType.PAGE.value,
+            "page_idx": page_idx,
+        }
+
+    @staticmethod
+    def build_translate_chunk_frame(
+        *,
+        chunk_idx: int,
+        source_chars: int,
+        translated_text: str,
+        target_language: str,
+    ) -> dict[str, Any]:
+        return {
+            "type": FrameType.TRANSLATE_CHUNK.value,
+            "chunk_idx": chunk_idx,
+            "source_chars": source_chars,
+            "translated_text": translated_text,
+            "target_language": target_language,
+        }
+
+    @staticmethod
+    def build_cancelled_frame(message: str = "Cancelled by user.") -> dict[str, Any]:
+        return {
+            "type": FrameType.CANCELLED.value,
+            "status": message,
+            "percent": 0,
+            "stage": "cancelled",
+        }
+
 
 def stage_to_percent(stage: str, current: int, total: int) -> int:
     """Map a pipeline stage + sub-progress into a 0-100 overall percent."""
@@ -91,7 +186,9 @@ def stage_to_percent(stage: str, current: int, total: int) -> int:
 def validate_stage(stage: str) -> Stage:
     clean_stage = _clean_stage(stage)
     if clean_stage not in _STAGE_WEIGHTS:
-        raise ValueError("stage must be one of: convert, detect, ocr, refine, embed.")
+        raise ValueError(
+            "stage must be one of: convert, detect, ocr, refine, embed, translate."
+        )
     return Stage(clean_stage)
 
 

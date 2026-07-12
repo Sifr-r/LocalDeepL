@@ -69,6 +69,8 @@ def create_app() -> ASGIApplication:
         ai,
         artifacts,
         config,
+        extraction,
+        extraction_translation,
         jobs,
         ocr,
         websocket,
@@ -117,6 +119,8 @@ def create_app() -> ASGIApplication:
     web_app.include_router(jobs.router)
     web_app.include_router(artifacts.router)
     web_app.include_router(ai.router)
+    web_app.include_router(extraction.router)
+    web_app.include_router(extraction_translation.router)
     web_app.get("/")(read_index)
 
     return cast(ASGIApplication, web_app)

@@ -10,11 +10,15 @@ import asyncio
 import logging
 import os
 import re
+from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
 from local_deepl.core.llm_client import call_llm
+
+if TYPE_CHECKING:
+    from local_deepl.core.trocr_engine import TrOCREngine
 
 load_dotenv()
 
@@ -109,6 +113,32 @@ CORRECTION_CROP_PROMPT = (
 )
 
 
+# Handwriting-specific page prompt. The base OLMOCR_PAGE_PROMPT assumes
+# printed text; this variant nudges the model to handle cursive, ascenders,
+# descenders, and crossed-out words without dropping them.
+HANDWRITING_PAGE_PROMPT = (
+    "Attached is one page of a document that may contain HANDWRITTEN text "
+    "(cursive, print, or a mix). Read it as carefully as you would a personal "
+    "letter. Pay close attention to:\n"
+    "  - Ascenders and descenders that may be ambiguous (b/d/p/q, n/u, etc.).\n"
+    "  - Words that may be misjoined or split incorrectly across lines.\n"
+    "  - Crossed-out or strikethrough words: keep them in the output as "
+    "[crossed: original text].\n"
+    "  - Margin annotations, arrows, and numbered notes: include them in reading order.\n"
+    "Return the page as Markdown. Tables -> HTML. Equations -> LaTeX.\n"
+    "Use a YAML front matter as in the printed-text prompt."
+)
+
+# Handwriting-specific crop prompt. Used when per-region OCR is requested.
+HANDWRITING_CROP_PROMPT = (
+    "You are recognizing a single line of HANDWRITTEN text from a document.\n"
+    "Be patient with cursive, irregular spacing, and ambiguous characters.\n"
+    "Pay attention to diacritics (accents, umlauts, Arabic tashkeel).\n"
+    "If you cannot read the line, return an empty string rather than guess.\n"
+    "Output only the plain text with no markdown formatting."
+)
+
+
 # Phrases the model emits as a fallback when it can't read the crop —
 # usually because the crop is blank, decorative, or otherwise non-text.
 # We strip them so they don't pollute the searchable text layer.
@@ -162,6 +192,9 @@ class OCRProcessor:
         api_base: str | None = None,
         api_key: str | None = None,
         model: str | None = None,
+        trocr_engine: "TrOCREngine | None" = None,
+        handwriting_mode: bool = False,
+        confidence_threshold: float = 0.75,
     ):
         self.api_base: str = (
             api_base or os.getenv("LLM_API_BASE") or "http://localhost:1234/v1"
@@ -169,6 +202,11 @@ class OCRProcessor:
         self.api_key: str = api_key or os.getenv("LLM_API_KEY") or "lm-studio"
         self.model: str = model or os.getenv("LLM_MODEL") or "allenai/olmocr-2-7b"
         self.client = AsyncOpenAI(base_url=self.api_base, api_key=self.api_key)
+        # Optional TrOCR specialist (lazy-loaded). When set, low-confidence
+        # crops are re-OCR'd with TrOCR and the higher-confidence candidate wins.
+        self.trocr_engine = trocr_engine
+        self.handwriting_mode = handwriting_mode
+        self.confidence_threshold = confidence_threshold
 
     async def ensure_model_loaded(self) -> None:
         """Pre-flight check that ``self.model`` is loaded on the server.
@@ -210,7 +248,11 @@ class OCRProcessor:
                 self._apply_adaptive_threshold, image_base64
             )
 
-        prompt = OLMOCR_PAGE_PROMPT
+        prompt = (
+            HANDWRITING_PAGE_PROMPT
+            if getattr(self, "handwriting_mode", False)
+            else OLMOCR_PAGE_PROMPT
+        )
         if dual_engine:
             draft = await asyncio.to_thread(self._get_tesseract_draft, image_base64)
             if draft:
@@ -257,7 +299,11 @@ class OCRProcessor:
                 self._apply_adaptive_threshold, image_base64
             )
 
-        prompt = CROP_PROMPT
+        prompt = (
+            HANDWRITING_CROP_PROMPT
+            if getattr(self, "handwriting_mode", False)
+            else CROP_PROMPT
+        )
         if dual_engine:
             draft = await asyncio.to_thread(self._get_tesseract_draft, image_base64)
             if draft:
@@ -286,7 +332,38 @@ class OCRProcessor:
         body = _strip_yaml_front_matter(text)
         result = " ".join(line.strip() for line in body.split("\n") if line.strip())
         if _is_fallback_response(result):
-            return ""
+            result = ""
+
+        if getattr(self, "handwriting_mode", False) and self.trocr_engine is not None:
+            from local_deepl.core.trocr_engine import _heuristic_confidence
+            vlm_conf = _heuristic_confidence(result)
+            if vlm_conf < self.confidence_threshold:
+                try:
+                    trocr_res = await asyncio.to_thread(self.trocr_engine.ocr, image_base64)
+                    if trocr_res.confidence > vlm_conf:
+                        correction_prompt = DUAL_ENGINE_CROP_PROMPT.replace("{draft_text}", trocr_res.text)
+                        vlm_corrected = await self._chat(
+                            correction_prompt,
+                            image_base64,
+                            timeout=self.CROP_TIMEOUT_S,
+                            max_tokens=self.CROP_MAX_TOKENS,
+                        )
+                        vlm_corrected_body = _strip_yaml_front_matter(vlm_corrected)
+                        vlm_corrected_res = " ".join(
+                            line.strip() for line in vlm_corrected_body.split("\n") if line.strip()
+                        )
+                        if _is_fallback_response(vlm_corrected_res):
+                            vlm_corrected_res = ""
+
+                        vlm_corr_conf = _heuristic_confidence(vlm_corrected_res)
+                        if trocr_res.confidence > vlm_corr_conf:
+                            result = trocr_res.text
+                        else:
+                            result = vlm_corrected_res
+                except Exception as e:
+                    import logging
+                    logging.warning(f"TrOCR fallback failed: {e}")
+
         return result
 
     async def _chat(

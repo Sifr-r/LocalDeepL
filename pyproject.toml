@@ -62,6 +62,29 @@ memory = [
     "sentence-transformers>=5.5.1",
 ]
 
+# TrOCR specialist (handwriting OCR). Adds transformers + sentencepiece.
+trocr = [
+    "transformers>=4.45.0",
+    "sentencepiece>=0.2.0",
+    "safetensors>=0.4.0",
+]
+
+# NLLB-200 fast translation fallback. Reuses transformers + sentencepiece.
+nllb = [
+    "transformers>=4.45.0",
+    "sentencepiece>=0.2.0",
+]
+
+# Translation quality scoring (chrF++, BLEU, etc.).
+quality = [
+    "sacrebleu>=2.4.0",
+]
+
+# COMET learned-metric scoring (opt-in, GPU-preferred, large download).
+comet = [
+    "unbabel-comet>=2.2.0",
+]
+
 
 [project.scripts]
 local-deepl-server = "local_deepl.server:main"

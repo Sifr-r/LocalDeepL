@@ -106,6 +106,8 @@ class ConfigUpdate(BaseModel):
     normalize_contrast: bool | None = None
     crop_cleanup: bool | None = None
     quality_routing: bool | None = None
+    handwriting_hint: bool | None = None
+    confidence_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     document_processors: list[DocumentProcessorName] | None = None
 
     @field_validator("api_base", "api_key", "model", mode="before")
@@ -182,6 +184,8 @@ class ProcessSettings(BaseModel):
     normalize_contrast: bool
     crop_cleanup: bool
     quality_routing: bool
+    handwriting_hint: bool = False
+    confidence_threshold: float = 0.75
     document_processors: list[DocumentProcessorName] = Field(default_factory=list)
 
     @field_validator("api_base", "api_key", "model", mode="before")
@@ -219,6 +223,13 @@ class TranslationRequest(BaseModel):
     api_base: str | None = None
     api_key: str | None = None
     model: str | None = None
+    glossary: list[dict[str, object]] | None = None
+    glossary_text: str | None = None
+    sliding_window_words: int = Field(default=80, ge=0, le=2000)
+    dual_translate: bool = False
+    second_api_base: str | None = None
+    second_api_key: str | None = None
+    second_model: str | None = None
 
     @field_validator(
         "text", "target_language", "api_base", "api_key", "model", mode="before"
@@ -226,6 +237,60 @@ class TranslationRequest(BaseModel):
     @classmethod
     def validate_optional_strings(cls, value: Any) -> Any:
         return _validate_optional_string(value)
+
+
+class GlossaryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entries: list[dict[str, object]] | None = None
+    text: str | None = None
+
+    @field_validator("text", mode="before")
+    @classmethod
+    def validate_optional_strings(cls, value: Any) -> Any:
+        return _validate_optional_string(value)
+
+
+class TreeTranslationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text_artifact_id: str = Field(min_length=32, max_length=32)
+    text_artifact_token: str = Field(min_length=32, max_length=256)
+    target_language: str = Field(default="English", min_length=1, max_length=80)
+    api_base: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+    glossary: list[dict[str, object]] | None = None
+    dual_translate: bool = False
+    channel_id: str | None = None
+
+    @field_validator("target_language", "api_base", "api_key", "model", mode="before")
+    @classmethod
+    def validate_optional_strings(cls, value: Any) -> Any:
+        return _validate_optional_string(value)
+
+
+class ExportHtmlRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text_artifact_id: str = Field(min_length=32, max_length=32)
+    text_artifact_token: str = Field(min_length=32, max_length=256)
+
+    @field_validator("text_artifact_id", "text_artifact_token", mode="before")
+    @classmethod
+    def validate_optional_strings(cls, value: Any) -> Any:
+        return _validate_optional_string(value)
+
+
+class ExportBlockTreeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text_artifact_id: str = Field(min_length=32, max_length=32)
+    text_artifact_token: str = Field(min_length=32, max_length=256)
+    metadata_artifact_id: str | None = Field(default=None, min_length=32, max_length=32)
+    metadata_artifact_token: str | None = Field(
+        default=None, min_length=32, max_length=256
+    )
 
 
 class ExtractionRequest(BaseModel):

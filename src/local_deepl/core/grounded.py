@@ -53,6 +53,7 @@ class GroundedBlock:
     text: str
     page_index: int
     label: str = "text"  # filter: keep "text", drop "image"/"figure"
+    image_bytes: bytes | None = None
 
 
 @dataclass
@@ -92,7 +93,6 @@ class GroundedOCRBackend(Protocol):
 # structural ones.
 _NON_CONTENT_LABELS = frozenset(
     {
-        "image",
         "empty_line",  # unfilled underline fields
         "signature_line",  # form signature placeholder
         "list_marker",  # lone bullet/dash glyphs
@@ -536,7 +536,38 @@ class PromptedGroundedOCR:
                         ],
                     )
                     text = text.strip()
-                    return page_idx, _parse_grounded_json(text, page_idx, w, h), None
+                    blocks = _parse_grounded_json(text, page_idx, w, h)
+                    
+                    if any(b.label in ("image", "figure") for b in blocks):
+                        import base64
+                        import io
+                        from PIL import Image
+                        
+                        img_data = base64.b64decode(b64)
+                        with Image.open(io.BytesIO(img_data)) as img:
+                            for b in blocks:
+                                if b.label in ("image", "figure"):
+                                    crop_box = (
+                                        b.bbox[0] * w,
+                                        b.bbox[1] * h,
+                                        b.bbox[2] * w,
+                                        b.bbox[3] * h
+                                    )
+                                    # Ensure coordinates are within image bounds
+                                    crop_box = (
+                                        max(0, min(w, crop_box[0])),
+                                        max(0, min(h, crop_box[1])),
+                                        max(0, min(w, crop_box[2])),
+                                        max(0, min(h, crop_box[3])),
+                                    )
+                                    # only crop if area > 0
+                                    if crop_box[2] > crop_box[0] and crop_box[3] > crop_box[1]:
+                                        cropped = img.crop(crop_box)
+                                        buf = io.BytesIO()
+                                        cropped.save(buf, format="PNG")
+                                        b.image_bytes = buf.getvalue()
+
+                    return page_idx, blocks, None
                 except Exception as e:
                     # Per-page isolation: log the failure and return zero
                     # blocks for this page so surviving pages still land in

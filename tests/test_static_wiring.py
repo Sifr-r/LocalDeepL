@@ -22,6 +22,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pytest
 
@@ -35,6 +36,8 @@ _ALLOWED_EXTERNAL_HOSTS = frozenset(
     {
         "fonts.googleapis.com",
         "fonts.gstatic.com",
+        # markdown-it CDN (Phase 1 — proper markdown rendering)
+        "cdn.jsdelivr.net",
     }
 )
 
@@ -92,11 +95,8 @@ def test_static_html_external_links_use_allowlisted_hosts():
     for url in _SCRIPT_RE.findall(html) + _STYLESHEET_RE.findall(html):
         if _is_local(url):
             continue
-        if url.startswith("//"):
-            # Protocol-relative: still external
-            host_part = url[2:].split("/", 1)[0]
-        else:
-            host_part = url.split("/", 1)[0]
+        parsed = urlparse(url)
+        host_part = parsed.hostname or ""
         assert host_part in _ALLOWED_EXTERNAL_HOSTS, (
             f"index.html references non-whitelisted host: {url}"
         )

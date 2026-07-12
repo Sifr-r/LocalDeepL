@@ -13,6 +13,7 @@ from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
 from typing import Protocol
 
+from local_deepl.core.block_tree import BlockNode, BlockType, Section, TableNode
 from local_deepl.core.document import DocumentBlock, DocumentPage, DocumentResult
 
 LOCAL_DOCUMENT_PROCESSOR_NAMES = (
@@ -183,9 +184,12 @@ class StructureAnalysisProcessor:
         self.table_min_columns = table_min_columns
 
     async def process(self, document: DocumentResult) -> DocumentResult:
-        for page in document.pages:
+        tree = document.tree
+        for page_idx, page in enumerate(document.pages):
             counts: Counter[str] = Counter()
-            for block in page.blocks:
+            tree_page = tree.pages[page_idx] if tree else None
+            
+            for block_idx, block in enumerate(page.blocks):
                 kind, confidence, signals = self._classify(block)
                 block.kind = kind
                 block.metadata["structure"] = {
@@ -194,6 +198,21 @@ class StructureAnalysisProcessor:
                     "signals": signals,
                 }
                 counts[kind] += 1
+                
+                if tree_page and block_idx < len(tree_page.children):
+                    node = tree_page.children[block_idx]
+                    if kind == "heading":
+                        node.block_type = BlockType.SECTION_HEADER
+                        node.level = 1
+                    elif kind == "list_item":
+                        node.block_type = BlockType.LIST_ITEM
+                    elif kind == "key_value":
+                        node.block_type = BlockType.KEY_VALUE
+                    elif kind == "table_candidate":
+                        # Table processor will properly replace it later
+                        node.block_type = BlockType.PARAGRAPH 
+                    else:
+                        node.block_type = BlockType.PARAGRAPH
 
             page.metadata["structure"] = {
                 "block_kinds": dict(sorted(counts.items())),
@@ -257,11 +276,17 @@ class SectionAnalysisProcessor:
 
     async def process(self, document: DocumentResult) -> DocumentResult:
         current_section: dict[str, object] | None = None
+        current_tree_section: Section | None = None
         section_index = -1
+        tree = document.tree
 
-        for page in document.pages:
+        for page_idx, page in enumerate(document.pages):
             page_headings: list[dict[str, object]] = []
+            tree_page = tree.pages[page_idx] if tree else None
+            
             for block_index, block in enumerate(page.blocks):
+                node = tree_page.children[block_index] if tree_page and block_index < len(tree_page.children) else None
+                
                 if self._is_heading(block):
                     section_index += 1
                     title = _normalize_space(block.text)
@@ -276,6 +301,12 @@ class SectionAnalysisProcessor:
                         **current_section,
                         "role": "heading",
                     }
+                    
+                    if tree and node:
+                        current_tree_section = Section(title=title, level=1, start_page=page.page_index, block_id=node.block_id)
+                        tree.sections.append(current_tree_section)
+                        node.parent_id = current_tree_section.block_id
+                        node.section_hierarchy = [title]
                     continue
 
                 if current_section is None:
@@ -291,6 +322,9 @@ class SectionAnalysisProcessor:
                         **current_section,
                         "role": "body",
                     }
+                    if node and current_tree_section:
+                        node.parent_id = current_tree_section.block_id
+                        node.section_hierarchy = [current_tree_section.title]
 
             page.metadata["sections"] = {
                 "headings": page_headings,
@@ -339,9 +373,12 @@ class LayoutEnrichmentProcessor:
     name = "layout_enrichment"
 
     async def process(self, document: DocumentResult) -> DocumentResult:
-        for page in document.pages:
+        tree = document.tree
+        for page_idx, page in enumerate(document.pages):
             counts: Counter[str] = Counter()
-            for block in page.blocks:
+            tree_page = tree.pages[page_idx] if tree else None
+            
+            for block_idx, block in enumerate(page.blocks):
                 role, region, confidence, signals = self._classify(block)
                 block.metadata["layout"] = {
                     "role": role,
@@ -350,6 +387,19 @@ class LayoutEnrichmentProcessor:
                     "signals": signals,
                 }
                 counts[role] += 1
+                
+                if tree_page and block_idx < len(tree_page.children):
+                    node = tree_page.children[block_idx]
+                    if role == "header":
+                        node.block_type = BlockType.PAGE_HEADER
+                    elif role == "footer":
+                        node.block_type = BlockType.PAGE_FOOTER
+                    elif role == "page_number":
+                        node.block_type = BlockType.PAGE_NUMBER
+                    elif role == "figure":
+                        node.block_type = BlockType.FIGURE
+                    elif role == "caption":
+                        node.block_type = BlockType.CAPTION
 
             page.metadata["layout"] = {
                 "roles": dict(sorted(counts.items())),
@@ -403,13 +453,78 @@ class TableExtractionProcessor:
         self.min_columns = min_columns
 
     async def process(self, document: DocumentResult) -> DocumentResult:
-        for page in document.pages:
+        tree = document.tree
+        for page_idx, page in enumerate(document.pages):
             candidate_indices = [
                 index
                 for index, block in enumerate(page.blocks)
                 if self._is_candidate(block)
             ]
-            page.metadata["tables"] = self._extract_page_tables(page, candidate_indices)
+            tables_data = self._extract_page_tables(page, candidate_indices)
+            page.metadata["tables"] = tables_data
+            
+            if tree and tree.pages[page_idx]:
+                tree_page = tree.pages[page_idx]
+                table_cell_indices = set()
+                
+                for table_data in tables_data:
+                    row_count = table_data["row_count"]
+                    cells_data = table_data["cells"]
+                    
+                    # Create empty grid
+                    max_col = max((c["column_index"] for c in cells_data), default=-1)
+                    if max_col < 0:
+                        continue
+                        
+                    grid = [[] for _ in range(row_count)]
+                    
+                    min_x, min_y, max_x, max_y = float('inf'), float('inf'), float('-inf'), float('-inf')
+                    
+                    for cell in cells_data:
+                        r_idx = cell["row_index"]
+                        c_idx = cell["column_index"]
+                        b_idx = cell["block_index"]
+                        table_cell_indices.add(b_idx)
+                        
+                        node = tree_page.children[b_idx]
+                        node.block_type = BlockType.TABLE
+                        grid[r_idx].append(node)
+                        
+                        bbox = node.bbox
+                        min_x = min(min_x, bbox[0])
+                        min_y = min(min_y, bbox[1])
+                        max_x = max(max_x, bbox[2])
+                        max_y = max(max_y, bbox[3])
+
+                    # Pad grid rows to ensure rectangular matrix
+                    for r in range(row_count):
+                        while len(grid[r]) < max_col + 1:
+                            empty_node = BlockNode(
+                                block_type=BlockType.TABLE,
+                                bbox=[min_x, min_y, max_x, max_y], # fallback bbox
+                                text="",
+                                page_idx=page.page_index
+                            )
+                            grid[r].append(empty_node)
+
+                    table_node = TableNode(
+                        block_type=BlockType.TABLE,
+                        bbox=[min_x, min_y, max_x, max_y],
+                        text="",
+                        page_idx=page.page_index,
+                        rows=row_count,
+                        cols=max_col + 1,
+                        cells=grid
+                    )
+                    tree.tables.append(table_node)
+                    
+                if table_cell_indices:
+                    # Filter out the individual cell blocks from the page's children
+                    tree_page.children = [
+                        node for i, node in enumerate(tree_page.children)
+                        if i not in table_cell_indices
+                    ]
+
         return document
 
     def _is_candidate(self, block: DocumentBlock) -> bool:
@@ -559,6 +674,10 @@ async def run_document_processors(
     document: DocumentResult, processors: Sequence[DocumentProcessor]
 ) -> DocumentResult:
     """Run processors in order, passing each mutation to the next stage."""
+
+    if document.tree is None:
+        from local_deepl.core.block_tree import from_document_result
+        document.tree = from_document_result(document)
 
     result = document
     for processor in processors:

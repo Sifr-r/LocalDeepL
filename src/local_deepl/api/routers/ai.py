@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from local_deepl.api.schemas import ExtractionRequest, TranslationRequest
+from local_deepl.api.schemas import ExtractionRequest, TranslationRequest, TreeTranslationRequest
 from local_deepl.api.services.ai import (
     AIServiceError,
     extract_structured_data,
@@ -59,30 +59,20 @@ async def extract_data(body: ExtractionRequest):
 
 
 @router.post("/api/translate/async")
-async def translate_text_async(body: dict[str, Any]):
-    """Trigger a background translation job via Celery.
+async def translate_text_async(body: TreeTranslationRequest):
+    """Trigger a background tree translation job via Celery.
 
     Returns 503 if the optional async-translation extras are not installed.
     """
     from local_deepl.api.tasks import process_translation_task
 
-    if not isinstance(body, dict):
-        return JSONResponse(
-            status_code=422, content={"error": "Invalid request parameters."}
-        )
-
-    raw_document_id = body.get("document_id") or uuid.uuid4().hex
-    document_id = str(raw_document_id).strip() or uuid.uuid4().hex
-    raw_text = body.get("text", "")
-    text = raw_text if isinstance(raw_text, str) else ""
-    if not isinstance(document_id, str) or not document_id.strip():
-        return JSONResponse(
-            status_code=422,
-            content={"error": "document_id must be a non-empty string."},
-        )
-
     try:
-        task = process_translation_task.delay(document_id, text)
+        task = process_translation_task.delay(
+            body.text_artifact_id,
+            body.text_artifact_token,
+            body.target_language,
+            body.glossary or [],
+        )
     except AsyncTranslationUnavailable as exc:
         return JSONResponse(status_code=503, content={"error": str(exc)})
 

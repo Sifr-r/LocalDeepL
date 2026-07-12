@@ -53,6 +53,11 @@ class GroundedEngine(EngineBase):
         pages_data = self._accumulate_pages(response.blocks)
         page_nums = sorted(pages_data)
 
+        block_metadata_overlays = {}
+        for block in response.blocks:
+            page_overlays = block_metadata_overlays.setdefault(block.page_index, [])
+            page_overlays.append({"label": block.label, "image_bytes": block.image_bytes})
+
         document_result = await self._build_document_result(
             pages_data=pages_data,
             page_nums=page_nums,
@@ -60,6 +65,8 @@ class GroundedEngine(EngineBase):
             source_processor="grounded",
             spellcheck=spellcheck,
             cross_page=cross_page,
+            page_metadata_overlays=None,
+            block_metadata_overlays=block_metadata_overlays,
         )
 
         return await self._emit(

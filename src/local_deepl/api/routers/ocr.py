@@ -194,6 +194,7 @@ def _resolve_process_settings(
     crop_cleanup: str | None,
     quality_routing: str | None,
     document_processors: str | None,
+    handwriting_hint: str | None,
 ) -> ProcessSettings:
     form_params = {
         "api_base": api_base,
@@ -219,11 +220,14 @@ def _resolve_process_settings(
         "crop_cleanup": crop_cleanup,
         "quality_routing": quality_routing,
         "document_processors": document_processors,
+        "handwriting_hint": handwriting_hint,
     }
     merged = {
-        k: v if v is not None else cast(dict[str, Any], _config)[k]
+        k: v if v is not None else cast(dict[str, Any], _config).get(k)
         for k, v in form_params.items()
     }
+    # filter out None values so Pydantic can use its defaults
+    merged = {k: v for k, v in merged.items() if v is not None}
     # pages is a special override, don't fallback to config
     merged["pages"] = pages
     return ProcessSettings.model_validate(merged)
@@ -241,9 +245,23 @@ def _build_pipeline(settings: ProcessSettings) -> tuple[OCRPipeline, Any]:
         normalize_contrast=settings.normalize_contrast,
         crop_cleanup=settings.crop_cleanup,
     )
-    page_preprocessor = (
-        LocalPagePreprocessor() if preprocessing_options.enabled else None
-    )
+    page_preprocessor: PagePreprocessor | None = None
+    if settings.handwriting_hint:
+        from local_deepl.core.preprocessing import (
+            CompositePagePreprocessor,
+            HandwritingPagePreprocessor,
+            LocalPagePreprocessor,
+        )
+        if preprocessing_options.enabled:
+            page_preprocessor = CompositePagePreprocessor([
+                HandwritingPagePreprocessor(),
+                LocalPagePreprocessor()
+            ])
+        else:
+            page_preprocessor = HandwritingPagePreprocessor()
+    elif preprocessing_options.enabled:
+        from local_deepl.core.preprocessing import LocalPagePreprocessor
+        page_preprocessor = LocalPagePreprocessor()
 
     if settings.pipeline_mode == "grounded":
         backend = PromptedGroundedOCR(
@@ -260,10 +278,13 @@ def _build_pipeline(settings: ProcessSettings) -> tuple[OCRPipeline, Any]:
             page_preprocessor=page_preprocessor,
         )
     else:
+        from local_deepl.core.trocr_engine import TrOCREngine
         backend = OCRProcessor(
             api_base=settings.api_base,
             api_key=settings.api_key,
             model=settings.model,
+            handwriting_mode=settings.handwriting_hint,
+            trocr_engine=TrOCREngine() if settings.handwriting_hint else None,
         )
         pipeline = OCRPipeline(
             aligner=HybridAligner(),
@@ -368,6 +389,7 @@ async def process_pdf(
     crop_cleanup: str | None = Form(None),
     quality_routing: str | None = Form(None),
     document_processors: str | None = Form(None),
+    handwriting_hint: str | None = Form(None),
 ):
     """
     Process a PDF or image file through the OCR pipeline.
@@ -401,6 +423,7 @@ async def process_pdf(
             crop_cleanup=crop_cleanup,
             quality_routing=quality_routing,
             document_processors=document_processors,
+            handwriting_hint=handwriting_hint,
         )
     except ValidationError as exc:
         return _validation_error_response(exc)
@@ -490,6 +513,15 @@ async def process_pdf(
             state.text_artifacts.create, cast(PageText, pages_text)
         )
         text_path = artifact_handle.path
+        
+        doc_res = getattr(pipeline, "last_document_result", None)
+        if doc_res and doc_res.tree:
+            import pathlib
+            import pickle
+            def _write_tree() -> None:
+                pathlib.Path(f"{text_path}.tree.pkl").write_bytes(pickle.dumps(doc_res.tree))
+            await asyncio.to_thread(_write_tree)
+
         metadata_handle = await _create_document_metadata_artifact(pipeline)
         job_id = artifact_handle.artifact_id
 

@@ -136,6 +136,7 @@ class EngineBase:
         spellcheck: SpellcheckMode,
         cross_page: bool,
         page_metadata_overlays: dict[int, dict[str, object]] | None = None,
+        block_metadata_overlays: dict[int, list[dict[str, object]]] | None = None,
     ) -> DocumentResult:
         """Apply text-only post-processing and run document processors.
 
@@ -162,6 +163,13 @@ class EngineBase:
                 metadata = page_metadata_overlays.get(page.page_index)
                 if metadata:
                     page.metadata.update(metadata)
+
+        if block_metadata_overlays:
+            for page in document_result.pages:
+                block_overlays = block_metadata_overlays.get(page.page_index)
+                if block_overlays:
+                    for block, meta in zip(page.blocks, block_overlays):
+                        block.metadata.update(meta)
 
         return await run_document_processors(document_result, self.document_processors)
 
