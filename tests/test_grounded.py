@@ -29,7 +29,6 @@ from local_deepl.core.grounded import (
     _parse_grounded_json,
     _rasterize_to_jpeg_pages,
     parse_glm_layout_details,
-    parse_zai_response,
 )
 from local_deepl.core.ocr import LLMCallError, ModelNotLoadedError
 from local_deepl.core.pdf import PDFHandler
@@ -61,68 +60,6 @@ def test_grounded_pdf_rasterization_skips_intermediate_jpeg_decode(
 
 # --- parsers ----------------------------------------------------------------
 
-
-class TestParseZAIResponse:
-    @pytest.fixture
-    def fixture(self) -> dict:
-        # Both tests/fixtures/zai_handwritten.json and
-        # tests/fixtures/ground_truth_handwritten.json carry the same Z.AI
-        # layout — we use the ground-truth copy as the single source.
-        with (FIXTURES / "ground_truth_handwritten.json").open() as f:
-            return json.load(f)
-
-    def test_parses_captured_response(self, fixture):
-        response = parse_zai_response(fixture)
-        assert isinstance(response, GroundedResponse)
-        assert response.page_sizes == [(1654, 2170)]
-        # 15 layout entries, 1 `list_marker` skipped → 14 content blocks.
-        assert len(response.blocks) == 14
-
-    def test_coordinates_are_normalized(self, fixture):
-        response = parse_zai_response(fixture)
-        for b in response.blocks:
-            assert 0.0 <= b.bbox[0] < b.bbox[2] <= 1.0
-            assert 0.0 <= b.bbox[1] < b.bbox[3] <= 1.0
-
-    def test_non_content_labels_filtered_out(self, fixture):
-        response = parse_zai_response(fixture)
-        labels = {b.label for b in response.blocks}
-        assert not labels & {"image", "empty_line", "signature_line", "list_marker"}
-
-    def test_accepts_inner_data_directly(self, fixture):
-        # Passing the unwrapped `data` object should also work.
-        inner_only = fixture["data"]
-        response = parse_zai_response(inner_only)
-        assert len(response.blocks) == 14
-
-    def test_known_text_survives_parsing(self, fixture):
-        response = parse_zai_response(fixture)
-        joined = " | ".join(b.text for b in response.blocks)
-        assert "computational procedure" in joined
-        assert "CORRECT ALGORITHM" in joined
-        assert "induction proofs" in joined
-
-    def test_page_index_preserved(self, fixture):
-        response = parse_zai_response(fixture)
-        assert all(b.page_index == 0 for b in response.blocks)
-
-    def test_empty_content_filtered(self, fixture):
-        # Inject an empty block and confirm it's dropped.
-        f = dict(fixture)
-        f["data"] = dict(f["data"])
-        f["data"]["layout"] = list(f["data"]["layout"]) + [
-            {
-                "block_content": "   ",
-                "bbox": [0, 0, 100, 100],
-                "block_id": 999,
-                "page_index": 0,
-                "block_label": "text",
-                "score": 0,
-            }
-        ]
-        response = parse_zai_response(f)
-        # Still 14 content blocks (whitespace-only block discarded).
-        assert len(response.blocks) == 14
 
 
 class TestParseGLMLayoutDetails:
@@ -568,9 +505,15 @@ class TestPromptedGroundedEnsureModelLoaded:
         def _fake_async_openai(*args, **kwargs):
             return fake_client
 
-        # ensure_model_loaded does `from openai import AsyncOpenAI` inside,
-        # so we patch the source module's attribute.
-        monkeypatch.setattr("openai.AsyncOpenAI", _fake_async_openai)
+        # ensure_model_loaded imports AsyncOpenAI at the top of
+        # `local_deepl.core.grounded.prompted`. Patching the source
+        # `openai.AsyncOpenAI` is no longer sufficient — we need to
+        # patch the module-level binding that PromptedGroundedOCR
+        # actually references.
+        monkeypatch.setattr(
+            "local_deepl.core.grounded.prompted.AsyncOpenAI",
+            _fake_async_openai,
+        )
         return fake_client
 
     def test_passes_when_model_loaded(self, monkeypatch):

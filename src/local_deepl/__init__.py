@@ -40,9 +40,7 @@ _EXPORT_MODULES = {
     "GroundedResponse": "local_deepl.core.grounded",
     "GroundedOCRBackend": "local_deepl.core.grounded",
     "PromptedGroundedOCR": "local_deepl.core.grounded",
-    "ZAIHostedOCR": "local_deepl.core.grounded",
     "DEFAULT_GROUNDING_PROMPT": "local_deepl.core.grounded",
-    "parse_zai_response": "local_deepl.core.grounded",
     "parse_glm_layout_details": "local_deepl.core.grounded",
     "parse_page_range": "local_deepl.pipeline",
 }
@@ -82,10 +80,8 @@ __all__ = [
     "PromptedGroundedOCR",
     "QualityAnalysisProcessor",
     "ReadingOrderProcessor",
-    "ZAIHostedOCR",
     "__version__",
     "parse_glm_layout_details",
     "parse_page_range",
-    "parse_zai_response",
     "run_document_processors",
 ]

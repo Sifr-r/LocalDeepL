@@ -19,14 +19,25 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, Response
 
 from local_deepl.api.routers import state
+from local_deepl.api.routers.common import _stable_server_error
+from local_deepl.api.routers.config import _config
 from local_deepl.api.schemas.requests import (
     ExportBlockTreeRequest,
     ExportDocxRequest,
     ExportHtmlRequest,
+    ExtractionRequest,
 )
+from local_deepl.api.services.ai import AIServiceError, extract_structured_data
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _ai_error_response(exc: AIServiceError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": exc.public_message},
+    )
 
 
 def _load_tree_from_artifact(artifact_id: str, token: str) -> Any:
@@ -126,3 +137,16 @@ async def export_blocktree(req: ExportBlockTreeRequest) -> JSONResponse:
 
     payload = json.loads(export_json(tree))
     return JSONResponse(content=payload)
+
+
+@router.post("/api/extract")
+async def extract_data(body: ExtractionRequest):
+    """Extract structured JSON data from OCR text."""
+    try:
+        extracted = await extract_structured_data(body, config=_config)
+    except AIServiceError as exc:
+        return _ai_error_response(exc)
+    except Exception:
+        logger.exception("Extraction request failed")
+        return _stable_server_error()
+    return {"extracted_data": extracted}

@@ -66,13 +66,12 @@ def create_app() -> ASGIApplication:
     staticfiles = _load_optional_module("fastapi.staticfiles")
 
     from local_deepl.api.routers import (
-        ai,
         artifacts,
         config,
         extraction,
-        extraction_translation,
         jobs,
         ocr,
+        translation,
         websocket,
     )
     from local_deepl.api.services.security_config import SecuritySettings
@@ -118,9 +117,8 @@ def create_app() -> ASGIApplication:
     web_app.include_router(websocket.router)
     web_app.include_router(jobs.router)
     web_app.include_router(artifacts.router)
-    web_app.include_router(ai.router)
+    web_app.include_router(translation.router)
     web_app.include_router(extraction.router)
-    web_app.include_router(extraction_translation.router)
     web_app.get("/")(read_index)
 
     return cast(ASGIApplication, web_app)

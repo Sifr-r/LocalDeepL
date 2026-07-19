@@ -7,14 +7,15 @@ from unittest.mock import AsyncMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from local_deepl.api.routers import ai, config
+from local_deepl.api.routers import config, extraction, translation
 from local_deepl.api.services.security import SAFE_API_BASE_ERROR
 
 
 def _api_client() -> TestClient:
     app = FastAPI()
     app.include_router(config.router)
-    app.include_router(ai.router)
+    app.include_router(translation.router)
+    app.include_router(extraction.router)
     return TestClient(app)
 
 

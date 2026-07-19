@@ -16,12 +16,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from local_deepl.api.routers import (
-    ai,
     artifacts,
     config,
+    extraction,
     jobs,
     ocr,
     state,
+    translation,
     websocket,
 )
 from local_deepl.api.services.artifacts import TextArtifactStore
@@ -49,7 +50,8 @@ class _AsyncUpload:
 def _api_client() -> TestClient:
     app = FastAPI()
     app.include_router(config.router)
-    app.include_router(ai.router)
+    app.include_router(translation.router)
+    app.include_router(extraction.router)
     app.include_router(ocr.router)
     app.include_router(websocket.router)
     app.include_router(jobs.router)
@@ -163,17 +165,19 @@ def test_process_issues_opaque_text_artifact_ids_and_prevents_client_id_lookup(
 
     with (
         patch("local_deepl.utils.security.socket.getaddrinfo", side_effect=_public_dns),
-        patch("local_deepl.api.routers.ocr.OCRPipeline", DummyPipeline),
         patch(
-            "local_deepl.api.routers.ocr.OCRProcessor",
+            "local_deepl.api.services.ocr_pipeline_factory.OCRPipeline", DummyPipeline
+        ),
+        patch(
+            "local_deepl.api.services.ocr_pipeline_factory.OCRProcessor",
             lambda *args, **kwargs: SimpleNamespace(),
         ),
         patch(
-            "local_deepl.api.routers.ocr.HybridAligner",
+            "local_deepl.api.services.ocr_pipeline_factory.HybridAligner",
             lambda *args, **kwargs: SimpleNamespace(),
         ),
         patch(
-            "local_deepl.api.routers.ocr.PDFHandler",
+            "local_deepl.api.services.ocr_pipeline_factory.PDFHandler",
             lambda *args, **kwargs: SimpleNamespace(),
         ),
     ):
@@ -269,9 +273,12 @@ def test_process_omits_document_metadata_artifact_when_no_report(tmp_path: Path)
                 "local_deepl.utils.security.socket.getaddrinfo",
                 side_effect=_public_dns,
             ),
-            patch("local_deepl.api.routers.ocr.OCRPipeline", DummyPipeline),
-            patch("local_deepl.api.routers.ocr.HybridAligner"),
-            patch("local_deepl.api.routers.ocr.PDFHandler"),
+            patch(
+                "local_deepl.api.services.ocr_pipeline_factory.OCRPipeline",
+                DummyPipeline,
+            ),
+            patch("local_deepl.api.services.ocr_pipeline_factory.HybridAligner"),
+            patch("local_deepl.api.services.ocr_pipeline_factory.PDFHandler"),
         ):
             response = client.post(
                 "/process", data=_process_form(), files={"file": _pdf_upload()}
@@ -343,9 +350,12 @@ def test_process_exposes_token_bound_document_metadata_artifact(tmp_path: Path):
                 "local_deepl.utils.security.socket.getaddrinfo",
                 side_effect=_public_dns,
             ),
-            patch("local_deepl.api.routers.ocr.OCRPipeline", DummyPipeline),
-            patch("local_deepl.api.routers.ocr.HybridAligner"),
-            patch("local_deepl.api.routers.ocr.PDFHandler"),
+            patch(
+                "local_deepl.api.services.ocr_pipeline_factory.OCRPipeline",
+                DummyPipeline,
+            ),
+            patch("local_deepl.api.services.ocr_pipeline_factory.HybridAligner"),
+            patch("local_deepl.api.services.ocr_pipeline_factory.PDFHandler"),
         ):
             response = client.post(
                 "/process", data=_process_form(), files={"file": _pdf_upload()}
@@ -467,9 +477,12 @@ def test_process_surfaces_partial_page_failures_in_headers_and_history(tmp_path:
 
     with (
         patch("local_deepl.utils.security.socket.getaddrinfo", side_effect=_public_dns),
-        patch("local_deepl.api.routers.ocr.OCRPipeline", _FailingDummyPipeline),
-        patch("local_deepl.api.routers.ocr.HybridAligner"),
-        patch("local_deepl.api.routers.ocr.PDFHandler"),
+        patch(
+            "local_deepl.api.services.ocr_pipeline_factory.OCRPipeline",
+            _FailingDummyPipeline,
+        ),
+        patch("local_deepl.api.services.ocr_pipeline_factory.HybridAligner"),
+        patch("local_deepl.api.services.ocr_pipeline_factory.PDFHandler"),
     ):
         response = client.post(
             "/process",

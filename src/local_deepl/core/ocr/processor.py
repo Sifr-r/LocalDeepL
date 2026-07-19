@@ -1,167 +1,69 @@
-"""
-OCRProcessor - LLM-based OCR processing.
+"""OCRProcessor — the main OCR class.
 
-Uses a local vision LLM (OlmOCR via LM Studio by default; any OpenAI-compatible
-endpoint works, including GLM OCR via Ollama — set LLM_API_BASE/LLM_MODEL or
-pass --api-base/--model).
+:class:`OCRProcessor` is the single class that performs OCR against a
+local vision LLM (OlmOCR via LM Studio by default; any OpenAI-compatible
+endpoint works, including GLM OCR via Ollama — set LLM_API_BASE/LLM_MODEL
+or pass ``api_base``/``model``).
+
+It composes four sibling modules:
+
+- :mod:`local_deepl.core.ocr.prompts` — OlmOCR/page/crop/dual-engine/
+  correction/handwriting prompt constants and selection helpers.
+- :mod:`local_deepl.core.ocr.filters` — output sanitization
+  (YAML front-matter strip, fallback-phrase suppression, runaway-
+  repetition clip).
+- :mod:`local_deepl.core.ocr.client` — pre-flight model-loaded checks
+  (reused by :mod:`local_deepl.core.grounded.zai`).
+- :mod:`local_deepl.core.ocr.exceptions` — :class:`LLMCallError` and
+  :class:`ModelNotLoadedError`.
+
+Call :meth:`ensure_model_loaded` once at pipeline startup before paying
+for image conversion or detection (LM Studio silently falls back to
+whatever model is currently loaded when the requested one is missing —
+see :class:`ModelNotLoadedError` for why this matters). Then use
+:meth:`perform_ocr` for full-page OCR or :meth:`perform_ocr_on_crop`
+for single-box OCR.
 """
+
+from __future__ import annotations
 
 import asyncio
 import logging
 import os
-import re
 from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
 from local_deepl.core.llm_client import call_llm
+from local_deepl.core.ocr.client import (
+    _format_model_not_loaded,
+    _list_loaded_model_ids,
+    _model_in_loaded,
+)
+from local_deepl.core.ocr.exceptions import LLMCallError, ModelNotLoadedError
+from local_deepl.core.ocr.filters import (
+    _is_fallback_response,
+    _strip_runaway_repetition,
+    _strip_yaml_front_matter,
+)
+from local_deepl.core.ocr.prompts import (
+    CORRECTION_CROP_PROMPT,
+    CORRECTION_PAGE_PROMPT,
+    CROP_PROMPT,
+    DUAL_ENGINE_CROP_PROMPT,
+    DUAL_ENGINE_PAGE_PROMPT,
+    HANDWRITING_CROP_PROMPT,
+    HANDWRITING_PAGE_PROMPT,
+    OLMOCR_PAGE_PROMPT,
+)
 
 if TYPE_CHECKING:
     from local_deepl.core.trocr_engine import TrOCREngine
 
 load_dotenv()
 
-
-class LLMCallError(RuntimeError):
-    """Raised when a call to the local LLM OCR endpoint fails.
-
-    Wraps the underlying exception (connection refused, model not loaded,
-    timeout, auth, ...) with a message that names the api-base and model
-    so the user can diagnose without digging through a stack trace.
-    """
-
-
-class ModelNotLoadedError(LLMCallError):
-    """Raised when the requested model is not loaded on the LLM server.
-
-    LM Studio silently falls back to whatever model is currently loaded
-    when an OpenAI-compat client requests an unavailable model ID — so a
-    typo in --model or a forgotten model swap produces subtly wrong OCR
-    output with no surface error. This exception is raised by
-    :meth:`OCRProcessor.ensure_model_loaded` (and the grounded equivalent)
-    *before* any OCR work starts so the user sees the mismatch immediately
-    instead of debugging strange output later.
-    """
-
-
-# Canonical OlmOCR-2 prompt (the model was RL-trained on this exact string).
-# Source: github.com/allenai/olmocr olmocr/prompts/prompts.py
-# :func:`build_no_anchoring_v4_yaml_prompt`.
-OLMOCR_PAGE_PROMPT = (
-    "Attached is one page of a document that you must process. Just return "
-    "the plain text representation of this document as if you were reading it "
-    "naturally. Convert equations to LateX and tables to HTML.\n"
-    "If there are any figures or charts, label them with the following "
-    "markdown syntax ![Alt text describing the contents of the figure]"
-    "(page_startx_starty_width_height.png)\n"
-    "Return your output as markdown, with a front matter section on top "
-    "specifying values for the primary_language, is_rotation_valid, "
-    "rotation_correction, is_table, and is_diagram parameters."
-)
-
-# Prompt for cropped box regions — we want raw text only, no metadata
-# (the YAML front matter is nonsensical for a single line/region).
-CROP_PROMPT = """
-You are a highly accurate OCR assistant.
-Extract all text from the provided image crop exactly as it appears.
-CRITICAL INSTRUCTION: Pay extremely close attention to all diacritical marks (e.g. Arabic Tashkeel, French accents, German umlauts). They are deliberate and must be transcribed accurately. Do not dismiss them as speckles or background noise.
-Output only the plain text with no markdown formatting or other commentary.
-"""
-
-DUAL_ENGINE_PAGE_PROMPT = """
-You are a highly accurate OCR assistant.
-Extract all text from the provided page image exactly as it appears.
-CRITICAL INSTRUCTION: Pay extremely close attention to all diacritical marks (e.g. Arabic Tashkeel, French accents, German umlauts). They are deliberate and must be transcribed accurately. Do not dismiss them as speckles or background noise.
-You are given a rough, error-prone draft transcription from a legacy OCR engine. Use it as a hint, but rely on the image for the final correct text, paying special attention to correcting hallucinations and diacritics in the draft.
-
-DRAFT HINT:
-{draft_text}
-
-Output only the corrected transcribed text, without any conversational formatting or commentary.
-"""
-
-DUAL_ENGINE_CROP_PROMPT = """
-You are a highly accurate OCR assistant.
-Extract all text from the provided image crop exactly as it appears.
-CRITICAL INSTRUCTION: Pay extremely close attention to all diacritical marks (e.g. Arabic Tashkeel, French accents, German umlauts). They are deliberate and must be transcribed accurately. Do not dismiss them as speckles or background noise.
-You are given a rough draft transcription from a legacy OCR engine. Use it as a hint, but rely on the image for the final correct text.
-
-DRAFT HINT:
-{draft_text}
-
-Output only the corrected transcribed text, without any conversational formatting or commentary.
-"""
-
-CORRECTION_PAGE_PROMPT = (
-    "Attached is an image of a document and a draft transcription. The draft may contain minor "
-    "errors such as missing diacritics, incorrect characters, or hallucinated words (especially in Arabic script). "
-    "Carefully compare the draft to the image and output the perfectly corrected text in the same format.\n"
-    "Draft Transcription:\n"
-    "---\n"
-    "{draft_text}\n"
-    "---\n"
-    "Please provide only the corrected transcription with no additional commentary."
-)
-
-CORRECTION_CROP_PROMPT = (
-    "Attached is an image of a cropped text region and a draft transcription. "
-    "Carefully compare the draft to the image and output the perfectly corrected text on a single line. "
-    "Fix any missing diacritics or incorrect characters (especially for Arabic script). "
-    "Output only the plain text with no explanation.\n"
-    "Draft Transcription: {draft_text}"
-)
-
-
-# Handwriting-specific page prompt. The base OLMOCR_PAGE_PROMPT assumes
-# printed text; this variant nudges the model to handle cursive, ascenders,
-# descenders, and crossed-out words without dropping them.
-HANDWRITING_PAGE_PROMPT = (
-    "Attached is one page of a document that may contain HANDWRITTEN text "
-    "(cursive, print, or a mix). Read it as carefully as you would a personal "
-    "letter. Pay close attention to:\n"
-    "  - Ascenders and descenders that may be ambiguous (b/d/p/q, n/u, etc.).\n"
-    "  - Words that may be misjoined or split incorrectly across lines.\n"
-    "  - Crossed-out or strikethrough words: keep them in the output as "
-    "[crossed: original text].\n"
-    "  - Margin annotations, arrows, and numbered notes: include them in reading order.\n"
-    "Return the page as Markdown. Tables -> HTML. Equations -> LaTeX.\n"
-    "Use a YAML front matter as in the printed-text prompt."
-)
-
-# Handwriting-specific crop prompt. Used when per-region OCR is requested.
-HANDWRITING_CROP_PROMPT = (
-    "You are recognizing a single line of HANDWRITTEN text from a document.\n"
-    "Be patient with cursive, irregular spacing, and ambiguous characters.\n"
-    "Pay attention to diacritics (accents, umlauts, Arabic tashkeel).\n"
-    "If you cannot read the line, return an empty string rather than guess.\n"
-    "Output only the plain text with no markdown formatting."
-)
-
-
-# Phrases the model emits as a fallback when it can't read the crop —
-# usually because the crop is blank, decorative, or otherwise non-text.
-# We strip them so they don't pollute the searchable text layer.
-_HALLUCINATION_PATTERNS = (
-    "the quick brown fox jumps over the lazy dog",  # OlmOCR-2 pangram fallback
-    "lorem ipsum",
-)
-
-
-def _is_fallback_response(text: str) -> bool:
-    """
-    True if ``text`` is essentially one of the known LLM fallback phrases.
-
-    A substring match would over-trigger: a real document might contain
-    "lorem ipsum" as quoted placeholder text, or the pangram as an
-    example sentence. We require the response to *be* the fallback
-    after light normalization (case-fold, strip whitespace, drop
-    surrounding punctuation/quotes) — i.e. the fallback occupies the
-    entire crop response, not just part of it.
-    """
-    _trim = ".!?\"'`)([]{}<>“”‘’ \t"
-    normalized = text.strip().lower().strip(_trim)
-    return normalized in _HALLUCINATION_PATTERNS
+logger = logging.getLogger(__name__)
 
 
 class OCRProcessor:
@@ -192,7 +94,7 @@ class OCRProcessor:
         api_base: str | None = None,
         api_key: str | None = None,
         model: str | None = None,
-        trocr_engine: "TrOCREngine | None" = None,
+        trocr_engine: TrOCREngine | None = None,
         handwriting_mode: bool = False,
         confidence_threshold: float = 0.75,
     ):
@@ -234,8 +136,7 @@ class OCRProcessor:
         binarize: bool = False,
         dual_engine: bool = False,
     ) -> list[str]:
-        """
-        OCR a full page image. Returns a list of non-empty lines in reading order.
+        """OCR a full page image. Returns non-empty lines in reading order.
 
         YAML front matter emitted by OlmOCR (rotation/language/is_table flags)
         is stripped before returning. Runaway repetition (the model getting
@@ -289,9 +190,8 @@ class OCRProcessor:
         binarize: bool = False,
         dual_engine: bool = False,
     ) -> str:
-        """
-        OCR a single cropped box region. Returns a single whitespace-joined
-        string (the crop is small, so we don't try to preserve line structure).
+        """OCR a single cropped box region. Returns a single whitespace-joined string.
+
         Empty-string for blank/uncertain crops (filtered hallucination).
         """
         if binarize:
@@ -385,9 +285,8 @@ class OCRProcessor:
                 except Exception as e:
                     # TrOCR is optional; a failure here must not poison the
                     # surrounding OCR result. Log and return the VLM's
-                    # best-effort output. (The `logging` import is module-
-                    # level at the top of this file; do not re-import.)
-                    logging.warning("TrOCR fallback failed: %s", e)
+                    # best-effort output.
+                    logger.warning("TrOCR fallback failed: %s", e)
 
         return result
 
@@ -488,107 +387,4 @@ class OCRProcessor:
             return image_base64
 
 
-def _strip_runaway_repetition(lines: list[str], max_repeat: int = 20) -> list[str]:
-    """
-    Drop pathological repetition from LLM output.
-
-    Local VLMs occasionally fall into an output loop on dense or unusual
-    pages — the same line is emitted dozens or hundreds of times in a row
-    until max_tokens cuts the response off. The repeated junk pollutes
-    every box the DP then tries to assign it to. We cap any single string
-    at ``max_repeat`` total occurrences across the response: large enough
-    to admit legitimate repeated structure (table row tags, separators)
-    but small enough that runaway loops are clipped to a handful of lines
-    and the rest is dropped.
-
-    A warning is emitted if any clipping happened so the user knows the
-    OCR layer for that page may be incomplete.
-    """
-    counts: dict[str, int] = {}
-    out: list[str] = []
-    truncated = 0
-    for line in lines:
-        c = counts.get(line, 0) + 1
-        counts[line] = c
-        if c <= max_repeat:
-            out.append(line)
-        else:
-            truncated += 1
-    if truncated > 0:
-        worst = max(counts.items(), key=lambda kv: kv[1])
-        logging.warning(
-            "LLM OCR output had %d runaway-repetition lines clipped "
-            "(worst offender: %r occurred %d times). The model likely "
-            "got stuck on this page; output may be incomplete. "
-            "Try lowering --max-image-dim or switching --model.",
-            truncated,
-            worst[0][:60],
-            worst[1],
-        )
-    return out
-
-
-async def _list_loaded_model_ids(client: AsyncOpenAI, api_base: str) -> list[str]:
-    """Return model IDs loaded on an OpenAI-compatible server.
-
-    Uses the SDK's ``client.models.list()`` (hits ``GET /v1/models``).
-    Wraps any transport / auth / response-shape failure in
-    :class:`LLMCallError` with the same diagnostic format ``_chat`` uses
-    so the caller sees a consistent error message style across the
-    pipeline's LLM-facing surfaces.
-    """
-    try:
-        page = await client.models.list()
-    except Exception as e:
-        raise LLMCallError(
-            f"Could not list models on {api_base}: "
-            f"{type(e).__name__}: {e}\n"
-            f"  - Is your local LLM server (LM Studio / Ollama / vLLM) running at "
-            f"{api_base}?\n"
-            f"  - Does it expose GET /v1/models? (Most do; some custom servers "
-            f"don't — pass --no-verify-model to skip this check.)"
-        ) from e
-    return [m.id for m in page.data] if page.data else []
-
-
-def _model_in_loaded(model: str, loaded: list[str]) -> bool:
-    target = model.lower()
-    return any(m.lower() == target for m in loaded)
-
-
-def _format_model_not_loaded(api_base: str, model: str, loaded: list[str]) -> str:
-    listing = "\n    ".join(loaded) if loaded else "(none)"
-    return (
-        f"Model {model!r} is not loaded on {api_base}.\n"
-        f"  Loaded models:\n    {listing}\n"
-        f"  Fix:\n"
-        f"    - Load {model!r} in LM Studio (Models -> search -> Load), then retry.\n"
-        f"    - Or pass --model with one of the loaded model IDs above.\n"
-        f"    - Or pass --no-verify-model to skip this check "
-        f"(e.g. on Ollama / vLLM, which auto-load on demand).\n"
-        f"  Why this matters: LM Studio silently falls back to whatever model is "
-        f"loaded when the requested one is missing, producing subtly wrong OCR "
-        f"results with no error. (issue #7)"
-    )
-
-
-def _strip_yaml_front_matter(text: str) -> str:
-    """
-    If the response begins with a YAML front matter block (--- ... ---),
-    return the body after it. Otherwise return the input unchanged.
-    Robust to models that ignore the front-matter instruction or wrap it
-    in markdown code fences.
-    """
-    t = re.sub(r"^\s*```[a-zA-Z]*\n?", "", text).lstrip()
-    if not t.startswith("---"):
-        return text
-    # Find the closing fence on its own line, after the opening fence.
-    rest = t[3:]
-    close_idx = rest.find("\n---")
-    if close_idx == -1:
-        return text  # malformed; return as-is
-    body = rest[close_idx + len("\n---") :]
-    # Remove optional closing ``` if it was part of a markdown fence
-    body = re.sub(r"^\s*```\n?", "", body)
-    # Trim the newline directly after the closing fence.
-    return body.lstrip("\n").strip()
+__all__ = ["OCRProcessor"]

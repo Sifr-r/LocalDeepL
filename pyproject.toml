@@ -191,10 +191,21 @@ ignore = [
 "src/local_deepl/api/routers/extraction.py" = ["SIM105"]
 "src/local_deepl/api/routers/ocr.py" = ["RUF003"]
 "src/local_deepl/api/services/security.py" = ["SIM115"]
-"src/local_deepl/core/grounded.py" = ["SIM113"]
-# RUF001 in core/ocr.py: the curly quotes in `_trim` are intentional —
+# SIM113 in core/grounded/zai.py: the manual counter in the Z.AI
+# poll loop is intentional — we need the elapsed-time accounting
+# alongside `poll_count` for the progress message.
+"src/local_deepl/core/grounded/zai.py" = ["SIM113"]
+# RUF022 in core/{ocr,grounded}/__init__.py: the public/private grouping in
+# __all__ is intentional and more scannable than strict alphabetical.
+"src/local_deepl/core/grounded/__init__.py" = ["RUF022"]
+"src/local_deepl/core/ocr/__init__.py" = ["RUF022"]
+# SIM113 in core/grounded/prompted.py: the manual `completed` counter in the
+# `asyncio.as_completed` loop is intentional — we cannot use enumerate()
+# because `as_completed` yields futures, not indices.
+"src/local_deepl/core/grounded/prompted.py" = ["SIM113"]
+# RUF001 in core/ocr/filters.py: the curly quotes in `_trim` are intentional —
 # OCR can emit curly quotes that need stripping, not ASCII apostrophes.
-"src/local_deepl/core/ocr.py" = ["RUF001"]
+"src/local_deepl/core/ocr/filters.py" = ["RUF001"]
 "src/local_deepl/core/processors.py" = ["RUF002", "RUF005"]
 "src/local_deepl/evaluation.py" = ["RUF002"]
 "tests/**/*.py" = [

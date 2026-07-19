@@ -27,12 +27,23 @@ from local_deepl.core.callbacks import BlockCallbackSet
 # ---------------------------------------------------------------------------
 
 # Files in `core/` must not import anything from `api/`. The reverse
-# (api importing core) is fine and expected.
+# (api importing core) is fine and expected. After the god-module
+# decomposition, `core/ocr.py` and `core/grounded.py` became
+# sub-packages; each member file is included individually so a
+# regression in any one of them surfaces a clear failure.
 _CORE_FILES_TO_CHECK = [
     Path("src/local_deepl/core/workflows/hybrid.py"),
     Path("src/local_deepl/core/workflows/grounded.py"),
     Path("src/local_deepl/core/workflows/base.py"),
-    Path("src/local_deepl/core/ocr.py"),
+    Path("src/local_deepl/core/ocr/client.py"),
+    Path("src/local_deepl/core/ocr/exceptions.py"),
+    Path("src/local_deepl/core/ocr/filters.py"),
+    Path("src/local_deepl/core/ocr/processor.py"),
+    Path("src/local_deepl/core/ocr/prompts.py"),
+    Path("src/local_deepl/core/grounded/models.py"),
+    Path("src/local_deepl/core/grounded/parsers.py"),
+    Path("src/local_deepl/core/grounded/prompted.py"),
+    Path("src/local_deepl/core/grounded/rasterize.py"),
     Path("src/local_deepl/core/aligner.py"),
     Path("src/local_deepl/core/processors.py"),
     Path("src/local_deepl/core/block_tree.py"),

@@ -47,16 +47,17 @@ async def test_trocr_fallback_uses_recognize_with_raw_bytes(monkeypatch):
     `TrOCREngine.recognize(image_bytes)` — not the non-existent
     `ocr(image_base64)` from the pre-fix code path."""
 
-    # Replace `call_llm` inside ocr.py's namespace (not llm_client.py)
+    # Replace `call_llm` inside the processor's namespace (not llm_client.py)
     # because OCRProcessor imports it directly: `from local_deepl.core
     # .llm_client import call_llm`. Patching the source module won't
-    # affect the already-bound reference.
-    from local_deepl.core import ocr as ocr_module
+    # affect the already-bound reference. After the P1 god-module split,
+    # the binding lives in `local_deepl.core.ocr.processor`.
+    from local_deepl.core.ocr import processor as processor_module
 
     async def _fake_call_llm(**kwargs) -> str:
         return "x"
 
-    monkeypatch.setattr(ocr_module, "call_llm", _fake_call_llm)
+    monkeypatch.setattr(processor_module, "call_llm", _fake_call_llm)
 
     trocr = _FakeTrOCREngine(TrOCRResult(text="hello", confidence=0.9))
     processor = OCRProcessor(
@@ -87,12 +88,12 @@ async def test_trocr_fallback_swallows_engine_errors(monkeypatch):
         async def recognize(self, image_bytes: bytes) -> TrOCRResult:
             raise RuntimeError("synthetic TrOCR failure")
 
-    from local_deepl.core import ocr as ocr_module
+    from local_deepl.core.ocr import processor as processor_module
 
     async def _fake_call_llm(**kwargs) -> str:
         return "x"
 
-    monkeypatch.setattr(ocr_module, "call_llm", _fake_call_llm)
+    monkeypatch.setattr(processor_module, "call_llm", _fake_call_llm)
 
     processor = OCRProcessor(
         api_base="http://localhost:0/v1",

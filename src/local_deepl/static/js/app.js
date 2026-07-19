@@ -75,6 +75,22 @@ async function ensureProgressSession() {
     state.progressSessionToken = session.session_token;
 }
 
+function renderMarkdownSafely(element) {
+    if (!window.markdownit) return;
+    // markdownit() sanitises by default (raw HTML in markdown
+    // is escaped), so the returned string is safe to parse and
+    // adopt into the DOM. We use DOMParser + replaceChildren
+    // (not the assignment-to-inner-HTML property) to satisfy
+    // the project's no-raw-HTML-insertion policy.
+    const html = window.markdownit().render(element.textContent);
+    const parsed = new DOMParser().parseFromString(html, 'text/html');
+    const frag = document.createDocumentFragment();
+    while (parsed.body.firstChild) {
+        frag.appendChild(parsed.body.firstChild);
+    }
+    element.replaceChildren(frag);
+}
+
 async function connectWS() {
     await ensureProgressSession();
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -110,15 +126,7 @@ async function connectWS() {
                 if (refs.mdContent && data.text) {
                     const cur = refs.mdContent.textContent || '';
                     refs.mdContent.textContent = (cur ? cur + '\n\n' : '') + data.text;
-                    if (window.markdownit) {
-                        const html = window.markdownit().render(refs.mdContent.textContent);
-                        const parsed = new DOMParser().parseFromString(html, 'text/html');
-                        const frag = document.createDocumentFragment();
-                        while (parsed.body.firstChild) {
-                            frag.appendChild(parsed.body.firstChild);
-                        }
-                        refs.mdContent.replaceChildren(frag);
-                    }
+                    renderMarkdownSafely(refs.mdContent);
                 }
                 return;
             }
@@ -133,25 +141,7 @@ async function connectWS() {
                     const cur = refs.translatedMarkdownContent.textContent || '';
                     refs.translatedMarkdownContent.textContent =
                         (cur ? cur + '\n\n' : '') + data.translated_text;
-                    if (window.markdownit) {
-                        // markdownit() sanitises by default (raw HTML in markdown
-                        // is escaped), so the returned string is safe to parse and
-                        // adopt into the DOM. We use DOMParser + replaceChildren
-                        // (not the assignment-to-inner-HTML property) to satisfy
-                        // the project's no-raw-HTML-insertion policy. The trusted
-                        // source is the markdown renderer.
-                        const html = window.markdownit().render(
-                            refs.translatedMarkdownContent.textContent
-                        );
-                        const parsed = new DOMParser().parseFromString(
-                            html, 'text/html'
-                        );
-                        const frag = document.createDocumentFragment();
-                        while (parsed.body.firstChild) {
-                            frag.appendChild(parsed.body.firstChild);
-                        }
-                        refs.translatedMarkdownContent.replaceChildren(frag);
-                    }
+                    renderMarkdownSafely(refs.translatedMarkdownContent);
                 }
                 return;
             }
@@ -254,6 +244,21 @@ function setupUploaderDragAndDrop() {
 }
 
 // 3. Document OCR Execution Flow
+async function buildProcessFormData(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('client_id', clientId);
+    await ensureProgressSession();
+    formData.append('progress_channel', state.progressChannelId);
+    formData.append('progress_token', state.progressSessionToken);
+    
+    const settings = getFormSettings();
+    Object.entries(settings).forEach(([k, v]) => {
+        formData.append(k, v);
+    });
+    return formData;
+}
+
 async function triggerDocuVerseOCR(file) {
     workspaceState.isProcessing = true;
     if(refs.startBtn) refs.startBtn.disabled = true;
@@ -273,18 +278,7 @@ async function triggerDocuVerseOCR(file) {
         if(refs.elapsedTime) refs.elapsedTime.innerText = `${mins}:${secs}`;
     }, 1000);
 
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('client_id', clientId);
-    await ensureProgressSession();
-    formData.append('progress_channel', state.progressChannelId);
-    formData.append('progress_token', state.progressSessionToken);
-    
-    // Append form parameters
-    const settings = getFormSettings();
-    Object.entries(settings).forEach(([k, v]) => {
-        formData.append(k, v);
-    });
+    const formData = await buildProcessFormData(file);
     
     try {
         const response = await fetch('/process', {
@@ -705,17 +699,7 @@ async function runTranslationTabOcrAndTranslate(file, lang) {
     setTranslationFileInfo(file, 'Uploading & OCR…');
     setTranslationOcrProgress('Uploading', 5);
 
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('client_id', clientId);
-    await ensureProgressSession();
-    formData.append('progress_channel', state.progressChannelId);
-    formData.append('progress_token', state.progressSessionToken);
-
-    const settings = getFormSettings();
-    Object.entries(settings).forEach(([k, v]) => {
-        formData.append(k, v);
-    });
+    const formData = await buildProcessFormData(file);
 
     let response;
     try {

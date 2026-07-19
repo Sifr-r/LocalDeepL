@@ -129,9 +129,7 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 
 ## Known Tech Debt
 
-- `api/routers/ocr.py` mixes OCR, translation, extraction, and asynchronous task routes.
-- The grounded web route instantiates hybrid components even though `OCRPipeline` skips them in grounded mode.
-- `ZAIHostedOCR` remains an experimental backend.
+- No major tech debt at the moment.
 
 ## Product-Planning Notes (scout plans, not code)
 

@@ -1,13 +1,4 @@
-"""Translation API routes: glossary, tree-aware translation, NLLB fast path.
-
-Adds the following endpoints to the existing AI service:
-
-- ``POST /api/glossary`` -> upload a glossary (JSON or paired-lines text)
-- ``POST /api/translate/tree`` -> translate a stored text artifact
-  (structure-preserving). Streams ``translate_chunk_complete`` events if a
-  ``channel_id`` is supplied.
-- ``POST /api/translate/nllb`` -> fast translation via NLLB-200
-"""
+"""Translation API routes: async tasks, glossary, tree-aware translation, NLLB fast path."""
 
 from __future__ import annotations
 
@@ -15,18 +6,38 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 from local_deepl.api.routers import state
 from local_deepl.api.routers.websocket import manager
 from local_deepl.api.schemas.requests import (
     GlossaryRequest,
+    TranslationRequest,
     TreeTranslationRequest,
 )
+from local_deepl.api.services.ai import (
+    AIServiceError,
+)
+from local_deepl.api.services.ai import (
+    translate_text as translate_document_text,
+)
+from local_deepl.api.services.security import SERVER_ERROR_MESSAGE
 from local_deepl.core.glossary import Glossary
+from local_deepl.core.translation_config import AsyncTranslationUnavailable
 from local_deepl.core.translation_tree import translate_tree
+
+from .common import _stable_server_error
+from .config import _config
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _ai_error_response(exc: AIServiceError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": exc.public_message},
+    )
 
 
 def _load_pages_from_artifact(artifact_id: str, token: str) -> dict:
@@ -43,6 +54,72 @@ def _load_pages_from_artifact(artifact_id: str, token: str) -> dict:
         return pages_data
     except Exception as exc:
         raise HTTPException(status_code=404, detail="text artifact not found") from exc
+
+
+@router.post("/api/translate")
+async def translate_text(body: TranslationRequest):
+    """Translate OCR text into the requested target language."""
+    try:
+        translated = await translate_document_text(body, config=_config)
+    except AIServiceError as exc:
+        return _ai_error_response(exc)
+    except Exception:
+        logger.exception("Translation request failed")
+        return _stable_server_error()
+    return {"translated_text": translated}
+
+
+@router.post("/api/translate/async")
+async def translate_text_async(body: TreeTranslationRequest):
+    """Trigger a background tree translation job via Celery.
+
+    Returns 503 if the optional async-translation extras are not installed.
+    """
+    from local_deepl.api.tasks import process_translation_task
+
+    try:
+        task = process_translation_task.delay(
+            body.text_artifact_id,
+            body.text_artifact_token,
+            body.target_language,
+            body.glossary or [],
+        )
+    except AsyncTranslationUnavailable as exc:
+        return JSONResponse(status_code=503, content={"error": str(exc)})
+
+    return {"job_id": task.id, "status": "Processing"}
+
+
+@router.get("/api/translate/status/{job_id}")
+async def get_translation_status(job_id: str):
+    """Poll the status of a Celery background translation job."""
+    from local_deepl.api.celery_app import celery_app
+
+    try:
+        task = celery_app.AsyncResult(job_id)
+    except AsyncTranslationUnavailable as exc:
+        return JSONResponse(status_code=503, content={"error": str(exc)})
+
+    try:
+        response: dict[str, Any] = {
+            "job_id": job_id,
+            "state": task.state,
+        }
+
+        if task.state == "PENDING":
+            response["status"] = "Pending..."
+        elif task.state != "FAILURE":
+            response["info"] = task.info
+            if task.state == "SUCCESS":
+                response["result"] = task.get()
+        else:
+            logger.error("Async translation task failed: %s", task.info)
+            response["error"] = SERVER_ERROR_MESSAGE
+
+        return response
+    except Exception:
+        logger.exception("Async translation status lookup failed")
+        return _stable_server_error()
 
 
 @router.post("/api/glossary")
@@ -115,23 +192,12 @@ async def translate_tree_endpoint(req: TreeTranslationRequest) -> dict[str, Any]
             if text:
                 memory.add_text(text)
 
-    # Phase C (review M1) — wire the WebSocket streaming through
-    # `translate_tree`'s `on_translate_chunk` parameter. The pre-fix
-    # code path duplicated `translate_tree`'s body (skip headers, build
-    # context, sliding window, LLM call, write-back) so the WS frame
-    # could be emitted per chunk. After the callback lands, the core
-    # does the work and the API layer only translates callback args
-    # into the right transport frame.
     async def _on_translate_chunk(
         chunk_idx: int,
         source_chars: int,
         translated_text: str,
         target_language: str,
     ) -> None:
-        # The channel_id auth check is the WS manager's responsibility
-        # (silently no-ops on an unbound / un-authorized channel). The
-        # routing contract: `channel_id` presence is the only
-        # "should I emit" signal this layer owns.
         if not req.channel_id:
             return
         await manager.send_translate_chunk(
