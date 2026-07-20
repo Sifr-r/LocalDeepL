@@ -1,0 +1,1 @@
+Hatchling build + uv lock manager; Ruff (lint/format) + MyPy (strict on `core/*`) enforced by pre-commit hooks; Pytest with `pytest-asyncio` auto mode; Docker multi-stage image + docker-compose profiles (`default` = api+redis, `async` adds celery worker); FastAPI/Uvicorn server and Celery+Redis async translation stack are optional extras of the same package.

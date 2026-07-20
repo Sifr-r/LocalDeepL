@@ -1,0 +1,48 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: en-US
+branch: main
+nodes_managed: true
+exported_at: "2026-07-20T19:12:26Z"
+modules:
+    "":
+        dir_name: LocalDeepL — Local LLM Vision OCR & Translation Platform
+        title: LocalDeepL — Local LLM Vision OCR & Translation Platform
+        scope:
+            - README.md
+            - ARCHITECTURE.md
+            - AGENTS.md
+            - .gitignore
+            - .pre-commit-config.yaml
+            - pyproject.toml
+            - Dockerfile
+            - compose.yaml
+            - install.ps1
+            - phase2_reqs.txt
+            - phase3_text.txt
+            - test_ui.py
+            - .fallowrc.json
+        source_files: []
+        children:
+            - scripts_and_examples
+            - tests
+        depends_on: []
+        related_to: []
+    scripts_and_examples:
+        dir_name: Development, Evaluation & Visualization Scripts
+        title: Development, Evaluation & Visualization Scripts
+        scope:
+            - scripts/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    tests:
+        dir_name: Pytest Test Suite & Fixtures
+        title: Pytest Test Suite & Fixtures
+        scope:
+            - tests/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []

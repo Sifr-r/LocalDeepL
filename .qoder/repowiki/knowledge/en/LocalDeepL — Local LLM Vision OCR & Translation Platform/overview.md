@@ -1,0 +1,1 @@
+Python package that wires Surya OCR, grounded/hybrid LLM pipelines, and a FastAPI surface into a searchable-PDF pipeline, with optional async Celery workers and Docker/Compose orchestration.
