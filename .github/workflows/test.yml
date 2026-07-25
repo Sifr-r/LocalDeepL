@@ -42,6 +42,9 @@ jobs:
       - name: Run Ruff check
         run: uv run ruff check src tests --no-fix
 
+      - name: Run Ruff format check
+        run: uv run ruff format src tests --check
+
       - name: Run Mypy type check
         run: uv run mypy src
 

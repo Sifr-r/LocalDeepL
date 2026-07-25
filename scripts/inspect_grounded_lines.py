@@ -6,6 +6,18 @@ import sys
 import fitz
 
 
+def _flush(
+    line_words: list[str],
+    line_x: tuple[float, float] | None,
+    line_y: float | None,
+) -> None:
+    if line_words and line_x is not None and line_y is not None:
+        x0, x1 = line_x
+        print(
+            f"  y={line_y:6.1f} x=({x0:6.1f},{x1:6.1f}) text={' '.join(line_words)!r}"
+        )
+
+
 def main(pdf_path: str) -> None:
     doc = fitz.open(pdf_path)
     for pn, page in enumerate(doc):
@@ -18,25 +30,20 @@ def main(pdf_path: str) -> None:
         line_x: tuple[float, float] | None = None
         line_y: float | None = None
 
-        def flush():
-            if line_words:
-                x0, x1 = line_x
-                print(f"  y={line_y:6.1f} x=({x0:6.1f},{x1:6.1f}) text={' '.join(line_words)!r}")
-
         print(f"page {pn}:")
-        for x0, y0, x1, y1, w, *_ in words:
+        for x0, y0, x1, _y1, w, *_ in words:
             row_y = round(y0 / 5) * 5
             if prev_y is None or row_y != prev_y:
-                flush()
+                _flush(line_words, line_x, line_y)
                 line_words = [w]
                 line_x = (x0, x1)
                 line_y = y0
             else:
                 line_words.append(w)
-                lx0, lx1 = line_x
+                lx0, lx1 = line_x  # type: ignore[misc]
                 line_x = (min(lx0, x0), max(lx1, x1))
             prev_y = row_y
-        flush()
+        _flush(line_words, line_x, line_y)
     doc.close()
 
 

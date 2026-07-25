@@ -93,12 +93,12 @@ class TestHallucinationFilter:
         from local_deepl.core.ocr import OCRProcessor
 
         ocr = OCRProcessor.__new__(OCRProcessor)  # skip real init
-        ocr.client = None  # never used; we override _chat below
+        ocr.client = None  # type: ignore[assignment]  # never used; we override _chat below
 
         async def _fake_pangram(*a, **kw):
             return "The quick brown fox jumps over the lazy dog."
 
-        ocr._chat = _fake_pangram
+        ocr._chat = _fake_pangram  # type: ignore[method-assign]
         ocr.CROP_TIMEOUT_S = 60.0
         ocr.CROP_MAX_TOKENS = 256
         result = asyncio.run(ocr.perform_ocr_on_crop("ignored"))
@@ -110,12 +110,12 @@ class TestHallucinationFilter:
         from local_deepl.core.ocr import OCRProcessor
 
         ocr = OCRProcessor.__new__(OCRProcessor)
-        ocr.client = None
+        ocr.client = None  # type: ignore[assignment]
 
         async def _fake(*a, **kw):
             return "real handwritten content"
 
-        ocr._chat = _fake
+        ocr._chat = _fake  # type: ignore[method-assign]
         ocr.CROP_TIMEOUT_S = 60.0
         ocr.CROP_MAX_TOKENS = 256
         assert (
@@ -132,7 +132,7 @@ class TestHallucinationFilter:
         from local_deepl.core.ocr import OCRProcessor
 
         ocr = OCRProcessor.__new__(OCRProcessor)
-        ocr.client = None
+        ocr.client = None  # type: ignore[assignment]
 
         sentence = (
             "Practice typing: The quick brown fox jumps over the lazy dog. "
@@ -142,7 +142,7 @@ class TestHallucinationFilter:
         async def _fake(*a, **kw):
             return sentence
 
-        ocr._chat = _fake
+        ocr._chat = _fake  # type: ignore[method-assign]
         ocr.CROP_TIMEOUT_S = 60.0
         ocr.CROP_MAX_TOKENS = 256
         assert asyncio.run(ocr.perform_ocr_on_crop("ignored")) == sentence
@@ -166,8 +166,8 @@ class TestHallucinationFilter:
             "the quick brown fox jumps over the lazy dog",
         ):
             ocr = OCRProcessor.__new__(OCRProcessor)
-            ocr.client = None
-            ocr._chat = _make_fake(variant)
+            ocr.client = None  # type: ignore[assignment]
+            ocr._chat = _make_fake(variant)  # type: ignore[method-assign]
             ocr.CROP_TIMEOUT_S = 60.0
             ocr.CROP_MAX_TOKENS = 256
             assert asyncio.run(ocr.perform_ocr_on_crop("ignored")) == "", (

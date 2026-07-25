@@ -44,7 +44,7 @@ async def generate_comparison(pdf_path, output_path):
     buffer = io.BytesIO()
     original_img.save(buffer, format="JPEG", quality=50)
     jpeg_bytes = buffer.getvalue()
-    print(f"Compressed Image Size: {len(jpeg_bytes)/1024:.2f} KB")
+    print(f"Compressed Image Size: {len(jpeg_bytes) / 1024:.2f} KB")
 
     # 2. Run Surya (Layout) via batch API with a single-element list
     aligner = HybridAligner()
@@ -58,13 +58,16 @@ async def generate_comparison(pdf_path, output_path):
     print("Running LLM OCR...")
     try:
         import base64
+
         # Processor expects base64 string
-        b64_img = base64.b64encode(jpeg_bytes).decode('utf-8')
+        b64_img = base64.b64encode(jpeg_bytes).decode("utf-8")
 
         llm_text_lines = await processor.perform_ocr(b64_img)
         print(f"LLM Response: {len(llm_text_lines)} lines found.")
     except Exception as e:
-        print(f"LLM Failed: {e}. Using dummy text for visualization if needed, but alignment will fail.")
+        print(
+            f"LLM Failed: {e}. Using dummy text for visualization if needed, but alignment will fail."
+        )
         llm_text_lines = []
 
     # 4. Run Hybrid Alignment
@@ -78,7 +81,7 @@ async def generate_comparison(pdf_path, output_path):
     draw_raw = ImageDraw.Draw(img_raw)
 
     # Draw Raw Boxes (Red)
-    for (rect, text) in structured_data:
+    for rect, _text in structured_data:
         # rect is normalized [x0, y0, x1, y1]
         x0 = rect[0] * width
         y0 = rect[1] * height
@@ -92,7 +95,7 @@ async def generate_comparison(pdf_path, output_path):
     draw_hybrid = ImageDraw.Draw(img_hybrid)
 
     # Draw Aligned Boxes (Green)
-    for (rect, text) in final_output:
+    for rect, _text in final_output:
         x0 = rect[0] * width
         y0 = rect[1] * height
         x1 = rect[2] * width
@@ -101,8 +104,8 @@ async def generate_comparison(pdf_path, output_path):
         draw_hybrid.rectangle([x0, y0, x1, y1], outline="#00ff00", width=3)
 
     # Create Side-by-Side Comparison
-    total_width = width * 2 + 50 # 50px gap
-    comparison_img = Image.new('RGB', (total_width, height), color='white')
+    total_width = width * 2 + 50  # 50px gap
+    comparison_img = Image.new("RGB", (total_width, height), color="white")
 
     comparison_img.paste(img_raw, (0, 0))
     comparison_img.paste(img_hybrid, (width + 50, 0))

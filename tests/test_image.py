@@ -53,7 +53,7 @@ def test_crop_captures_painted_region():
     out = _decode_b64_image(crop_b64)
     # Center pixel should be red-ish (JPEG compression is forgiving).
     cx, cy = out.width // 2, out.height // 2
-    r, g, b = out.getpixel((cx, cy))
+    r, g, b = out.getpixel((cx, cy))  # type: ignore[misc]
     assert r > 150 and g < 100 and b < 100, f"expected red-ish, got {(r, g, b)}"
 
 

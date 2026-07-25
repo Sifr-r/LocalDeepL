@@ -118,7 +118,7 @@ def test_translate_node_uses_injected_settings(monkeypatch):
         ),
     }
 
-    result = translation.translate_node(state)
+    result = translation.translate_node(state)  # type: ignore[arg-type]
 
     assert result["translated_chunk"] == "Bonjour"
     assert captured["api_base"] == "https://example.test/v1"

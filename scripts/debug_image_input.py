@@ -31,21 +31,23 @@ async def main(image_path: str, output_pdf: str) -> None:
         print(f"page {p}: {len(lines)} lines")
         # Detect repetition: count consecutive duplicates
         from collections import Counter
+
         counts = Counter(lines)
         repeats = [(k, v) for k, v in counts.items() if v > 3]
         if repeats:
             print(f"  REPETITION DETECTED: {repeats[:5]}")
-        for i, l in enumerate(lines[:30]):
-            print(f"  [{i}] {l!r}")
+        for i, line in enumerate(lines[:30]):
+            print(f"  [{i}] {line!r}")
         if len(lines) > 30:
             print(f"  ... [{len(lines) - 30} more lines]")
-            for i, l in enumerate(lines[-5:]):
-                print(f"  [{len(lines) - 5 + i}] {l!r}")
+            for i, line in enumerate(lines[-5:]):
+                print(f"  [{len(lines) - 5 + i}] {line!r}")
 
     # Visualize Surya boxes on the source image
     img = Image.open(image_path).convert("RGB")
     img.thumbnail((1024, 1024))
     import io
+
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=80)
     boxes = aligner.get_detected_boxes_batch([buf.getvalue()])[0]

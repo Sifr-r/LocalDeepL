@@ -49,8 +49,8 @@ def get_detection_only_boxes(image_bytes):
             x0, y0, x1, y1 = bbox.bbox
 
             # Normalize coords
-            nx0, ny0 = x0/img_w, y0/img_h
-            nx1, ny1 = x1/img_w, y1/img_h
+            nx0, ny0 = x0 / img_w, y0 / img_h
+            nx1, ny1 = x1 / img_w, y1 / img_h
 
             # Clamp to bounds
             nx0 = max(0.0, min(1.0, nx0))
@@ -72,8 +72,10 @@ def visualize_detection_boxes(img, boxes, color, label):
     width, height = img.size
 
     try:
-        font = ImageFont.truetype("arial.ttf", 12)
-    except:
+        font: ImageFont.FreeTypeFont | ImageFont.ImageFont = ImageFont.truetype(
+            "arial.ttf", 12
+        )
+    except Exception:
         font = ImageFont.load_default()
 
     for i, rect in enumerate(boxes):
@@ -86,7 +88,7 @@ def visualize_detection_boxes(img, boxes, color, label):
 
         draw.rectangle([x0, y0, x1, y1], outline=color, width=2)
         # Draw box number
-        draw.text((x0 + 2, y0 + 2), str(i+1), fill=color, font=font)
+        draw.text((x0 + 2, y0 + 2), str(i + 1), fill=color, font=font)
 
     draw.text((10, 10), f"{label}: {len(boxes)} boxes", fill=color, font=font)
     return img
@@ -94,14 +96,18 @@ def visualize_detection_boxes(img, boxes, color, label):
 
 def test_detection(pdf_filename):
     """Test detection-only on a PDF file."""
-    input_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "examples", pdf_filename)
+    input_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "examples",
+        pdf_filename,
+    )
     if not os.path.exists(input_path):
         print(f"File not found: {input_path}")
         return
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Detection-Only Test: {pdf_filename}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Load PDF
     doc = fitz.open(input_path)

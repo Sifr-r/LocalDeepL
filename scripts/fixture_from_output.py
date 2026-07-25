@@ -24,7 +24,7 @@ from pathlib import Path
 
 import fitz
 
-sys.stdout.reconfigure(encoding="utf-8")
+sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
 
 def main() -> None:
@@ -32,9 +32,10 @@ def main() -> None:
     parser.add_argument("output_pdf", help="Path to an existing sandwich PDF output")
     parser.add_argument("fixture", help="Path to write the new fixture JSON")
     parser.add_argument(
-        "--source-name", default=None,
+        "--source-name",
+        default=None,
         help="file_name field for the fixture (defaults to the output PDF stem "
-             "with the 'output_' prefix stripped — e.g. output_notes.pdf -> notes.pdf)",
+        "with the 'output_' prefix stripped — e.g. output_notes.pdf -> notes.pdf)",
     )
     args = parser.parse_args()
 
@@ -58,24 +59,28 @@ def main() -> None:
                     if not text:
                         continue
                     x0, y0, x1, y1 = span["bbox"]
-                    layout.append({
-                        "block_content": text,
-                        "bbox": [
-                            int(round(y0)),
-                            int(round(x0)),
-                            int(round(y1)),
-                            int(round(x1)),
-                        ],
-                        "block_id": block_id,
-                        "page_index": page_idx,
-                        "block_label": "text",
-                        "score": 1.0,
-                    })
+                    layout.append(
+                        {
+                            "block_content": text,
+                            "bbox": [
+                                int(round(y0)),
+                                int(round(x0)),
+                                int(round(y1)),
+                                int(round(x1)),
+                            ],
+                            "block_id": block_id,
+                            "page_index": page_idx,
+                            "block_label": "text",
+                            "score": 1.0,
+                        }
+                    )
                     block_id += 1
     doc.close()
 
     if not layout:
-        print(f"ERROR: extracted 0 blocks from {out_pdf}; refusing to write empty fixture")
+        print(
+            f"ERROR: extracted 0 blocks from {out_pdf}; refusing to write empty fixture"
+        )
         sys.exit(1)
 
     fixture = {
@@ -96,7 +101,7 @@ def main() -> None:
 
     print(
         f"wrote {len(layout)} blocks across {len(page_sizes)} pages "
-        f"(dims={'x'.join(f'{w}x{h}' for w, h in page_sizes[:3])}{'...' if len(page_sizes)>3 else ''})"
+        f"(dims={'x'.join(f'{w}x{h}' for w, h in page_sizes[:3])}{'...' if len(page_sizes) > 3 else ''})"
     )
     print(f"  -> {fixture_path}")
 

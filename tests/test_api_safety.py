@@ -139,12 +139,13 @@ def test_upload_validation_uses_streaming_limit_and_content_signature():
     async def run_checks():
         with pytest.raises(UploadValidationError) as too_large:
             await save_validated_upload(
-                _AsyncUpload(b"%PDF-1.4\n" + b"x" * 16), max_bytes=8
+                _AsyncUpload(b"%PDF-1.4\n" + b"x" * 16),  # type: ignore[arg-type]
+                max_bytes=8,
             )
         assert too_large.value.status_code == 413
 
         with pytest.raises(UploadValidationError) as bad_type:
-            await save_validated_upload(_AsyncUpload(b"not a pdf"), max_bytes=1024)
+            await save_validated_upload(_AsyncUpload(b"not a pdf"), max_bytes=1024)  # type: ignore[arg-type]
         assert bad_type.value.status_code == 415
 
     asyncio.run(run_checks())

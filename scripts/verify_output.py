@@ -29,13 +29,12 @@ def verify(pdf_path):
                     full_text += w[4] + " "
                     positions.append((w[0], w[1]))
 
-            print(f"--- Page {i+1} Stats ---")
+            print(f"--- Page {i + 1} Stats ---")
             print(f"Word count: {len(words)}")
             if words:
-                 y_vals = sorted([w[1] for w in words])
-                 print(f"Y-coordinate samples: {y_vals[::max(1, len(y_vals)//5)]}")
+                y_vals = sorted([w[1] for w in words])
+                print(f"Y-coordinate samples: {y_vals[:: max(1, len(y_vals) // 5)]}")
             print("-----------------------------")
-
 
         doc.close()
 
@@ -47,8 +46,8 @@ def verify(pdf_path):
         # We expect y to vary.
         y_coords = [p[1] for p in positions]
         if not y_coords:
-             print("FAILURE: No words.")
-             sys.exit(1)
+            print("FAILURE: No words.")
+            sys.exit(1)
 
         min_y, max_y = min(y_coords), max(y_coords)
         print(f"Y-coordinate range: {min_y} - {max_y}")
@@ -65,8 +64,8 @@ def verify(pdf_path):
         if len(found_keywords) > 0:
             print("SUCCESS: Text content verified.")
         else:
-             print("FAILURE: Text content missing keywords.")
-             sys.exit(1)
+            print("FAILURE: Text content missing keywords.")
+            sys.exit(1)
 
     except Exception as e:
         print(f"Error reading PDF: {e}")

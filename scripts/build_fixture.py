@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 
 os.environ.setdefault("TQDM_DISABLE", "1")
-sys.stdout.reconfigure(encoding="utf-8")
+sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -39,7 +39,8 @@ async def main() -> None:
     parser.add_argument("input", help="Input PDF or image")
     parser.add_argument("output", help="Output fixture JSON path")
     parser.add_argument(
-        "--api-base", default=None,
+        "--api-base",
+        default=None,
         help="Defaults to LLM_API_BASE env var, then localhost:1234",
     )
     parser.add_argument("--model", default="qwen/qwen3-vl-4b")
@@ -54,8 +55,11 @@ async def main() -> None:
     print(f"  api_base={api_base}")
 
     backend = PromptedGroundedOCR(
-        api_base=api_base, model=args.model,
-        max_image_dim=args.max_image_dim, max_tokens=8192, concurrency=3,
+        api_base=api_base,
+        model=args.model,
+        max_image_dim=args.max_image_dim,
+        max_tokens=8192,
+        concurrency=3,
     )
     response = await backend.ocr_document(str(in_path))
 
@@ -76,14 +80,16 @@ async def main() -> None:
             int(round(ny1 * ph)),
             int(round(nx1 * pw)),
         ]
-        layout.append({
-            "block_content": b.text,
-            "bbox": bbox_yx,
-            "block_id": block_id,
-            "page_index": b.page_index,
-            "block_label": b.label or "text",
-            "score": 1.0,
-        })
+        layout.append(
+            {
+                "block_content": b.text,
+                "bbox": bbox_yx,
+                "block_id": block_id,
+                "page_index": b.page_index,
+                "block_label": b.label or "text",
+                "score": 1.0,
+            }
+        )
         block_id += 1
 
     fixture = {
@@ -92,7 +98,10 @@ async def main() -> None:
             "file_type": "pdf" if in_path.suffix.lower() == ".pdf" else "image",
             "layout": layout,
             "data_info": {
-                "pages": [{"width": int(w), "height": int(h)} for (w, h) in response.page_sizes],
+                "pages": [
+                    {"width": int(w), "height": int(h)}
+                    for (w, h) in response.page_sizes
+                ],
                 "num_pages": len(response.page_sizes),
             },
         }

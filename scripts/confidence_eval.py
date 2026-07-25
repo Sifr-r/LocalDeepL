@@ -91,8 +91,11 @@ async def run_hybrid(pdf: Path, api_base: str, model: str, max_dim: int):
         output_writer=capture_writer,
     )
     await pipe.run(
-        str(pdf), str(pdf.with_suffix(".scoring.pdf")),
-        max_image_dim=max_dim, concurrency=1, refine=True,
+        str(pdf),
+        str(pdf.with_suffix(".scoring.pdf")),
+        max_image_dim=max_dim,
+        concurrency=1,
+        refine=True,
     )
     blocks = []
     for _page_num, page_blocks in captured.get("pages_data", {}).items():
@@ -134,7 +137,9 @@ def render_report(console: Console, reports: list):
         unmatched = [m for m in report.matches if m.iou < report.iou_threshold]
         if not unmatched:
             continue
-        console.print(f"\n[yellow]Unmatched GT blocks in {report.document} ({path}):[/]")
+        console.print(
+            f"\n[yellow]Unmatched GT blocks in {report.document} ({path}):[/]"
+        )
         for m in unmatched[:6]:
             snippet = m.gt_text[:80].replace("\n", " ")
             console.print(f"  - {snippet!r}  (best_iou={m.iou:.2f})")
@@ -147,7 +152,9 @@ def render_report(console: Console, reports: list):
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--path", choices=["both", "grounded", "hybrid"], default="both")
+    parser.add_argument(
+        "--path", choices=["both", "grounded", "hybrid"], default="both"
+    )
     parser.add_argument("--api-base", default="http://localhost:1234/v1")
     parser.add_argument("--grounded-model", default="qwen/qwen3-vl-8b")
     parser.add_argument("--hybrid-model", default="allenai/olmocr-2-7b")
@@ -167,8 +174,12 @@ async def main() -> None:
         if args.path in ("both", "grounded"):
             console.print("   [cyan]grounded[/]...")
             try:
-                out = await run_grounded(pdf, args.api_base, args.grounded_model, args.max_image_dim)
-                report = compute_report(pdf_name, gt, out, iou_threshold=args.iou_threshold)
+                out = await run_grounded(
+                    pdf, args.api_base, args.grounded_model, args.max_image_dim
+                )
+                report = compute_report(
+                    pdf_name, gt, out, iou_threshold=args.iou_threshold
+                )
                 reports.append(("grounded", report))
                 console.print(f"   {report.summary_line()}")
             except Exception as e:
@@ -177,8 +188,12 @@ async def main() -> None:
         if args.path in ("both", "hybrid"):
             console.print("   [cyan]hybrid[/]...")
             try:
-                out = await run_hybrid(pdf, args.api_base, args.hybrid_model, args.max_image_dim)
-                report = compute_report(pdf_name, gt, out, iou_threshold=args.iou_threshold)
+                out = await run_hybrid(
+                    pdf, args.api_base, args.hybrid_model, args.max_image_dim
+                )
+                report = compute_report(
+                    pdf_name, gt, out, iou_threshold=args.iou_threshold
+                )
                 reports.append(("hybrid", report))
                 console.print(f"   {report.summary_line()}")
             except Exception as e:

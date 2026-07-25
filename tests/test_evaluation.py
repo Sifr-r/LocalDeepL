@@ -45,7 +45,7 @@ class TestAxisDetection:
             [100, 120, 700, 170],
             [100, 200, 800, 240],
         ]
-        assert _detect_bbox_axis_order(boxes) == "xyxy"
+        assert _detect_bbox_axis_order(boxes) == "xyxy"  # type: ignore[arg-type]
 
     def test_detects_swapped_yxyx(self):
         # Portrait-shaped if read as xyxy → must be yxyx in reality.
@@ -54,7 +54,7 @@ class TestAxisDetection:
             [120, 100, 170, 700],
             [200, 100, 240, 800],
         ]
-        assert _detect_bbox_axis_order(boxes) == "yxyx"
+        assert _detect_bbox_axis_order(boxes) == "yxyx"  # type: ignore[arg-type]
 
     def test_mixed_majority_wins(self):
         # Two portrait, one landscape → declare portrait (yxyx).
@@ -63,7 +63,7 @@ class TestAxisDetection:
             [120, 100, 170, 900],  # portrait
             [100, 50, 900, 100],  # landscape
         ]
-        assert _detect_bbox_axis_order(boxes) == "yxyx"
+        assert _detect_bbox_axis_order(boxes) == "yxyx"  # type: ignore[arg-type]
 
     def test_empty_input_defaults_to_xyxy(self):
         assert _detect_bbox_axis_order([]) == "xyxy"

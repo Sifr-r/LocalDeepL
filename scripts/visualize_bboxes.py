@@ -17,7 +17,9 @@ from local_deepl.core.aligner import HybridAligner
 
 
 def visualize_boxes(pdf_filename):
-    examples_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "examples")
+    examples_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "examples"
+    )
     input_path = os.path.join(examples_dir, pdf_filename)
     if not os.path.exists(input_path):
         print(f"File not found: {input_path}")
@@ -30,7 +32,7 @@ def visualize_boxes(pdf_filename):
 
     # Load PDF
     doc = fitz.open(input_path)
-    page = doc[0] # Just checking first page
+    page = doc[0]  # Just checking first page
     pix = page.get_pixmap()
     img_bytes = pix.tobytes("png")
 

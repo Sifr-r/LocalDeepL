@@ -7,11 +7,11 @@ import sys
 from collections import Counter
 
 # Force UTF-8 stdout on Windows so unicode in OCR'd text doesn't blow up.
-sys.stdout.reconfigure(encoding="utf-8")
+sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from local_deepl import OCRProcessor, PDFHandler
+from local_deepl import OCRProcessor, PDFHandler  # noqa: E402
 
 
 async def main(input_path: str) -> None:

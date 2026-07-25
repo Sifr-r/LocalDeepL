@@ -13,7 +13,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def inspect_pdf(filename):
-    examples_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "examples")
+    examples_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "examples"
+    )
     path = os.path.join(examples_dir, filename)
     print(f"\nInspecting {filename}...")
     doc = fitz.open(path)

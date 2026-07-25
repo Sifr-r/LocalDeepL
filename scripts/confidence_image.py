@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 os.environ.setdefault("TQDM_DISABLE", "1")
-sys.stdout.reconfigure(encoding="utf-8")  # Windows console safety
+sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]  # Windows console safety
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -40,6 +40,7 @@ from local_deepl import (  # noqa: E402
     PromptedGroundedOCR,
 )
 from local_deepl.evaluation import (  # noqa: E402
+    ConfidenceReport,
     compute_report,
     load_ground_truth,
 )
@@ -47,8 +48,10 @@ from local_deepl.evaluation import (  # noqa: E402
 
 async def run_grounded(image: Path, api_base: str, model: str, max_dim: int):
     backend = PromptedGroundedOCR(
-        api_base=api_base, model=model,
-        max_image_dim=max_dim, max_tokens=8192,
+        api_base=api_base,
+        model=model,
+        max_image_dim=max_dim,
+        max_tokens=8192,
     )
     response = await backend.ocr_document(str(image))
     return [(b.bbox, b.text) for b in response.blocks]
@@ -68,8 +71,11 @@ async def run_hybrid(image: Path, api_base: str, model: str, max_dim: int):
     )
     # Throwaway output path — we use the captured in-memory data.
     await pipe.run(
-        str(image), str(image.with_suffix(".scoring.pdf")),
-        max_image_dim=max_dim, concurrency=3, refine=True,
+        str(image),
+        str(image.with_suffix(".scoring.pdf")),
+        max_image_dim=max_dim,
+        concurrency=3,
+        refine=True,
     )
     blocks = []
     for _page_num, page_blocks in captured.get("pages_data", {}).items():
@@ -87,7 +93,8 @@ async def main() -> None:
         default=str(ROOT / "tests" / "fixtures" / "ground_truth_image.json"),
     )
     parser.add_argument(
-        "--api-base", default=None,
+        "--api-base",
+        default=None,
         help="Defaults to LLM_API_BASE env var, then localhost:1234",
     )
     parser.add_argument("--hybrid-model", default="allenai/olmocr-2-7b")
@@ -109,7 +116,7 @@ async def main() -> None:
         f"   grounded_model={args.grounded_model}\n"
     )
 
-    reports: list[tuple[str, object]] = []
+    reports: list[tuple[str, ConfidenceReport]] = []
 
     console.print("[cyan]hybrid (no --grounded)...[/]")
     try:
@@ -122,7 +129,9 @@ async def main() -> None:
 
     console.print("\n[cyan]grounded (--grounded)...[/]")
     try:
-        out = await run_grounded(image, api_base, args.grounded_model, args.max_image_dim)
+        out = await run_grounded(
+            image, api_base, args.grounded_model, args.max_image_dim
+        )
         report = compute_report(image.name, gt, out, iou_threshold=args.iou_threshold)
         reports.append(("grounded", report))
         console.print(f"   {report.summary_line()}")
@@ -133,7 +142,9 @@ async def main() -> None:
         console.print("[red]Both paths failed; nothing to report.[/]")
         return
 
-    table = Table(title="Confidence: hybrid vs grounded on " + image.name, show_lines=True)
+    table = Table(
+        title="Confidence: hybrid vs grounded on " + image.name, show_lines=True
+    )
     table.add_column("path")
     table.add_column("GT", justify="right")
     table.add_column("Pipeline", justify="right")

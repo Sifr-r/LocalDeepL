@@ -68,8 +68,10 @@ def debug_alignment(pdf_path):
 
     # Try to load a font, else default
     try:
-        font = ImageFont.truetype("arial.ttf", 15)
-    except:
+        font: ImageFont.FreeTypeFont | ImageFont.ImageFont = ImageFont.truetype(
+            "arial.ttf", 15
+        )
+    except Exception:
         font = ImageFont.load_default()
 
     for i, (rect, text) in enumerate(aligned_data):

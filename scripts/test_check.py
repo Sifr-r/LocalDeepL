@@ -15,7 +15,9 @@ from local_deepl.core.aligner import HybridAligner
 
 
 def check_file(filename):
-    examples_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "examples")
+    examples_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "examples"
+    )
     path = os.path.join(examples_dir, filename)
     if not os.path.exists(path):
         print(f"Skipping {path} (not found)")
@@ -42,13 +44,13 @@ def check_file(filename):
                 print(f"  Status: FAIL (Not Normalized: {r})")
 
             # Check sorting
-            y_iter = [item[0][1] for item in structured_data] # y0
-            is_sorted = all(y_iter[i] <= y_iter[i+1] for i in range(len(y_iter)-1))
+            y_iter = [item[0][1] for item in structured_data]  # y0
+            is_sorted = all(y_iter[i] <= y_iter[i + 1] for i in range(len(y_iter) - 1))
             print(f"  Sorted by Y: {is_sorted}")
             if not is_sorted:
                 print(f"  Y-coords first 10: {y_iter[:10]}")
         else:
-             print("  Status: WARNING (No text found)")
+            print("  Status: WARNING (No text found)")
 
     except Exception as e:
         print(f"  Status: ERROR ({e})")
