@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from local_deepl.core.callbacks import BlockCallbackSet
@@ -12,6 +12,30 @@ if TYPE_CHECKING:
 ProgressCallback = Callable[[str, int, int, str], Awaitable[None]]
 WarningCallback = Callable[[int, BaseException], Awaitable[None]]
 OutputWriter = Callable[[str, str, dict, int], None]
+
+
+@runtime_checkable
+class DocumentResultWriter(Protocol):
+    """Rich output writer that receives the full DocumentResult.
+
+    Writers implementing this protocol get access to block kinds,
+    confidence, metadata, and reading order — everything the legacy
+    ``{page: [(bbox, text)]}`` conversion drops. The engine prefers
+    this interface when the injected writer supports it and falls back
+    to the legacy 4-arg callable otherwise.
+    """
+
+    def write_document_result(
+        self,
+        input_path: str,
+        output_path: str,
+        document_result: DocumentResult,
+        dpi: int,
+    ) -> None: ...
+
+
+#: Accepted output-writer shapes: the legacy 4-arg callable or a rich writer.
+AnyOutputWriter = OutputWriter | DocumentResultWriter
 
 
 async def notify(
@@ -46,7 +70,7 @@ class EngineBase:
 
     def __init__(
         self,
-        output_writer: OutputWriter,
+        output_writer: AnyOutputWriter,
         document_processors: Sequence[DocumentProcessor] | None = None,
         block_callbacks: BlockCallbackSet | None = None,
     ) -> None:
@@ -206,6 +230,10 @@ class EngineBase:
         This is the single place where ``last_document_result`` is assigned and
         the output writer is invoked; both engines route through it so the
         end-of-pipeline contract lives in exactly one method.
+
+        When the injected writer implements :class:`DocumentResultWriter` the
+        full ``DocumentResult`` is passed through losslessly; legacy 4-arg
+        callable writers receive the ``to_pages_data()`` conversion instead.
         """
         self.last_document_result = document_result
         pages_data = document_result.to_pages_data()
@@ -216,8 +244,16 @@ class EngineBase:
             pages_text[p] = [text for _, text in pages_data[p] if text.strip()]
 
         await notify(progress, "embed", 0, 1, "Writing output...")
-        await asyncio.to_thread(
-            self.output_writer, input_path, output_path, pages_data, dpi
-        )
+        writer = self.output_writer
+        if isinstance(writer, DocumentResultWriter):
+            await asyncio.to_thread(
+                writer.write_document_result,
+                input_path,
+                output_path,
+                document_result,
+                dpi,
+            )
+        else:
+            await asyncio.to_thread(writer, input_path, output_path, pages_data, dpi)
         await notify(progress, "embed", 1, 1, "Done.")
         return pages_text

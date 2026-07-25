@@ -22,10 +22,11 @@ from local_deepl.core.preprocessing import PagePreprocessingOptions, PagePreproc
 from local_deepl.core.processors import DocumentProcessor
 from local_deepl.core.routing import QualityRoutingOptions
 from local_deepl.core.workflows import (
+    AnyOutputWriter,
+    DocumentResultWriter,
     EngineBase,
     GroundedEngine,
     HybridEngine,
-    OutputWriter,
     ProgressCallback,
     WarningCallback,
 )
@@ -40,7 +41,7 @@ class OCRPipeline:
         aligner=None,
         ocr_processor=None,
         pdf_handler=None,
-        output_writer: OutputWriter | None = None,
+        output_writer: AnyOutputWriter | None = None,
         grounded_backend: GroundedOCRBackend | None = None,
         document_processors: Sequence[DocumentProcessor] | None = None,
         page_preprocessor: PagePreprocessor | None = None,
@@ -49,7 +50,15 @@ class OCRPipeline:
         self.grounded_backend = grounded_backend
         if pdf_handler is None:
             raise ValueError("pdf_handler is required (used for output writing)")
-        output_writer = output_writer or pdf_handler.embed_structured_text
+        # Prefer the handler object itself when it implements the rich
+        # DocumentResultWriter protocol (receives the full DocumentResult
+        # without the lossy legacy conversion). Explicitly injected writers
+        # always win, whether legacy callables or rich writers.
+        if output_writer is None:
+            if isinstance(pdf_handler, DocumentResultWriter):
+                output_writer = pdf_handler
+            else:
+                output_writer = pdf_handler.embed_structured_text
 
         # Phase B (review M2) — `block_callbacks` is forwarded to the
         # engine so the WebSocket-free per-block observer path reaches

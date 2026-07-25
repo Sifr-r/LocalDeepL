@@ -8,13 +8,19 @@ a PDF wrap step first. AVIF support is provided natively by Pillow ≥
 11.3 (the `pyproject.toml` constraint enforces that floor).
 """
 
+from __future__ import annotations
+
 import base64
 import io
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import fitz  # PyMuPDF
 from PIL import Image, ImageSequence
+
+if TYPE_CHECKING:
+    from local_deepl.core.document import DocumentResult
 
 # PyMuPDF (Artifex Software) is dual-licensed under AGPL-3.0 and a commercial
 # license. The library is bundled with LocalDeepL (MIT) for the convenience of
@@ -169,6 +175,26 @@ class PDFHandler:
                 images[page_num] = base64.b64encode(buffer.getvalue()).decode("utf-8")
         return images
 
+    def write_document_result(
+        self,
+        input_pdf_path: str,
+        output_pdf_path: str,
+        document_result: DocumentResult,
+        dpi: int = 200,
+    ) -> None:
+        """Rich-writer interface: embed text from a full DocumentResult.
+
+        Implements :class:`~local_deepl.core.workflows.base.DocumentResultWriter`
+        so the engine can pass the lossless IR directly. The current text-layer
+        embedding only consumes bbox + text (via ``to_pages_data()``, which
+        respects processor-assigned reading order); block kinds, confidence,
+        and metadata remain available on ``document_result`` for future
+        structure-aware embedding without a protocol change.
+        """
+        self.embed_structured_text(
+            input_pdf_path, output_pdf_path, document_result.to_pages_data(), dpi
+        )
+
     def embed_structured_text(
         self,
         input_pdf_path: str,
@@ -258,7 +284,7 @@ class PDFHandler:
 
     @staticmethod
     def _draw_invisible_text(
-        page: "fitz.Page",
+        page: fitz.Page,
         rect_coords: list[float],
         text: str,
         page_width: float,
@@ -309,7 +335,7 @@ class PDFHandler:
 
     @staticmethod
     def _handle_fullpage_fallback(
-        page: "fitz.Page",
+        page: fitz.Page,
         rect_coords: list[float],
         text: str,
         page_width: float,
@@ -339,7 +365,7 @@ class PDFHandler:
 
     @staticmethod
     def _split_and_draw_lines(
-        page: "fitz.Page",
+        page: fitz.Page,
         rect_coords: list[float],
         text: str,
         page_width: float,
@@ -397,7 +423,7 @@ class PDFHandler:
 
     @staticmethod
     def _draw_single_line_text(
-        page: "fitz.Page",
+        page: fitz.Page,
         rect_coords: list[float],
         text: str,
         page_width: float,

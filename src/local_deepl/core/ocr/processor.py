@@ -57,6 +57,7 @@ from local_deepl.core.ocr.prompts import (
     HANDWRITING_PAGE_PROMPT,
     OLMOCR_PAGE_PROMPT,
 )
+from local_deepl.core.ocr.resilience import CircuitBreaker, is_transient_error
 
 if TYPE_CHECKING:
     from local_deepl.core.trocr_engine import TrOCREngine
@@ -89,6 +90,15 @@ class OCRProcessor:
     CROP_TIMEOUT_S: float = 60.0
     CROP_MAX_TOKENS: int = 256
 
+    # Retry policy for transient VLM errors (429, 5xx, connection drops).
+    # Exponential backoff: base * 2^attempt, capped at MAX. Env overrides:
+    # LOCAL_DEEPL_LLM_MAX_RETRIES, LOCAL_DEEPL_LLM_RETRY_BASE_DELAY.
+    MAX_RETRIES: int = int(os.getenv("LOCAL_DEEPL_LLM_MAX_RETRIES", "2"))
+    RETRY_BASE_DELAY_S: float = float(
+        os.getenv("LOCAL_DEEPL_LLM_RETRY_BASE_DELAY", "1.0")
+    )
+    RETRY_MAX_DELAY_S: float = 8.0
+
     def __init__(
         self,
         api_base: str | None = None,
@@ -109,6 +119,10 @@ class OCRProcessor:
         self.trocr_engine = trocr_engine
         self.handwriting_mode = handwriting_mode
         self.confidence_threshold = confidence_threshold
+        # Per-request circuit breaker: after LOCAL_DEEPL_CB_FAILURE_THRESHOLD
+        # consecutive failures the remaining calls in this job fail fast
+        # instead of each waiting for a full timeout against a dead endpoint.
+        self.circuit_breaker = CircuitBreaker()
 
     async def ensure_model_loaded(self) -> None:
         """Pre-flight check that ``self.model`` is loaded on the server.
@@ -298,49 +312,91 @@ class OCRProcessor:
         timeout: float,
         max_tokens: int,
     ) -> str:
-        try:
-            content = await call_llm(
-                model=self.model,
-                api_base=self.api_base,
-                api_key=self.api_key,
-                temperature=0.1,
-                max_tokens=max_tokens,
-                timeout=timeout,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/png;base64,{image_base64}"
+        """Call the VLM with retry-on-transient and circuit-breaker protection.
+
+        Transient failures (429, 5xx, connection resets, timeouts) are
+        retried up to ``MAX_RETRIES`` times with exponential backoff.
+        Permanent failures (context-length exceeded, auth) raise
+        immediately. The circuit breaker counts consecutive failures
+        (across all attempts) and fails fast once the endpoint is deemed
+        down, so a dead server doesn't serialize N page-timeouts.
+        """
+        self.circuit_breaker.check()
+
+        last_exc: Exception | None = None
+        for attempt in range(self.MAX_RETRIES + 1):
+            if attempt > 0:
+                # Re-check: a prior attempt may have tripped the breaker.
+                # CircuitOpenError propagates directly (not an LLMCallError)
+                # so the engine's per-page handler sees "endpoint down".
+                self.circuit_breaker.check()
+            try:
+                content = await call_llm(
+                    model=self.model,
+                    api_base=self.api_base,
+                    api_key=self.api_key,
+                    temperature=0.1,
+                    max_tokens=max_tokens,
+                    timeout=timeout,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/png;base64,{image_base64}"
+                                    },
                                 },
-                            },
-                        ],
-                    }
-                ],
-            )
-            return content.strip()
-        except Exception as e:
-            err_msg = str(e)
-            if any(
-                term in err_msg.lower()
-                for term in (
-                    "context size",
-                    "context_length_exceeded",
-                    "context length",
+                            ],
+                        }
+                    ],
                 )
-            ):
-                raise LLMCallError(
-                    f"LLM OCR call failed due to Context Size Limit. "
-                    f"Please load the model in LM Studio and increase the 'Context Length' in the right-side panel "
-                    f"to at least 8192 or 16384 tokens. "
-                    f"Underlying error: {e}"
-                ) from e
+                self.circuit_breaker.record_success()
+                return content.strip()
+            except Exception as e:
+                last_exc = e
+                self.circuit_breaker.record_failure()
+
+                if not is_transient_error(e):
+                    break  # permanent failure — do not retry
+                if attempt < self.MAX_RETRIES:
+                    delay = min(
+                        self.RETRY_BASE_DELAY_S * (2**attempt),
+                        self.RETRY_MAX_DELAY_S,
+                    )
+                    logger.warning(
+                        "Transient LLM error (attempt %d/%d), retrying in "
+                        "%.1fs: %s: %s",
+                        attempt + 1,
+                        self.MAX_RETRIES + 1,
+                        delay,
+                        type(e).__name__,
+                        e,
+                    )
+                    await asyncio.sleep(delay)
+
+        assert last_exc is not None
+        err_msg = str(last_exc)
+        if any(
+            term in err_msg.lower()
+            for term in (
+                "context size",
+                "context_length_exceeded",
+                "context length",
+            )
+        ):
             raise LLMCallError(
-                f"LLM OCR call failed against {self.api_base} ({type(e).__name__}): {e}"
-            ) from e
+                f"LLM OCR call failed due to Context Size Limit. "
+                f"Please load the model in LM Studio and increase the 'Context Length' in the right-side panel "
+                f"to at least 8192 or 16384 tokens. "
+                f"Underlying error: {last_exc}"
+            ) from last_exc
+        raise LLMCallError(
+            f"LLM OCR call failed against {self.api_base} "
+            f"({type(last_exc).__name__}): {last_exc}"
+        ) from last_exc
 
     def _get_tesseract_draft(self, image_base64: str) -> str:
         try:

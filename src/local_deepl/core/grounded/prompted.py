@@ -39,6 +39,7 @@ from local_deepl.core.ocr import (
     _list_loaded_model_ids,
     _model_in_loaded,
 )
+from local_deepl.core.ocr.resilience import CircuitBreaker, is_transient_error
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,15 @@ class PromptedGroundedOCR:
         self.timeout_s = timeout_s
         self.max_tokens = max_tokens
         self.concurrency = concurrency
+        # Same resilience policy as the hybrid OCRProcessor: retry
+        # transient errors with backoff, fail fast once the endpoint is
+        # deemed down. Env overrides: LOCAL_DEEPL_LLM_MAX_RETRIES,
+        # LOCAL_DEEPL_LLM_RETRY_BASE_DELAY, LOCAL_DEEPL_CB_*.
+        self.max_retries = int(os.getenv("LOCAL_DEEPL_LLM_MAX_RETRIES", "2"))
+        self.retry_base_delay_s = float(
+            os.getenv("LOCAL_DEEPL_LLM_RETRY_BASE_DELAY", "1.0")
+        )
+        self.circuit_breaker = CircuitBreaker()
 
     async def ensure_model_loaded(self) -> None:
         """Pre-flight check that ``self.model`` is loaded on the server.
@@ -134,6 +144,66 @@ class PromptedGroundedOCR:
             raise ModelNotLoadedError(
                 _format_model_not_loaded(self.api_base, self.model, loaded)
             )
+
+    async def _call_with_retry(self, image_b64: str) -> str:
+        """One grounded VLM page call with retry + circuit-breaker protection.
+
+        Same policy as :meth:`OCRProcessor._chat`: transient failures are
+        retried with exponential backoff (capped at 8s); permanent failures
+        raise immediately; the shared circuit breaker fails fast once the
+        endpoint is deemed down so remaining pages don't each burn a timeout.
+        """
+        self.circuit_breaker.check()
+
+        last_exc: BaseException | None = None
+        for attempt in range(self.max_retries + 1):
+            if attempt > 0:
+                self.circuit_breaker.check()
+            try:
+                text = await call_llm(
+                    model=self.model,
+                    api_base=self.api_base,
+                    api_key=self.api_key,
+                    temperature=0.0,
+                    max_tokens=self.max_tokens,
+                    timeout=self.timeout_s,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": self.prompt},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{image_b64}",
+                                    },
+                                },
+                            ],
+                        }
+                    ],
+                )
+                self.circuit_breaker.record_success()
+                return text
+            except Exception as e:
+                last_exc = e
+                self.circuit_breaker.record_failure()
+                if not is_transient_error(e):
+                    break
+                if attempt < self.max_retries:
+                    delay = min(self.retry_base_delay_s * (2**attempt), 8.0)
+                    logger.warning(
+                        "Transient grounded OCR error (attempt %d/%d), "
+                        "retrying in %.1fs: %s: %s",
+                        attempt + 1,
+                        self.max_retries + 1,
+                        delay,
+                        type(e).__name__,
+                        e,
+                    )
+                    await asyncio.sleep(delay)
+
+        assert last_exc is not None
+        raise last_exc
 
     async def ocr_document(
         self,
@@ -162,28 +232,7 @@ class PromptedGroundedOCR:
             b64, w, h = page_imgs[page_idx]
             async with sem:
                 try:
-                    text = await call_llm(
-                        model=self.model,
-                        api_base=self.api_base,
-                        api_key=self.api_key,
-                        temperature=0.0,
-                        max_tokens=self.max_tokens,
-                        timeout=self.timeout_s,
-                        messages=[
-                            {
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": self.prompt},
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {
-                                            "url": f"data:image/jpeg;base64,{b64}",
-                                        },
-                                    },
-                                ],
-                            }
-                        ],
-                    )
+                    text = await self._call_with_retry(b64)
                     text = text.strip()
                     blocks = _parse_grounded_json(text, page_idx, w, h)
 

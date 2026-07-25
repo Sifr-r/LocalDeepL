@@ -66,13 +66,14 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/local_deepl/core/evaluation.py` | Local evaluation metric helpers (lightweight, for processor result scoring) |
 | `src/local_deepl/core/docx_writer.py` | Markdown → `.docx` converter for the docx export route |
 | `src/local_deepl/core/aligner.py` | Surya detection and DP alignment |
-| `src/local_deepl/core/ocr.py` | LiteLLM OCR calls, prompts, limits, and filters |
-| `src/local_deepl/core/pdf.py` | PDF/image conversion and sandwich-PDF embedding |
-| `src/local_deepl/core/grounded.py` | Grounded backends and bbox JSON parsers |
+| `src/local_deepl/core/ocr/` | LiteLLM OCR calls, prompts, limits, filters, and resilience (retry + circuit breaker) |
+| `src/local_deepl/core/ocr/resilience.py` | `is_transient_error` classification, `CircuitBreaker` (closed/open/half-open), `CircuitOpenError` |
+| `src/local_deepl/core/pdf.py` | PDF/image conversion and sandwich-PDF embedding; implements `DocumentResultWriter` |
+| `src/local_deepl/core/grounded/` | Grounded backends and bbox JSON parsers (retry + circuit breaker on the VLM call) |
 | `src/local_deepl/core/postprocess.py` | Dictionary spellcheck |
 | `src/local_deepl/core/translation_config.py` | Core-owned async translation settings |
 | `src/local_deepl/core/translation.py` | Optional LangGraph translation workflow |
-| `src/local_deepl/core/workflows/base.py` | `EngineBase` + `OutputWriter` / `ProgressCallback` / `WarningCallback` shared by both engines |
+| `src/local_deepl/core/workflows/base.py` | `EngineBase` + `OutputWriter` / `DocumentResultWriter` / `ProgressCallback` / `WarningCallback` shared by both engines |
 | `src/local_deepl/core/workflows/hybrid.py` | `HybridEngine` — Surya detect → VLM OCR → DP align → refine → post-process → processors → output |
 | `src/local_deepl/core/workflows/grounded.py` | `GroundedEngine` — single bbox-native VLM call → post-process → processors → output |
 | `src/local_deepl/resources/dictionaries/` | Packaged spellcheck dictionaries |
@@ -85,7 +86,6 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/local_deepl/api/routers/extraction.py` | `POST /api/extract` and `POST /api/export/*` routes |
 | `src/local_deepl/api/routers/state.py` | Module-level singletons (`text_artifacts`, `metadata_artifacts`, `export_artifacts`, `job_history`, `progress_service`) |
 | `src/local_deepl/api/routers/common.py` | Shared router helpers (`_stable_server_error`, `_extract_bearer_token`, `_path_exists`) |
-| `src/local_deepl/api/routers/ai.py` | AI service module consumed by `extraction.py` and `translation.py` |
 | `src/local_deepl/api/schemas/requests.py` | `ConfigUpdate`, `ProcessSettings`, `TranslationRequest`, `ExtractionRequest`, `ExtractionTemplate`, `DocumentExportRequest`, `DocumentExportFormat`, `ExportDocxRequest`; enums: `PipelineMode`, `DenseMode`, `SpellcheckMode`, `DocumentProcessorName` |
 | `src/local_deepl/api/services/security.py` | API upload validation, stable error constants, temporary-file cleanup, opaque text artifact IDs |
 | `src/local_deepl/api/services/security_config.py` | `SecuritySettings.from_env()` — env-driven knobs for `LOCAL_DEEPL_AUTH_TOKEN`, `_CORS_ORIGINS`, `_MAX_UPLOAD_MB`, `_RATE_LIMIT_PER_MIN` |
@@ -110,7 +110,7 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 - `aligner=`: layout detection and text alignment
 - `ocr_processor=`: page and crop OCR backend
 - `pdf_handler=`: input conversion and default PDF writer
-- `output_writer=`: alternate output generation
+- `output_writer=`: alternate output generation (legacy 4-arg callable, or any object implementing `DocumentResultWriter.write_document_result` for the lossless `DocumentResult` path)
 - `grounded_backend=`: bbox-native OCR path
 - `document_processors=`: sequence of `DocumentProcessor` instances run after OCR cleanup and before PDF embedding
 - `page_preprocessor=`: opt-in `PagePreprocessor` for orientation/deskew/denoise/contrast/crop preprocessing on the hybrid image path
@@ -120,6 +120,9 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 - Browser translation and structured extraction use synchronous endpoints and do not require Redis.
 - `/api/translate/async` uses Celery, Redis, and LangGraph from the `async-translation` extra. The translation module degrades gracefully when ChromaDB is not installed (no lexicon retrieval); install the separate `memory` extra (ChromaDB + sentence-transformers) for the lexicon-backed RAG feature.
 - `ALLOW_SSRF_LOCAL=true` is the local-development default. Set it to `false` when exposing the server to untrusted users.
+- **Auth**: set `LOCAL_DEEPL_AUTH_TOKEN` to require `Authorization: Bearer <token>` on every HTTP route (constant-time compare, ASGI middleware). Unset = open (local-desktop default).
+- **VLM resilience**: every LLM call retries transient errors (429/5xx/connection resets) with exponential backoff, and a per-request circuit breaker fails fast after `LOCAL_DEEPL_CB_FAILURE_THRESHOLD` (default 5) consecutive failures. Tunables: `LOCAL_DEEPL_LLM_MAX_RETRIES` (default 2), `LOCAL_DEEPL_LLM_RETRY_BASE_DELAY` (default 1.0s), `LOCAL_DEEPL_CB_COOLDOWN` (default 30s).
+- **Model pre-flight**: each `/api/process` request verifies the configured model is actually loaded on the VLM server (`GET /v1/models`) before paying for conversion/detection — one extra HTTP round-trip per request, guarding against LM Studio's silent model fallback (issue #7).
 - Web runtime settings are initialized in `api/routers/config.py`.
 - **Windows quick-start**: run `install.bat` to install `uv`, sync the web extra, and create Desktop / Start-Menu shortcuts. `start_app.vbs` boots Redis + Celery + uvicorn hidden and opens the browser. `stop_app.bat` terminates them. `test_ui.py` is the headless Playwright smoke test against `examples/dense.pdf`.
 - **Developer scripts** live in `scripts/`. The most useful for OCR quality work are `scripts/confidence_eval.py` (hybrid + grounded vs the `examples/*.pdf` fixtures) and `scripts/confidence_image.py` (single-image confidence). The rest are debug/inspection/visualization tools.
@@ -129,7 +132,10 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 
 ## Known Tech Debt
 
-- No major tech debt at the moment.
+- `/api/process` runs the full OCR pipeline synchronously on the uvicorn worker (no background task queue on the default path); long jobs block other requests on the same worker.
+- Job/artifact state is in-memory only (`api/routers/state.py` singletons) — restarts lose history; no horizontal scaling.
+- `pages_structured` legacy dict is still the working format inside `HybridEngine`; `DocumentResult` is built at finalize. The output boundary now supports the lossless rich path (`DocumentResultWriter`), but intermediate stages still convert.
+- `dense.pdf` and `notes.pdf` ground-truth fixtures are bootstrapped from hybrid output (regression baseline, not absolute quality).
 
 ## Product-Planning Notes (scout plans, not code)
 

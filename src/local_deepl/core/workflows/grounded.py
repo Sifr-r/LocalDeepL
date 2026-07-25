@@ -7,8 +7,8 @@ from local_deepl.core.document import SpellcheckMode
 from local_deepl.core.grounded import GroundedBlock, GroundedOCRBackend
 from local_deepl.core.processors import DocumentProcessor
 from local_deepl.core.workflows.base import (
+    AnyOutputWriter,
     EngineBase,
-    OutputWriter,
     PagesData,
     ProgressCallback,
     WarningCallback,
@@ -22,7 +22,7 @@ class GroundedEngine(EngineBase):
     def __init__(
         self,
         grounded_backend: GroundedOCRBackend,
-        output_writer: OutputWriter,
+        output_writer: AnyOutputWriter,
         document_processors: Sequence[DocumentProcessor] | None = None,
         block_callbacks: BlockCallbackSet | None = None,
     ) -> None:

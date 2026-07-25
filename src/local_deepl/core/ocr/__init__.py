@@ -7,6 +7,7 @@ Sub-package layout:
 - :mod:`.filters` — output sanitization (YAML strip, fallback suppression,
   runaway-repetition clip)
 - :mod:`.client` — pre-flight ``GET /v1/models`` helpers
+- :mod:`.resilience` — retry classification and circuit breaker
 - :mod:`.processor` — :class:`OCRProcessor` itself
 
 This ``__init__`` re-exports the *public* surface exactly as it appeared
@@ -47,6 +48,11 @@ from local_deepl.core.ocr.prompts import (
     select_crop_prompt,
     select_page_prompt,
 )
+from local_deepl.core.ocr.resilience import (
+    CircuitBreaker,
+    CircuitOpenError,
+    is_transient_error,
+)
 
 # Underscore-prefixed names are still re-exported for tests and the
 # grounded engine, which share the pre-flight check and the filters.
@@ -54,6 +60,8 @@ __all__ = [
     "CORRECTION_CROP_PROMPT",
     "CORRECTION_PAGE_PROMPT",
     "CROP_PROMPT",
+    "CircuitBreaker",
+    "CircuitOpenError",
     "DUAL_ENGINE_CROP_PROMPT",
     "DUAL_ENGINE_PAGE_PROMPT",
     "HANDWRITING_CROP_PROMPT",
@@ -73,6 +81,7 @@ __all__ = [
     "fill_correction_page",
     "fill_dual_engine_crop",
     "fill_dual_engine_page",
+    "is_transient_error",
     "select_crop_prompt",
     "select_page_prompt",
 ]

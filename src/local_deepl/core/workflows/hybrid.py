@@ -17,8 +17,8 @@ from local_deepl.core.preprocessing import PagePreprocessingOptions, PagePreproc
 from local_deepl.core.processors import DocumentProcessor
 from local_deepl.core.routing import QualityRoutingOptions, QualityRoutingPolicy
 from local_deepl.core.workflows.base import (
+    AnyOutputWriter,
     EngineBase,
-    OutputWriter,
     PageBoxes,
     PagesData,
     ProgressCallback,
@@ -135,7 +135,7 @@ class HybridEngine(EngineBase):
         aligner: HybridAligner,
         ocr_processor: OCRProcessor,
         pdf_handler: PDFHandler,
-        output_writer: OutputWriter,
+        output_writer: AnyOutputWriter,
         document_processors: Sequence[DocumentProcessor] | None = None,
         page_preprocessor: PagePreprocessor | None = None,
         block_callbacks: BlockCallbackSet | None = None,

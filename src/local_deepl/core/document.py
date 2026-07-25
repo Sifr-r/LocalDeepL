@@ -119,10 +119,20 @@ class DocumentResult:
         return "\n\n".join(page.text for page in self.pages if page.text.strip())
 
     def to_pages_data(self) -> dict[int, list[tuple[BBox, str]]]:
-        return {
-            page.page_index: [(block.bbox, block.text) for block in page.blocks]
-            for page in self.pages
-        }
+        """Convert back to legacy ``{page: [(bbox, text)]}`` for output writers.
+
+        When every block on a page carries a ``reading_order`` annotation
+        (e.g. set by :class:`ReadingOrderProcessor`), blocks are emitted in
+        that order so the PDF text layer respects processor-assigned reading
+        order even if the block list was not physically sorted.
+        """
+        result: dict[int, list[tuple[BBox, str]]] = {}
+        for page in self.pages:
+            blocks = page.blocks
+            if blocks and all(b.reading_order is not None for b in blocks):
+                blocks = sorted(blocks, key=lambda b: b.reading_order or 0)
+            result[page.page_index] = [(block.bbox, block.text) for block in blocks]
+        return result
 
 
 def _normalize_bbox(bbox: Sequence[float]) -> BBox:
