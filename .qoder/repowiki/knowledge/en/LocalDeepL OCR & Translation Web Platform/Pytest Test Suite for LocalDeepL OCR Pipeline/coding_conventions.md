@@ -1,0 +1,5 @@
+- Expensive external services (Surya aligner, LLM clients) are replaced by `_StubOCR` subclasses implementing `perform_ocr` and `perform_ocr_on_crop` so tests run offline and deterministically.
+- Session-scoped fixtures are used for heavy resources like `surya_aligner` and `example_pdfs` to avoid repeated model loading across test functions.
+- Integration tests that exercise real PDF I/O and Surya detection are marked with `@pytest.mark.slow` and parametrized over the three example PDF names.
+- Ground-truth expectations are stored as JSON files under `fixtures/ground_truth_<type>.json` with a consistent schema of `data.layout` blocks containing `block_content`, `bbox`, `block_id`, `page_index`, `block_label`, and `score` fields.
+- Async tests use `async def` test methods and call `asyncio.run()` to execute synchronous pipeline entry points like `pipe.run(...)`.

@@ -166,12 +166,9 @@ def translate_node(state: TranslationState) -> dict[str, str | int]:
     - ``sliding_window``: a tail of the previous translation, used as
       auxiliary consistency context.
     """
-    import litellm
-
-    from local_deepl.utils.litellm_provider import resolve_custom_provider
+    from openai import OpenAI
 
     settings = _state_settings(state)
-    custom_provider = resolve_custom_provider(settings.model)
 
     prompt = f"Translate the following text into {state['target_language']}.\n\n"
     if state.get("glossary_prompt_block"):
@@ -197,11 +194,9 @@ def translate_node(state: TranslationState) -> dict[str, str | int]:
     prompt += f"SOURCE TEXT:\n{state['source_chunk']}"
 
     try:
-        response = litellm.completion(
+        client = OpenAI(base_url=settings.api_base, api_key=settings.api_key)
+        response = client.chat.completions.create(
             model=settings.model,
-            custom_llm_provider=custom_provider,
-            api_base=settings.api_base,
-            api_key=settings.api_key,
             temperature=0.3,
             messages=[{"role": "user", "content": prompt}],
         )

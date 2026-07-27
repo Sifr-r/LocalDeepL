@@ -61,7 +61,6 @@ def test_grounded_pdf_rasterization_skips_intermediate_jpeg_decode(
 # --- parsers ----------------------------------------------------------------
 
 
-
 class TestParseGLMLayoutDetails:
     def test_parses_flat_list(self):
         payload = {

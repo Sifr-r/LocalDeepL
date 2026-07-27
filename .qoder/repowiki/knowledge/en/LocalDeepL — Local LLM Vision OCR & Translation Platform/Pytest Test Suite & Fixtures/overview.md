@@ -1,1 +1,0 @@
-Pytest-based test suite covering the LocalDeepL pipeline, workflows, OCR, evaluation, API surface and repo hygiene, with shared session-scoped fixtures for expensive model loading.

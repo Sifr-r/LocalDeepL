@@ -1,13 +1,15 @@
-/* Dynamic Glassmorphic Modal Dialog */
+/* ═══════════════════════════════════════════════════════════
+   DocuVerse Modals — Toolkit & Generic Dialogs
+   ═══════════════════════════════════════════════════════════ */
+
 .toolkit-modal-backdrop {
     position: fixed;
     top: 0;
     left: 0;
     width: 100vw;
     height: 100vh;
-    background: rgba(44, 36, 27, 0.4);
+    background: rgba(0, 0, 0, 0.55);
     backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
     z-index: 100;
     display: flex;
     align-items: center;
@@ -21,37 +23,31 @@
 }
 
 .toolkit-modal-card {
-    background: var(--surface);
+    background: var(--surface-solid);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     width: 90%;
-    max-width: 550px;
+    max-width: 520px;
     box-shadow: var(--shadow-lg);
     overflow: hidden;
-    animation: zoomIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    animation: zoomIn 0.25s var(--ease-out);
     max-height: 85vh;
     display: flex;
     flex-direction: column;
 }
 
-.toolkit-modal-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 1rem;
-}
-
 @keyframes zoomIn {
-    from { transform: scale(0.95); opacity: 0; }
+    from { transform: scale(0.96); opacity: 0; }
     to { transform: scale(1); opacity: 1; }
 }
 
 .toolkit-modal-header {
-    padding: 1.25rem 1.5rem;
+    padding: 1.15rem 1.5rem;
     border-bottom: 1px solid var(--border);
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: var(--bg-main);
+    background: var(--bg-raised);
 }
 
 .toolkit-modal-body {
@@ -60,29 +56,29 @@
     flex: 1;
 }
 
-/* Generic Tool Form Elements */
+/* ─── File List Preview ─── */
 .file-list-preview {
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     background: var(--bg-main);
     max-height: 180px;
     overflow-y: auto;
-    margin-bottom: 1.25rem;
-    padding: 0.5rem;
+    margin-bottom: 1rem;
+    padding: 0.4rem;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.4rem;
 }
 
 .file-item-row {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    padding: 0.5rem 0.75rem;
+    border-radius: 5px;
+    padding: 0.45rem 0.7rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
 }
 
 .file-item-row span {
@@ -90,29 +86,30 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 320px;
+    max-width: 300px;
 }
 
+/* ─── Meta Table ─── */
 .meta-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.85rem;
-    margin-top: 0.5rem;
+    font-size: 0.8rem;
+    margin-top: 0.4rem;
 }
 
 .meta-table th, .meta-table td {
-    padding: 0.75rem;
+    padding: 0.65rem;
     text-align: left;
     border-bottom: 1px solid var(--border);
 }
 
 .meta-table th {
-    background: var(--bg-main);
-    font-family: var(--font-heading);
+    background: var(--bg-raised);
+    font-family: var(--font-display);
     font-weight: 600;
+    font-size: 0.75rem;
 }
 
 .meta-table tr:hover td {
     background: var(--surface-hover);
 }
-

@@ -1,5 +1,0 @@
-- Expensive external dependencies (Surya `HybridAligner`) are instantiated once as a session-scoped fixture and injected into tests via dependency injection rather than imported inside each test.
-- External LLM calls are stubbed by defining a local `_Stub` subclass of `OCRProcessor` that returns marker strings (e.g. `ZZMARKER_*`) which are then asserted to appear in the output PDF's selectable text layer.
-- Slow/integration tests are collected under a single file and marked with a module-level `pytestmark = pytest.mark.slow` instead of decorating every function individually.
-- Ground-truth expectations for evaluation tests live as JSON files under `tests/fixtures/ground_truth_<type>.json` and are loaded at runtime rather than hard-coded in Python.
-- Async engine methods are tested directly (e.g. `engine._convert_pages(...)`) in dedicated per-phase test classes (`TestHybridConvertPages`, `TestHybridDetectLayout`, …) while `test_pipeline.py` covers the public `run()` surface end-to-end.

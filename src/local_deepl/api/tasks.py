@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from local_deepl.api.celery_app import celery_app
@@ -182,4 +183,94 @@ def process_translation_task(
         "artifact_id": artifact_id,
         "translated_tree_path": translated_tree_path,
         "blocks_translated": len(translated_tree.pages),
+    }
+
+
+@celery_app.task(bind=True, name="process_glossary_import")
+def process_glossary_import_task(
+    self,
+    source_dict: dict,
+    glossary_name: str,
+    channel_id: str | None = None,
+    session_token: str | None = None,
+):
+    """Background task for large glossary imports.
+
+    Re-runs the selected parser via the JSON-safe ``source_dict`` payload,
+    saves the result to the on-disk library, and emits a terminal
+    ``glossary_import`` WebSocket frame.
+    """
+
+    import base64
+
+    from local_deepl.api.routers import state
+    from local_deepl.api.routers.websocket import manager
+    from local_deepl.core.glossary_sources import parse
+
+    self.update_state(
+        state="PROGRESS",
+        meta={"progress": 10, "status": "Loading glossary source"},
+    )
+
+    if not isinstance(source_dict, dict):
+        raise ValueError("source_dict must be a dict.")
+    format_name = str(source_dict.get("format", "")).strip().lower()
+    if not format_name:
+        raise ValueError("source_dict.format is required.")
+
+    kwargs: dict = {key: value for key, value in source_dict.items() if key != "format"}
+    if isinstance(kwargs.get("inline_bytes_b64"), str):
+        kwargs["data"] = base64.b64decode(kwargs.pop("inline_bytes_b64"), validate=True)
+    if "data" in kwargs and isinstance(kwargs["data"], str):
+        kwargs["data"] = kwargs["data"].encode("utf-8")
+
+    summary = parse(format=format_name, source_uri=None, **kwargs)
+
+    self.update_state(
+        state="PROGRESS",
+        meta={"progress": 80, "status": "Saving glossary to library"},
+    )
+
+    library = state.glossary_library
+    stored = library.save(
+        name=glossary_name or f"{format_name.upper()} import",
+        format=format_name,
+        entries=summary.entries,
+        source_uri=summary.source_uri,
+        encoding=summary.encoding,
+    )
+
+    terminal_frame = state.progress_service.build_glossary_import_frame(
+        glossary_id=stored.id,
+        name=stored.name,
+        format_label=format_name,
+        entry_count=len(summary.entries),
+        warnings=list(summary.warnings),
+        status="complete",
+    )
+
+    async def _emit() -> None:
+        if channel_id and manager.is_authorized(channel_id, session_token):
+            await manager.send(channel_id, terminal_frame)
+
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = None
+    if loop is not None and loop.is_running():
+        loop.create_task(_emit())
+    else:
+        asyncio.run(_emit())
+
+    self.update_state(
+        state="PROGRESS",
+        meta={"progress": 100, "status": "Glossary import complete"},
+    )
+
+    return {
+        "glossary_id": stored.id,
+        "name": stored.name,
+        "format": format_name,
+        "entry_count": len(summary.entries),
+        "warnings": list(summary.warnings),
     }

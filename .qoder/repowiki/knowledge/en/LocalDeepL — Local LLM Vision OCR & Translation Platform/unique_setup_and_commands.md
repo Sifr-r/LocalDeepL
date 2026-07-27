@@ -1,1 +1,0 @@
-`uv sync --extra web --extra async-translation` installs the full dev/runtime surface; `uv tool run pre-commit install` registers ruff + uv-lock hooks; `docker compose up` starts API+Redis, `docker compose --profile async up --build` also boots the Celery worker; `local-deepl-server --host 0.0.0.0 --port 8000` is the container default command.

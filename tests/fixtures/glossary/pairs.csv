@@ -1,0 +1,5 @@
+source,target,group,case_sensitive
+Hello,Hola,greetings,
+Goodbye,AdiÃ³s,greetings,
+Thank you,Gracias,greetings,no
+Acme Corp,Acme Sociedad,,no

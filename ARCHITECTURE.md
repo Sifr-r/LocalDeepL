@@ -25,13 +25,24 @@ PDF/image -> grounded bbox-native VLM OCR -> optional post-process -> DocumentRe
 | `src/local_deepl/pipeline.py` | `OCRPipeline` facade — thin orchestration layer that delegates to `HybridEngine` or `GroundedEngine` based on injected components |
 | `src/local_deepl/evaluation.py` | Package-root confidence evaluator: GLM-OCR fixture loader, greedy IoU matching, and per-document `ConfidenceReport` for the `scripts/confidence_*.py` tooling |
 | `src/local_deepl/core/document.py` | Normalized `DocumentResult` IR, pages, blocks, spans, text aggregation, and legacy pages-data adapter |
-| `src/local_deepl/core/processors.py` | Local deterministic document processor protocol, registry, six built-in processors, and the user-facing name-to-factory builder |
+| `src/local_deepl/core/processors/__init__.py` | Package-level re-exports for backward-compatible import of `DocumentProcessor`, `DocumentProcessorRegistry`, built-in processors, and helper functions |
+| `src/local_deepl/core/processors/base.py` | Core `DocumentProcessor` protocol, `DocumentProcessorFactory`, `DocumentProcessorRegistry`, processor name lists, shared regexes, helper functions (`_structure_kind`, `_normalize_space`, `_page_region`, `_bbox_area`), `build_document_processors`, and `run_document_processors` |
+| `src/local_deepl/core/processors/reading_order.py` | `ReadingOrderProcessor` — row-major block ordering based on normalized bounding box coordinates |
+| `src/local_deepl/core/processors/quality.py` | `QualityAnalysisProcessor` — page-level OCR quality findings (empty pages, sparse text, large empty blocks) |
+| `src/local_deepl/core/processors/structure.py` | `StructureAnalysisProcessor` — deterministic block structure hints (headings, list items, key-values, table candidates) |
+| `src/local_deepl/core/processors/section.py` | `SectionAnalysisProcessor` — section heading detection and block grouping across page boundaries |
+| `src/local_deepl/core/processors/layout.py` | `LayoutEnrichmentProcessor` — page region and layout role labeling (headers, footers, page numbers, figures, captions) |
+| `src/local_deepl/core/processors/table.py` | `TableExtractionProcessor` — table grid structure extraction from aligned text blocks |
 | `src/local_deepl/core/aligner.py` | Surya detection and DP text-to-box alignment |
 | `src/local_deepl/core/ocr.py` | OpenAI-compatible VLM calls, prompts, limits, and OCR response filters |
-| `src/local_deepl/core/pdf.py` | PDF/image conversion and searchable PDF embedding |
+| `src/local_deepl/core/pdf/__init__.py` | Package re-exports for `PDFHandler`, `DocumentResultWriter`, `IMAGE_EXTENSIONS`, `_emit_pymupdf_agpl_notice`, and public PDF symbols |
+| `src/local_deepl/core/pdf/rasterizer.py` | PyMuPDF AGPL warning emission, safe DPI calculation, image extension validation, and PDF/image rasterization to JPEG/PNG base64 |
+| `src/local_deepl/core/pdf/embedder.py` | Invisible text layer PDF rendering over rasterized backgrounds, normalized bbox coordinate transformations, and font sizing calculation |
+| `src/local_deepl/core/pdf/handler.py` | `PDFHandler` class facade implementing `DocumentResultWriter` protocol for high-level workflow orchestration |
 | `src/local_deepl/core/grounded.py` | Grounded OCR backends and bbox-native response parsing |
 | `src/local_deepl/core/postprocess.py` | Dictionary-based spellcheck post-processing |
 | `src/local_deepl/core/preprocessing.py` | Local hybrid-path page preprocessing (orientation detection, deskew, denoise, contrast normalization, crop cleanup) |
+| `src/local_deepl/core/handwriting_preprocessor.py` | Local handwriting image preprocessor for specialized handwriting pipeline paths |
 | `src/local_deepl/core/routing.py` | Quality routing recommendation metadata and policy recorder |
 | `src/local_deepl/core/evaluation.py` | Lightweight `EvaluationMetrics` dataclass and `evaluate_document` helper for in-process processor result scoring |
 | `src/local_deepl/core/docx_writer.py` | Markdown → `.docx` converter used by the docx export route |
@@ -40,7 +51,8 @@ PDF/image -> grounded bbox-native VLM OCR -> optional post-process -> DocumentRe
 | `src/local_deepl/core/workflows/base.py` | `EngineBase`, `OutputWriter`, `ProgressCallback`, `WarningCallback` shared by both engines |
 | `src/local_deepl/core/workflows/hybrid.py` | `HybridEngine` — Surya detect → VLM OCR (sparse/dense) → DP align → optional refine → post-process → processors → output |
 | `src/local_deepl/core/workflows/grounded.py` | `GroundedEngine` — single bbox-native VLM call → post-process → processors → output |
-| `src/local_deepl/core/workflows/__init__.py` | Re-exports `EngineBase`, `HybridEngine`, `GroundedEngine`, and the callback type aliases |
+| `src/local_deepl/core/workflows/utils.py` | Stand-alone workflow helper functions (`parse_page_range`, `_estimate_confidence`, `_decode_page_image`, `_normalize_for_dedup`, `_drop_refined_duplicates`, `_is_refinable`) and workflow constants (`REFINABLE_MIN_WIDTH`, `REFINABLE_MIN_HEIGHT`, `DETECT_CHUNK_SIZE`) |
+| `src/local_deepl/core/workflows/__init__.py` | Re-exports `EngineBase`, `HybridEngine`, `GroundedEngine`, public helper `parse_page_range`, constants, and callback type aliases |
 | `src/local_deepl/resources/dictionaries/` | Packaged compiled spellcheck dictionaries loaded before legacy repository-root dictionaries |
 | `src/local_deepl/api/routers/config.py` | Runtime configuration and model discovery routes (`GET/POST /api/config`) |
 | `src/local_deepl/api/routers/ocr.py` | Thin `POST /api/process` orchestrator — validate the request, build the pipeline, run it, build the response, record the job; delegates all heavy lifting to `api/services/ocr_*.py` |
@@ -68,7 +80,6 @@ PDF/image -> grounded bbox-native VLM OCR -> optional post-process -> DocumentRe
 | `src/local_deepl/api/tasks.py` | Optional Celery translation task execution |
 | `src/local_deepl/utils/image.py` | Image crop, blank-region detection, and crop encoding helpers |
 | `src/local_deepl/utils/security.py` | SSRF target validation |
-| `src/local_deepl/utils/litellm_provider.py` | LiteLLM provider selection |
 | `src/local_deepl/utils/tqdm_patch.py` | Surya progress-bar suppression |
 | `src/local_deepl/static/` | Browser workstation assets (`index.html`, CSS, JS modules) |
 | `scripts/` | Repo-root developer utilities: confidence eval, fixture builder, debug/inspection scripts, bbox visualizers |
@@ -148,6 +159,37 @@ hex-id / bearer-token pair across all three surfaces.
 
 ## Change Blueprint
 
+### 2026-07-25: Core PDF Decomposition into `src/local_deepl/core/pdf/` Package
+
+Refactored `src/local_deepl/core/pdf.py` (~18 KB) into a clean, single-responsibility subpackage `src/local_deepl/core/pdf/`. Separated PyMuPDF/image rasterization, safe DPI calculations, and image extension handling into `rasterizer.py`, invisible text layer rendering, font sizing, and coordinate transformation into `embedder.py`, and high-level workflow orchestration into `handler.py`. Preserved 100% backward compatibility via `__init__.py` re-exports for `PDFHandler`, `DocumentResultWriter`, `IMAGE_EXTENSIONS`, `_emit_pymupdf_agpl_notice`, and all public/internal symbols.
+
+| File | Responsibility |
+| --- | --- |
+| `src/local_deepl/core/pdf/rasterizer.py` | PyMuPDF AGPL warning emission, safe DPI calculation, image extension validation, and PDF/image rasterization to JPEG/PNG base64 |
+| `src/local_deepl/core/pdf/embedder.py` | Invisible text layer PDF rendering over rasterized backgrounds, normalized bbox coordinate transformations, and font sizing calculation |
+| `src/local_deepl/core/pdf/handler.py` | `PDFHandler` class facade implementing `DocumentResultWriter` protocol for high-level workflow orchestration |
+| `src/local_deepl/core/pdf/__init__.py` | Re-exports `PDFHandler`, `DocumentResultWriter`, `IMAGE_EXTENSIONS`, `_emit_pymupdf_agpl_notice`, and public PDF symbols |
+
+### 2026-07-25: Refactor stand-alone workflow helpers into `core/workflows/utils.py`
+
+Extracted stand-alone helper functions (`parse_page_range`, `_estimate_confidence`, `_decode_page_image`, `_normalize_for_dedup`, `_drop_refined_duplicates`, `_is_refinable`) and constants (`REFINABLE_MIN_WIDTH`, `REFINABLE_MIN_HEIGHT`, `DETECT_CHUNK_SIZE`) out of `hybrid.py` into `local_deepl.core.workflows.utils`. Re-exported public helpers in `local_deepl.core.workflows.__init__.py` and maintained backward compatibility in `hybrid.py`.
+
+| File | Responsibility |
+| --- | --- |
+| `src/local_deepl/core/workflows/utils.py` | Stand-alone workflow helper functions and constants |
+| `src/local_deepl/core/workflows/hybrid.py` | Imports and uses `local_deepl.core.workflows.utils` while re-exporting helpers |
+| `src/local_deepl/core/workflows/__init__.py` | Re-exports public workflow helpers (`parse_page_range`, constants) |
+
+### 2026-07-25: LiteLLM Cleanup, Handwriting Preprocessing, and DocuVerse CSS UI System
+
+Streamlined provider selection by replacing `litellm_provider.py` with direct OpenAI-compatible client integration in `llm_client.py` and `ocr/processor.py`. Added dedicated `handwriting_preprocessor.py` module. Fully overhauled the frontend interface with the DocuVerse CSS Design System featuring dual theme options (dark/light), glassmorphism, responsive control sidebars, interactive modals, and dynamic notification toasts.
+
+| File | Responsibility |
+| --- | --- |
+| `src/local_deepl/core/handwriting_preprocessor.py` | Local handwriting image preprocessor |
+| `src/local_deepl/core/llm_client.py` | Direct OpenAI-compatible VLM client integration and resilience handlers |
+| `src/local_deepl/static/css/` | DocuVerse CSS system (`variables.css`, `layout.css`, `components.css`, `workspace.css`, `modals.css`) |
+| `src/local_deepl/static/index.html` | Restructured workstation layout with theme toggle, floating control dock, and modal system |
 ### 2026-07-13: God-module decomposition — `core/ocr/`, `core/grounded/`, `api/services/ocr_*.py`
 
 A four-phase decomposition targeted the two largest god-modules in the

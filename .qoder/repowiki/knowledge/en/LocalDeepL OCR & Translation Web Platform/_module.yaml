@@ -1,0 +1,27 @@
+schema_version: 1
+module_path: ""
+title: LocalDeepL OCR & Translation Web Platform
+scope:
+    - README.md
+    - .gitignore
+    - pyproject.toml
+    - Makefile
+    - compose.yaml
+    - Dockerfile
+    - AGENTS.md
+    - ARCHITECTURE.md
+    - .env.example
+    - .fallowrc.json
+    - .pre-commit-config.yaml
+    - LICENSE
+    - install.ps1
+    - phase2_reqs.txt
+    - phase3_text.txt
+    - screenshot_full.png
+    - screenshot_new_ui.png
+    - test_ui.py
+    - user_prompt.json
+    - uv.lock
+source_files: []
+depends_on: []
+related_to: []

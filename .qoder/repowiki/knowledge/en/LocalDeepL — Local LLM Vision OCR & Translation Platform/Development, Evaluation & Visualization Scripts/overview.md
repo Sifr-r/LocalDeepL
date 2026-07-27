@@ -1,1 +1,0 @@
-Standalone CLI helpers that build ground-truth fixtures, run confidence regression across grounded/hybrid pipelines, and visualize alignment/bounding-box results against example PDFs.

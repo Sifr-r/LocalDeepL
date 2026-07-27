@@ -1,0 +1,1 @@
+Python 3.11+, FastAPI, Pydantic, OpenAI-compatible LLM clients (LiteLLM), pytest with uv, ruff for linting, mypy for type checking — all specified in both the plan and spec as the verification gate.

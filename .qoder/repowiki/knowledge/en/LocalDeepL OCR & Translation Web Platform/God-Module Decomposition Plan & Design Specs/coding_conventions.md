@@ -1,0 +1,4 @@
+- Each new sub-package exposes its public surface through an `__init__.py` that re-exports every name from sibling modules so existing `from local_deepl.core.ocr import ...` and `from local_deepl.core.grounded import ...` imports continue to work verbatim.
+- New modules open with a 1–3 line module-level docstring stating their single responsibility, and underscore-prefixed helpers remain private while only explicitly listed names appear in `__all__`.
+- Cross-cutting concerns are isolated into dedicated sibling modules (e.g., `filters.py` for output filtering, `parsers.py` for backend-specific JSON parsing, `rasterization.py` for synchronous I/O wrapped via `asyncio.to_thread`) rather than inlined in class bodies.
+- Each phase is treated as an independent PR boundary where the full test suite, linter, and type checker must pass without modifying any test files.

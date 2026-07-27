@@ -561,11 +561,18 @@ def test_translate_node_includes_glossary_and_memory(monkeypatch):
             captured["prompt"] = msgs[0]["content"]
         return _FakeResponse("translated")
 
-    # litellm.completion is imported inside the function; patch the symbol on the
-    # module after the import has happened.
-    import litellm
+    # Patch the OpenAI client used inside translate_node.
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            return fake_completion(**kwargs)
 
-    monkeypatch.setattr(litellm, "completion", fake_completion)
+    class _FakeChat:
+        completions = _FakeCompletions()
+
+    class _FakeClient:
+        chat = _FakeChat()
+
+    monkeypatch.setattr("openai.OpenAI", lambda **kw: _FakeClient())
 
     state = {
         "source_chunk": "Bonjour le monde",

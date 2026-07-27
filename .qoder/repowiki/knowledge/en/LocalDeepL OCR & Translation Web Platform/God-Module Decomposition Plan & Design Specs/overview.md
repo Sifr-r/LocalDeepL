@@ -1,0 +1,1 @@
+Implementation plan and design specification for decomposing LocalDeepL's three god modules (core/ocr.py, core/grounded.py, api/routers/ocr.py) into single-responsibility sub-packages while preserving the public import surface and test suite.

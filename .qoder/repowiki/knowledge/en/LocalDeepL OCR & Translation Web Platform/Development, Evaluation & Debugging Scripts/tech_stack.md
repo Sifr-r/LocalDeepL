@@ -1,0 +1,1 @@
+Python 3.11+ with `uv` for execution (`uv run scripts/...`). Core dependencies include PyMuPDF (`fitz`) for PDF handling, `surya` for detection-only bounding boxes, `chromadb` + `sentence-transformers` for lexicon RAG ingestion, `rich` for console reporting, and an OpenAI-compatible API client for VLM/LLM calls. `dotenv` is used for `.env` loading in `dev.py`.

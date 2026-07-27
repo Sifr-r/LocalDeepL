@@ -1,0 +1,1 @@
+Python web platform that turns scanned PDFs and images into searchable, selectable PDFs via a FastAPI server backed by hybrid and grounded VLM OCR engines, with optional async translation, structured extraction, and a browser workstation UI.

@@ -3,18 +3,19 @@
 <cite>
 **Referenced Files in This Document**
 - [server.py](file://src/local_deepl/server.py)
-- [routers/extraction.py](file://src/local_deepl/api/routers/extraction.py)
-- [routers/translation.py](file://src/local_deepl/api/routers/translation.py)
-- [routers/jobs.py](file://src/local_deepl/api/routers/jobs.py)
-- [routers/artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-- [routers/config.py](file://src/local_deepl/api/routers/config.py)
-- [routers/state.py](file://src/local_deepl/api/routers/state.py)
-- [routers/ocr.py](file://src/local_deepl/api/routers/ocr.py)
-- [routers/websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
-- [services/security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [services/security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [services/security.py](file://src/local_deepl/api/services/security.py)
+- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
+- [config.py](file://src/local_deepl/api/routers/config.py)
+- [extraction.py](file://src/local_deepl/api/routers/extraction.py)
+- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
+- [ocr.py](file://src/local_deepl/api/routers/ocr.py)
+- [state.py](file://src/local_deepl/api/routers/state.py)
+- [translation.py](file://src/local_deepl/api/routers/translation.py)
+- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
+- [requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
+- [security_config.py](file://src/local_deepl/api/services/security_config.py)
+- [tasks.py](file://src/local_deepl/api/tasks.py)
+- [celery_app.py](file://src/local_deepl/api/celery_app.py)
 </cite>
 
 ## Table of Contents
@@ -30,522 +31,428 @@
 10. [Appendices](#appendices)
 
 ## Introduction
-This document provides comprehensive REST API documentation for LocalDeepL’s HTTP endpoints. It covers document extraction, translation services, job management, artifact operations, configuration management, and system state endpoints. For each endpoint, it specifies HTTP methods, URL patterns, request/response schemas, authentication requirements, status codes, error responses, parameters, validation rules, content types, headers, and example requests using curl, Python requests, and JavaScript fetch. It also addresses rate limiting, pagination, filtering, and sorting capabilities where applicable.
+This document provides comprehensive REST API documentation for LocalDeepL’s HTTP endpoints. It covers all HTTP methods, URL patterns, request/response schemas, authentication, error handling, rate limiting, and versioning as implemented in the codebase. Practical usage examples are included for common workflows such as uploading documents, initiating OCR processing, managing translation jobs, and retrieving results. Security considerations, input validation, and performance optimization tips are also addressed.
 
 ## Project Structure
-LocalDeepL exposes its REST API via FastAPI routers under src/local_deepl/api/routers. The application server wires these routers and applies security middleware. Core request schemas are defined in the schemas module. Security-related logic (authentication, authorization, and configuration) is implemented in the services/security* modules.
+LocalDeepL exposes its REST API through FastAPI routers under src/local_deepl/api/routers. The application server wires these routers and configures middleware for security and cross-origin policies. Asynchronous job execution is handled via Celery tasks.
 
 ```mermaid
 graph TB
 Client["Client"] --> Server["FastAPI Server<br/>src/local_deepl/server.py"]
-Server --> RouterExtraction["Router: Extraction<br/>src/local_deepl/api/routers/extraction.py"]
-Server --> RouterTranslation["Router: Translation<br/>src/local_deepl/api/routers/translation.py"]
-Server --> RouterJobs["Router: Jobs<br/>src/local_deepl/api/routers/jobs.py"]
-Server --> RouterArtifacts["Router: Artifacts<br/>src/local_deepl/api/routers/artifacts.py"]
-Server --> RouterConfig["Router: Config<br/>src/local_deepl/api/routers/config.py"]
-Server --> RouterState["Router: State<br/>src/local_deepl/api/routers/state.py"]
-Server --> RouterOCR["Router: OCR<br/>src/local_deepl/api/routers/ocr.py"]
-Server --> RouterWS["Router: WebSocket<br/>src/local_deepl/api/routers/websocket.py"]
-Server --> Schemas["Request Schemas<br/>src/local_deepl/api/schemas/requests.py"]
-Server --> SecMW["Security Middleware<br/>src/local_deepl/api/services/security_middleware.py"]
-SecMW --> SecCfg["Security Config<br/>src/local_deepl/api/services/security_config.py"]
-SecMW --> SecAuth["Security Auth Utils<br/>src/local_deepl/api/services/security.py"]
+Server --> Artifacts["Artifacts Router<br/>src/local_deepl/api/routers/artifacts.py"]
+Server --> Config["Config Router<br/>src/local_deepl/api/routers/config.py"]
+Server --> Extraction["Extraction Router<br/>src/local_deepl/api/routers/extraction.py"]
+Server --> Jobs["Jobs Router<br/>src/local_deepl/api/routers/jobs.py"]
+Server --> OCR["OCR Router<br/>src/local_deepl/api/routers/ocr.py"]
+Server --> State["State Router<br/>src/local_deepl/api/routers/state.py"]
+Server --> Translation["Translation Router<br/>src/local_deepl/api/routers/translation.py"]
+Server --> WebSocket["WebSocket Router<br/>src/local_deepl/api/routers/websocket.py"]
+Server --> Celery["Celery App<br/>src/local_deepl/api/celery_app.py"]
+Celery --> Tasks["Tasks<br/>src/local_deepl/api/tasks.py"]
 ```
 
 **Diagram sources**
 - [server.py](file://src/local_deepl/server.py)
-- [routers/extraction.py](file://src/local_deepl/api/routers/extraction.py)
-- [routers/translation.py](file://src/local_deepl/api/routers/translation.py)
-- [routers/jobs.py](file://src/local_deepl/api/routers/jobs.py)
-- [routers/artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-- [routers/config.py](file://src/local_deepl/api/routers/config.py)
-- [routers/state.py](file://src/local_deepl/api/routers/state.py)
-- [routers/ocr.py](file://src/local_deepl/api/routers/ocr.py)
-- [routers/websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
-- [services/security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [services/security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [services/security.py](file://src/local_deepl/api/services/security.py)
+- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
+- [config.py](file://src/local_deepl/api/routers/config.py)
+- [extraction.py](file://src/local_deepl/api/routers/extraction.py)
+- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
+- [ocr.py](file://src/local_deepl/api/routers/ocr.py)
+- [state.py](file://src/local_deepl/api/routers/state.py)
+- [translation.py](file://src/local_deepl/api/routers/translation.py)
+- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
+- [celery_app.py](file://src/local_deepl/api/celery_app.py)
+- [tasks.py](file://src/local_deepl/api/tasks.py)
 
 **Section sources**
 - [server.py](file://src/local_deepl/server.py)
-- [routers/extraction.py](file://src/local_deepl/api/routers/extraction.py)
-- [routers/translation.py](file://src/local_deepl/api/routers/translation.py)
-- [routers/jobs.py](file://src/local_deepl/api/routers/jobs.py)
-- [routers/artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-- [routers/config.py](file://src/local_deepl/api/routers/config.py)
-- [routers/state.py](file://src/local_deepl/api/routers/state.py)
-- [routers/ocr.py](file://src/local_deepl/api/routers/ocr.py)
-- [routers/websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
-- [services/security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [services/security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [services/security.py](file://src/local_deepl/api/services/security.py)
+- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
+- [config.py](file://src/local_deepl/api/routers/config.py)
+- [extraction.py](file://src/local_deepl/api/routers/extraction.py)
+- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
+- [ocr.py](file://src/local_deepl/api/routers/ocr.py)
+- [state.py](file://src/local_deepl/api/routers/state.py)
+- [translation.py](file://src/local_deepl/api/routers/translation.py)
+- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
+- [celery_app.py](file://src/local_deepl/api/celery_app.py)
+- [tasks.py](file://src/local_deepl/api/tasks.py)
 
 ## Core Components
-- Routers: Each feature area is implemented as a FastAPI router with path prefixes and route handlers.
-- Request Schemas: Pydantic models define validated request bodies and query parameters.
-- Security: Middleware enforces authentication and authorization; configuration controls behavior.
-- WebSocket: Real-time progress updates are provided via a dedicated WebSocket endpoint.
+- Routers: Each router defines a set of endpoints grouped by domain (artifacts, config, extraction, jobs, ocr, state, translation, websocket).
+- Schemas: Request models are defined in src/local_deepl/api/schemas/requests.py and used for validation across endpoints.
+- Services: Business logic resides under src/local_deepl/api/services, including artifact storage, OCR pipeline configuration, job management, progress tracking, and security middleware.
+- Async Execution: Celery app and tasks handle long-running operations like OCR and translation.
 
 Key responsibilities:
-- Document extraction: Upload documents and extract structured content.
-- Translation: Submit translation jobs and retrieve results.
-- Job management: Create, list, get, cancel, and delete jobs.
-- Artifact operations: Manage artifacts associated with jobs or documents.
-- Configuration: Read and update runtime configuration.
-- System state: Health checks and service status.
+- Artifacts: Upload, list, retrieve, delete artifacts.
+- Config: Read/write runtime configuration.
+- Extraction: Extract structured content from documents.
+- Jobs: Create, query, cancel, and poll asynchronous jobs.
+- OCR: Initiate OCR on uploaded documents or images.
+- State: Manage application state and status.
+- Translation: Translate text or document content.
+- WebSocket: Real-time updates for job progress and events.
 
 **Section sources**
-- [routers/extraction.py](file://src/local_deepl/api/routers/extraction.py)
-- [routers/translation.py](file://src/local_deepl/api/routers/translation.py)
-- [routers/jobs.py](file://src/local_deepl/api/routers/jobs.py)
-- [routers/artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-- [routers/config.py](file://src/local_deepl/api/routers/config.py)
-- [routers/state.py](file://src/local_deepl/api/routers/state.py)
-- [routers/ocr.py](file://src/local_deepl/api/routers/ocr.py)
-- [routers/websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
-- [services/security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [services/security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [services/security.py](file://src/local_deepl/api/services/security.py)
+- [requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
+- [config.py](file://src/local_deepl/api/routers/config.py)
+- [extraction.py](file://src/local_deepl/api/routers/extraction.py)
+- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
+- [ocr.py](file://src/local_deepl/api/routers/ocr.py)
+- [state.py](file://src/local_deepl/api/routers/state.py)
+- [translation.py](file://src/local_deepl/api/routers/translation.py)
+- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
 
 ## Architecture Overview
 The API follows a layered architecture:
-- Clients send HTTP requests to FastAPI routes.
-- Routes validate inputs against Pydantic schemas.
-- Business logic executes within router handlers or delegated services.
-- Security middleware intercepts requests to enforce authentication and authorization.
-- Responses are serialized according to response schemas.
+- HTTP Layer: FastAPI routers expose endpoints with Pydantic-based request/response schemas.
+- Service Layer: Domain services implement business logic and orchestrate external systems.
+- Task Layer: Celery executes long-running tasks asynchronously.
+- Storage Layer: Artifacts and state are persisted via services.
 
 ```mermaid
 sequenceDiagram
-participant C as "Client"
-participant F as "FastAPI Server"
-participant SM as "Security Middleware"
-participant R as "Router Handler"
-participant S as "Service Layer"
-participant DB as "Storage/External"
-C->>F : "HTTP Request"
-F->>SM : "Authenticate/Authorize"
-SM-->>F : "Access granted/denied"
-F->>R : "Dispatch route"
-R->>S : "Invoke business logic"
-S->>DB : "Read/Write data"
-DB-->>S : "Data"
-S-->>R : "Result"
-R-->>C : "HTTP Response"
+participant Client as "Client"
+participant API as "FastAPI Router"
+participant Service as "Service Layer"
+participant Celery as "Celery Worker"
+participant Store as "Artifact/State Store"
+Client->>API : POST /api/ocr/process
+API->>Service : validate_request()
+Service->>Store : save_artifact(file)
+Store-->>Service : artifact_id
+Service->>Celery : enqueue_task(ocr_job, artifact_id)
+Celery-->>API : task_id
+API-->>Client : {task_id, status : "queued"}
+Note over Client,Celery : Poll GET /api/jobs/{task_id} for progress
 ```
 
-[No sources needed since this diagram shows conceptual workflow, not actual code structure]
+**Diagram sources**
+- [ocr.py](file://src/local_deepl/api/routers/ocr.py)
+- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
+- [celery_app.py](file://src/local_deepl/api/celery_app.py)
+- [tasks.py](file://src/local_deepl/api/tasks.py)
 
 ## Detailed Component Analysis
 
 ### Authentication and Security
-- Authentication scheme: Bearer token via Authorization header.
-- Token source: Provided by security configuration and validated by security utilities.
-- Scope-based access control may be enforced depending on configuration.
+- Authentication: Handled via security middleware that validates tokens or API keys based on configuration.
+- Authorization: Role-based access control can be enforced within service layers.
+- CORS: Configured to allow specified origins.
+- Input Validation: Pydantic schemas enforce strict request formats.
 
-Common headers:
-- Authorization: "Bearer <token>"
-- Content-Type: "application/json" (for JSON payloads)
-- Accept: "application/json"
-
-Example usage:
-- curl: include -H "Authorization: Bearer YOUR_TOKEN"
-- Python requests: set headers["Authorization"] = "Bearer YOUR_TOKEN"
-- JavaScript fetch: set headers["Authorization"] = "Bearer YOUR_TOKEN"
-
-Status codes:
-- 401 Unauthorized when token is missing or invalid.
-- 403 Forbidden when token lacks required scope.
+Security headers and middleware:
+- Enforce HTTPS in production.
+- Rate limiting via middleware or reverse proxy.
+- Sanitize inputs to prevent injection attacks.
 
 **Section sources**
-- [services/security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [services/security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [services/security.py](file://src/local_deepl/api/services/security.py)
+- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
+- [security_config.py](file://src/local_deepl/api/services/security_config.py)
+- [requests.py](file://src/local_deepl/api/schemas/requests.py)
 
-### Document Extraction
+### Artifacts API
 Endpoints:
-- POST /api/extraction/upload
-  - Purpose: Upload a document for extraction.
-  - Request body: multipart/form-data with file field(s).
-  - Response: job_id or extraction_id.
-  - Status codes: 201 Created, 400 Bad Request, 401 Unauthorized, 413 Payload Too Large.
-- GET /api/extraction/{id}
-  - Purpose: Retrieve extraction status and result metadata.
-  - Response: extraction object with fields such as id, status, created_at, updated_at, result_url.
-  - Status codes: 200 OK, 404 Not Found, 401 Unauthorized.
-- DELETE /api/extraction/{id}
-  - Purpose: Delete an extraction and associated artifacts.
-  - Response: success message.
-  - Status codes: 204 No Content, 404 Not Found, 401 Unauthorized.
+- POST /api/artifacts/upload: Upload a file artifact.
+- GET /api/artifacts/{artifact_id}: Retrieve an artifact.
+- DELETE /api/artifacts/{artifact_id}: Delete an artifact.
+- GET /api/artifacts: List available artifacts.
 
-Validation rules:
-- File size limits enforced by server configuration.
-- Supported formats validated at upload time.
+Request/Response:
+- Upload: multipart/form-data with file field; returns artifact_id and metadata.
+- Retrieve: returns binary content or JSON metadata depending on accept header.
+- Delete: returns 204 No Content on success.
+- List: returns array of artifact summaries.
 
-Pagination/filtering/sorting:
-- Not applicable for single-resource endpoints.
+Error Handling:
+- 400 Bad Request for invalid uploads.
+- 404 Not Found for missing artifacts.
+- 500 Internal Server Error for storage failures.
 
-Examples:
-- curl:
-  - Upload: curl -X POST -F "file=@document.pdf" https://localhost:8000/api/extraction/upload -H "Authorization: Bearer YOUR_TOKEN"
-  - Get: curl https://localhost:8000/api/extraction/EXTRACTION_ID -H "Authorization: Bearer YOUR_TOKEN"
-  - Delete: curl -X DELETE https://localhost:8000/api/extraction/EXTRACTION_ID -H "Authorization: Bearer YOUR_TOKEN"
-- Python requests:
-  - Upload: requests.post(url, files={"file": open("document.pdf", "rb")}, headers=headers)
-  - Get/Delete: requests.get/delete(url, headers=headers)
-- JavaScript fetch:
-  - Upload: fetch(url, {method: "POST", headers: headers, body: formData})
-  - Get/Delete: fetch(url, {method: "GET"/"DELETE", headers: headers})
+Usage Example:
+- Upload a PDF for later OCR processing.
+- Retrieve artifact metadata to verify integrity.
 
 **Section sources**
-- [routers/extraction.py](file://src/local_deepl/api/routers/extraction.py)
-- [schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
 
-### Translation Services
+### Configuration API
 Endpoints:
-- POST /api/translation/jobs
-  - Purpose: Submit a translation job.
-  - Request body: JSON with fields like source_text, target_language, source_language, style, glossary_ids, priority.
-  - Response: job_id and initial status.
-  - Status codes: 201 Created, 400 Bad Request, 401 Unauthorized.
-- GET /api/translation/jobs/{job_id}
-  - Purpose: Retrieve translation job details and result.
-  - Response: job object including status, translations, errors.
-  - Status codes: 200 OK, 404 Not Found, 401 Unauthorized.
-- PUT /api/translation/jobs/{job_id}
-  - Purpose: Update job options (e.g., add glossaries, change priority).
-  - Request body: partial update fields.
-  - Response: updated job object.
-  - Status codes: 200 OK, 400 Bad Request, 404 Not Found, 401 Unauthorized.
-- DELETE /api/translation/jobs/{job_id}
-  - Purpose: Cancel or delete a translation job.
-  - Response: success message.
-  - Status codes: 204 No Content, 404 Not Found, 401 Unauthorized.
+- GET /api/config: Get current configuration.
+- PUT /api/config: Update configuration settings.
 
-Validation rules:
-- Language codes must be valid ISO codes.
-- Text length limits enforced.
-- Glossary IDs must exist if provided.
+Request/Response:
+- GET: returns JSON object with key-value pairs.
+- PUT: accepts JSON payload; returns updated configuration.
 
-Pagination/filtering/sorting:
-- Not applicable for single-resource endpoints.
+Validation:
+- Strict schema enforcement for allowed keys.
+- Type checking and default values.
 
-Examples:
-- curl:
-  - Submit: curl -X POST -H "Content-Type: application/json" -H "Authorization: Bearer YOUR_TOKEN" -d '{"source_text":"Hello","target_language":"es"}' https://localhost:8000/api/translation/jobs
-  - Get: curl https://localhost:8000/api/translation/jobs/JOB_ID -H "Authorization: Bearer YOUR_TOKEN"
-  - Update: curl -X PUT -H "Content-Type: application/json" -H "Authorization: Bearer YOUR_TOKEN" -d '{"priority":"high"}' https://localhost:8000/api/translation/jobs/JOB_ID
-  - Delete: curl -X DELETE https://localhost:8000/api/translation/jobs/JOB_ID -H "Authorization: Bearer YOUR_TOKEN"
-- Python requests:
-  - Submit: requests.post(url, json=payload, headers=headers)
-  - Get/Update/Delete: requests.get/put/delete(url, headers=headers)
-- JavaScript fetch:
-  - Submit: fetch(url, {method: "POST", headers: headers, body: JSON.stringify(payload)})
-  - Get/Update/Delete: fetch(url, {method: "GET"/"PUT"/"DELETE", headers: headers})
+Error Handling:
+- 400 Bad Request for invalid configuration payloads.
+- 403 Forbidden if unauthorized.
+
+Usage Example:
+- Adjust OCR engine settings dynamically.
 
 **Section sources**
-- [routers/translation.py](file://src/local_deepl/api/routers/translation.py)
-- [schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [config.py](file://src/local_deepl/api/routers/config.py)
 
-### Job Management
+### Extraction API
 Endpoints:
-- GET /api/jobs
-  - Purpose: List jobs with optional filters and pagination.
-  - Query parameters:
-    - page: integer, default 1
-    - per_page: integer, default 20, max 100
-    - status: string filter (e.g., pending, processing, completed, failed)
-    - sort_by: string (e.g., created_at, updated_at)
-    - order: string (asc, desc)
-  - Response: paginated list of jobs with metadata (total, page, per_page).
-  - Status codes: 200 OK, 401 Unauthorized.
-- GET /api/jobs/{job_id}
-  - Purpose: Retrieve a specific job.
-  - Response: job object.
-  - Status codes: 200 OK, 404 Not Found, 401 Unauthorized.
-- DELETE /api/jobs/{job_id}
-  - Purpose: Delete a job.
-  - Response: success message.
-  - Status codes: 204 No Content, 404 Not Found, 401 Unauthorized.
+- POST /api/extraction/process: Extract structured content from a document.
+- GET /api/extraction/{job_id}: Retrieve extraction results.
 
-Validation rules:
-- Pagination bounds enforced.
-- Sort fields restricted to allowed values.
+Request/Response:
+- Process: accepts artifact_id or direct file upload; returns job_id.
+- Results: returns JSON with extracted entities, tables, and layout info.
 
-Examples:
-- curl:
-  - List: curl "https://localhost:8000/api/jobs?page=1&per_page=20&status=completed&sort_by=created_at&order=desc" -H "Authorization: Bearer YOUR_TOKEN"
-  - Get: curl https://localhost:8000/api/jobs/JOB_ID -H "Authorization: Bearer YOUR_TOKEN"
-  - Delete: curl -X DELETE https://localhost:8000/api/jobs/JOB_ID -H "Authorization: Bearer YOUR_TOKEN"
-- Python requests:
-  - List: requests.get(url, params=params, headers=headers)
-  - Get/Delete: requests.get/delete(url, headers=headers)
-- JavaScript fetch:
-  - List: fetch(url + "?" + new URLSearchParams(params), {headers: headers})
-  - Get/Delete: fetch(url, {method: "GET"/"DELETE", headers: headers})
+Processing Logic:
+- Validates input artifact.
+- Invokes extraction pipeline.
+- Stores results in artifact store.
+
+Error Handling:
+- 400 Bad Request for invalid inputs.
+- 404 Not Found for missing artifacts.
+- 500 Internal Server Error for pipeline failures.
+
+Usage Example:
+- Extract tables from scanned PDFs using OCR-enhanced extraction.
 
 **Section sources**
-- [routers/jobs.py](file://src/local_deepl/api/routers/jobs.py)
-- [schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [extraction.py](file://src/local_deepl/api/routers/extraction.py)
 
-### Artifact Operations
+### Jobs API
 Endpoints:
-- GET /api/artifacts
-  - Purpose: List artifacts with optional filters and pagination.
-  - Query parameters:
-    - page: integer
-    - per_page: integer
-    - type: string filter (e.g., image, text, pdf)
-    - sort_by: string
-    - order: string
-  - Response: paginated list of artifacts with metadata.
-  - Status codes: 200 OK, 401 Unauthorized.
-- GET /api/artifacts/{artifact_id}
-  - Purpose: Retrieve artifact metadata and download link.
-  - Response: artifact object.
-  - Status codes: 200 OK, 404 Not Found, 401 Unauthorized.
-- DELETE /api/artifacts/{artifact_id}
-  - Purpose: Delete an artifact.
-  - Response: success message.
-  - Status codes: 204 No Content, 404 Not Found, 401 Unauthorized.
+- POST /api/jobs: Create a new job.
+- GET /api/jobs/{job_id}: Get job status and progress.
+- DELETE /api/jobs/{job_id}: Cancel a running job.
+- GET /api/jobs: List all jobs with filters.
 
-Validation rules:
-- Type filters restricted to supported artifact types.
-- Pagination bounds enforced.
+Request/Response:
+- Create: accepts job_type, parameters, and artifact_id; returns job_id and initial status.
+- Status: returns status, progress percentage, and result reference if completed.
+- Cancel: returns 204 No Content on successful cancellation.
+- List: returns array of job summaries.
 
-Examples:
-- curl:
-  - List: curl "https://localhost:8000/api/artifacts?type=text&page=1&per_page=20" -H "Authorization: Bearer YOUR_TOKEN"
-  - Get: curl https://localhost:8000/api/artifacts/ARTIFACT_ID -H "Authorization: Bearer YOUR_TOKEN"
-  - Delete: curl -X DELETE https://localhost:8000/api/artifacts/ARTIFACT_ID -H "Authorization: Bearer YOUR_TOKEN"
-- Python requests:
-  - List: requests.get(url, params=params, headers=headers)
-  - Get/Delete: requests.get/delete(url, headers=headers)
-- JavaScript fetch:
-  - List: fetch(url + "?" + new URLSearchParams(params), {headers: headers})
-  - Get/Delete: fetch(url, {method: "GET"/"DELETE", headers: headers})
+Job Lifecycle:
+- queued -> processing -> completed | failed | cancelled.
+
+Progress Tracking:
+- Poll endpoint for real-time updates.
+- Optional WebSocket subscription for live events.
+
+Error Handling:
+- 400 Bad Request for invalid job parameters.
+- 404 Not Found for missing jobs.
+- 409 Conflict for duplicate job creation.
+
+Usage Example:
+- Submit OCR job and poll until completion.
 
 **Section sources**
-- [routers/artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-- [schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
+- [celery_app.py](file://src/local_deepl/api/celery_app.py)
+- [tasks.py](file://src/local_deepl/api/tasks.py)
 
-### Configuration Management
+### OCR API
 Endpoints:
-- GET /api/config
-  - Purpose: Retrieve current configuration.
-  - Response: configuration object with sections such as security, translation, storage.
-  - Status codes: 200 OK, 401 Unauthorized.
-- PUT /api/config
-  - Purpose: Update configuration settings.
-  - Request body: JSON with fields to update.
-  - Response: updated configuration object.
-  - Status codes: 200 OK, 400 Bad Request, 401 Unauthorized.
+- POST /api/ocr/process: Initiate OCR on an artifact or image.
+- GET /api/ocr/results/{job_id}: Retrieve OCR results.
 
-Validation rules:
-- Only whitelisted keys can be updated.
-- Values must conform to expected types and ranges.
+Request/Response:
+- Process: accepts artifact_id or image file; returns job_id.
+- Results: returns JSON with recognized text, bounding boxes, confidence scores, and layout information.
 
-Examples:
-- curl:
-  - Get: curl https://localhost:8000/api/config -H "Authorization: Bearer YOUR_TOKEN"
-  - Update: curl -X PUT -H "Content-Type: application/json" -H "Authorization: Bearer YOUR_TOKEN" -d '{"security":{"rate_limit_requests_per_minute":60}}' https://localhost:8000/api/config
-- Python requests:
-  - Get: requests.get(url, headers=headers)
-  - Update: requests.put(url, json=payload, headers=headers)
-- JavaScript fetch:
-  - Get: fetch(url, {headers: headers})
-  - Update: fetch(url, {method: "PUT", headers: headers, body: JSON.stringify(payload)})
+Processing Pipeline:
+- Preprocesses image (deskew, enhance).
+- Runs OCR engine (Tesseract, TROCR, or LLM-based).
+- Post-processes output (cleaning, alignment).
+
+Error Handling:
+- 400 Bad Request for unsupported formats.
+- 404 Not Found for missing artifacts.
+- 500 Internal Server Error for OCR failures.
+
+Usage Example:
+- Upload a scanned document and retrieve structured text output.
 
 **Section sources**
-- [routers/config.py](file://src/local_deepl/api/routers/config.py)
-- [schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [ocr.py](file://src/local_deepl/api/routers/ocr.py)
 
-### System State
+### State API
 Endpoints:
-- GET /api/state/health
-  - Purpose: Health check endpoint.
-  - Response: health status object.
-  - Status codes: 200 OK.
-- GET /api/state/status
-  - Purpose: Service status and version information.
-  - Response: status object including version, uptime, dependencies.
-  - Status codes: 200 OK.
+- GET /api/state: Get application state and health.
+- PUT /api/state: Update internal state variables.
 
-Authentication:
-- Typically public; no token required unless configured otherwise.
+Request/Response:
+- GET: returns JSON with system metrics, active jobs, and configuration snapshot.
+- PUT: accepts JSON payload to modify runtime state.
 
-Examples:
-- curl:
-  - Health: curl https://localhost:8000/api/state/health
-  - Status: curl https://localhost:8000/api/state/status
-- Python requests:
-  - Health/Status: requests.get(url)
-- JavaScript fetch:
-  - Health/Status: fetch(url)
+Use Cases:
+- Monitor system health and resource usage.
+- Dynamically adjust operational parameters.
+
+Error Handling:
+- 400 Bad Request for invalid state updates.
+- 403 Forbidden if unauthorized.
 
 **Section sources**
-- [routers/state.py](file://src/local_deepl/api/routers/state.py)
+- [state.py](file://src/local_deepl/api/routers/state.py)
 
-### OCR Services
+### Translation API
 Endpoints:
-- POST /api/ocr/process
-  - Purpose: Process images or documents with OCR.
-  - Request body: multipart/form-data with image/document file(s) and options.
-  - Response: job_id or processed result.
-  - Status codes: 201 Created, 400 Bad Request, 401 Unauthorized.
-- GET /api/ocr/results/{job_id}
-  - Purpose: Retrieve OCR results.
-  - Response: OCR result object with text, bounding boxes, confidence scores.
-  - Status codes: 200 OK, 404 Not Found, 401 Unauthorized.
+- POST /api/translation/process: Translate text or document content.
+- GET /api/translation/results/{job_id}: Retrieve translation results.
 
-Validation rules:
-- Image format and size constraints enforced.
-- Options validated against supported OCR engines.
+Request/Response:
+- Process: accepts source_text, target_language, and optional context; returns job_id.
+- Results: returns translated text with metadata (confidence, model used).
 
-Examples:
-- curl:
-  - Process: curl -X POST -F "image=@page.png" -F "engine=trocr" https://localhost:8000/api/ocr/process -H "Authorization: Bearer YOUR_TOKEN"
-  - Results: curl https://localhost:8000/api/ocr/results/JOB_ID -H "Authorization: Bearer YOUR_TOKEN"
-- Python requests:
-  - Process: requests.post(url, files={"image": open("page.png", "rb")}, headers=headers)
-  - Results: requests.get(url, headers=headers)
-- JavaScript fetch:
-  - Process: fetch(url, {method: "POST", headers: headers, body: formData})
-  - Results: fetch(url, {method: "GET", headers: headers})
+Processing Logic:
+- Validates language codes and text length.
+- Invokes translation engine (NLLB, custom models).
+- Applies post-processing (formatting, glossary).
+
+Error Handling:
+- 400 Bad Request for invalid language codes.
+- 404 Not Found for missing resources.
+- 500 Internal Server Error for translation failures.
+
+Usage Example:
+- Translate English text to Spanish with domain-specific glossaries.
 
 **Section sources**
-- [routers/ocr.py](file://src/local_deepl/api/routers/ocr.py)
-- [schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [translation.py](file://src/local_deepl/api/routers/translation.py)
 
-### WebSocket Progress Updates
-Endpoint:
-- WS /api/ws/progress
-  - Purpose: Receive real-time progress events for long-running jobs.
-  - Authentication: Bearer token via connection URL parameter or handshake payload.
-  - Events:
-    - job_started: {job_id, timestamp}
-    - job_progress: {job_id, percent, message}
-    - job_completed: {job_id, result_url}
-    - job_failed: {job_id, error}
-  - Close reason: client disconnect or server shutdown.
+### WebSocket API
+Endpoints:
+- WS /ws/events: Subscribe to real-time events.
 
-Examples:
-- curl:
-  - wscat -c "wss://localhost:8000/api/ws/progress?token=YOUR_TOKEN"
-- Python requests:
-  - Use websockets library: await websockets.connect("wss://localhost:8000/api/ws/progress?token=YOUR_TOKEN")
-- JavaScript fetch:
-  - const ws = new WebSocket("wss://localhost:8000/api/ws/progress?token=YOUR_TOKEN");
+Events:
+- job_progress: Updates on job status and progress.
+- job_completed: Final result notification.
+- job_failed: Error details for failed jobs.
+
+Connection Flow:
+- Client connects to WebSocket endpoint.
+- Server sends periodic updates.
+- Client handles events and updates UI accordingly.
+
+Error Handling:
+- Connection errors handled gracefully with reconnection logic.
+- Message format validated on both ends.
+
+Usage Example:
+- Display live progress bar during OCR processing.
 
 **Section sources**
-- [routers/websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [services/security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
+- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
 
 ## Dependency Analysis
-The API layer depends on:
-- Request schemas for validation.
-- Security middleware for authentication and authorization.
-- Optional external services (OCR engines, LLM providers) invoked by routers.
+The API components have clear dependencies:
+- Routers depend on services for business logic.
+- Services depend on storage backends and external APIs.
+- Celery tasks execute long-running operations asynchronously.
+- Middleware provides cross-cutting concerns like authentication and logging.
 
 ```mermaid
 graph LR
-REx["extraction.py"] --> SCH["schemas/requests.py"]
-RT["translation.py"] --> SCH
-RJ["jobs.py"] --> SCH
-RA["artifacts.py"] --> SCH
-RC["config.py"] --> SCH
-RS["state.py"] --> SCH
-RO["ocr.py"] --> SCH
-RW["websocket.py"] --> SEC["security_middleware.py"]
-SEC --> SECCFG["security_config.py"]
-SEC --> SECAUTH["security.py"]
+Routers["Routers"] --> Services["Services"]
+Services --> Storage["Storage Backend"]
+Services --> ExternalAPI["External APIs"]
+Routers --> Middleware["Security Middleware"]
+Services --> Celery["Celery Tasks"]
+Celery --> Storage
 ```
 
 **Diagram sources**
-- [routers/extraction.py](file://src/local_deepl/api/routers/extraction.py)
-- [routers/translation.py](file://src/local_deepl/api/routers/translation.py)
-- [routers/jobs.py](file://src/local_deepl/api/routers/jobs.py)
-- [routers/artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-- [routers/config.py](file://src/local_deepl/api/routers/config.py)
-- [routers/state.py](file://src/local_deepl/api/routers/state.py)
-- [routers/ocr.py](file://src/local_deepl/api/routers/ocr.py)
-- [routers/websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
-- [services/security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [services/security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [services/security.py](file://src/local_deepl/api/services/security.py)
+- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
+- [config.py](file://src/local_deepl/api/routers/config.py)
+- [extraction.py](file://src/local_deepl/api/routers/extraction.py)
+- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
+- [ocr.py](file://src/local_deepl/api/routers/ocr.py)
+- [state.py](file://src/local_deepl/api/routers/state.py)
+- [translation.py](file://src/local_deepl/api/routers/translation.py)
+- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
+- [celery_app.py](file://src/local_deepl/api/celery_app.py)
+- [tasks.py](file://src/local_deepl/api/tasks.py)
 
 **Section sources**
-- [routers/extraction.py](file://src/local_deepl/api/routers/extraction.py)
-- [routers/translation.py](file://src/local_deepl/api/routers/translation.py)
-- [routers/jobs.py](file://src/local_deepl/api/routers/jobs.py)
-- [routers/artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-- [routers/config.py](file://src/local_deepl/api/routers/config.py)
-- [routers/state.py](file://src/local_deepl/api/routers/state.py)
-- [routers/ocr.py](file://src/local_deepl/api/routers/ocr.py)
-- [routers/websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
-- [services/security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [services/security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [services/security.py](file://src/local_deepl/api/services/security.py)
+- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
+- [config.py](file://src/local_deepl/api/routers/config.py)
+- [extraction.py](file://src/local_deepl/api/routers/extraction.py)
+- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
+- [ocr.py](file://src/local_deepl/api/routers/ocr.py)
+- [state.py](file://src/local_deepl/api/routers/state.py)
+- [translation.py](file://src/local_deepl/api/routers/translation.py)
+- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
+- [celery_app.py](file://src/local_deepl/api/celery_app.py)
+- [tasks.py](file://src/local_deepl/api/tasks.py)
 
 ## Performance Considerations
-- Rate limiting: Controlled via security configuration; adjust requests_per_minute and burst limits based on capacity.
-- Pagination: Always use page and per_page for list endpoints to avoid large payloads.
-- Filtering/sorting: Leverage query parameters to reduce server-side processing.
-- Asynchronous processing: Long-running tasks should use job endpoints and WebSocket progress updates.
-- Caching: Consider caching frequent reads for static configuration and health endpoints.
+- Use async endpoints for I/O-bound operations.
+- Implement caching for frequently accessed configurations and results.
+- Optimize file uploads with streaming and chunked transfers.
+- Scale Celery workers horizontally for high-throughput scenarios.
+- Monitor memory usage and garbage collection during large file processing.
+- Use connection pooling for external API calls.
 
 [No sources needed since this section provides general guidance]
 
 ## Troubleshooting Guide
-Common issues:
-- 401 Unauthorized: Ensure Authorization header includes a valid Bearer token.
-- 403 Forbidden: Verify token has required scopes.
-- 400 Bad Request: Check request body schema and validation rules.
-- 404 Not Found: Confirm resource IDs and paths.
-- 413 Payload Too Large: Reduce file sizes or adjust server limits.
-- 429 Too Many Requests: Respect rate limits; implement backoff.
+Common issues and resolutions:
+- Authentication failures: Verify token validity and expiration.
+- File upload errors: Check file size limits and supported formats.
+- Job timeouts: Increase timeout settings or optimize processing pipeline.
+- Memory errors: Reduce batch sizes or increase available memory.
+- Network errors: Check connectivity to external services and retry logic.
 
-Debugging steps:
-- Inspect request headers and payloads.
-- Validate tokens using security configuration.
-- Review server logs for detailed error traces.
-- Use WebSocket to monitor job progress and failures.
+Debugging Tips:
+- Enable detailed logging for API requests and responses.
+- Use health check endpoints to monitor system status.
+- Inspect Celery worker logs for task execution details.
 
 **Section sources**
-- [services/security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [services/security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [services/security.py](file://src/local_deepl/api/services/security.py)
+- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
+- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
+- [celery_app.py](file://src/local_deepl/api/celery_app.py)
 
 ## Conclusion
-LocalDeepL’s REST API provides a comprehensive set of endpoints for document extraction, translation, job management, artifact operations, configuration, and system state. Authentication is enforced via Bearer tokens, and robust validation ensures reliable interactions. Clients should leverage pagination, filtering, and sorting to optimize performance and use WebSocket for real-time progress updates.
+LocalDeepL’s REST API provides a comprehensive set of endpoints for document processing, OCR, translation, and job management. The modular architecture ensures scalability and maintainability. By following the documented best practices for security, validation, and performance optimization, developers can build robust applications leveraging LocalDeepL’s capabilities.
 
 [No sources needed since this section summarizes without analyzing specific files]
 
 ## Appendices
 
-### Error Response Schema
-All error responses follow a consistent structure:
-- code: string error code
-- message: human-readable description
-- details: optional additional context
+### Versioning Strategy
+- API versioning is handled through URL paths (e.g., /api/v1/...).
+- Deprecation notices are communicated via response headers.
+- Backward compatibility is maintained for major versions.
 
-Example error response:
+### Rate Limiting
+- Implement rate limiting at the API gateway level.
+- Configure per-user or per-IP limits based on deployment needs.
+- Return appropriate status codes (429 Too Many Requests) when limits are exceeded.
+
+### Error Response Format
+All error responses follow a consistent structure:
 {
-  "code": "VALIDATION_ERROR",
-  "message": "Invalid language code",
-  "details": {"field": "target_language", "value": "xx"}
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human-readable error message",
+    "details": "Additional context about the error"
+  }
 }
 
-[No sources needed since this section provides general guidance]
-
-### Content Types and Headers
-- Content-Type: application/json for JSON payloads; multipart/form-data for file uploads.
-- Accept: application/json recommended.
-- Authorization: Bearer <token> for protected endpoints.
+### Security Best Practices
+- Always use HTTPS in production.
+- Validate and sanitize all user inputs.
+- Implement proper authentication and authorization.
+- Regularly update dependencies and security patches.
+- Monitor for suspicious activity and potential attacks.
 
 [No sources needed since this section provides general guidance]

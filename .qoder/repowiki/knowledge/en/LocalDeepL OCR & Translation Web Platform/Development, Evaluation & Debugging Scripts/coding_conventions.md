@@ -1,0 +1,5 @@
+- Each script is self-contained with a `#!/usr/bin/env python3` shebang, sets `TQDM_DISABLE=1` early, and prepends the repository root to `sys.path` before importing `local_deepl`.
+- CLI interfaces are built with `argparse.ArgumentParser` using `__doc__` as the description and expose options via `--flag` style arguments rather than positional-only APIs.
+- Async scripts use `asyncio.run(main())` at the bottom, while sync scripts follow the same `if __name__ == "__main__": main()` or direct invocation pattern.
+- Output is printed directly to stdout with colored `rich.console.Console` formatting in evaluation/reporting scripts, and errors cause `sys.exit(1)` rather than raising exceptions to callers.
+- Paths are constructed with `pathlib.Path` relative to `Path(__file__).resolve().parent.parent` (repository root) so scripts work regardless of cwd.

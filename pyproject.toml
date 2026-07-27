@@ -28,8 +28,6 @@ dependencies = [
     "surya-ocr>=0.17.0",
     "torch>=2.0.0",
     "torchvision>=0.15.0",
-    "opencv-python-headless>=4.8.0",
-    "litellm>=1.35.0",
     "httpx>=0.27.0",
     # surya 0.17.x imports `requests` in surya/common/s3.py but doesn't
     # declare it. Newer huggingface-hub (≥1.0) no longer pulls it in
@@ -46,6 +44,10 @@ web = [
     "uvicorn>=0.38.0",
     "websockets>=10.0,<14.0",
     "python-multipart>=0.0.20",
+]
+preprocessing = [
+    "opencv-python-headless>=4.8.0",
+    "numpy>=1.24.0",
 ]
 # Async translation: the LLM-driven translation workflow. ``chromadb`` and
 # ``sentence-transformers`` are intentionally kept out so this extra is
@@ -83,6 +85,19 @@ quality = [
 # COMET learned-metric scoring (opt-in, GPU-preferred, large download).
 comet = [
     "unbabel-comet>=2.2.0",
+]
+
+# Glossary multi-source import: optional XLSX, SQL pair-table, git archive
+# fetchers, safe XML parsers (XLIFF/TBX/TMX), and encoding auto-detection.
+# Every parser tolerates the dep being missing by raising
+# `FormatNotAvailableError` from `core.glossary_sources.parse`, which the
+# router maps to HTTP 503 with an install hint.
+glossary = [
+    "openpyxl>=3.1.0",        # XLSX support (CSV/TSV use stdlib)
+    "sqlalchemy>=2.0.0",       # SQL pair-table reader
+    "gitpython>=3.1.0",        # Git glossary file fetcher
+    "defusedxml>=0.7.1",       # Safe XML parsing for XLIFF/TBX/TMX
+    "chardet>=5.2.0",          # Encoding detection fallback
 ]
 
 

@@ -2,20 +2,25 @@
 
 <cite>
 **Referenced Files in This Document**
-- [src/local_deepl/api/schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
-- [src/local_deepl/api/routers/artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-- [src/local_deepl/api/routers/common.py](file://src/local_deepl/api/routers/common.py)
-- [src/local_deepl/api/routers/config.py](file://src/local_deepl/api/routers/config.py)
-- [src/local_deepl/api/routers/extraction.py](file://src/local_deepl/api/routers/extraction.py)
-- [src/local_deepl/api/routers/jobs.py](file://src/local_deepl/api/routers/jobs.py)
-- [src/local_deepl/api/routers/ocr.py](file://src/local_deepl/api/routers/ocr.py)
-- [src/local_deepl/api/routers/state.py](file://src/local_deepl/api/routers/state.py)
-- [src/local_deepl/api/routers/translation.py](file://src/local_deepl/api/routers/translation.py)
-- [src/local_deepl/api/routers/websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [src/local_deepl/api/services/ocr_response.py](file://src/local_deepl/api/services/ocr_response.py)
-- [src/local_deepl/api/services/document_metadata.py](file://src/local_deepl/api/services/document_metadata.py)
-- [src/local_deepl/core/grounded/models.py](file://src/local_deepl/core/grounded/models.py)
-- [src/local_deepl/core/workflows/base.py](file://src/local_deepl/core/workflows/base.py)
+- [requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [__init__.py](file://src/local_deepl/api/schemas/__init__.py)
+- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
+- [ocr.py](file://src/local_deepl/api/routers/ocr.py)
+- [translation.py](file://src/local_deepl/api/routers/translation.py)
+- [extraction.py](file://src/local_deepl/api/routers/extraction.py)
+- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
+- [config.py](file://src/local_deepl/api/routers/config.py)
+- [state.py](file://src/local_deepl/api/routers/state.py)
+- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
+- [common.py](file://src/local_deepl/api/routers/common.py)
+- [tasks.py](file://src/local_deepl/api/tasks.py)
+- [celery_app.py](file://src/local_deepl/api/celery_app.py)
+- [progress.py](file://src/local_deepl/api/services/progress.py)
+- [ocr_response.py](file://src/local_deepl/api/services/ocr_response.py)
+- [workflow.py](file://src/local_deepl/api/services/workflow.py)
+- [document_metadata.py](file://src/local_deepl/api/services/document_metadata.py)
+- [security_config.py](file://src/local_deepl/api/services/security_config.py)
+- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
 </cite>
 
 ## Table of Contents
@@ -31,367 +36,481 @@
 10. [Appendices](#appendices)
 
 ## Introduction
-This document provides comprehensive schema documentation for LocalDeepL’s API data models. It focuses on Pydantic models, request/response structures, validation rules, and data type definitions used across the REST and WebSocket endpoints. The goal is to enable clients to understand field semantics, required/optional parameters, default values, constraints, enums, nested objects, and complex relationships. It also includes guidance on versioning strategies, backward compatibility, and migration practices for evolving schemas.
+This document provides comprehensive data model documentation for LocalDeepL’s API request and response schemas. It focuses on Pydantic models, field definitions, data types, validation rules, constraints, and nested object structures used across endpoints for document uploads, OCR configuration, translation parameters, job creation, processing results, status information, error messages, and metadata. It also includes guidance on schema evolution patterns, backward compatibility considerations, and migration strategies.
 
 ## Project Structure
-LocalDeepL organizes API schemas primarily under the API layer:
-- Centralized request schemas are defined in a dedicated module.
-- Routers define endpoint contracts and may reference shared or domain-specific response models.
-- Services encapsulate business logic and often return typed responses that align with Pydantic models.
-- Core domain models (e.g., grounded outputs) live in core modules and can be reused by API layers.
+LocalDeepL organizes API schemas under a dedicated module with routers defining endpoints that consume and produce these schemas. The primary schema definitions are centralized in the requests module, while responses are often constructed inline or via service helpers. Routers expose endpoints for jobs, OCR, translation, extraction, artifacts, configuration, state, and WebSocket-based progress streaming.
 
 ```mermaid
 graph TB
 subgraph "API Layer"
-A["schemas/requests.py"]
-B["routers/*.py"]
-C["services/*.py"]
+R_Jobs["routers/jobs.py"]
+R_OCR["routers/ocr.py"]
+R_Translation["routers/translation.py"]
+R_Extraction["routers/extraction.py"]
+R_Artifacts["routers/artifacts.py"]
+R_Config["routers/config.py"]
+R_State["routers/state.py"]
+R_WS["routers/websocket.py"]
+R_Common["routers/common.py"]
 end
-subgraph "Core Domain"
-D["core/grounded/models.py"]
-E["core/workflows/base.py"]
+subgraph "Schemas"
+S_Requests["schemas/requests.py"]
+S_Init["schemas/__init__.py"]
 end
-B --> A
-B --> C
-C --> D
-C --> E
+subgraph "Services"
+S_Progress["services/progress.py"]
+S_OCRResp["services/ocr_response.py"]
+S_Workflow["services/workflow.py"]
+S_DocMeta["services/document_metadata.py"]
+S_SecCfg["services/security_config.py"]
+S_SecMW["services/security_middleware.py"]
+end
+subgraph "Async Tasks"
+T_Tasks["api/tasks.py"]
+T_App["api/celery_app.py"]
+end
+R_Jobs --> S_Requests
+R_OCR --> S_Requests
+R_Translation --> S_Requests
+R_Extraction --> S_Requests
+R_Artifacts --> S_Requests
+R_Config --> S_Requests
+R_State --> S_Requests
+R_WS --> S_Progress
+R_WS --> S_OCRResp
+R_Common --> S_Requests
+T_Tasks --> S_Requests
+T_App --> T_Tasks
+S_Workflow --> S_Requests
+S_DocMeta --> S_Requests
+S_SecCfg --> R_Common
+S_SecMW --> R_Common
 ```
 
-[No sources needed since this diagram shows conceptual structure]
-
-## Core Components
-The following components form the backbone of LocalDeepL’s API schemas:
-- Centralized request models: Shared input structures for multiple endpoints.
-- Router-level models: Endpoint-specific requests/responses and status/error payloads.
-- Service-level models: Business-oriented response shapes and intermediate data structures.
-- Core domain models: Reusable entities such as grounded translation artifacts.
-
-Key responsibilities:
-- Define strict validation via Pydantic fields, types, and constraints.
-- Provide clear separation between transport (HTTP/WebSocket) and domain models.
-- Ensure consistent error and progress reporting across endpoints.
+**Diagram sources**
+- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
+- [ocr.py](file://src/local_deepl/api/routers/ocr.py)
+- [translation.py](file://src/local_deepl/api/routers/translation.py)
+- [extraction.py](file://src/local_deepl/api/routers/extraction.py)
+- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
+- [config.py](file://src/local_deepl/api/routers/config.py)
+- [state.py](file://src/local_deepl/api/routers/state.py)
+- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
+- [common.py](file://src/local_deepl/api/routers/common.py)
+- [requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [__init__.py](file://src/local_deepl/api/schemas/__init__.py)
+- [progress.py](file://src/local_deepl/api/services/progress.py)
+- [ocr_response.py](file://src/local_deepl/api/services/ocr_response.py)
+- [workflow.py](file://src/local_deepl/api/services/workflow.py)
+- [document_metadata.py](file://src/local_deepl/api/services/document_metadata.py)
+- [security_config.py](file://src/local_deepl/api/services/security_config.py)
+- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
+- [tasks.py](file://src/local_deepl/api/tasks.py)
+- [celery_app.py](file://src/local_deepl/api/celery_app.py)
 
 **Section sources**
-- [src/local_deepl/api/schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
-- [src/local_deepl/api/routers/artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-- [src/local_deepl/api/routers/common.py](file://src/local_deepl/api/routers/common.py)
-- [src/local_deepl/api/routers/config.py](file://src/local_deepl/api/routers/config.py)
-- [src/local_deepl/api/routers/extraction.py](file://src/local_deepl/api/routers/extraction.py)
-- [src/local_deepl/api/routers/jobs.py](file://src/local_deepl/api/routers/jobs.py)
-- [src/local_deepl/api/routers/ocr.py](file://src/local_deepl/api/routers/ocr.py)
-- [src/local_deepl/api/routers/state.py](file://src/local_deepl/api/routers/state.py)
-- [src/local_deepl/api/routers/translation.py](file://src/local_deepl/api/routers/translation.py)
-- [src/local_deepl/api/routers/websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [src/local_deepl/api/services/ocr_response.py](file://src/local_deepl/api/services/ocr_response.py)
-- [src/local_deepl/api/services/document_metadata.py](file://src/local_deepl/api/services/document_metadata.py)
-- [src/local_deepl/core/grounded/models.py](file://src/local_deepl/core/grounded/models.py)
-- [src/local_deepl/core/workflows/base.py](file://src/local_deepl/core/workflows/base.py)
+- [requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [__init__.py](file://src/local_deepl/api/schemas/__init__.py)
+- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
+- [ocr.py](file://src/local_deepl/api/routers/ocr.py)
+- [translation.py](file://src/local_deepl/api/routers/translation.py)
+- [extraction.py](file://src/local_deepl/api/routers/extraction.py)
+- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
+- [config.py](file://src/local_deepl/api/routers/config.py)
+- [state.py](file://src/local_deepl/api/routers/state.py)
+- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
+- [common.py](file://src/local_deepl/api/routers/common.py)
+- [tasks.py](file://src/local_deepl/api/tasks.py)
+- [celery_app.py](file://src/local_deepl/api/celery_app.py)
+- [progress.py](file://src/local_deepl/api/services/progress.py)
+- [ocr_response.py](file://src/local_deepl/api/services/ocr_response.py)
+- [workflow.py](file://src/local_deepl/api/services/workflow.py)
+- [document_metadata.py](file://src/local_deepl/api/services/document_metadata.py)
+- [security_config.py](file://src/local_deepl/api/services/security_config.py)
+- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
+
+## Core Components
+The core data models for API payloads live in the schemas module. These include:
+- Request models for document upload, OCR configuration, translation parameters, and job creation.
+- Shared base models and enums for consistent validation across endpoints.
+- Optional nested objects for advanced configurations (e.g., OCR settings, translation options).
+
+Key responsibilities:
+- Enforce required fields and constraints at the API boundary.
+- Provide default values where appropriate to simplify client usage.
+- Support extensibility through optional fields and nested structures.
+
+Validation highlights:
+- Type checks enforced by Pydantic.
+- Enumerated values for controlled options (e.g., languages, modes).
+- Length and format constraints for strings and identifiers.
+- Nested object validation for complex payloads.
+
+**Section sources**
+- [requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [__init__.py](file://src/local_deepl/api/schemas/__init__.py)
 
 ## Architecture Overview
-At runtime, client requests enter routers, which validate inputs against Pydantic models and delegate to services. Services orchestrate workflows and core domain models, then return structured responses. Progress and state updates may be emitted over HTTP or WebSockets.
+The API layer consumes request schemas and produces response payloads. Jobs are created via POST endpoints, processed asynchronously using Celery tasks, and progress is streamed via WebSocket events. OCR and translation workflows leverage shared services to build responses and manage metadata.
 
 ```mermaid
 sequenceDiagram
 participant Client as "Client"
-participant Router as "Router Handler"
-participant Schema as "Pydantic Models"
-participant Service as "Service Layer"
-participant Core as "Core Domain Models"
-Client->>Router : "HTTP Request"
-Router->>Schema : "Validate request body/query/path"
-alt Validation fails
-Router-->>Client : "4xx Error"
-else Validation passes
-Router->>Service : "Invoke operation"
-Service->>Core : "Use domain models"
-Service-->>Router : "Structured response"
-Router-->>Client : "2xx Response"
-end
-```
-
-[No sources needed since this diagram shows conceptual workflow]
-
-## Detailed Component Analysis
-
-### Centralized Request Schemas
-Centralized request models provide reusable input structures consumed by multiple endpoints. Typical characteristics include:
-- Field names and types aligned with JSON payloads.
-- Optional vs required fields explicitly declared.
-- Constraints such as length, format, or value ranges where applicable.
-- Nested objects for grouped parameters.
-
-Common patterns:
-- Pagination and filtering parameters.
-- File upload metadata (e.g., filename, content type).
-- Feature flags and processing options.
-
-Best practices:
-- Prefer explicit defaults for optional fields.
-- Use descriptive field aliases when necessary for backward compatibility.
-- Keep models focused on transport concerns; avoid embedding business logic.
-
-**Section sources**
-- [src/local_deepl/api/schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
-
-### Artifacts API
-Endpoints related to artifacts manage creation, retrieval, and listing of generated assets. Expect:
-- Request models for artifact operations (e.g., create, list, get).
-- Response models describing artifact metadata and links.
-- Status codes indicating success or failure.
-
-Typical fields:
-- Artifact identifiers and versions.
-- Source references (e.g., job ID).
-- Timestamps and ownership information.
-
-**Section sources**
-- [src/local_deepl/api/routers/artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-
-### Common API Utilities
-Shared utilities include:
-- Standardized error response models.
-- Common pagination wrappers.
-- Health/status indicators.
-
-These ensure consistent client experiences across endpoints.
-
-**Section sources**
-- [src/local_deepl/api/routers/common.py](file://src/local_deepl/api/routers/common.py)
-
-### Configuration API
-Configuration endpoints expose system settings and feature toggles. Expect:
-- Read-only configuration models.
-- Optional write endpoints guarded by authorization.
-- Versioned configuration keys.
-
-Validation considerations:
-- Enumerated option sets.
-- Type-safe numeric ranges.
-- Secret masking in responses.
-
-**Section sources**
-- [src/local_deepl/api/routers/config.py](file://src/local_deepl/api/routers/config.py)
-
-### Extraction API
-Extraction endpoints handle document extraction tasks. Expect:
-- Request models specifying target documents and extraction modes.
-- Response models containing extracted content and metadata.
-- Job IDs for asynchronous processing.
-
-Processing flow:
-- Validate inputs.
-- Enqueue extraction job.
-- Return job status or results depending on sync/async mode.
-
-**Section sources**
-- [src/local_deepl/api/routers/extraction.py](file://src/local_deepl/api/routers/extraction.py)
-
-### Jobs API
-Jobs API manages long-running operations. Expect:
-- Job lifecycle states (e.g., pending, running, completed, failed).
-- Progress tracking fields.
-- Result references and error details.
-
-Progress model:
-- Percentage or step-based progress.
-- Estimated completion time.
-- Human-readable messages.
-
-**Section sources**
-- [src/local_deepl/api/routers/jobs.py](file://src/local_deepl/api/routers/jobs.py)
-
-### OCR API
-OCR endpoints process images and documents to extract text. Expect:
-- Request models for image uploads and OCR options.
-- Response models including recognized text, bounding boxes, and confidence scores.
-- Integration with OCR service responses.
-
-Response composition:
-- Aggregated text blocks.
-- Per-block metadata (confidence, language hints).
-- Links to artifacts if applicable.
-
-**Section sources**
-- [src/local_deepl/api/routers/ocr.py](file://src/local_deepl/api/routers/ocr.py)
-- [src/local_deepl/api/services/ocr_response.py](file://src/local_deepl/api/services/ocr_response.py)
-
-### State API
-State endpoints expose current application state and health. Expect:
-- Lightweight status models.
-- Feature availability flags.
-- Version information.
-
-**Section sources**
-- [src/local_deepl/api/routers/state.py](file://src/local_deepl/api/routers/state.py)
-
-### Translation API
-Translation endpoints perform text translation using configured engines. Expect:
-- Request models with source text, target languages, and options.
-- Response models with translated text and metadata.
-- Support for batch translations.
-
-Options:
-- Glossary usage flags.
-- Style or tone preferences.
-- Confidence thresholds.
-
-**Section sources**
-- [src/local_deepl/api/routers/translation.py](file://src/local_deepl/api/routers/translation.py)
-
-### WebSocket API
-WebSocket endpoints provide real-time updates for jobs and streaming responses. Expect:
-- Message schemas for events (e.g., progress, result, error).
-- Connection lifecycle handling.
-- Backpressure and reconnection guidance.
-
-Message types:
-- Progress updates.
-- Completion notifications.
-- Error diagnostics.
-
-**Section sources**
-- [src/local_deepl/api/routers/websocket.py](file://src/local_deepl/api/routers/websocket.py)
-
-### OCR Response Service
-The OCR response service composes final OCR outputs from internal representations. Expect:
-- Normalization of OCR blocks.
-- Confidence scoring aggregation.
-- Formatting for downstream consumers.
-
-**Section sources**
-- [src/local_deepl/api/services/ocr_response.py](file://src/local_deepl/api/services/ocr_response.py)
-
-### Document Metadata Service
-Document metadata service enriches responses with file and processing metadata. Expect:
-- File size, MIME type, page counts.
-- Processing timestamps.
-- Source provenance.
-
-**Section sources**
-- [src/local_deepl/api/services/document_metadata.py](file://src/local_deepl/api/services/document_metadata.py)
-
-### Grounded Models
-Grounded models represent structured outputs from grounded translation workflows. Expect:
-- Entities and spans.
-- Alignment information.
-- Confidence metrics.
-
-Relationships:
-- Link to original text segments.
-- References to artifacts and jobs.
-
-**Section sources**
-- [src/local_deepl/core/grounded/models.py](file://src/local_deepl/core/grounded/models.py)
-
-### Workflows Base
-Workflows base defines common interfaces and state transitions for processing pipelines. Expect:
-- Abstract steps and hooks.
-- Context propagation.
-- Error handling patterns.
-
-**Section sources**
-- [src/local_deepl/core/workflows/base.py](file://src/local_deepl/core/workflows/base.py)
-
-## Dependency Analysis
-The API layer depends on centralized request schemas and service-layer models. Core domain models are reused by services to compose responses. Routers orchestrate validation and delegation.
-
-```mermaid
-graph LR
-Requests["schemas/requests.py"] --> Artifacts["routers/artifacts.py"]
-Requests --> Common["routers/common.py"]
-Requests --> Config["routers/config.py"]
-Requests --> Extraction["routers/extraction.py"]
-Requests --> Jobs["routers/jobs.py"]
-Requests --> OCR["routers/ocr.py"]
-Requests --> State["routers/state.py"]
-Requests --> Translation["routers/translation.py"]
-Requests --> WS["routers/websocket.py"]
-OCR --> OCRResp["services/ocr_response.py"]
-Extraction --> DocMeta["services/document_metadata.py"]
-OCRResp --> Grounded["core/grounded/models.py"]
-DocMeta --> Grounded
-Jobs --> WFBase["core/workflows/base.py"]
+participant Router as "Jobs Router"
+participant Schema as "Request Schemas"
+participant Task as "Celery Task"
+participant Progress as "Progress Service"
+participant WS as "WebSocket Router"
+Client->>Router : POST /jobs/create {payload}
+Router->>Schema : validate payload
+Schema-->>Router : validated model
+Router->>Task : enqueue job with id
+Task-->>Router : job_id assigned
+Router-->>Client : {job_id, status : queued}
+Client->>WS : connect ws : //.../jobs/{job_id}/stream
+WS->>Progress : subscribe to job events
+Progress-->>WS : {status, progress, result?}
+WS-->>Client : stream updates
+Note over Client,WS : Real-time progress until completion
 ```
 
 **Diagram sources**
-- [src/local_deepl/api/schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
-- [src/local_deepl/api/routers/artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-- [src/local_deepl/api/routers/common.py](file://src/local_deepl/api/routers/common.py)
-- [src/local_deepl/api/routers/config.py](file://src/local_deepl/api/routers/config.py)
-- [src/local_deepl/api/routers/extraction.py](file://src/local_deepl/api/routers/extraction.py)
-- [src/local_deepl/api/routers/jobs.py](file://src/local_deepl/api/routers/jobs.py)
-- [src/local_deepl/api/routers/ocr.py](file://src/local_deepl/api/routers/ocr.py)
-- [src/local_deepl/api/routers/state.py](file://src/local_deepl/api/routers/state.py)
-- [src/local_deepl/api/routers/translation.py](file://src/local_deepl/api/routers/translation.py)
-- [src/local_deepl/api/routers/websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [src/local_deepl/api/services/ocr_response.py](file://src/local_deepl/api/services/ocr_response.py)
-- [src/local_deepl/api/services/document_metadata.py](file://src/local_deepl/api/services/document_metadata.py)
-- [src/local_deepl/core/grounded/models.py](file://src/local_deepl/core/grounded/models.py)
-- [src/local_deepl/core/workflows/base.py](file://src/local_deepl/core/workflows/base.py)
+- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
+- [requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [tasks.py](file://src/local_deepl/api/tasks.py)
+- [celery_app.py](file://src/local_deepl/api/celery_app.py)
+- [progress.py](file://src/local_deepl/api/services/progress.py)
+- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
+
+## Detailed Component Analysis
+
+### Request Models: Document Uploads
+Document upload requests typically include:
+- File identifier or binary content reference.
+- Optional metadata such as filename, MIME type, and size hints.
+- Flags to control preprocessing or output formats.
+
+Validation rules:
+- Required file reference fields.
+- Optional metadata fields with defaults when omitted.
+- Constraints on allowed MIME types and maximum sizes.
+
+Example valid JSON payload structure:
+- A top-level object containing a file reference and optional metadata fields.
+
+Common validation errors:
+- Missing required file reference.
+- Unsupported MIME type.
+- Exceeding maximum file size.
+
+Backward compatibility:
+- New optional fields should not break existing clients.
+- Deprecation warnings can be added before removing fields.
 
 **Section sources**
-- [src/local_deepl/api/schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
-- [src/local_deepl/api/routers/artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-- [src/local_deepl/api/routers/common.py](file://src/local_deepl/api/routers/common.py)
-- [src/local_deepl/api/routers/config.py](file://src/local_deepl/api/routers/config.py)
-- [src/local_deepl/api/routers/extraction.py](file://src/local_deepl/api/routers/extraction.py)
-- [src/local_deepl/api/routers/jobs.py](file://src/local_deepl/api/routers/jobs.py)
-- [src/local_deepl/api/routers/ocr.py](file://src/local_deepl/api/routers/ocr.py)
-- [src/local_deepl/api/routers/state.py](file://src/local_deepl/api/routers/state.py)
-- [src/local_deepl/api/routers/translation.py](file://src/local_deepl/api/routers/translation.py)
-- [src/local_deepl/api/routers/websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [src/local_deepl/api/services/ocr_response.py](file://src/local_deepl/api/services/ocr_response.py)
-- [src/local_deepl/api/services/document_metadata.py](file://src/local_deepl/api/services/document_metadata.py)
-- [src/local_deepl/core/grounded/models.py](file://src/local_deepl/core/grounded/models.py)
-- [src/local_deepl/core/workflows/base.py](file://src/local_deepl/core/workflows/base.py)
+- [requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
+
+### Request Models: OCR Configuration
+OCR configuration requests define how OCR engines process input documents:
+- Engine selection and mode flags.
+- Language codes and dictionaries.
+- Preprocessing options (e.g., deskew, denoise).
+- Output preferences (e.g., text-only, structured blocks).
+
+Validation rules:
+- Enumerated engine/mode values.
+- Language code format validation.
+- Boolean flags for enabling/disabling features.
+- Nested configuration objects for advanced options.
+
+Example valid JSON payload structure:
+- An object with engine-specific settings and global OCR options.
+
+Common validation errors:
+- Invalid engine or mode value.
+- Malformed language code.
+- Conflicting options within nested configuration.
+
+Migration strategy:
+- Introduce new engine options as optional fields.
+- Maintain default behavior for legacy clients.
+
+**Section sources**
+- [requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [ocr.py](file://src/local_deepl/api/routers/ocr.py)
+- [ocr_response.py](file://src/local_deepl/api/services/ocr_response.py)
+
+### Request Models: Translation Parameters
+Translation requests specify source/target languages and formatting:
+- Source and target language codes.
+- Formatting preferences (e.g., preserve layout, handle tables).
+- Glossary or terminology overrides.
+- Callback or webhook URLs for asynchronous processing.
+
+Validation rules:
+- Language code format validation.
+- Allowed formatting options.
+- Optional callback URL format validation.
+
+Example valid JSON payload structure:
+- An object with language codes and formatting options.
+
+Common validation errors:
+- Invalid language code.
+- Unsupported formatting option.
+- Malformed callback URL.
+
+Backward compatibility:
+- Add new formatting options as optional fields.
+- Keep default formatting behavior unchanged.
+
+**Section sources**
+- [requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [translation.py](file://src/local_deepl/api/routers/translation.py)
+
+### Request Models: Job Creation Requests
+Job creation requests encapsulate all necessary parameters for processing:
+- Input document reference.
+- Processing pipeline configuration (OCR + translation).
+- Output format and destination.
+- Priority and timeout settings.
+
+Validation rules:
+- Required input reference.
+- Valid pipeline configuration.
+- Allowed output formats.
+- Numeric constraints for priority and timeouts.
+
+Example valid JSON payload structure:
+- A composite object combining document, OCR, and translation settings.
+
+Common validation errors:
+- Missing input reference.
+- Invalid pipeline configuration.
+- Unsupported output format.
+
+Migration strategy:
+- Extend job configuration with optional fields.
+- Use versioned endpoints if breaking changes are needed.
+
+**Section sources**
+- [requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
+- [tasks.py](file://src/local_deepl/api/tasks.py)
+
+### Response Models: Processing Results
+Processing results include:
+- Job status and progress indicators.
+- Output artifacts (text, structured data, translations).
+- Metadata about processing steps and timings.
+- Error details if processing failed.
+
+Validation rules:
+- Status enum values.
+- Optional artifact fields based on job type.
+- Timestamps and duration fields.
+
+Example valid JSON payload structure:
+- A result object with status, artifacts, and metadata.
+
+Common validation errors:
+- Inconsistent status vs. artifact presence.
+- Missing required metadata fields.
+
+Backward compatibility:
+- Add new artifact types as optional fields.
+- Preserve existing artifact structures.
+
+**Section sources**
+- [ocr_response.py](file://src/local_deepl/api/services/ocr_response.py)
+- [progress.py](file://src/local_deepl/api/services/progress.py)
+- [workflow.py](file://src/local_deepl/api/services/workflow.py)
+
+### Response Models: Status Information
+Status responses provide real-time updates during processing:
+- Current job state (queued, processing, completed, failed).
+- Progress percentage or step indicators.
+- Estimated time remaining.
+
+Validation rules:
+- Status enum values.
+- Numeric progress bounds.
+- Optional timing fields.
+
+Example valid JSON payload structure:
+- A status object with state and progress fields.
+
+Common validation errors:
+- Progress outside valid range.
+- Inconsistent state transitions.
+
+**Section sources**
+- [progress.py](file://src/local_deepl/api/services/progress.py)
+- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
+
+### Response Models: Error Messages
+Error responses contain:
+- Error code and message.
+- Contextual details about the failure.
+- Suggestions for resolution.
+
+Validation rules:
+- Standardized error code enumeration.
+- Human-readable message string.
+- Optional contextual data.
+
+Example valid JSON payload structure:
+- An error object with code, message, and context.
+
+Common validation errors:
+- Missing error code.
+- Empty message field.
+
+Backward compatibility:
+- Add new error codes without breaking existing clients.
+- Maintain message format consistency.
+
+**Section sources**
+- [common.py](file://src/local_deepl/api/routers/common.py)
+- [security_config.py](file://src/local_deepl/api/services/security_config.py)
+- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
+
+### Response Models: Metadata
+Metadata responses include:
+- Job identifiers and timestamps.
+- Input/output file references.
+- Processing engine versions and configurations.
+
+Validation rules:
+- Identifier format validation.
+- Timestamp format validation.
+- Version string constraints.
+
+Example valid JSON payload structure:
+- A metadata object with identifiers and timestamps.
+
+Common validation errors:
+- Malformed timestamp.
+- Invalid identifier format.
+
+**Section sources**
+- [document_metadata.py](file://src/local_deepl/api/services/document_metadata.py)
+- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
+
+## Dependency Analysis
+The schemas module depends on shared utilities and is consumed by multiple routers. Services construct response models based on processing outcomes. Async tasks coordinate job execution and update progress.
+
+```mermaid
+classDiagram
+class RequestModels {
++DocumentUpload
++OCRConfig
++TranslationParams
++JobCreation
+}
+class ResponseModels {
++ProcessingResult
++StatusInfo
++ErrorMessage
++Metadata
+}
+class Routers {
++JobsRouter
++OCRRouter
++TranslationRouter
++ExtractionRouter
++ArtifactsRouter
++ConfigRouter
++StateRouter
++WebsocketRouter
+}
+class Services {
++ProgressService
++OCRResponseService
++WorkflowService
++DocumentMetadataService
+}
+RequestModels <.. Routers : "consumed by"
+ResponseModels ..> Services : "constructed by"
+Routers --> Services : "uses"
+Services --> RequestModels : "validates inputs"
+```
+
+**Diagram sources**
+- [requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
+- [ocr.py](file://src/local_deepl/api/routers/ocr.py)
+- [translation.py](file://src/local_deepl/api/routers/translation.py)
+- [extraction.py](file://src/local_deepl/api/routers/extraction.py)
+- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
+- [config.py](file://src/local_deepl/api/routers/config.py)
+- [state.py](file://src/local_deepl/api/routers/state.py)
+- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
+- [progress.py](file://src/local_deepl/api/services/progress.py)
+- [ocr_response.py](file://src/local_deepl/api/services/ocr_response.py)
+- [workflow.py](file://src/local_deepl/api/services/workflow.py)
+- [document_metadata.py](file://src/local_deepl/api/services/document_metadata.py)
+
+**Section sources**
+- [requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
+- [ocr.py](file://src/local_deepl/api/routers/ocr.py)
+- [translation.py](file://src/local_deepl/api/routers/translation.py)
+- [extraction.py](file://src/local_deepl/api/routers/extraction.py)
+- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
+- [config.py](file://src/local_deepl/api/routers/config.py)
+- [state.py](file://src/local_deepl/api/routers/state.py)
+- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
+- [progress.py](file://src/local_deepl/api/services/progress.py)
+- [ocr_response.py](file://src/local_deepl/api/services/ocr_response.py)
+- [workflow.py](file://src/local_deepl/api/services/workflow.py)
+- [document_metadata.py](file://src/local_deepl/api/services/document_metadata.py)
 
 ## Performance Considerations
-- Prefer streaming responses for large OCR or translation outputs to reduce memory pressure.
-- Use pagination for list endpoints to limit payload sizes.
-- Cache frequently accessed configuration and metadata where appropriate.
-- Avoid deep nesting in responses; flatten when possible for efficient parsing.
-- Validate early and fail fast to minimize unnecessary processing.
+- Validate payloads early to fail fast on invalid requests.
+- Use streaming for large file uploads and progress updates.
+- Cache frequently used configuration objects to reduce validation overhead.
+- Implement pagination for large result sets.
+- Optimize serialization/deserialization for high-throughput scenarios.
 
 [No sources needed since this section provides general guidance]
 
 ## Troubleshooting Guide
 Common issues and resolutions:
-- Validation errors: Check field types, required flags, and constraints in request models.
-- Missing fields: Ensure all required parameters are provided; review defaults for optional fields.
-- Unexpected nulls: Verify service-layer transformations and core model mappings.
-- Progress not updating: Confirm WebSocket message schemas and router event emission.
-- Inconsistent metadata: Inspect document metadata service for missing attributes.
+- Validation errors: Check field types, required fields, and enum values.
+- Timeout errors: Adjust job priority and timeout settings.
+- Memory errors: Reduce batch sizes and optimize preprocessing.
+- Network errors: Retry logic and exponential backoff for external dependencies.
 
-Recommended debugging steps:
-- Enable detailed logging at router and service boundaries.
-- Compare incoming payloads against documented schemas.
-- Inspect error response structures for diagnostic fields.
+Debugging tips:
+- Enable detailed logging for request/response payloads.
+- Inspect WebSocket events for real-time progress.
+- Use health check endpoints to verify service status.
 
 **Section sources**
-- [src/local_deepl/api/routers/common.py](file://src/local_deepl/api/routers/common.py)
-- [src/local_deepl/api/routers/websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [src/local_deepl/api/services/document_metadata.py](file://src/local_deepl/api/services/document_metadata.py)
+- [common.py](file://src/local_deepl/api/routers/common.py)
+- [security_config.py](file://src/local_deepl/api/services/security_config.py)
+- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
 
 ## Conclusion
-LocalDeepL’s API schemas are organized around clear Pydantic models that enforce validation and provide consistent contracts across endpoints. By centralizing request schemas, leveraging service-layer models, and reusing core domain models, the system maintains clarity and extensibility. Adopting robust versioning and migration strategies will further enhance backward compatibility and client stability.
+LocalDeepL’s API schemas provide a robust foundation for document processing workflows. By leveraging Pydantic models for validation and maintaining backward compatibility, the system ensures reliable and extensible interactions between clients and services. Following the migration strategies outlined here will help evolve schemas safely while preserving existing integrations.
 
 [No sources needed since this section summarizes without analyzing specific files]
 
 ## Appendices
 
-### Versioning Strategy
-- Semantic versioning for API surfaces.
-- Deprecation headers and changelogs for breaking changes.
-- Feature flags to gradually roll out new fields.
+### Schema Evolution Patterns
+- Add new optional fields to maintain backward compatibility.
+- Use versioned endpoints for breaking changes.
+- Deprecate fields gradually with clear migration timelines.
+- Maintain comprehensive test coverage for schema changes.
 
-### Backward Compatibility Guidelines
-- Additive changes only (new optional fields).
-- Preserve existing field semantics and types.
-- Maintain legacy endpoints during transition periods.
-
-### Migration Guide
-- Announce deprecations well in advance.
-- Provide dual support for old and new schemas during migration windows.
-- Offer automated tools or scripts to adapt client code.
+### Migration Strategies
+- Implement dual-write support during transition periods.
+- Provide migration scripts for client upgrades.
+- Monitor deprecation warnings in production environments.
+- Communicate changes through API documentation and release notes.
 
 [No sources needed since this section provides general guidance]

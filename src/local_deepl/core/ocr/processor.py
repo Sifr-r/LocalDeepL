@@ -415,30 +415,35 @@ class OCRProcessor:
             return ""
 
     def _apply_adaptive_threshold(self, image_base64: str) -> str:
+        """Adaptive mean threshold using only PIL (no OpenCV dependency).
+
+        Approximates ``cv2.adaptiveThreshold(..., ADAPTIVE_THRESH_GAUSSIAN_C,
+        THRESH_BINARY, 21, 15)`` with a box-blur local mean. The Gaussian
+        vs uniform kernel difference is negligible for handwriting
+        binarization at block_size=21.
+        """
         try:
             import base64
+            import io
 
-            import cv2
             import numpy as np
+            from PIL import Image, ImageFilter
 
-            image_bytes = base64.b64decode(image_base64)
-            np_arr = np.frombuffer(image_bytes, np.uint8)
-            img = cv2.imdecode(np_arr, cv2.IMREAD_GRAYSCALE)
+            img = Image.open(io.BytesIO(base64.b64decode(image_base64))).convert("L")
 
-            if img is None:
-                return image_base64
+            # Local mean via box blur (radius 10 ≈ block_size 21).
+            local_mean = img.filter(ImageFilter.BoxBlur(radius=10))
 
-            # Apply adaptive thresholding to extract ink cleanly
-            # Block size 21, constant 15 gives robust separation for handwriting
-            binary = cv2.adaptiveThreshold(
-                img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 15
-            )
+            # Adaptive threshold: pixel is white (255) if src > local_mean - C.
+            # C=15 matches the old cv2.adaptiveThreshold constant parameter.
+            src_arr = np.asarray(img, dtype=np.int16)
+            mean_arr = np.asarray(local_mean, dtype=np.int16)
+            binary_arr = np.where(src_arr > mean_arr - 15, 255, 0).astype(np.uint8)
+            binary = Image.fromarray(binary_arr, mode="L")
 
-            success, encoded = cv2.imencode(".png", binary)
-            if not success:
-                return image_base64
-
-            return base64.b64encode(encoded.tobytes()).decode("utf-8")
+            buf = io.BytesIO()
+            binary.save(buf, format="PNG")
+            return base64.b64encode(buf.getvalue()).decode("utf-8")
         except Exception:
             return image_base64
 

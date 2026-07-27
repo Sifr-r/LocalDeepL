@@ -1,0 +1,51 @@
+version: 1
+
+scope:
+  include: []
+  exclude:
+    - "node_modules/**"
+    - ".venv/**"
+    - ".mypy_cache/**"
+    - ".pytest_cache/**"
+    - ".ruff_cache/**"
+    - ".opencode/**"
+    - "__pycache__/**"
+    - "*.lock"
+
+repowiki:
+  notes:
+    - text: >
+        Refresh all existing wiki pages against the current source tree.
+        The codebase has evolved significantly — verify every module reference,
+        file path, class name, and data-flow description against the live code
+        under src/local_deepl/ before emitting content.
+    - text: >
+        The core package is now decomposed into sub-packages: core/ocr/,
+        core/pdf/, core/grounded/, core/processors/, core/workflows/,
+        core/glossary_library/, and core/glossary_sources/. Ensure the
+        Architecture and Core Processing Engine pages reflect this structure
+        rather than a monolithic core/.
+    - text: >
+        Newer modules that must be covered: block_tree.py, translation_tree.py,
+        tree_export.py, docx_tree_writer.py, entity_memory.py, nllb_engine.py,
+        trocr_engine.py, handwriting_preprocessor.py, and the api/services/
+        modules ocr_pipeline_factory.py, ocr_response.py, ocr_settings.py,
+        tree_artifact.py, http_fetch.py.
+    - text: >
+        The pipeline facade (pipeline.py) now supports both HybridEngine and
+        GroundedEngine via injected components. Document the extension points
+        (aligner, ocr_processor, pdf_handler, output_writer, grounded_backend,
+        document_processors, page_preprocessor) accurately.
+    - text: >
+        API layer uses ASGI security middlewares (BearerAuthMiddleware,
+        MaxUploadSizeMiddleware, RateLimitMiddleware) wired in server.py via
+        security_middleware.py. Ensure the Security and Authentication page
+        reflects this middleware-stack architecture.
+
+knowledgecard:
+  notes:
+    - text: >
+        Refresh knowledge cards to match the current module boundaries.
+        The god-module decomposition (docs/superpowers/) has been executed —
+        core/ is now split into focused sub-packages. Update module cards
+        accordingly.

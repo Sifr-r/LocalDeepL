@@ -14,15 +14,44 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 
 class _MissingCeleryTask:
-    def __init__(self, func: Callable[..., Any]) -> None:
+    def __init__(
+        self,
+        func: Callable[..., Any],
+        *,
+        name: str | None = None,
+        bind: bool = False,
+    ) -> None:
         self._func = func
+        self._name = name or getattr(func, "__name__", "celery_task")
+        self._bind = bind
         self.__name__ = func.__name__
         self.__doc__ = func.__doc__
 
-    def run(self, *args: Any, **kwargs: Any) -> Any:
-        return self._func(self, *args, **kwargs)
+    @property
+    def name(self) -> str:
+        """Task name registered with the (stub) Celery app."""
+        return self._name
 
-    def delay(self, *_args: Any, **_kwargs: Any) -> Any:
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Calling the task directly mirrors ``.run()`` (parity with celery)."""
+        return self.run(*args, **kwargs)
+
+    def run(self, *args: Any, **kwargs: Any) -> Any:
+        if self._bind:
+            return self._func(self, *args, **kwargs)
+        return self._func(*args, **kwargs)
+
+    def delay(self, *args: Any, **kwargs: Any) -> Any:
+        """No broker means no async dispatch: run inline.
+
+        When the optional ``celery`` dependency isn't installed (or no worker
+        is available) we fall back to executing the task synchronously in the
+        caller. This mirrors the production fallback contract used by
+        ``process_translation_task`` and keeps tests hermetic.
+        """
+        return self.run(*args, **kwargs)
+
+    def apply_async(self, *_args: Any, **_kwargs: Any) -> Any:  # pragma: no cover
         raise AsyncTranslationUnavailable(
             "Async translation requires optional dependency 'celery'. "
             "Install the async translation extras to enable background jobs."
@@ -33,9 +62,12 @@ class _MissingCeleryTask:
 
 
 class _MissingCeleryApp:
-    def task(self, *_args: Any, **_kwargs: Any) -> Callable[[Callable[..., Any]], Any]:
+    def task(self, *_args: Any, **kwargs: Any) -> Callable[[Callable[..., Any]], Any]:
+        bind = bool(kwargs.get("bind", False))
+        name = kwargs.get("name")
+
         def decorator(func: Callable[..., Any]) -> _MissingCeleryTask:
-            return _MissingCeleryTask(func)
+            return _MissingCeleryTask(func, name=name, bind=bind)
 
         return decorator
 

@@ -19,6 +19,8 @@ class GlossaryEntry:
     target: str
     case_sensitive: bool = False
     notes: str = ""
+    source_uri: str | None = None
+    encoding: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -32,6 +34,9 @@ class GlossaryEntry:
 @dataclass(slots=True)
 class Glossary:
     entries: list[GlossaryEntry] = field(default_factory=list)
+    source_uri: str | None = None
+    source_format: str | None = None
+    encoding: str | None = None
 
     def is_empty(self) -> bool:
         return not any(e.source.strip() for e in self.entries)
@@ -92,6 +97,19 @@ class Glossary:
                 )
             )
         return cls(entries=entries)
+
+    @classmethod
+    def from_dict_with_metadata(cls, data: dict[str, object]) -> Glossary:
+        """Build a glossary and capture source metadata at the dictionary level."""
+        glos = cls.from_dict(data)
+        if isinstance(data, dict):
+            uri = data.get("source_uri")
+            fmt = data.get("source_format")
+            enc = data.get("encoding")
+            glos.source_uri = str(uri) if uri else None
+            glos.source_format = str(fmt) if fmt else None
+            glos.encoding = str(enc) if enc else None
+        return glos
 
     @classmethod
     def from_paired_lines(cls, text: str) -> Glossary:

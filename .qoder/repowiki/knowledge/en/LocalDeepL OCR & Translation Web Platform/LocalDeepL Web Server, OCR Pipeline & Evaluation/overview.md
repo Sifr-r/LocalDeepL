@@ -1,0 +1,1 @@
+FastAPI web server exposing OCR/translation endpoints with WebSocket progress, a programmatic OCRPipeline facade over Grounded/Hybrid engines, and a confidence evaluation tool that compares pipeline output against GLM-OCR ground-truth fixtures.

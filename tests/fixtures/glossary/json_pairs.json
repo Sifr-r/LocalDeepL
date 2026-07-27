@@ -1,0 +1,7 @@
+{
+  "entries": [
+    {"source": "Hello", "target": "Hola"},
+    {"source": "World", "target": "Mundo"},
+    {"source": "FastAPI", "target": "FastAPI", "case_sensitive": true}
+  ]
+}

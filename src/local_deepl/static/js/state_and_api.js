@@ -15,7 +15,6 @@ const state = {
     resultBlob: null,
     resultFilename: null,
     rawTextResult: null,
-    translatedText: "",
     extractedJson: null,
     translationTabResult: ""
 };
@@ -131,14 +130,8 @@ const refs = {
     dlMdBtn: document.getElementById('dl-md-btn'),
     dlMdDocxBtn: document.getElementById('dl-md-docx-btn'),
     
-    // Translation features
-    translateLangSelect: document.getElementById('translate-lang-select'),
-    translateBtn: document.getElementById('translate-btn'),
-    translatedMarkdownContent: document.getElementById('translated-markdown-content'),
-    copyTransBtn: document.getElementById('copy-trans-btn'),
-    dlTransBtn: document.getElementById('dl-trans-btn'),
-    dlTransDocxBtn: document.getElementById('dl-trans-docx-btn'),
-    openTranslationTabBtn: document.getElementById('open-translation-tab-btn'),
+    // Translation features (top-level Translation view)
+    translateInTabBtn: document.getElementById('translate-in-tab-btn'),
 
     // Top-level app shell + Translation view
     appTabBtns: document.querySelectorAll('.app-tab-btn'),
@@ -176,14 +169,45 @@ const refs = {
     copyJsonBtn: document.getElementById('copy-json-btn'),
     dlJsonBtn: document.getElementById('dl-json-btn'),
     
-    // Global Server Connection modal
-    btnOpenSettingsModal: document.getElementById('btn-open-settings-modal'),
-    settingsModal: document.getElementById('settings-modal'),
-    settingsModalClose: document.getElementById('settings-modal-close'),
-    settingsModalCancel: document.getElementById('settings-modal-cancel'),
-    settingsModalSave: document.getElementById('settings-modal-save'),
+    // Glossary (top-level Glossary view)
+    glossaryTextarea: document.getElementById('glossary-textarea'),
+    glossarySaveBtn: document.getElementById('glossary-save-btn'),
+    glossaryStatus: document.getElementById('glossary-status'),
+
+    // Glossary library (multi-source import management)
+    glossaryLibraryTable: document.getElementById('glossary-library-table'),
+    glossaryLibraryTbody: document.getElementById('glossary-library-tbody'),
+    glossaryImportBtn: document.getElementById('glossary-import-btn'),
+    glossaryPreviewBtn: document.getElementById('glossary-preview-btn'),
+    glossaryPreviewPanel: document.getElementById('glossary-preview-panel'),
+    glossaryImportModal: document.getElementById('glossary-import-modal'),
+    glossaryImportFormat: document.getElementById('glossary-import-format'),
+    glossaryImportTextGroup: document.getElementById('glossary-import-text-group'),
+    glossaryImportText: document.getElementById('glossary-import-text'),
+    glossaryImportFileGroup: document.getElementById('glossary-import-file-group'),
+    glossaryImportFile: document.getElementById('glossary-import-file'),
+    glossaryImportGitGroup: document.getElementById('glossary-import-git-group'),
+    glossaryImportGitUrl: document.getElementById('glossary-import-git-url'),
+    glossaryImportGitPath: document.getElementById('glossary-import-git-path'),
+    glossaryImportGitRef: document.getElementById('glossary-import-git-ref'),
+    glossaryImportSqlGroup: document.getElementById('glossary-import-sql-group'),
+    glossaryImportSqlDsn: document.getElementById('glossary-import-sql-dsn'),
+    glossaryImportSqlSourceTable: document.getElementById('glossary-import-sql-source-table'),
+    glossaryImportSqlTargetTable: document.getElementById('glossary-import-sql-target-table'),
+    glossaryImportSqlSourceCol: document.getElementById('glossary-import-sql-source-col'),
+    glossaryImportSqlTargetCol: document.getElementById('glossary-import-sql-target-col'),
+    glossaryImportSqlWhere: document.getElementById('glossary-import-sql-where'),
+    glossaryImportName: document.getElementById('glossary-import-name'),
+    glossaryImportSubmit: document.getElementById('glossary-import-submit'),
+    glossaryImportCancel: document.getElementById('glossary-import-cancel'),
+    glossaryImportStatus: document.getElementById('glossary-import-status'),
+
+    // Server Configuration lives in the top-level Settings tab now.
+    // `setting-api-base`, `setting-api-key`, and `connection-status-dot`
+    // are still in the ref registry so `loadConfig()` / `saveConfig()` / `fetchModels()`
+    // keep working as-is.
     connectionStatusDot: document.getElementById('connection-status-dot'),
-    
+
     toastContainer: document.getElementById('toast-container')
 };
 
@@ -469,7 +493,7 @@ async function translateText(text, targetLang) {
 
 async function extractData(text, template, customPrompt = "") {
     if (!text.trim()) return {};
-    
+
     const settings = getFormSettings();
     const body = {
         text: text,
@@ -479,18 +503,25 @@ async function extractData(text, template, customPrompt = "") {
         api_key: settings.api_key,
         model: settings.model
     };
-    
+
     const res = await fetch('/api/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
     });
-    
+
     if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error || 'Data extraction request failed');
     }
-    
+
     const data = await res.json();
     return data.extracted_data || {};
+}
+
+// Expose the refs registry globally so independent scripts (e.g. the
+// glossary manager) can attach to the same DOM handles without re-querying.
+if (typeof window !== 'undefined') {
+    window.refs = refs;
+    window.state = state;
 }

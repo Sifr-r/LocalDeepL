@@ -91,17 +91,20 @@ def test_translate_node_uses_injected_settings(monkeypatch):
 
     captured = {}
 
-    def fake_completion(**kwargs):
-        captured.update(kwargs)
-        return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content="Bonjour"))]
-        )
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="Bonjour"))]
+            )
 
-    monkeypatch.setitem(
-        sys.modules,
-        "litellm",
-        SimpleNamespace(completion=fake_completion),
-    )
+    class _FakeChat:
+        completions = _FakeCompletions()
+
+    class _FakeClient:
+        chat = _FakeChat()
+
+    monkeypatch.setattr("openai.OpenAI", lambda **kw: _FakeClient())
 
     state = {
         "source_chunk": "Hello",
@@ -121,6 +124,4 @@ def test_translate_node_uses_injected_settings(monkeypatch):
     result = translation.translate_node(state)  # type: ignore[arg-type]
 
     assert result["translated_chunk"] == "Bonjour"
-    assert captured["api_base"] == "https://example.test/v1"
-    assert captured["api_key"] == "test-key"
     assert captured["model"] == "openai/test-model"

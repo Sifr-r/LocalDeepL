@@ -34,13 +34,10 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     // Load Runtime Configuration from server
     await loadConfig();
-    
+
     // Wire up Drag and Drop for premium dropzones
     setupUploaderDragAndDrop();
-    
-    // Wire up Server settings modal triggers
-    setupSettingsModal();
-    
+
     // Wire up AI workstation right sidebar tabs
     setupAIWorkstationTabs();
     
@@ -133,16 +130,6 @@ async function connectWS() {
             // Page complete event: notify thumbnails
             if (data.type === 'page_complete') {
                 window.dispatchEvent(new CustomEvent('ocr-page-complete', { detail: data }));
-                return;
-            }
-            // Translation chunk event: stream translated text into the right pane.
-            if (data.type === 'translate_chunk_complete') {
-                if (refs.translatedMarkdownContent) {
-                    const cur = refs.translatedMarkdownContent.textContent || '';
-                    refs.translatedMarkdownContent.textContent =
-                        (cur ? cur + '\n\n' : '') + data.translated_text;
-                    renderMarkdownSafely(refs.translatedMarkdownContent);
-                }
                 return;
             }
             // Cancellation: surface and stop the progress bar.
@@ -354,11 +341,6 @@ async function fetchExtractedText() {
         }
         if(refs.textContent) refs.textContent.value = plain;
         
-        // Pre-populate translator content
-        if(refs.translatedMarkdownContent) {
-            refs.translatedMarkdownContent['inner' + 'HTML'] = "";
-        }
-        
         // Switch to Tab 1 (Markdown) automatically
         const tabMd = document.getElementById('tab-btn-text');
         if (tabMd) tabMd.click();
@@ -368,33 +350,7 @@ async function fetchExtractedText() {
     }
 }
 
-// 4. Server Configuration Settings Modal
-function setupSettingsModal() {
-    if (!refs.btnOpenSettingsModal) return;
-    
-    refs.btnOpenSettingsModal.addEventListener('click', () => {
-        if(refs.settingsModal) refs.settingsModal.classList.remove('hidden');
-    });
-    
-    const closeModal = () => {
-        if(refs.settingsModal) refs.settingsModal.classList.add('hidden');
-    };
-    
-    refs.settingsModalClose?.addEventListener('click', closeModal);
-    refs.settingsModalCancel?.addEventListener('click', closeModal);
-    
-    refs.settingsModalSave?.addEventListener('click', async () => {
-        await saveConfig();
-        closeModal();
-        showToast('Settings saved successfully!', 'success');
-        
-        // Refresh models list based on new Server endpoint
-        const currentModel = refs.modelSelect ? refs.modelSelect.value : null;
-        await fetchModels(currentModel);
-    });
-}
-
-// 5. Right Sidebar AI Workstation Tabs
+// 4. Right Sidebar AI Workstation Tabs
 function setupAIWorkstationTabs() {
     refs.tabBtns.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -447,63 +403,6 @@ function setupAIFeatures() {
     refs.dlTxtBtn?.addEventListener('click', () => {
         if (refs.textContent && refs.textContent.value.trim()) {
             downloadBlobFile(refs.textContent.value, 'extracted_document.txt', 'text/plain');
-        }
-    });
-
-    // --- AI Translator triggers ---
-    refs.translateBtn?.addEventListener('click', async () => {
-        const text = state.rawTextResult || "";
-        if (!text.trim()) {
-            showToast("No extracted text found. Run OCR first!", "error");
-            return;
-        }
-        
-        const lang = refs.translateLangSelect ? refs.translateLangSelect.value : "Spanish";
-        
-        refs.translateBtn.disabled = true;
-        refs.translateBtn.innerText = "Translating...";
-        if(refs.translatedMarkdownContent) {
-            refs.translatedMarkdownContent['inner' + 'HTML'] = `<span class="text-muted" style="font-style:italic;">AI is translating your document. Please wait...</span>`;
-        }
-        
-        try {
-            const translated = await translateText(text, lang);
-            state.translatedText = translated;
-            if(refs.translatedMarkdownContent) {
-                refs.translatedMarkdownContent['inner' + 'HTML'] = renderMarkdownToHtml(translated);
-            }
-            showToast(`Document translated to ${lang}!`, 'success');
-        } catch (e) {
-            showToast(`Translation failed: ${e.message}`, 'error');
-            if(refs.translatedMarkdownContent) {
-                refs.translatedMarkdownContent['inner' + 'HTML'] = `<span class="error-text">Error: ${e.message}</span>`;
-            }
-        } finally {
-            refs.translateBtn.disabled = false;
-            refs.translateBtn.innerText = "Translate";
-        }
-    });
-
-    // Copy / Download Translated text
-    refs.copyTransBtn?.addEventListener('click', () => {
-        if (state.translatedText && state.translatedText.trim()) {
-            navigator.clipboard.writeText(state.translatedText).then(() => {
-                showToast('Translation copied!', 'success');
-            });
-        }
-    });
-    
-    refs.dlTransBtn?.addEventListener('click', () => {
-        if (state.translatedText && state.translatedText.trim()) {
-            const lang = refs.translateLangSelect ? refs.translateLangSelect.value : "Translated";
-            downloadBlobFile(state.translatedText, `translated_${lang.toLowerCase()}.md`, 'text/markdown');
-        }
-    });
-    
-    refs.dlTransDocxBtn?.addEventListener('click', () => {
-        if (state.translatedText && state.translatedText.trim()) {
-            const lang = refs.translateLangSelect ? refs.translateLangSelect.value : "Translated";
-            downloadDocxFile(state.translatedText, `translated_${lang.toLowerCase()}.docx`);
         }
     });
 
@@ -605,18 +504,16 @@ function setupAppShellTabs() {
         switchAppView('view-workstation');
     }
 
-    // Workstation Translator "Open in Translation tab" link
-    refs.openTranslationTabBtn?.addEventListener('click', () => {
-        // Pre-populate the translation source from the latest OCR result
+    // Workstation Markdown "Translate →" chip: send OCR'd text to the Translation view
+    refs.translateInTabBtn?.addEventListener('click', () => {
         const sourceText = state.rawTextResult || '';
-        if (sourceText.trim() && refs.translationSourceText) {
+        if (!sourceText.trim()) {
+            showToast('No extracted text yet. Run OCR first.', 'error');
+            return;
+        }
+        if (refs.translationSourceText) {
             refs.translationSourceText.value = sourceText;
         }
-        // Mirror the language selection
-        if (refs.translateLangSelect && refs.translationTabLangSelect) {
-            refs.translationTabLangSelect.value = refs.translateLangSelect.value;
-        }
-        // Force source mode to paste since we're carrying text
         setTranslationSourceMode('paste');
         switchAppView('view-translation');
     });
@@ -692,81 +589,110 @@ function getTranslationTabSourceText() {
     return '';
 }
 
-// One-shot: run OCR on the uploaded file, fetch the extracted markdown,
-// then immediately translate it into the selected language.
-async function runTranslationTabOcrAndTranslate(file, lang) {
-    if (!file) return;
-    setTranslationFileInfo(file, 'Uploading & OCR…');
-    setTranslationOcrProgress('Uploading', 5);
+// Reconstruct readable lines from PDF.js text items by grouping on Y position.
+function buildLinesFromTextItems(items) {
+    const filtered = items.filter(it => it.str && it.str.trim());
+    if (!filtered.length) return '';
 
-    const formData = await buildProcessFormData(file);
+    // Sort top-to-bottom (PDF y-axis points up), then left-to-right
+    const sorted = [...filtered].sort((a, b) => {
+        const dy = b.transform[5] - a.transform[5];
+        if (Math.abs(dy) > 2.5) return dy;
+        return a.transform[4] - b.transform[4];
+    });
 
-    let response;
-    try {
-        response = await fetch('/process', {
-            method: 'POST',
-            body: formData
-        });
-    } catch (e) {
-        setTranslationOcrProgress(null, 0);
-        setTranslationFileInfo(file, 'Upload failed');
-        showToast(`OCR upload failed: ${e.message}`, 'error');
-        return;
-    }
-
-    if (!response.ok) {
-        setTranslationOcrProgress(null, 0);
-        setTranslationFileInfo(file, 'OCR failed');
-        let errMsg = 'OCR processing failed';
-        try { const err = await response.json(); errMsg = err.error || errMsg; } catch (_) {}
-        showToast(errMsg, 'error');
-        return;
-    }
-
-    const artifactId = response.headers.get('X-Text-Artifact-Id');
-    const artifactToken = response.headers.get('X-Text-Artifact-Token');
-    if (!artifactId || !artifactToken) {
-        setTranslationOcrProgress(null, 0);
-        setTranslationFileInfo(file, 'Artifact missing');
-        showToast('OCR completed but text artifact metadata was missing.', 'error');
-        return;
-    }
-
-    setTranslationOcrProgress('Extracting text', 60);
-
-    let markdown = '';
-    try {
-        const textResp = await fetch(`/text/${encodeURIComponent(artifactId)}?t=${Date.now()}`, {
-            headers: { Authorization: `Bearer ${artifactToken}` }
-        });
-        if (!textResp.ok) throw new Error('Could not fetch extracted text');
-        const textMap = await textResp.json();
-        for (const [page, lines] of Object.entries(textMap)) {
-            markdown += `## Page ${parseInt(page) + 1}\n\n`;
-            markdown += lines.join('\n\n') + "\n\n";
+    // Group items sharing the same baseline into lines
+    const lines = [];
+    let line = [sorted[0]];
+    for (let i = 1; i < sorted.length; i++) {
+        if (Math.abs(sorted[i].transform[5] - line[0].transform[5]) <= 2.5) {
+            line.push(sorted[i]);
+        } else {
+            lines.push(line);
+            line = [sorted[i]];
         }
+    }
+    lines.push(line);
+
+    return lines
+        .map(l => l
+            .sort((a, b) => a.transform[4] - b.transform[4])
+            .map(it => it.str)
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+        )
+        .filter(Boolean)
+        .join('\n');
+}
+
+// Extract text directly from a document without OCR.
+// PDF  -> embedded text layer via PDF.js (client-side)
+// TXT/MD -> plain text read
+async function extractTextFromDocument(file) {
+    const ext = '.' + file.name.split('.').pop().toLowerCase();
+
+    if (ext === '.pdf') {
+        await loadPdfJs();
+        const buffer = await file.arrayBuffer();
+        const pdfDoc = await window.pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
+        let markdown = '';
+        for (let i = 1; i <= pdfDoc.numPages; i++) {
+            const page = await pdfDoc.getPage(i);
+            const textContent = await page.getTextContent();
+            const pageText = buildLinesFromTextItems(textContent.items);
+            if (pageText.trim()) {
+                markdown += `## Page ${i}\n\n${pageText}\n\n`;
+            }
+        }
+        return markdown;
+    }
+
+    if (ext === '.txt' || ext === '.md') {
+        return await file.text();
+    }
+
+    throw new Error(
+        `Unsupported file type for direct translation: ${ext}. ` +
+        'Images and scanned PDFs require OCR — use the Workstation tab.'
+    );
+}
+
+// One-shot: extract text from the uploaded file (no OCR), then translate.
+async function runTranslationTabUploadAndTranslate(file, lang) {
+    if (!file) return;
+    setTranslationFileInfo(file, 'Extracting text…');
+    setTranslationOcrProgress('Extracting text', 20);
+
+    let sourceText = '';
+    try {
+        sourceText = await extractTextFromDocument(file);
     } catch (e) {
         setTranslationOcrProgress(null, 0);
-        setTranslationFileInfo(file, 'Text fetch failed');
-        showToast(`Text fetch failed: ${e.message}`, 'error');
+        setTranslationFileInfo(file, 'Extraction failed');
+        showToast(e.message, 'error');
         return;
     }
 
-    if (!markdown.trim()) {
+    if (!sourceText.trim()) {
         setTranslationOcrProgress(null, 0);
-        setTranslationFileInfo(file, 'No text found');
-        showToast('OCR did not return any text. Try a different file or settings.', 'error');
+        setTranslationFileInfo(file, 'No embedded text');
+        showToast(
+            'No embedded text found — this PDF appears to be scanned. ' +
+            'Run OCR in the Workstation tab first.',
+            'error'
+        );
         return;
     }
 
-    // Mirror the OCR'd text into the paste textarea so the user can edit before re-translating
-    if (refs.translationSourceText) refs.translationSourceText.value = markdown;
+    // Mirror the extracted text into the paste textarea so the user can edit before re-translating
+    if (refs.translationSourceText) refs.translationSourceText.value = sourceText;
 
-    setTranslationOcrProgress('Translating', 85);
+    setTranslationOcrProgress('Translating', 60);
     setTranslationFileInfo(file, 'Translating…');
 
     try {
-        const translated = await translateText(markdown, lang);
+        const translated = await translateText(sourceText, lang);
         state.translationTabResult = translated;
         if (refs.translationTabOutput) {
             refs.translationTabOutput['inner' + 'HTML'] = renderMarkdownToHtml(translated);
@@ -825,10 +751,10 @@ function setupTranslationTab() {
     // Main translate action
     refs.translationTabTranslateBtn.addEventListener('click', async () => {
         const lang = refs.translationTabLangSelect?.value || 'English';
-        // If a file is staged, run OCR + translate
+        // If a file is staged, extract its text directly (no OCR) and translate
         const stagedFile = refs.translationFileInput?.files?.[0];
         if (stagedFile) {
-            await runTranslationTabOcrAndTranslate(stagedFile, lang);
+            await runTranslationTabUploadAndTranslate(stagedFile, lang);
             return;
         }
         // Otherwise, translate whatever's in the source textarea

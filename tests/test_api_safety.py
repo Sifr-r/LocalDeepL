@@ -551,7 +551,7 @@ def test_translate_error_response_does_not_expose_internal_exception():
     client = _api_client()
     with (
         patch("local_deepl.utils.security.socket.getaddrinfo", side_effect=_public_dns),
-        patch("litellm.acompletion", fail_completion),
+        patch("local_deepl.api.services.ai.call_llm", fail_completion),
     ):
         response = client.post(
             "/api/translate",

@@ -3,46 +3,80 @@ schema_version: 1
 locale: en-US
 branch: main
 nodes_managed: true
-exported_at: "2026-07-20T19:12:26Z"
+exported_at: "2026-07-27T00:51:35Z"
 modules:
     "":
-        dir_name: LocalDeepL — Local LLM Vision OCR & Translation Platform
-        title: LocalDeepL — Local LLM Vision OCR & Translation Platform
+        dir_name: LocalDeepL OCR & Translation Web Platform
+        title: LocalDeepL OCR & Translation Web Platform
         scope:
             - README.md
-            - ARCHITECTURE.md
-            - AGENTS.md
             - .gitignore
-            - .pre-commit-config.yaml
             - pyproject.toml
-            - Dockerfile
+            - Makefile
             - compose.yaml
+            - Dockerfile
+            - AGENTS.md
+            - ARCHITECTURE.md
+            - .env.example
+            - .fallowrc.json
+            - .pre-commit-config.yaml
+            - LICENSE
             - install.ps1
             - phase2_reqs.txt
             - phase3_text.txt
+            - screenshot_full.png
+            - screenshot_new_ui.png
             - test_ui.py
-            - .fallowrc.json
+            - user_prompt.json
+            - uv.lock
         source_files: []
         children:
-            - scripts_and_examples
+            - docs_and_plans
+            - package_root
+            - scripts
             - tests
         depends_on: []
         related_to: []
-    scripts_and_examples:
-        dir_name: Development, Evaluation & Visualization Scripts
-        title: Development, Evaluation & Visualization Scripts
+    docs_and_plans:
+        dir_name: God-Module Decomposition Plan & Design Specs
+        title: God-Module Decomposition Plan & Design Specs
+        scope:
+            - docs/
+            - .mavis/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    package_root:
+        dir_name: LocalDeepL Web Server, OCR Pipeline & Evaluation
+        title: LocalDeepL Web Server, OCR Pipeline & Evaluation
+        scope:
+            - src/local_deepl/server.py
+            - src/local_deepl/pipeline.py
+            - src/local_deepl/evaluation.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: tests
+    scripts:
+        dir_name: Development, Evaluation & Debugging Scripts
+        title: Development, Evaluation & Debugging Scripts
         scope:
             - scripts/
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: tests
     tests:
-        dir_name: Pytest Test Suite & Fixtures
-        title: Pytest Test Suite & Fixtures
+        dir_name: Pytest Test Suite for LocalDeepL OCR Pipeline
+        title: Pytest Test Suite for LocalDeepL OCR Pipeline
         scope:
             - tests/
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: package_root
+            - path: scripts

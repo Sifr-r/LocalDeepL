@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<martif type="TBX" xml:lang="en">
+    <termEntry id="c1">
+        <langSet xml:lang="en">
+            <tig>
+                <term>Hello</term>
+            </tig>
+        </langSet>
+        <langSet xml:lang="es">
+            <tig>
+                <term>Hola</term>
+            </tig>
+        </langSet>
+    </termEntry>
+    <termEntry id="c2">
+        <langSet xml:lang="en">
+            <tig>
+                <term>Goodbye</term>
+            </tig>
+        </langSet>
+        <langSet xml:lang="es">
+            <tig>
+                <term>Adiós</term>
+            </tig>
+        </langSet>
+    </termEntry>
+</martif>

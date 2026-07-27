@@ -1,0 +1,1 @@
+Pytest with async test support (`async def` tests), `fitz` (PyMuPDF) for PDF inspection, base64 image handling, and JSON fixtures for ground-truth validation. The Surya HybridAligner is loaded once per session to amortize its ~5s initialization cost.

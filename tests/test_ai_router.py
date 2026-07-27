@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from fastapi import FastAPI
@@ -19,12 +18,6 @@ def _api_client() -> TestClient:
     return TestClient(app)
 
 
-def _completion_response(content: str) -> SimpleNamespace:
-    return SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
-    )
-
-
 def test_translate_provider_error_response_is_stable():
     async def fail_completion(*args, **kwargs):
         raise RuntimeError("secret-api-key leaked by provider")
@@ -35,7 +28,7 @@ def test_translate_provider_error_response_is_stable():
             "local_deepl.api.services.ai.is_ssrf_target",
             new=AsyncMock(return_value=False),
         ),
-        patch("litellm.acompletion", fail_completion),
+        patch("local_deepl.api.services.ai.call_llm", fail_completion),
     ):
         response = client.post(
             "/api/translate",
@@ -56,7 +49,7 @@ def test_translate_provider_error_response_is_stable():
 
 def test_extract_invalid_json_returns_empty_object():
     async def invalid_json_completion(*args, **kwargs):
-        return _completion_response("not valid json")
+        return "not valid json"
 
     client = _api_client()
     with (
@@ -64,7 +57,7 @@ def test_extract_invalid_json_returns_empty_object():
             "local_deepl.api.services.ai.is_ssrf_target",
             new=AsyncMock(return_value=False),
         ),
-        patch("litellm.acompletion", invalid_json_completion),
+        patch("local_deepl.api.services.ai.call_llm", invalid_json_completion),
     ):
         response = client.post(
             "/api/extract",

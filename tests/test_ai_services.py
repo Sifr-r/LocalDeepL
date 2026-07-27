@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -22,18 +21,12 @@ def _config() -> dict[str, object]:
     }
 
 
-def _completion(content: str) -> SimpleNamespace:
-    return SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
-    )
-
-
 async def test_translate_uses_request_settings_and_builds_prompt():
     calls: list[dict[str, Any]] = []
 
     async def capture_completion(**kwargs):
         calls.append(kwargs)
-        return _completion("  Traduccion directa  ")
+        return "  Traduccion directa  "
 
     request = TranslationRequest(
         text="# Hello\n\nA table follows.",
@@ -48,7 +41,7 @@ async def test_translate_uses_request_settings_and_builds_prompt():
             "local_deepl.api.services.ai.is_ssrf_target",
             new=AsyncMock(return_value=False),
         ),
-        patch("litellm.acompletion", capture_completion),
+        patch("local_deepl.api.services.ai.call_llm", capture_completion),
     ):
         translated = await ai.translate_text(request, config=_config())
 
@@ -57,7 +50,6 @@ async def test_translate_uses_request_settings_and_builds_prompt():
     assert calls[0]["api_base"] == "http://request.example/v1"
     assert calls[0]["api_key"] == "request-key"
     assert calls[0]["model"] == "custom-local-model"
-    assert calls[0]["custom_llm_provider"] == "openai"
     assert calls[0]["temperature"] == 0.3
     prompt = calls[0]["messages"][0]["content"]
     assert "Translate the following document text into Spanish" in prompt
@@ -70,9 +62,7 @@ async def test_extract_uses_template_prompt_and_config_defaults():
 
     async def capture_completion(**kwargs):
         calls.append(kwargs)
-        return _completion(
-            '```json\n{"vendor_name": "Acme", "total_amount": "10.00"}\n```'
-        )
+        return '```json\n{"vendor_name": "Acme", "total_amount": "10.00"}\n```'
 
     request = ExtractionRequest(
         text="Invoice from Acme", template=ExtractionTemplate.INVOICE
@@ -83,7 +73,7 @@ async def test_extract_uses_template_prompt_and_config_defaults():
             "local_deepl.api.services.ai.is_ssrf_target",
             new=AsyncMock(return_value=False),
         ),
-        patch("litellm.acompletion", capture_completion),
+        patch("local_deepl.api.services.ai.call_llm", capture_completion),
     ):
         extracted = await ai.extract_structured_data(request, config=_config())
 
@@ -100,7 +90,7 @@ async def test_extract_uses_template_prompt_and_config_defaults():
 
 async def test_extract_invalid_json_returns_empty_object():
     async def bad_completion(**kwargs):
-        return _completion("Bad model output with no JSON")
+        return "Bad model output with no JSON"
 
     request = ExtractionRequest(
         text="Invoice text",
@@ -113,7 +103,7 @@ async def test_extract_invalid_json_returns_empty_object():
             "local_deepl.api.services.ai.is_ssrf_target",
             new=AsyncMock(return_value=False),
         ),
-        patch("litellm.acompletion", bad_completion),
+        patch("local_deepl.api.services.ai.call_llm", bad_completion),
     ):
         assert await ai.extract_structured_data(request, config=_config()) == {}
 
@@ -136,7 +126,7 @@ async def test_ssrf_blocking_is_distinct_and_skips_provider_call():
             "local_deepl.api.services.ai.is_ssrf_target",
             new=AsyncMock(return_value=True),
         ),
-        patch("litellm.acompletion", unexpected_completion),
+        patch("local_deepl.api.services.ai.call_llm", unexpected_completion),
         pytest.raises(ai.BlockedAPIBaseError) as exc_info,
     ):
         await ai.translate_text(request, config=_config())
@@ -161,7 +151,7 @@ async def test_provider_failure_wraps_without_public_detail_leak():
             "local_deepl.api.services.ai.is_ssrf_target",
             new=AsyncMock(return_value=False),
         ),
-        patch("litellm.acompletion", fail_completion),
+        patch("local_deepl.api.services.ai.call_llm", fail_completion),
         pytest.raises(ai.AIProviderError) as exc_info,
     ):
         await ai.translate_text(request, config=_config())

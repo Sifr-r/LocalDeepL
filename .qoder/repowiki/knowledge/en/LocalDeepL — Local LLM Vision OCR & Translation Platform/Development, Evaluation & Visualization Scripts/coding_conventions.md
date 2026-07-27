@@ -1,4 +1,0 @@
-- Each script is self-contained: it adds the repo root to `sys.path`, sets `TQDM_DISABLE=1`, reconfigures stdout to UTF-8, then defines a single `main()` driven by `argparse` and calls `asyncio.run(main())` when needed.
-- Fixture JSON files follow a fixed schema with top-level `data.layout` entries containing `block_content`, `bbox` as `[y0,x0,y1,x1]` in pixels, `block_id`, `page_index`, `block_label`, and `score`, plus a `data.data_info.pages` list of `{width,height}` dicts.
-- Bounding boxes produced by `HybridAligner` are normalized `[nx0,ny0,nx1,ny1]` and must be scaled by page width/height before drawing or comparing against pixel-space GT bboxes.
-- Debug/visualization scripts operate only on the first page of a PDF and write their output image next to the working directory rather than into a dedicated artifacts folder.

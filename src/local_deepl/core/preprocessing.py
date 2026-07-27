@@ -7,11 +7,12 @@ import io
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-import cv2
-import numpy as np
 from PIL import Image, ImageOps
+
+if TYPE_CHECKING:
+    import numpy as np
 
 # CLAHE contrast normalisation defaults. `clip_limit=2.0` is the
 # widely-cited sweet spot for scanned-document text — higher values
@@ -106,7 +107,11 @@ class HandwritingPagePreprocessor:
 
 
 class LocalPagePreprocessor:
-    """Deterministic local image cleanup built from OpenCV and Pillow."""
+    """Deterministic local image cleanup built from OpenCV and Pillow.
+
+    Requires ``opencv-python-headless`` and ``numpy`` at runtime (install
+    the ``preprocessing`` extra: ``uv sync --extra preprocessing``).
+    """
 
     def preprocess(
         self,
@@ -115,6 +120,9 @@ class LocalPagePreprocessor:
     ) -> PagePreprocessingResult:
         if not options.enabled:
             return PagePreprocessingResult(images=dict(images))
+
+        import cv2
+        import numpy as np
 
         processed: dict[int, str] = {}
         metadata: dict[int, dict[str, object]] = {}
@@ -186,6 +194,8 @@ def _trim_border(image: Image.Image) -> tuple[Image.Image, dict[str, object]]:
 
 
 def _normalize_contrast(array: np.ndarray) -> np.ndarray:
+    import cv2
+
     # ⚡ Bolt: replace cv2.split / cv2.merge (3 full-plane copies of the LAB
     # image) with a single in-place L-plane write. CLAHE only touches the L
     # channel, so copying A and B is pure waste. On a 1024x1024 page this
@@ -200,6 +210,9 @@ def _normalize_contrast(array: np.ndarray) -> np.ndarray:
 
 
 def _deskew(array: np.ndarray) -> tuple[np.ndarray, float]:
+    import cv2
+    import numpy as np
+
     gray = cv2.cvtColor(array, cv2.COLOR_RGB2GRAY)
     gray = cv2.bitwise_not(gray)
     coords = np.column_stack(np.where(gray > 0))

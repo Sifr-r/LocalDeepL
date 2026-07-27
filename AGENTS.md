@@ -60,7 +60,7 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/local_deepl/pipeline.py` | `OCRPipeline` facade — picks `HybridEngine` or `GroundedEngine` based on injected components |
 | `src/local_deepl/evaluation.py` | Package-root confidence eval (fixture loader, IoU matching, `ConfidenceReport`) for `scripts/confidence_*.py` |
 | `src/local_deepl/core/document.py` | Normalized DocumentResult IR and legacy pages-data adapter |
-| `src/local_deepl/core/processors.py` | Local deterministic document processors and user-facing processor builder |
+| `src/local_deepl/core/processors/` | Local deterministic document processors (`reading_order`, `quality`, `structure`, `section`, `layout`, `table`) and builder |
 | `src/local_deepl/core/preprocessing.py` | Local hybrid-path page preprocessing |
 | `src/local_deepl/core/routing.py` | Quality routing recommendation metadata |
 | `src/local_deepl/core/evaluation.py` | Local evaluation metric helpers (lightweight, for processor result scoring) |
@@ -68,12 +68,13 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/local_deepl/core/aligner.py` | Surya detection and DP alignment |
 | `src/local_deepl/core/ocr/` | LiteLLM OCR calls, prompts, limits, filters, and resilience (retry + circuit breaker) |
 | `src/local_deepl/core/ocr/resilience.py` | `is_transient_error` classification, `CircuitBreaker` (closed/open/half-open), `CircuitOpenError` |
-| `src/local_deepl/core/pdf.py` | PDF/image conversion and sandwich-PDF embedding; implements `DocumentResultWriter` |
+| `src/local_deepl/core/pdf/` | PDF/image rasterization (`rasterizer.py`), sandwich PDF embedding (`embedder.py`), and `PDFHandler` facade (`handler.py`) |
 | `src/local_deepl/core/grounded/` | Grounded backends and bbox JSON parsers (retry + circuit breaker on the VLM call) |
 | `src/local_deepl/core/postprocess.py` | Dictionary spellcheck |
 | `src/local_deepl/core/translation_config.py` | Core-owned async translation settings |
 | `src/local_deepl/core/translation.py` | Optional LangGraph translation workflow |
 | `src/local_deepl/core/workflows/base.py` | `EngineBase` + `OutputWriter` / `DocumentResultWriter` / `ProgressCallback` / `WarningCallback` shared by both engines |
+| `src/local_deepl/core/workflows/utils.py` | Stand-alone workflow helper functions (`parse_page_range`, `_estimate_confidence`, `_decode_page_image`, `_drop_refined_duplicates`) and constants |
 | `src/local_deepl/core/workflows/hybrid.py` | `HybridEngine` — Surya detect → VLM OCR → DP align → refine → post-process → processors → output |
 | `src/local_deepl/core/workflows/grounded.py` | `GroundedEngine` — single bbox-native VLM call → post-process → processors → output |
 | `src/local_deepl/resources/dictionaries/` | Packaged spellcheck dictionaries |
@@ -98,7 +99,7 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/local_deepl/api/services/workflow.py` | Web/API workflow summaries |
 | `src/local_deepl/api/services/ai.py` | Backing AI service for extraction and translation routes |
 | `src/local_deepl/utils/security.py` | SSRF target validation |
-| `src/local_deepl/utils/litellm_provider.py` | LiteLLM provider selection |
+| `src/local_deepl/core/handwriting_preprocessor.py` | Local handwriting image preprocessor |
 | `scripts/` | Developer utilities: confidence eval, fixture builder, debug/inspection scripts, bbox visualizers |
 | `examples/` | Sample PDFs and images for `tests/`, `test_ui.py`, and the confidence scripts |
 | `install.bat` / `install.ps1` / `start_app.vbs` / `stop_app.bat` / `test_ui.py` | Windows one-click install, hidden-start, stop, and Playwright smoke test |

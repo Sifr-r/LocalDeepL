@@ -308,10 +308,6 @@ refs.clearFileBtn?.addEventListener('click', () => {
         refs.mdContent['inner' + 'HTML'] = '';
     }
     if (refs.textContent) refs.textContent.value = '';
-    if (refs.translatedMarkdownContent) {
-        refs.translatedMarkdownContent.value = '';
-        refs.translatedMarkdownContent['inner' + 'HTML'] = '';
-    }
     if (refs.extractedJsonRaw) refs.extractedJsonRaw.value = '';
     renderExtractedJsonStatus('No data extracted yet.');
 });

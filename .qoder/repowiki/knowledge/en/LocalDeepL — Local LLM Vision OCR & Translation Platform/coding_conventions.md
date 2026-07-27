@@ -1,3 +1,0 @@
-- Optional feature stacks are declared as `[project.optional-dependencies]` extras in `pyproject.toml` and installed via `--extra <name>` rather than separate packages.
-- Ruff lint/format configuration lives centrally in `pyproject.toml`; per-file ignores are used only for pre-existing violations deferred to follow-up PRs.
-- Pre-commit hooks pin versions explicitly and keep `uv.lock` in sync with `pyproject.toml` via the `uv-pre-commit` hook.

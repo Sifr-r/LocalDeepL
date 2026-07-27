@@ -34,6 +34,7 @@ class FrameType(StrEnum):
     PAGE = "page_complete"
     TRANSLATE_CHUNK = "translate_chunk_complete"
     CANCELLED = "cancelled"
+    GLOSSARY_IMPORT = "glossary_import"
 
 
 CHANNEL_TOKEN_BYTES: Final = 24
@@ -166,6 +167,27 @@ class ProgressService:
             "status": message,
             "percent": 0,
             "stage": "cancelled",
+        }
+
+    @staticmethod
+    def build_glossary_import_frame(
+        *,
+        glossary_id: str,
+        name: str,
+        format_label: str,
+        entry_count: int,
+        warnings: list[str],
+        status: str = "complete",
+    ) -> dict[str, Any]:
+        """Terminal frame emitted after a glossary import finishes."""
+        return {
+            "type": FrameType.GLOSSARY_IMPORT.value,
+            "status": status,
+            "glossary_id": glossary_id,
+            "name": name,
+            "format": format_label,
+            "entry_count": entry_count,
+            "warnings": list(warnings),
         }
 
 

@@ -12,8 +12,8 @@ LocalDeepL turns scanned PDFs and images into searchable, selectable PDFs using 
 - **Searchable Output**: Sandwich PDFs with the original page image plus hidden searchable text.
 - **Hybrid OCR**: Surya layout detection, VLM OCR, DP alignment, optional refine, and searchable PDF embedding.
 - **Grounded OCR**: Bbox-native VLM path for models that return positioned text directly.
-- **Local Document Intelligence**: Optional web/API processors for preprocessing, reading order, quality analysis, structure, sections, layout enrichment, table extraction, quality routing, metadata reports, and structured exports.
-- **Web Workspace**: Page selection, WebSocket progress, preview, translation, extraction, export artifacts, and job history.
+- **Local Document Intelligence**: Optional web/API processors for preprocessing (including page cleanup and handwriting preprocessing), reading order, quality analysis, structure, sections, layout enrichment, table extraction, quality routing, metadata reports, and structured exports.
+- **Web Workstation**: Single-page workstation UI built with the DocuVerse CSS system (dark/light themes, glassmorphism, floating dock), page selection, WebSocket progress, preview, translation, extraction, export artifacts, and job history.
 
 ## Installation
 

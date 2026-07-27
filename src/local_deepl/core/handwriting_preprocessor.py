@@ -19,8 +19,14 @@ import io
 import logging
 from dataclasses import dataclass
 
-import cv2
-import numpy as np
+try:
+    import cv2
+    import numpy as np
+except ImportError as _exc:
+    raise ImportError(
+        "handwriting_preprocessor requires opencv-python-headless and numpy. "
+        "Install with: uv sync --extra preprocessing"
+    ) from _exc
 from PIL import Image
 
 logger = logging.getLogger(__name__)
