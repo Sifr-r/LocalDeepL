@@ -11,6 +11,7 @@ from PIL import Image
 from local_deepl.core.aligner import HybridAligner
 from local_deepl.core.document import DenseMode, SpellcheckMode
 from local_deepl.core.ocr import OCRProcessor
+from local_deepl.core.ocr.resilience import CircuitOpenError
 from local_deepl.core.pdf import PDFHandler
 from local_deepl.core.preprocessing import PagePreprocessingOptions, PagePreprocessor
 from local_deepl.core.processors import DocumentProcessor
@@ -87,9 +88,9 @@ class HybridEngine(EngineBase):
         progress: ProgressCallback | None = None,
         on_warning: WarningCallback | None = None,
     ) -> dict[int, list[str]]:
-        if dense_mode not in [m.value for m in DenseMode]:
+        if not isinstance(dense_mode, DenseMode):
             raise ValueError(
-                f"dense_mode must be one of {[m.value for m in DenseMode]}; got {dense_mode!r}"
+                f"dense_mode must be a DenseMode instance; got {dense_mode!r}"
             )
 
         self._reset_run_state()
@@ -171,11 +172,24 @@ class HybridEngine(EngineBase):
         pages: str | None,
         preprocessing_options: PagePreprocessingOptions | None,
         progress: ProgressCallback | None,
+        rasterize_batch_size: int = 8,
     ) -> tuple[dict[int, str], list[int], dict[int, dict[str, object]]]:
-        """Render the input to per-page images and apply optional preprocessing."""
+        """Render the input to per-page images and apply optional preprocessing.
+
+        H1 audit fix: rasterization now streams through
+        :meth:`PDFHandler.convert_batches` with a bounded batch size so
+        peak memory is independent of total page count. Each batch's
+        PIL.Image objects are released as soon as their base64 strings
+        are merged into the returned ``images_dict``.
+        """
         await notify(progress, "convert", 0, 1, "Converting PDF to images...")
-        images_dict = await asyncio.to_thread(
-            self.pdf_handler.convert_to_images, input_path, dpi, max_image_dim
+        images_dict: dict[int, str] = await asyncio.to_thread(
+            self._collect_batched_images,
+            input_path,
+            dpi,
+            max_image_dim,
+            pages,
+            rasterize_batch_size,
         )
         page_nums = sorted(images_dict.keys())
         total_pages = len(page_nums)
@@ -206,6 +220,47 @@ class HybridEngine(EngineBase):
         await notify(progress, "convert", 1, 1, f"Converted {total_pages} pages.")
 
         return images_dict, page_nums, preprocessing_metadata
+
+    def _collect_batched_images(
+        self,
+        input_path: str,
+        dpi: int,
+        max_image_dim: int,
+        pages: str | None,
+        batch_size: int,
+    ) -> dict[int, str]:
+        """Drive the bounded-memory batched rasterization and merge b64 strings.
+
+        H1 audit fix: the heavy lifting of ``_convert_pages`` runs in a
+        worker thread so the event loop is never blocked. ``isinstance``
+        gates the new streaming API on the concrete ``PDFHandler``
+        implementation so test ``MagicMock`` stubs (which auto-create
+        every attribute) keep working through the legacy
+        ``convert_to_images`` path they already mock.
+        """
+        images_dict: dict[int, str] = {}
+
+        if isinstance(self.pdf_handler, PDFHandler):
+            for batch in self.pdf_handler.convert_batches(
+                input_path,
+                batch_size=batch_size,
+                dpi=dpi,
+                pages=pages,
+                max_image_dim=max_image_dim,
+            ):
+                for page_num, _img, b64_str in batch:
+                    images_dict[page_num] = b64_str
+                # Drop the batch reference so its PIL.Image objects are
+                # eligible for GC before the next batch is decoded.
+                # ``_img`` is intentionally unused after extraction.
+                del batch
+            return images_dict
+
+        # Fallback: legacy handlers (test stubs, custom subclasses that
+        # predate the H1 fix) keep working via convert_to_images.
+        return self.pdf_handler.convert_to_images(
+            input_path, dpi=dpi, max_image_dim=max_image_dim
+        )
 
     async def _detect_layout(
         self,
@@ -305,6 +360,8 @@ class HybridEngine(EngineBase):
                     else:
                         aligned = pages_structured[p_num]
                     return p_num, aligned, None
+            except CircuitOpenError:
+                raise
             except Exception as e:
                 import logging
 
@@ -442,8 +499,10 @@ class HybridEngine(EngineBase):
         self_correction: bool = False,
         binarize: bool = False,
         dual_engine: bool = False,
+        page_image: Image.Image | None = None,
     ) -> PageBoxes:
-        page_image = await asyncio.to_thread(_decode_page_image, image_b64)
+        if page_image is None:
+            page_image = await asyncio.to_thread(_decode_page_image, image_b64)
 
         async def ocr_one(idx: int, bbox: list[float]) -> tuple[int, str]:
             try:
@@ -462,6 +521,8 @@ class HybridEngine(EngineBase):
                         dual_engine=dual_engine,
                     )
                     return idx, text
+            except CircuitOpenError:
+                raise
             except Exception as e:
                 import logging
 
@@ -529,6 +590,8 @@ class HybridEngine(EngineBase):
                         dual_engine=dual_engine,
                     )
                     return p_num, idx, text
+            except CircuitOpenError:
+                raise
             except Exception as e:
                 import logging
 

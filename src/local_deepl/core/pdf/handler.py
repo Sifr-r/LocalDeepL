@@ -7,8 +7,11 @@ conversion to images and searchable sandwich PDF embedding.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+from PIL import Image
 
 from local_deepl.core.pdf.embedder import (
     _draw_invisible_text,
@@ -22,6 +25,8 @@ from local_deepl.core.pdf.rasterizer import (
     MAX_SAFE_PIXELS,
     _calculate_safe_dpi,
     _images_from_image_file,
+    convert_batches,
+    convert_generator,
     convert_pdf_to_images,
 )
 
@@ -68,6 +73,65 @@ class PDFHandler:
         """
         return convert_pdf_to_images(pdf_path, dpi=dpi, max_image_dim=max_image_dim)
 
+    def convert(
+        self,
+        source: str | Path,
+        dpi: int = 200,
+        pages: str | None = None,
+        max_image_dim: int = 1024,
+    ) -> dict[int, str]:
+        """Backward-compatible eager entry point.
+
+        Historical alias for :meth:`convert_to_images` retained for
+        pre-existing callers (tests, custom subclasses). For large PDFs
+        prefer :meth:`convert_batches` (bounded peak memory) or
+        :meth:`convert_generator` (single-page streaming).
+        """
+        return convert_pdf_to_images(source, dpi=dpi, max_image_dim=max_image_dim)
+
+    def convert_generator(
+        self,
+        source: str | bytes | Path,
+        dpi: int = 200,
+        pages: str | None = None,
+        max_image_dim: int = 1024,
+    ) -> Iterator[tuple[int, Image.Image, str]]:
+        """Stream page images and base64-encoded JPEGs lazily one at a time.
+
+        Audit H1 fix: this is the single-page streaming counterpart to
+        :meth:`convert_to_images`. Yields ``(page_num, image_pil, b64_str)``
+        tuples. The caller MUST consume the iterator so PyMuPDF releases
+        the file handle when rasterization is done.
+        """
+        return convert_generator(
+            source, dpi=dpi, pages=pages, max_image_dim=max_image_dim
+        )
+
+    def convert_batches(
+        self,
+        source: str | bytes | Path,
+        *,
+        batch_size: int = 8,
+        dpi: int = 200,
+        pages: str | None = None,
+        max_image_dim: int = 1024,
+    ) -> Iterator[list[tuple[int, Image.Image, str]]]:
+        """Stream pages in bounded batches.
+
+        Audit H1 fix: the high-volume OCR pipeline consumes this rather
+        than the eager :meth:`convert_to_images` so peak memory during
+        rasterization is bounded to at most ``batch_size`` pages,
+        regardless of how large the PDF is. Each yielded batch is an
+        independent list; the caller may mutate or discard it freely.
+        """
+        return convert_batches(
+            source,
+            batch_size=batch_size,
+            dpi=dpi,
+            pages=pages,
+            max_image_dim=max_image_dim,
+        )
+
     def write_document_result(
         self,
         input_pdf_path: str,
@@ -99,6 +163,4 @@ class PDFHandler:
         as input. Image inputs are converted to a 1-page-per-frame PDF —
         no rasterization-to-PDF-to-rasterization round trip required.
         """
-        embed_structured_text(
-            input_pdf_path, output_pdf_path, pages_data, dpi=dpi
-        )
+        embed_structured_text(input_pdf_path, output_pdf_path, pages_data, dpi=dpi)

@@ -65,15 +65,22 @@ async def resolve_ai_settings(
     api_key: str | None,
     model: str | None,
     config: RuntimeConfig,
+    namespace: str | None = None,
 ) -> AIRequestSettings:
-    """Resolve request overrides against runtime config and validate the endpoint."""
+    """Resolve request overrides against runtime config and validate the endpoint.
 
-    resolved_api_base = _resolve_setting("api_base", api_base, config)
+    ``namespace`` prefers the per-namespace key set (``ocr_*`` /
+    ``translation_*``) when set on the config mapping. The legacy
+    ``api_*`` keys remain the fallback. When ``namespace`` is ``None``
+    the function falls back to the legacy keys only.
+    """
+
+    resolved_api_base = _resolve_setting("api_base", api_base, config, namespace)
     if await is_ssrf_target(resolved_api_base):
         raise BlockedAPIBaseError
 
-    resolved_api_key = _resolve_setting("api_key", api_key, config)
-    resolved_model = _resolve_setting("model", model, config)
+    resolved_api_key = _resolve_setting("api_key", api_key, config, namespace)
+    resolved_model = _resolve_setting("model", model, config, namespace)
     return AIRequestSettings(
         api_base=resolved_api_base,
         api_key=resolved_api_key,
@@ -96,6 +103,7 @@ async def translate_text(
         api_key=request.api_key,
         model=request.model,
         config=config,
+        namespace="translation",
     )
     prompt = build_translation_prompt(request.text, request.target_language)
     return await _complete_text(
@@ -118,6 +126,7 @@ async def extract_structured_data(
         api_key=request.api_key,
         model=request.model,
         config=config,
+        namespace="translation",
     )
     prompt = build_extraction_prompt(
         text=request.text,
@@ -241,11 +250,32 @@ def _resolve_setting(
     key: str,
     request_value: str | None,
     config: RuntimeConfig,
+    namespace: str | None = None,
 ) -> str:
     if request_value is not None and request_value.strip():
         return request_value.strip()
 
-    config_value = config.get(key)
+    # Resolve in priority order:
+    # 1. Explicit namespaced key (e.g. ``ocr_api_base``) when
+    #    ``namespace`` is passed.
+    # 2. Any present namespaced key (``ocr_*`` or ``translation_*``)
+    #    when only one namespace is set on the config — this lets the
+    #    resolver shortcut to the namespaced value without the caller
+    #    having to know which namespace the operator chose.
+    # 3. Legacy ``api_*`` key.
+    config_value: object | None = None
+    if namespace:
+        namespaced = config.get(f"{namespace}_{key}")
+        if isinstance(namespaced, str) and namespaced.strip():
+            config_value = namespaced
+    if config_value is None:
+        for candidate_namespace in ("ocr", "translation"):
+            namespaced = config.get(f"{candidate_namespace}_{key}")
+            if isinstance(namespaced, str) and namespaced.strip():
+                config_value = namespaced
+                break
+    if config_value is None:
+        config_value = config.get(key)
     if not isinstance(config_value, str) or not config_value.strip():
         raise AISettingsError
     return config_value.strip()

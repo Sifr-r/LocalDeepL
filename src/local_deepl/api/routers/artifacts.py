@@ -38,7 +38,7 @@ async def get_text(
         return JSONResponse(status_code=403, content={"error": "Text access denied"})
 
     try:
-        text_path = state.text_artifacts.get(artifact_id, access_token)
+        text_path = await state.text_artifacts.get(artifact_id, access_token)
     except (InvalidArtifactReferenceError, ArtifactNotFoundError):
         return JSONResponse(status_code=404, content={"error": "Text not found"})
     except ArtifactAccessDeniedError:
@@ -64,7 +64,7 @@ async def get_document_metadata(
         )
 
     try:
-        metadata_path = state.metadata_artifacts.get(artifact_id, access_token)
+        metadata_path = await state.metadata_artifacts.get(artifact_id, access_token)
     except (InvalidArtifactReferenceError, ArtifactNotFoundError):
         return JSONResponse(
             status_code=404, content={"error": "Document metadata not found"}
@@ -88,13 +88,13 @@ async def get_document_metadata(
 @router.post("/api/export/document")
 async def create_document_export(body: DocumentExportRequest):
     try:
-        text_path = state.text_artifacts.get(
+        text_path = await state.text_artifacts.get(
             body.text_artifact_id, body.text_artifact_token
         )
         page_text = await asyncio.to_thread(load_json_file, text_path)
         metadata = None
         if body.metadata_artifact_id and body.metadata_artifact_token:
-            metadata_path = state.metadata_artifacts.get(
+            metadata_path = await state.metadata_artifacts.get(
                 body.metadata_artifact_id, body.metadata_artifact_token
             )
             metadata = await asyncio.to_thread(load_json_file, metadata_path)
@@ -139,7 +139,7 @@ async def get_document_export(
         return JSONResponse(status_code=403, content={"error": "Export access denied"})
 
     try:
-        export_path = state.export_artifacts.get(artifact_id, access_token)
+        export_path = await state.export_artifacts.get(artifact_id, access_token)
     except (InvalidArtifactReferenceError, ArtifactNotFoundError):
         return JSONResponse(status_code=404, content={"error": "Export not found"})
     except ArtifactAccessDeniedError:
@@ -175,3 +175,19 @@ async def export_docx(body: ExportDocxRequest):
     except Exception:
         logger.exception("Docx export failed")
         return _stable_server_error()
+
+
+# Canonical namespaced routes for the Svelte UI. Prefix-less routes above
+# remain available for backward compatibility and delegate to the same handlers.
+router.add_api_route("/api/text/{artifact_id}", get_text, methods=["GET"])
+router.add_api_route("/api/artifacts/text/{artifact_id}", get_text, methods=["GET"])
+router.add_api_route(
+    "/api/metadata/{artifact_id}", get_document_metadata, methods=["GET"]
+)
+router.add_api_route(
+    "/api/artifacts/metadata/{artifact_id}", get_document_metadata, methods=["GET"]
+)
+router.add_api_route("/api/export/{artifact_id}", get_document_export, methods=["GET"])
+router.add_api_route(
+    "/api/artifacts/export/{artifact_id}", get_document_export, methods=["GET"]
+)

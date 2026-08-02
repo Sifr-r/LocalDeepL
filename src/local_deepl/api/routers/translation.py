@@ -40,9 +40,9 @@ def _ai_error_response(exc: AIServiceError) -> JSONResponse:
     )
 
 
-def _load_pages_from_artifact(artifact_id: str, token: str) -> dict:
+async def _load_pages_from_artifact(artifact_id: str, token: str) -> dict:
     try:
-        path = state.text_artifacts.get(artifact_id, token)
+        path = await state.text_artifacts.get(artifact_id, token)
         import json
 
         with open(path, encoding="utf-8") as f:
@@ -145,7 +145,7 @@ async def translate_tree_endpoint(req: TreeTranslationRequest) -> dict[str, Any]
     result back. If ``channel_id`` is supplied, streams
     ``translate_chunk_complete`` events.
     """
-    pages_data = _load_pages_from_artifact(
+    pages_data = await _load_pages_from_artifact(
         req.text_artifact_id, req.text_artifact_token
     )
     if not pages_data:

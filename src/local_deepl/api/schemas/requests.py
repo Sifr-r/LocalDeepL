@@ -187,6 +187,7 @@ class ProcessSettings(BaseModel):
     handwriting_hint: bool = False
     confidence_threshold: float = 0.75
     document_processors: list[DocumentProcessorName] = Field(default_factory=list)
+    chunk_pages: int | None = Field(default=None, ge=1, le=500)
 
     @field_validator("api_base", "api_key", "model", mode="before")
     @classmethod
@@ -429,3 +430,147 @@ class GlossaryImportJobResponse(BaseModel):
     entry_count: int = Field(ge=0)
     warnings: list[str] = Field(default_factory=list)
     queued: bool = False
+
+
+# ---------------------------------------------------------------------------
+# Per-namespace runtime config (OAuth-style split)
+# ---------------------------------------------------------------------------
+
+
+_OCR_CONFIG_KEYS: tuple[str, ...] = (
+    "ocr_api_base",
+    "ocr_api_key",
+    "ocr_model",
+    "ocr_provider",
+)
+_TRANSLATION_CONFIG_KEYS: tuple[str, ...] = (
+    "translation_api_base",
+    "translation_api_key",
+    "translation_model",
+    "translation_provider",
+    "sliding_window_words",
+    "dual_translate",
+)
+
+
+class OcrConfigUpdate(BaseModel):
+    """Per-namespace OCR runtime config.
+
+    Mirrors the legacy ``ConfigUpdate`` shape but only accepts the
+    ``ocr_*`` keys so the contract is "what you POST is what you
+    GET" — unrelated keys cannot accidentally mutate the translation
+    or shared config.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    ocr_api_base: str | None = Field(default=None, min_length=1, max_length=512)
+    ocr_api_key: str | None = Field(default=None, max_length=512)
+    ocr_model: str | None = Field(default=None, min_length=1, max_length=256)
+    ocr_provider: str | None = Field(default=None, min_length=1, max_length=64)
+
+    @field_validator(
+        "ocr_api_base", "ocr_api_key", "ocr_model", "ocr_provider", mode="before"
+    )
+    @classmethod
+    def _validate_optional_strings(cls, value: Any) -> Any:
+        return _validate_optional_string(value)
+
+    @property
+    def stored_keys(self) -> tuple[str, ...]:
+        return _OCR_CONFIG_KEYS
+
+
+class TranslationConfigUpdate(BaseModel):
+    """Per-namespace translation runtime config."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    translation_api_base: str | None = Field(default=None, min_length=1, max_length=512)
+    translation_api_key: str | None = Field(default=None, max_length=512)
+    translation_model: str | None = Field(default=None, min_length=1, max_length=256)
+    translation_provider: str | None = Field(default=None, min_length=1, max_length=64)
+    sliding_window_words: int | None = Field(default=None, ge=0, le=2000)
+    dual_translate: bool | None = None
+
+    @field_validator(
+        "translation_api_base",
+        "translation_api_key",
+        "translation_model",
+        "translation_provider",
+        mode="before",
+    )
+    @classmethod
+    def _validate_optional_strings(cls, value: Any) -> Any:
+        return _validate_optional_string(value)
+
+    @field_validator("sliding_window_words", mode="before")
+    @classmethod
+    def _validate_window(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        return _reject_string_for_config_number(value)
+
+    @field_validator("dual_translate", mode="before")
+    @classmethod
+    def _validate_dual(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        return _reject_string_for_config_bool(value)
+
+    @property
+    def stored_keys(self) -> tuple[str, ...]:
+        return _TRANSLATION_CONFIG_KEYS
+
+
+def _validate_auth_token_value(value: str | None) -> str | None:
+    """Pydantic validator for ``AuthTokenUpdate``.
+
+    Returns the trimmed token (or None for ``None``). Raises
+    ``ValueError`` (mapped to 422 by FastAPI) for placeholder values
+    or tokens shorter than :data:`MIN_AUTH_TOKEN_LENGTH`. The full
+    placeholder denylist also lives in
+    :mod:`local_deepl.api.services.security_config`; this validator
+    mirrors the production rule so the same error envelope is shown
+    whether the token came from the env or from a runtime POST.
+    """
+    from local_deepl.api.services.security_config import (
+        MIN_AUTH_TOKEN_LENGTH,
+        PLACEHOLDER_AUTH_TOKENS,
+    )
+
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("must be a string")
+    stripped = value.strip()
+    if not stripped:
+        return None
+    if len(stripped) < MIN_AUTH_TOKEN_LENGTH:
+        raise ValueError(
+            f"auth_token must be at least {MIN_AUTH_TOKEN_LENGTH} characters"
+        )
+    if stripped.lower() in PLACEHOLDER_AUTH_TOKENS:
+        raise ValueError(
+            "auth_token is a well-known placeholder; use a real, high-entropy secret."
+        )
+    return stripped
+
+
+class AuthTokenUpdate(BaseModel):
+    """Request body for ``POST /api/config/{ocr,translation}/auth``.
+
+    A ``None`` value clears the namespace token. The server refuses
+    placeholder / short values with a 422 envelope; the runtime
+    denylist is identical to the boot-time
+    ``SecuritySettings.from_env`` check.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    auth_token: str | None = None
+
+    @field_validator("auth_token", mode="before")
+    @classmethod
+    def _validate(cls, value: Any) -> Any:
+        return _validate_auth_token_value(value)

@@ -34,12 +34,12 @@ PDF/image -> grounded bbox-native VLM OCR -> optional post-process -> DocumentRe
 | `src/local_deepl/core/processors/layout.py` | `LayoutEnrichmentProcessor` — page region and layout role labeling (headers, footers, page numbers, figures, captions) |
 | `src/local_deepl/core/processors/table.py` | `TableExtractionProcessor` — table grid structure extraction from aligned text blocks |
 | `src/local_deepl/core/aligner.py` | Surya detection and DP text-to-box alignment |
-| `src/local_deepl/core/ocr.py` | OpenAI-compatible VLM calls, prompts, limits, and OCR response filters |
+| `src/local_deepl/core/ocr/` | OpenAI-compatible VLM client, `OCRProcessor`, prompts, response filters, limits, exceptions, retry, and circuit-breaker resilience; `__init__.py` preserves the public import surface |
 | `src/local_deepl/core/pdf/__init__.py` | Package re-exports for `PDFHandler`, `DocumentResultWriter`, `IMAGE_EXTENSIONS`, `_emit_pymupdf_agpl_notice`, and public PDF symbols |
 | `src/local_deepl/core/pdf/rasterizer.py` | PyMuPDF AGPL warning emission, safe DPI calculation, image extension validation, and PDF/image rasterization to JPEG/PNG base64 |
 | `src/local_deepl/core/pdf/embedder.py` | Invisible text layer PDF rendering over rasterized backgrounds, normalized bbox coordinate transformations, and font sizing calculation |
 | `src/local_deepl/core/pdf/handler.py` | `PDFHandler` class facade implementing `DocumentResultWriter` protocol for high-level workflow orchestration |
-| `src/local_deepl/core/grounded.py` | Grounded OCR backends and bbox-native response parsing |
+| `src/local_deepl/core/grounded/` | Grounded OCR models, prompted backend, rasterization, and bbox-native response parsers; `__init__.py` preserves the public import surface |
 | `src/local_deepl/core/postprocess.py` | Dictionary-based spellcheck post-processing |
 | `src/local_deepl/core/preprocessing.py` | Local hybrid-path page preprocessing (orientation detection, deskew, denoise, contrast normalization, crop cleanup) |
 | `src/local_deepl/core/handwriting_preprocessor.py` | Local handwriting image preprocessor for specialized handwriting pipeline paths |
@@ -61,7 +61,8 @@ PDF/image -> grounded bbox-native VLM OCR -> optional post-process -> DocumentRe
 | `src/local_deepl/api/routers/artifacts.py` | Token-bound artifact download routes for text, metadata, and document exports |
 | `src/local_deepl/api/routers/translation.py` | Synchronous `POST /api/translate`, async `POST /api/translate/async`, tree translation `POST /api/translate/tree`, glossary and NLLB endpoints |
 | `src/local_deepl/api/routers/extraction.py` | `POST /api/extract` — structured data extraction, plus document export routes |
-| `src/local_deepl/api/routers/state.py` | Module-level singletons: `text_artifacts`, `metadata_artifacts`, `export_artifacts`, `job_history`, `progress_service` |
+| `src/local_deepl/api/routers/state.py` | Compatibility aliases over the `LocalStateBackend` singleton, plus the process-local glossary library |
+| `src/local_deepl/api/routers/providers.py` | OpenAI-compatible provider catalog and provider detail routes |
 | `src/local_deepl/api/routers/common.py` | Shared router helpers: `_stable_server_error`, `_extract_bearer_token`, `_path_exists`, `_cleanup` |
 
 | `src/local_deepl/api/schemas/__init__.py` | Re-exports the typed request models and StrEnums |
@@ -69,6 +70,9 @@ PDF/image -> grounded bbox-native VLM OCR -> optional post-process -> DocumentRe
 | `src/local_deepl/api/services/ocr_settings.py` | Form-parameter resolution for `POST /api/process` — "form field wins, config falls back" merge that produces a validated `ProcessSettings` |
 | `src/local_deepl/api/services/ocr_pipeline_factory.py` | Pipeline construction for `POST /api/process` — branches on `pipeline_mode` (hybrid vs grounded), wires WebSocket-bound per-block callbacks, decides whether to plug in the TrOCR handwriting specialist, and exposes backend-model verification |
 | `src/local_deepl/api/services/ocr_response.py` | Response assembly for `POST /api/process` — validation-error JSON, FileResponse construction with token-bound headers (`X-Document-Quality`, `X-Document-Structure`, `X-Document-Sections`, artifact-id/token pairs), and stable error envelopes |
+| `src/local_deepl/api/services/ocr_chunked_runner.py` | Bounded-page PDF execution, per-chunk progress frames, text/page remapping, and merged searchable-PDF output |
+| `src/local_deepl/api/services/ocr_jobs.py` | Single-worker asyncio OCR queue, background job lifecycle records, status serialization, and cancellation semantics |
+| `src/local_deepl/api/services/state_backend.py` | `StateBackend` protocol and process-local `LocalStateBackend`, including artifacts, history, progress, glossary, and OCR queue |
 | `src/local_deepl/api/services/security.py` | API upload validation, stable error constants, temporary-file cleanup, and opaque text artifact IDs |
 | `src/local_deepl/api/services/artifacts.py` | `TextArtifactStore`, `PageText`, `TextArtifactHandle`, and the opaque artifact-id / token primitives shared by text, metadata, and export stores |
 | `src/local_deepl/api/services/jobs.py` | `JobHistory`, `JobRecord`, `JobStatus` — durable job history with per-page failure tracking |
@@ -81,7 +85,8 @@ PDF/image -> grounded bbox-native VLM OCR -> optional post-process -> DocumentRe
 | `src/local_deepl/utils/image.py` | Image crop, blank-region detection, and crop encoding helpers |
 | `src/local_deepl/utils/security.py` | SSRF target validation |
 | `src/local_deepl/utils/tqdm_patch.py` | Surya progress-bar suppression |
-| `src/local_deepl/static/` | Browser workstation assets (`index.html`, CSS, JS modules) |
+| `src/local_deepl/static/` | Built Svelte 5 workstation assets served by FastAPI |
+| `frontend/` | Svelte 5 + Tailwind CSS v4 source, Vite configuration, and production build pipeline |
 | `scripts/` | Repo-root developer utilities: confidence eval, fixture builder, debug/inspection scripts, bbox visualizers |
 | `examples/` | Sample PDFs and images used by `tests/`, `test_ui.py`, and the confidence scripts |
 | `tests/` | Unit, integration, security, and slow-path validation |
@@ -120,44 +125,90 @@ instances back the three artifact surfaces:
 
 | Singleton | Surface | Token-bound header | Read endpoint |
 | --- | --- | --- | --- |
-| `text_artifacts` | Per-job searchable text | `X-Text-Artifact-Id` / `X-Text-Artifact-Token` | `GET /text/{artifact_id}` |
-| `metadata_artifacts` | Compact `DocumentResult` page/block metadata | `X-Document-Metadata-Artifact-Id` / `X-Document-Metadata-Artifact-Token` | `GET /metadata/{artifact_id}` |
-| `export_artifacts` | JSON / Markdown / text / Docling / MinerU exports | `X-Document-Export-Artifact-Id` / `X-Document-Export-Artifact-Token` | `GET /exports/{artifact_id}` |
+| `text_artifacts` | Per-job searchable text | `X-Text-Artifact-Id` / `X-Text-Artifact-Token` | `GET /api/text/{artifact_id}` |
+| `metadata_artifacts` | Compact `DocumentResult` page/block metadata | `X-Document-Metadata-Artifact-Id` / `X-Document-Metadata-Artifact-Token` | `GET /api/metadata/{artifact_id}` |
+| `export_artifacts` | JSON / Markdown / text / Docling / MinerU exports | `X-Document-Export-Artifact-Id` / `X-Document-Export-Artifact-Token` | `GET /api/export/{artifact_id}` |
 
-`job_history` (`JobHistory`) and `progress_service` (`ProgressService`) round
-out the shared state. The store implementation lives in
+`job_history` (`JobHistory`), `progress_service` (`ProgressService`),
+`glossary_library` (`GlossaryLibrary`), and `ocr_job_queue` (`OCRJobQueue`) round
+out the process-local state. The store implementation lives in
 `api/services/artifacts.py` and the token format is the same opaque
-hex-id / bearer-token pair across all three surfaces.
+hex-id / bearer-token pair across all three artifact surfaces.
+
+### Background OCR lifecycle
+
+`POST /api/process/async` validates and persists the upload before submitting a
+runner to the single-worker `OCRJobQueue`. The application lifespan starts the
+worker before serving requests and stops it during shutdown. Observable states
+are `pending`, `processing`, `complete`, and `error`; status is available at
+`GET /api/process/status/{job_id}`. `POST /api/jobs/{job_id}/cancel` removes a
+pending job or marks an in-flight job as a stable terminal error without letting
+the runner's eventual return overwrite the cancellation. Queue and artifact
+indexes are in-memory and are therefore lost on restart; horizontal scaling
+requires a shared backend.
+
+### Authentication and runtime security
+
+`SecuritySettings.from_env()` configures the ASGI boundary. A per-service
+`LOCAL_DEEPL_OCR_AUTH_TOKEN` or `LOCAL_DEEPL_TRANSLATION_AUTH_TOKEN` takes
+precedence over the global `LOCAL_DEEPL_AUTH_TOKEN` for its route group.
+`LOCAL_DEEPL_MAX_UPLOAD_MB`, `LOCAL_DEEPL_RATE_LIMIT_PER_MIN`, and
+`LOCAL_DEEPL_CORS_ORIGINS` control upload limits, per-IP request throttling, and
+CORS respectively. Artifact IDs use a separate artifact token supplied through
+`Authorization: Bearer ...`; artifact tokens must not be placed in query strings.
 
 ## Web API Surface (non-exhaustive)
 
 | Method | Path | Router | Notes |
 | --- | --- | --- | --- |
-| `GET` | `/api/config` | `config` | Current runtime config (api_base, model, spellcheck, …) |
-| `POST` | `/api/config` | `config` | `ConfigUpdate` — typed config edits |
-| `GET` | `/api/models` | `config` | Backend model discovery for the runtime config |
-| `POST` | `/process` | `ocr` | Multipart OCR; returns a sandwich PDF + token-bound headers |
-| `POST` | `/api/translate` | `translation` | Synchronous translation over OCR text |
-| `POST` | `/api/translate/async` | `translation` | Celery + Redis job (requires `async-translation` extra) |
-| `GET` | `/api/translate/status/{job_id}` | `translation` | Poll a Celery background translation job |
-| `POST` | `/api/translate/tree` | `translation` | Tree-walk translation over a stored text artifact |
-| `POST` | `/api/translate/nllb` | `translation` | NLLB engine translation endpoint |
-| `POST` | `/api/extract` | `extraction` | Structured extraction using `ExtractionTemplate` (`invoice`, `resume`, `academic`, `custom`) |
-| `POST` | `/api/glossary` | `translation` | Glossary management for translation |
-| `GET` / `DELETE` | `/api/jobs` | `jobs` | Recent job history; `DELETE` clears history and text artifacts |
-| `POST` | `/api/progress/session` | `websocket` | Issue a progress channel + token |
-| `POST` | `/api/progress/cancel/{channel_id}` | `websocket` | Cancel an in-flight progress channel |
-| `GET` | `/text/{artifact_id}` | `artifacts` | Text artifact body (token in `Authorization: Bearer …`) |
-| `GET` | `/metadata/{artifact_id}` | `artifacts` | Metadata artifact body |
-| `GET` | `/exports/{artifact_id}` | `artifacts` | Export artifact body |
-| `WS` | `/ws/progress/{channel_id}?token=…` | `websocket` | Token-bound per-job progress stream |
-| `POST` | `/api/export/document` | `artifacts` | Build a token-bound export artifact (JSON, Markdown, text, Docling, MinerU) |
-| `POST` | `/api/export/docx` | `extraction` | Build a `.docx` from Markdown page text |
-| `POST` | `/api/export/docx-tree` | `extraction` | Build a `.docx` from a tree text artifact |
-| `POST` | `/api/export/html` | `extraction` | Build HTML from a tree text artifact |
-| `POST` | `/api/export/blocktree` | `extraction` | Build a block-tree JSON export from a tree text artifact |
+| `GET` / `POST` | `/api/config` | `config` | Read or update shared runtime configuration |
+| `GET` / `POST` | `/api/config/ocr` | `config` | OCR-specific runtime configuration and auth updates |
+| `GET` / `POST` | `/api/config/translation` | `config` | Translation-specific runtime configuration and auth updates |
+| `GET` | `/api/models`, `/api/models/ocr`, `/api/models/translation` | `config` | Backend model discovery |
+| `GET` | `/api/providers`, `/api/providers/{provider_id}` | `providers` | Provider catalog and details |
+| `POST` | `/api/process` | `ocr` | Canonical synchronous multipart OCR; `/process` is the legacy alias |
+| `POST` | `/api/process/async` | `ocr` | Queue background OCR and return `202` with a job ID; `/process/async` is the legacy alias |
+| `GET` | `/api/process/status/{job_id}` | `ocr` | Background OCR lifecycle status; `/process/status/{job_id}` is the legacy alias |
+| `POST` | `/api/jobs/{job_id}/cancel` | `jobs` | Cancel pending/running background OCR; terminal jobs are idempotent |
+| `GET` / `DELETE` | `/api/jobs` | `jobs` | Recent completed-job history; `DELETE` clears history and text artifacts |
+| `POST` | `/api/progress/session` | `websocket` | Issue an opaque progress channel and session token |
+| `POST` | `/api/progress/cancel/{channel_id}` | `websocket` | Request cancellation for an active progress channel |
+| `WS` | `/ws/{channel_id}?token=...` | `websocket` | Token-bound progress stream; accepts `{"type":"cancel"}` inbound |
+| `GET` | `/api/text/{artifact_id}` | `artifacts` | Text artifact; aliases: `/text/...` and `/api/artifacts/text/...` |
+| `GET` | `/api/metadata/{artifact_id}` | `artifacts` | Metadata artifact; aliases: `/metadata/...` and `/api/artifacts/metadata/...` |
+| `GET` | `/api/export/{artifact_id}` | `artifacts` | Export artifact; aliases: `/export/...` and `/api/artifacts/export/...` |
+| `POST` | `/api/export/document` | `artifacts` | Build a token-bound JSON, Markdown, text, Docling, or MinerU artifact |
+| `POST` | `/api/export/docx`, `/api/export/docx-tree`, `/api/export/html`, `/api/export/blocktree` | `artifacts` / `extraction` | Document-format exports |
+| `POST` | `/api/translate`, `/api/translate/tree`, `/api/translate/nllb` | `translation` | Synchronous translation surfaces |
+| `POST` | `/api/translate/async` | `translation` | Celery + Redis translation job (optional extra) |
+| `GET` | `/api/translate/status/{job_id}` | `translation` | Poll a Celery translation job |
+| `POST` | `/api/extract` | `extraction` | Structured extraction with invoice, resume, academic, or custom templates |
+| `POST` | `/api/glossary`, `/api/glossary/import`, `/api/glossary/import/url` | `translation` / `glossary_imports` | Glossary management and imports |
+| `GET` / `POST` / `DELETE` | `/api/glossary/library...` | `glossary_imports` | Local glossary library management |
 
 ## Change Blueprint
+
+### 2026-08-02: Canonical `/api` aliases and background OCR reliability
+
+The Svelte workstation uses `/api/...` as its canonical HTTP contract. Legacy
+prefix-less OCR and artifact paths remain registered against the same handler
+objects so existing integrations continue to work without maintaining duplicate
+implementations. The obsolete `api/routers/ai.py` module is removed; translation
+and extraction routers use the single-purpose `api/services/ai.py` service.
+Added the single-worker OCR queue to `LocalStateBackend`, wired
+its start/stop lifecycle to FastAPI lifespan, exposed async submit/status/cancel
+routes, and preserved cancellation as a terminal state when a runner winds down.
+The WebSocket contract is `/ws/{channel_id}?token=...`; progress sessions are
+issued by `POST /api/progress/session`.
+
+| Area | Canonical route | Compatibility route |
+| --- | --- | --- |
+| Synchronous OCR | `POST /api/process` | `POST /process` |
+| Background OCR | `POST /api/process/async` | `POST /process/async` |
+| OCR status | `GET /api/process/status/{job_id}` | `GET /process/status/{job_id}` |
+| Text artifact | `GET /api/text/{artifact_id}` | `GET /text/{artifact_id}` |
+| Metadata artifact | `GET /api/metadata/{artifact_id}` | `GET /metadata/{artifact_id}` |
+| Export artifact | `GET /api/export/{artifact_id}` | `GET /export/{artifact_id}` |
 
 ### 2026-07-25: Core PDF Decomposition into `src/local_deepl/core/pdf/` Package
 
@@ -201,9 +252,11 @@ codebase (`core/ocr.py` and `core/grounded.py`) and the
 | `src/local_deepl/core/ocr/__init__.py` | Re-exports the public OCR surface (`OCRProcessor`, helpers, prompts) for backwards compatibility |
 | `src/local_deepl/core/ocr/processor.py` | LiteLLM-backed `OCRProcessor.run` and per-page retry/filter orchestration |
 | `src/local_deepl/core/ocr/prompts.py` | System + user prompt templates, OCR-specific limits, response filters |
-| `src/local_deepl/core/grounded/__init__.py` | Re-exports the grounded OCR surface (`GroundedBackend`, parsers) |
-| `src/local_deepl/core/grounded/backends.py` | `PromptedGroundedOCR`, `ZAIHostedOCR`, and backend selection helpers |
+| `src/local_deepl/core/grounded/__init__.py` | Re-exports the grounded OCR backend, models, parsers, and hosted adapters |
+| `src/local_deepl/core/grounded/models.py` | Grounded block/response models and backend protocol |
+| `src/local_deepl/core/grounded/prompted.py` | Prompted and hosted grounded OCR backends |
 | `src/local_deepl/core/grounded/parsers.py` | Bbox-native JSON response parsers and axis-order normalization |
+| `src/local_deepl/core/grounded/rasterize.py` | Grounded PDF/image rasterization helpers |
 | `src/local_deepl/api/services/ocr_settings.py` | Form-parameter resolution for `POST /api/process` |
 | `src/local_deepl/api/services/ocr_pipeline_factory.py` | Pipeline construction and backend-model verification for `POST /api/process` |
 | `src/local_deepl/api/services/ocr_response.py` | Response assembly, validation-error envelopes, and `FileResponse` construction with token-bound headers |
@@ -313,7 +366,7 @@ the three services.
 
 | File | Responsibility |
 | --- | --- |
-| `src/local_deepl/core/grounded.py` | Convert PDF pixmaps directly into Pillow images before emitting the final grounded OCR thumbnail JPEG |
+| `src/local_deepl/core/grounded/rasterize.py` | Convert PDF pixmaps directly into Pillow images before emitting the final grounded OCR thumbnail JPEG |
 | `tests/test_grounded.py` | Guard against restoring the redundant intermediate JPEG decode |
 | `ARCHITECTURE.md` | Record the existing module layout and the direct pixmap conversion invariant |
 
@@ -363,3 +416,14 @@ the three services.
 | `src/local_deepl/server.py` | Preserve `local_deepl.server:app` and `local_deepl.server:main` while deferring FastAPI, router, static-file, and uvicorn imports until the web app is created or run |
 | `tests/test_server_lazy_imports.py` | Verify base-install-safe `local_deepl.server` imports and deterministic missing-web-extra errors without uninstalling FastAPI |
 | `ARCHITECTURE.md` | Record the optional-web lazy import boundary for the server module |
+
+### 2026-08-02: Quality Audit & YAGNI Improvements
+
+| File | Responsibility |
+| --- | --- |
+| `src/local_deepl/core/workflows/hybrid.py` | Re-raise `CircuitOpenError` explicitly in crop/box OCR exception handlers to prevent swallowing endpoint failures |
+| `src/local_deepl/core/grounded/prompted.py` | Offload grounded PIL crop and PNG buffer generation to thread pool via `asyncio.to_thread` |
+| `src/local_deepl/api/routers/ocr.py` | Handle `asyncio.CancelledError` on client disconnect without logging 500 stack traces, and wrap file cleanup calls in `asyncio.to_thread` |
+| `src/local_deepl/api/services/security.py` | Add parent directory confinement check in `cleanup_files` to ensure deleted paths reside in temporary storage |
+| `frontend/src/lib/components/workstation/RightControlDock.svelte` | Add `role="button"`, `tabindex="0"`, and `onkeydown` keyboard trigger to target document drop zone for accessibility compliance |
+| `frontend/src/lib/components/workstation/BottomProgressDock.svelte` | Rename outer container ID to `workstation-progress-dock` to eliminate duplicate DOM ID conflicts |

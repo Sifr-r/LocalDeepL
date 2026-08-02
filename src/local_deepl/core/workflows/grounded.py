@@ -4,7 +4,11 @@ from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING
 
 from local_deepl.core.document import SpellcheckMode
-from local_deepl.core.grounded import GroundedBlock, GroundedOCRBackend
+from local_deepl.core.grounded import (
+    GroundedBlock,
+    GroundedOCRBackend,
+    GroundedResponse,
+)
 from local_deepl.core.processors import DocumentProcessor
 from local_deepl.core.workflows.base import (
     AnyOutputWriter,
@@ -40,6 +44,37 @@ class GroundedEngine(EngineBase):
         )
         self.grounded_backend = grounded_backend
 
+    async def _emit_block_callbacks(
+        self,
+        response: GroundedResponse,
+    ) -> None:
+        """Drive the per-block / per-page observer hooks from the backend response.
+
+        Mirrors :meth:`HybridEngine._ocr_pages` so the UI sees the same
+        ``block_complete`` + ``page_complete`` frames for both engines
+        (Phase B review M2 wired the parameter through; this method is
+        the parity work the docstring originally punted on).
+        """
+        cb = self.block_callbacks
+        if cb.on_block is None and cb.on_page_complete is None:
+            return
+
+        pages_data = self._accumulate_pages(response.blocks)
+        for page_index in sorted(pages_data):
+            page_blocks = pages_data[page_index]
+            for block_idx, (bbox, text) in enumerate(page_blocks):
+                if cb.on_block is not None and text and text.strip():
+                    await cb.on_block(
+                        page_index,
+                        block_idx,
+                        list(bbox),
+                        text,
+                        "text",
+                        None,
+                    )
+            if cb.on_page_complete is not None:
+                await cb.on_page_complete(page_index)
+
     async def execute(
         self,
         input_path: str,
@@ -65,6 +100,12 @@ class GroundedEngine(EngineBase):
 
         pages_data = self._accumulate_pages(response.blocks)
         page_nums = sorted(pages_data)
+
+        # Phase B review M2 — drive per-block / per-page observers so
+        # the grounded path emits the same WebSocket frames as the
+        # hybrid path. Done before `_build_document_result` so the
+        # block order matches what the backend produced.
+        await self._emit_block_callbacks(response)
 
         # Phase E (review E.5) — `block_metadata_overlays` is the
         # shape `EngineBase._build_document_result` expects for its

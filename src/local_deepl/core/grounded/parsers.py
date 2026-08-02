@@ -132,12 +132,22 @@ def _parse_grounded_json(
     except json.JSONDecodeError:
         m2 = _BARE_ARRAY.search(raw)
         if not m2:
-            logger.debug(f"grounded parse: no array in response: {raw[:200]!r}")
+            logger.warning(
+                "Grounded bbox JSON parsing failed on page %d: no array "
+                "found in response: %r",
+                page_idx,
+                raw[:200],
+            )
             return []
         try:
             data = json.loads(m2.group(1))
         except json.JSONDecodeError as e:
-            logger.debug(f"grounded parse failed: {e} — raw={raw[:200]!r}")
+            logger.warning(
+                "Grounded bbox JSON parsing failed on page %d: %s — raw=%r",
+                page_idx,
+                e,
+                raw[:200],
+            )
             return []
 
     if isinstance(data, dict):
@@ -182,6 +192,23 @@ def _parse_grounded_json(
             )
         )
     return blocks
+
+
+def log_grounded_parse_failure(text: str, page_idx: int, exc: BaseException) -> None:
+    """Public hook for callers that catch a parse failure upstream.
+
+    Surfaces a warning when the grounded response payload is not
+    parseable, so an operator can spot a regression in the LLM's
+    response shape. Kept separate from :func:`_parse_grounded_json` so
+    callers parsing the same response shape from a different code path
+    get the same observability.
+    """
+    logger.warning(
+        "Grounded bbox JSON parsing failed on page %d: %s — raw=%r",
+        page_idx,
+        exc,
+        text[:200],
+    )
 
 
 __all__ = [

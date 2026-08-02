@@ -1,4 +1,5 @@
 """Tests for the persistent glossary library."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -80,8 +81,12 @@ def test_delete_removes_entry(tmp_path: Path) -> None:
 
 def test_reorder_assigns_descending_priority(tmp_path: Path) -> None:
     lib = _new_library(tmp_path)
-    a = lib.save(name="a", format="json_pairs", entries=[{"source": "A", "target": "1"}])
-    b = lib.save(name="b", format="json_pairs", entries=[{"source": "B", "target": "2"}])
+    a = lib.save(
+        name="a", format="json_pairs", entries=[{"source": "A", "target": "1"}]
+    )
+    b = lib.save(
+        name="b", format="json_pairs", entries=[{"source": "B", "target": "2"}]
+    )
     lib.reorder([b.id, a.id])
     by_id = {item.id: item for item in lib.items()}
     assert by_id[b.id].priority > by_id[a.id].priority
@@ -151,9 +156,7 @@ def test_preview_reports_conflicts(tmp_path: Path) -> None:
     preview = lib.preview()
     assert preview["count"] == 1
     assert preview["enabled_glossaries"] == ["a", "b"]
-    assert any(
-        conflict["source"] == "hello" for conflict in preview["conflicts"]
-    )
+    assert any(conflict["source"] == "hello" for conflict in preview["conflicts"])
 
 
 def test_persistence_file_created(tmp_path: Path) -> None:

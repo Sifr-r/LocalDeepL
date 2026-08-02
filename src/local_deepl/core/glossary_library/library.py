@@ -97,7 +97,9 @@ class GlossaryLibrary:
             clean_priority = int(priority)
         except (TypeError, ValueError) as exc:
             raise ValueError("Glossary priority must be an integer.") from exc
-        normalized_entries: tuple[dict[str, object], ...] = tuple(self._normalize_entries(entries))
+        normalized_entries: tuple[dict[str, object], ...] = tuple(
+            self._normalize_entries(entries)
+        )
         if not normalized_entries:
             raise ValueError("Glossary must contain at least one valid entry.")
 
@@ -125,7 +127,9 @@ class GlossaryLibrary:
     def toggle(self, glossary_id: str, *, enabled: bool) -> StoredGlossary:
         with self._lock:
             item = self._require_unlocked(glossary_id)
-            updated = replace(item, enabled=bool(enabled), updated_at=float(self._clock()))
+            updated = replace(
+                item, enabled=bool(enabled), updated_at=float(self._clock())
+            )
             self._items[item.id] = updated
             self._write_unlocked()
             copied = self._copy_item(updated)
@@ -172,7 +176,10 @@ class GlossaryLibrary:
             # Glossary.merge is last-wins; feed low priority first so the
             # highest priority glossary is the effective winner.
             enabled_for_merge = list(reversed(enabled))
-            glossaries = [Glossary.from_dict({"entries": list(item.entries)}) for item in enabled_for_merge]
+            glossaries = [
+                Glossary.from_dict({"entries": list(item.entries)})
+                for item in enabled_for_merge
+            ]
             merged = Glossary.merge(glossaries)
             merged.source_format = "library"
             return merged
@@ -210,7 +217,9 @@ class GlossaryLibrary:
             payload = json.loads(self._path.read_text(encoding="utf-8"))
         except (FileNotFoundError, OSError, json.JSONDecodeError):
             return
-        raw_items_raw: Any = payload.get("glossaries", []) if isinstance(payload, dict) else payload
+        raw_items_raw: Any = (
+            payload.get("glossaries", []) if isinstance(payload, dict) else payload
+        )
         if not isinstance(raw_items_raw, list):
             return
         raw_items = raw_items_raw
@@ -262,12 +271,20 @@ class GlossaryLibrary:
     def _sorted_items(self) -> list[StoredGlossary]:
         return sorted(
             self._items.values(),
-            key=lambda item: (-item.priority, item.group.casefold(), item.name.casefold(), item.id),
+            key=lambda item: (
+                -item.priority,
+                item.group.casefold(),
+                item.name.casefold(),
+                item.id,
+            ),
         )
 
     def _merged_unlocked(self, enabled: list[StoredGlossary]) -> Glossary:
         return Glossary.merge(
-            [Glossary.from_dict({"entries": list(item.entries)}) for item in reversed(enabled)]
+            [
+                Glossary.from_dict({"entries": list(item.entries)})
+                for item in reversed(enabled)
+            ]
         )
 
     def _require_unlocked(self, glossary_id: str) -> StoredGlossary:
@@ -277,7 +294,9 @@ class GlossaryLibrary:
         return item
 
     def _write_unlocked(self) -> None:
-        payload = {"glossaries": [self._serialize(item) for item in self._items.values()]}
+        payload = {
+            "glossaries": [self._serialize(item) for item in self._items.values()]
+        }
         write_atomic(self._path, payload, prefix=".glossary_library.")
 
     @staticmethod
@@ -300,7 +319,9 @@ class GlossaryLibrary:
     def _copy_item(item: StoredGlossary | None) -> StoredGlossary | None:
         if item is None:
             return None
-        return replace(item, entries=tuple(copy.deepcopy(entry) for entry in item.entries))
+        return replace(
+            item, entries=tuple(copy.deepcopy(entry) for entry in item.entries)
+        )
 
 
 def _optional_text(value: object) -> str | None:

@@ -74,6 +74,7 @@ def _decode_bytes_payload(value: str) -> bytes:
     if not value:
         raise HTTPException(status_code=422, detail="inline_bytes_b64 is required.")
     import binascii
+
     try:
         return base64.b64decode(value, validate=True)
     except (ValueError, binascii.Error) as exc:
@@ -101,14 +102,10 @@ def _validate_ssrf(url: str) -> None:
     if not url:
         raise HTTPException(status_code=400, detail="URL is required.")
     blocked = (
-        _sync_ssrf(url)
-        if not _has_running_loop()
-        else asyncio.run(is_ssrf_target(url))
+        _sync_ssrf(url) if not _has_running_loop() else asyncio.run(is_ssrf_target(url))
     )
     if blocked:
-        raise HTTPException(
-            status_code=400, detail="URL targets a blocked address."
-        )
+        raise HTTPException(status_code=400, detail="URL targets a blocked address.")
 
 
 def _is_safe_sql_dsn(dsn: str) -> bool:
@@ -196,11 +193,13 @@ def _build_parser_kwargs(source: GlossaryImportSource) -> tuple[dict[str, Any], 
             }
         )
     else:  # pragma: no cover - exhausted by GlossaryFormat
-        raise HTTPException(status_code=422, detail=f"Unsupported format: {format_name}.")
+        raise HTTPException(
+            status_code=422, detail=f"Unsupported format: {format_name}."
+        )
     return kwargs, format_name
 
 
-def _resolve_request_name(req: "GlossaryImportRequest") -> str | None:
+def _resolve_request_name(req: GlossaryImportRequest) -> str | None:
     """Return the caller-supplied display name, or None when not provided."""
     candidate = getattr(req.source, "name", None)
     if isinstance(candidate, str) and candidate.strip():
@@ -364,7 +363,9 @@ def import_glossary_from_url(
     try:
         payload = asyncio.run(fetch_url_bytes(url))
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Failed to fetch URL: {exc}") from exc
+        raise HTTPException(
+            status_code=502, detail=f"Failed to fetch URL: {exc}"
+        ) from exc
 
     source = GlossaryImportSource(
         format=fmt,

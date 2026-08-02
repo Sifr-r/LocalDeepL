@@ -33,6 +33,8 @@ class FrameType(StrEnum):
     BLOCK = "block_complete"
     PAGE = "page_complete"
     TRANSLATE_CHUNK = "translate_chunk_complete"
+    CHUNK_INIT = "chunk_init"
+    CHUNK_COMPLETE = "chunk_complete"
     CANCELLED = "cancelled"
     GLOSSARY_IMPORT = "glossary_import"
 
@@ -159,6 +161,37 @@ class ProgressService:
             "translated_text": translated_text,
             "target_language": target_language,
         }
+
+    @staticmethod
+    def build_chunk_init_frame(*, total_chunks: int) -> dict[str, Any]:
+        """Pre-amble emitted at the start of a chunked OCR run."""
+        return {
+            "type": FrameType.CHUNK_INIT.value,
+            "total_chunks": int(total_chunks),
+        }
+
+    @staticmethod
+    def build_chunk_complete_frame(
+        *,
+        chunk_idx: int,
+        total_chunks: int,
+        page_range: str,
+        source_pages: list[int],
+        text_chars_so_far: int,
+        overall_percent: int | None = None,
+    ) -> dict[str, Any]:
+        """Per-chunk terminal frame emitted after a chunk finishes."""
+        frame: dict[str, Any] = {
+            "type": FrameType.CHUNK_COMPLETE.value,
+            "chunk_idx": int(chunk_idx),
+            "total_chunks": int(total_chunks),
+            "page_range": page_range,
+            "source_pages": [int(p) for p in source_pages],
+            "text_chars_so_far": int(text_chars_so_far),
+        }
+        if overall_percent is not None:
+            frame["overall_percent"] = int(overall_percent)
+        return frame
 
     @staticmethod
     def build_cancelled_frame(message: str = "Cancelled by user.") -> dict[str, Any]:

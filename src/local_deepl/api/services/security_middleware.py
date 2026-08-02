@@ -3,16 +3,31 @@ ASGI middleware that enforces the guards in `SecuritySettings`.
 
 Two thin middlewares are exposed:
 
-  * :class:`BearerAuthMiddleware` — when ``auth_token`` is set, rejects
-    every HTTP request whose ``Authorization: Bearer <token>`` header
-    does not match (constant-time compare). WebSocket traffic is passed
-    through; channel-level token binding is enforced separately inside
-    ``api/routers/websocket.py``.
+  * :class:`BearerAuthMiddleware` — when one or more auth tokens are
+    set, rejects every HTTP request whose ``Authorization: Bearer
+    <token>`` header does not match. Three independent tokens are
+    supported, with per-route precedence:
+
+      * ``expected_token`` (global) applies to every route.
+      * ``ocr_token`` overrides the global token for OCR routes
+        (``/api/process``, ``/api/models/ocr``, ``/api/config/ocr``).
+        When set, the global token does NOT unlock those routes.
+      * ``translation_token`` overrides the global token for
+        translation routes (``/api/translate``, ``/api/extract``,
+        ``/api/export``, ``/api/glossary``, ``/api/models/translation``,
+        ``/api/config/translation``). When set, the global token does
+        NOT unlock those routes.
+
+    WebSocket traffic is passed through; channel-level token binding
+    is enforced separately inside ``api/routers/websocket.py``.
 
   * :class:`MaxUploadSizeMiddleware` — rejects HTTP requests whose
-    ``Content-Length`` exceeds the configured cap. Rejection is
-    performed *before* any body is read, so the server never even
-    attempts to buffer an oversized upload.
+    body exceeds the configured cap. Two complementary paths guard
+    uploads: the ``Content-Length`` fast path (rejects before reading
+    any body) and the chunked path (accumulates bytes forwarded via
+    ``receive`` and 413s once the cumulative size exceeds the cap).
+    On rejection the middleware returns a 413 envelope
+    (``error`` / ``limit_bytes`` / ``limit_bytes_mb`` / ``hint``).
 
   * :class:`RateLimitMiddleware` — per-IP token bucket with a 60s
     sliding window. In-memory and process-local; behind uvicorn workers
@@ -26,11 +41,12 @@ they run *before* FastAPI's routing logic — no per-router boilerplate.
 
 from __future__ import annotations
 
+import json
 import logging
 import secrets
 import time
 from collections import deque
-from typing import Final
+from typing import Final, TypedDict
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,11 +55,17 @@ _TOO_LARGE: Final[dict[str, str]] = {"error": "Upload exceeds maximum size"}
 _TOO_MANY_REQUESTS: Final[dict[str, str]] = {"error": "Rate limit exceeded"}
 
 
+class _UploadGuard(TypedDict):
+    total: int
+    envelope: dict[str, str] | None
+    status: int | None
+
+
 async def _send_json(
     scope, receive, send, payload: dict[str, str], status: int
 ) -> None:
     """Send a small JSON error response via raw ASGI (no FastAPI import)."""
-    body = (str(payload).replace("'", '"')).encode("utf-8")
+    body = json.dumps(payload).encode("utf-8")
     await send(
         {
             "type": "http.response.start",
@@ -57,27 +79,117 @@ async def _send_json(
     await send({"type": "http.response.body", "body": body, "more_body": False})
 
 
-class BearerAuthMiddleware:
-    """Reject any HTTP request whose bearer token doesn't match."""
+def _normalize_token(value: str | None) -> str | None:
+    """Strip whitespace; treat empty/whitespace-only as ``None``."""
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
 
-    def __init__(self, app, expected_token: str | None) -> None:
+
+def _is_ocr_route(path: str) -> bool:
+    """Return True when ``path`` is an OCR route namespace."""
+    if path == "/api/process" or path.startswith("/api/process/"):
+        return True
+    return bool(
+        path == "/api/models/ocr"
+        or path.startswith("/api/models/ocr/")
+        or path == "/api/config/ocr"
+        or path.startswith("/api/config/ocr/")
+    )
+
+
+def _is_translation_route(path: str) -> bool:
+    """Return True when ``path`` is a translation route namespace."""
+    if path == "/api/translate" or path.startswith("/api/translate/"):
+        return True
+    if path == "/api/models/translation" or path.startswith("/api/models/translation/"):
+        return True
+    if path == "/api/config/translation" or path.startswith("/api/config/translation/"):
+        return True
+    return bool(
+        path == "/api/extract"
+        or path.startswith("/api/extract/")
+        or path == "/api/export"
+        or path.startswith("/api/export/")
+        or path == "/api/glossary"
+        or path.startswith("/api/glossary/")
+    )
+
+
+class BearerAuthMiddleware:
+    """Reject any HTTP request whose bearer token does not match.
+
+    Constructor accepts three independent tokens:
+
+    * ``expected_token`` — global fallback; accepted on every route.
+    * ``ocr_token`` — required for OCR routes; takes precedence over
+      the global token on those routes.
+    * ``translation_token`` — required for translation routes; takes
+      precedence over the global token on those routes.
+
+    Whitespace-only values are normalised to ``None`` so a stray
+    ``"   "`` env var does not silently lock everyone out.
+
+    When no token is set for a route group, that group is open.
+    """
+
+    def __init__(
+        self,
+        app,
+        expected_token: str | None,
+        ocr_token: str | None = None,
+        translation_token: str | None = None,
+    ) -> None:
         self.app = app
-        self.expected_token = (
-            expected_token.strip()
-            if expected_token and expected_token.strip()
-            else None
-        )
+        self.expected_token = _normalize_token(expected_token)
+        self.ocr_token = _normalize_token(ocr_token)
+        self.translation_token = _normalize_token(translation_token)
+
+    @staticmethod
+    def route_group_for(path: str) -> str:
+        """Classify an HTTP path into ``"ocr"``, ``"translation"`` or ``"other"``.
+
+        Used by tests to pin the per-route token mapping and by callers
+        that want to know which token to attach when both a global and
+        a per-service token are set.
+        """
+        if _is_ocr_route(path):
+            return "ocr"
+        if _is_translation_route(path):
+            return "translation"
+        return "other"
+
+    def _token_for(self, path: str) -> str | None:
+        """Pick the token that applies to ``path``.
+
+        Per-service tokens (OCR / translation) win over the global
+        token when both are set. When only the global token is set,
+        every route uses it. When neither is set, returns ``None``
+        and the caller is open.
+        """
+        if self.route_group_for(path) == "ocr" and self.ocr_token is not None:
+            return self.ocr_token
+        if (
+            self.route_group_for(path) == "translation"
+            and self.translation_token is not None
+        ):
+            return self.translation_token
+        return self.expected_token
 
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        if self.expected_token is None:
+
+        path = scope.get("path", "")
+        token = self._token_for(path)
+        if token is None:
             await self.app(scope, receive, send)
             return
 
         supplied: str | None = None
-        for name, value in scope.get("headers", ()):
+        for name, value in scope.get("headers", ()) or ():
             if name == b"authorization":
                 try:
                     supplied = value.decode("latin-1").strip()
@@ -88,11 +200,11 @@ class BearerAuthMiddleware:
         if not supplied:
             await _send_json(scope, receive, send, _UNAUTHORIZED, 401)
             return
-        scheme, _, token = supplied.partition(" ")
-        if scheme.lower() != "bearer" or not token.strip():
+        scheme, _, candidate = supplied.partition(" ")
+        if scheme.lower() != "bearer" or not candidate.strip():
             await _send_json(scope, receive, send, _UNAUTHORIZED, 401)
             return
-        if not secrets.compare_digest(token.strip(), self.expected_token):
+        if not secrets.compare_digest(candidate.strip(), token):
             await _send_json(scope, receive, send, _UNAUTHORIZED, 401)
             return
 
@@ -100,23 +212,51 @@ class BearerAuthMiddleware:
 
 
 class MaxUploadSizeMiddleware:
-    """Reject HTTP requests with a Content-Length over the configured cap.
+    """Reject HTTP requests whose body exceeds the configured cap.
 
-    Only ``Content-Length`` is consulted; chunked uploads without a
-    length header bypass this. Pair with a body-size ``Request`` check
-    for full coverage when that matters.
+    Two complementary paths guard uploads:
+
+    * ``Content-Length`` fast path: when the header is present and
+      already over the cap, the middleware rejects with a 413 envelope
+      before reading any body so the server never pays the buffering
+      cost.
+    * Chunked path: when no Content-Length is present, the middleware
+      wraps the ``receive`` callable, accumulates each chunk's bytes,
+      and rejects with a 413 envelope once the cumulative size exceeds
+      ``max_bytes``. The downstream app still runs against the
+      truncated body so its own cleanup logic sees the boundary.
+
+    The 413 envelope is ``{"error": "Upload exceeds maximum size",
+    "limit_bytes": ..., "limit_bytes_mb": ..., "hint": ...}`` so the
+    Settings tab can render an operator-friendly hint.
     """
 
     def __init__(self, app, max_bytes: int) -> None:
         self.app = app
         self.max_bytes = max_bytes
 
+    @staticmethod
+    def _envelope(max_bytes: int) -> dict[str, str]:
+        limit_mb = max_bytes // (1024 * 1024)
+        return {
+            **_TOO_LARGE,
+            "limit_bytes": str(max_bytes),
+            "limit_bytes_mb": str(limit_mb),
+            "hint": (
+                "Raise LOCAL_DEEPL_MAX_UPLOAD_MB (current cap "
+                f"{limit_mb} MB) and restart the server to accept "
+                "larger uploads."
+            ),
+        }
+
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
-        for name, value in scope.get("headers", ()):
+        # Fast path: Content-Length known. Reject up front without
+        # reading any body so the server never pays the buffering cost.
+        for name, value in scope.get("headers", ()) or ():
             if name == b"content-length":
                 try:
                     length = int(value.decode("ascii"))
@@ -127,16 +267,73 @@ class MaxUploadSizeMiddleware:
                         scope,
                         receive,
                         send,
-                        {
-                            **_TOO_LARGE,
-                            "limit_bytes": str(self.max_bytes),
-                        },
+                        self._envelope(self.max_bytes),
                         413,
                     )
                     return
                 break
 
-        await self.app(scope, receive, send)
+        # Chunked path: no Content-Length. Wrap ``receive`` so we
+        # accumulate bytes and reject with 413 the moment the running
+        # total crosses the cap. The downstream app still runs against
+        # the truncated body so it can do its own cleanup.
+        max_bytes = self.max_bytes
+        guard: _UploadGuard = {
+            "total": 0,
+            "envelope": None,
+            "status": None,
+        }
+
+        async def _guarded_receive():
+            msg = await receive()
+            if msg.get("type") != "http.request":
+                return msg
+            body = msg.get("body", b"") or b""
+            if not body:
+                return msg
+            running_total = guard["total"] + len(body)
+            guard["total"] = running_total
+            if running_total > max_bytes:
+                guard["envelope"] = self._envelope(max_bytes)
+                guard["status"] = 413
+                # Truncate this chunk so downstream reads stop.
+                return {
+                    "type": "http.request",
+                    "body": b"",
+                    "more_body": False,
+                }
+            return msg
+
+        async def _guarded_send(event):
+            if (
+                event.get("type") == "http.response.start"
+                and guard.get("status") == 413
+            ):
+                envelope = guard.get("envelope") or self._envelope(max_bytes)
+                envelope_body = json.dumps(envelope).encode("utf-8")
+                event = {
+                    **event,
+                    "status": 413,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (
+                            b"content-length",
+                            str(len(envelope_body)).encode("ascii"),
+                        ),
+                    ],
+                }
+                await send(event)
+                await send(
+                    {
+                        "type": "http.response.body",
+                        "body": envelope_body,
+                        "more_body": False,
+                    }
+                )
+                return
+            await send(event)
+
+        await self.app(scope, _guarded_receive, _guarded_send)
 
 
 class RateLimitMiddleware:

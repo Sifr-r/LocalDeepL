@@ -1,9 +1,9 @@
 """Smoke tests for the glossary import router."""
+
 from __future__ import annotations
 
 import base64
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -187,4 +187,6 @@ def test_entries_endpoint_returns_entries(library_dir):
     response = client.get(f"/api/glossary/library/{glossary_id}/entries")
     assert response.status_code == 200
     body = response.json()
-    assert body["entries"] == [{"source": "A", "target": "1", "case_sensitive": False, "notes": ""}]
+    assert body["entries"] == [
+        {"source": "A", "target": "1", "case_sensitive": False, "notes": ""}
+    ]

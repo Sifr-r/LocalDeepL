@@ -1,6 +1,7 @@
 """Typed API request schemas."""
 
 from .requests import (
+    AuthTokenUpdate,
     ConfigUpdate,
     DenseMode,
     DocumentExportFormat,
@@ -8,14 +9,17 @@ from .requests import (
     DocumentProcessorName,
     ExportDocxRequest,
     ExtractionRequest,
+    OcrConfigUpdate,
     PipelineMode,
     ProcessSettings,
     SpellcheckMode,
+    TranslationConfigUpdate,
     TranslationRequest,
     TreeTranslationRequest,
 )
 
 __all__ = [
+    "AuthTokenUpdate",
     "ConfigUpdate",
     "DenseMode",
     "DocumentExportFormat",
@@ -23,9 +27,11 @@ __all__ = [
     "DocumentProcessorName",
     "ExportDocxRequest",
     "ExtractionRequest",
+    "OcrConfigUpdate",
     "PipelineMode",
     "ProcessSettings",
     "SpellcheckMode",
+    "TranslationConfigUpdate",
     "TranslationRequest",
     "TreeTranslationRequest",
 ]

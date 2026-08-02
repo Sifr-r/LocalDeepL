@@ -9,9 +9,17 @@ from pathlib import Path
 
 from fastapi import UploadFile
 
+from local_deepl.api.services.security_config import (
+    DEFAULT_MAX_UPLOAD_MB as _DEFAULT_MAX_UPLOAD_MB,
+)
+
 logger = logging.getLogger(__name__)
 
-MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+# Module-level constant kept in sync with SecuritySettings.DEFAULT_MAX_UPLOAD_MB
+# so the in-process upload validator (``save_validated_upload``) defaults its
+# cap from the same source as the middleware. If the two drift apart, a
+# request rejected by one layer can be silently accepted by the other.
+MAX_UPLOAD_BYTES: int = _DEFAULT_MAX_UPLOAD_MB * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 
 SAFE_API_BASE_ERROR = (
@@ -98,11 +106,15 @@ async def save_validated_upload(
 
 
 def cleanup_files(*paths: str | None) -> None:
+    temp_dir = Path(tempfile.gettempdir()).resolve()
     for path in paths:
         if not path:
             continue
         try:
-            if os.path.exists(path):
-                os.remove(path)
+            resolved = Path(path).resolve()
+            if (
+                temp_dir in resolved.parents or temp_dir == resolved.parent
+            ) and resolved.exists():
+                os.remove(resolved)
         except OSError:
             logger.warning("Could not remove temporary file %s", path)

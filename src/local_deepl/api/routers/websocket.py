@@ -15,7 +15,7 @@ OCR blocks / translation chunks.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
@@ -24,6 +24,68 @@ from local_deepl.api.routers import state
 
 router = APIRouter()
 _progress_service = state.progress_service
+
+
+@runtime_checkable
+class ConnectionManagerLike(Protocol):
+    """Structural surface that the chunked runner depends on.
+
+    Declared as a ``Protocol`` so the chunked runner can be type-hinted
+    against the real :class:`ConnectionManager` (or a stub for tests)
+    without importing the websocket router at module load time. Keeping
+    the surface here means the runner does not need to know about
+    WebSocket internals — it just calls ``send_progress``,
+    ``send_block``, ``is_cancelled``, and friends.
+    """
+
+    def is_cancelled(self, channel_id: str | None) -> bool: ...
+
+    async def send_progress(
+        self,
+        channel_id: str | None,
+        message: str,
+        percent: int,
+        stage: str = "",
+        warning: bool = False,
+    ) -> None: ...
+
+    async def send_block(
+        self,
+        channel_id: str | None,
+        *,
+        page_idx: int,
+        block_idx: int,
+        bbox: list[float],
+        text: str,
+        kind: str = "text",
+        confidence: float | None = None,
+    ) -> None: ...
+
+    async def send_page_complete(
+        self,
+        channel_id: str | None,
+        *,
+        page_idx: int,
+    ) -> None: ...
+
+    async def send_chunk_init(
+        self,
+        channel_id: str | None,
+        *,
+        total_chunks: int,
+    ) -> None: ...
+
+    async def send_chunk_complete(
+        self,
+        channel_id: str | None,
+        *,
+        chunk_idx: int,
+        total_chunks: int,
+        page_range: str,
+        source_pages: list[int],
+        text_chars_so_far: int,
+        overall_percent: int | None = None,
+    ) -> None: ...
 
 
 class ConnectionManager:
@@ -154,6 +216,42 @@ class ConnectionManager:
             channel_id,
             _progress_service.build_page_complete_frame(
                 page_idx=page_idx,
+            ),
+        )
+
+    async def send_chunk_init(
+        self,
+        channel_id: str | None,
+        *,
+        total_chunks: int,
+    ) -> None:
+        """Emit the ``chunk_init`` pre-amble for a chunked OCR run."""
+        await self.send(
+            channel_id,
+            _progress_service.build_chunk_init_frame(total_chunks=total_chunks),
+        )
+
+    async def send_chunk_complete(
+        self,
+        channel_id: str | None,
+        *,
+        chunk_idx: int,
+        total_chunks: int,
+        page_range: str,
+        source_pages: list[int],
+        text_chars_so_far: int,
+        overall_percent: int | None = None,
+    ) -> None:
+        """Emit the per-chunk terminal frame after a chunk finishes."""
+        await self.send(
+            channel_id,
+            _progress_service.build_chunk_complete_frame(
+                chunk_idx=chunk_idx,
+                total_chunks=total_chunks,
+                page_range=page_range,
+                source_pages=list(source_pages),
+                text_chars_so_far=text_chars_so_far,
+                overall_percent=overall_percent,
             ),
         )
 

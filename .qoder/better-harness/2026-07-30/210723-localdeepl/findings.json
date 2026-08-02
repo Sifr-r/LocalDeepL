@@ -1,0 +1,181 @@
+{
+  "summary": {
+    "projectName": "LocalDeepL",
+    "locale": "en",
+    "modelId": "agent-work-loop-v4",
+    "reportContractVersion": 25,
+    "overview": "LocalDeepL has a strong instruction map and a layered CI gate, but the 30-day session window is too thin to show validated delivery, and several quality gates are present without enforcement. AGENTS.md routes every change to canonical file owners with zero missing references, and the fast tier runs ruff, mypy, and pytest on every PR with path-gated frontend contract tests. However, branch coverage is reported but never fails, a dead legacy code path in the hybrid engine is still unit-tested, the Playwright UI smoke and the committed frontend bundle have no CI gate, and a no-op step sits in the nightly workflow. This is a session-limited review: no task episode in the window produced an observable change, check, or accepted outcome, so behavior claims stay Unobserved and scores reflect inspected harness mechanisms rather than exercised delivery.",
+    "strengths": [
+      "AGENTS.md routes every change to canonical file owners via a 50-row key-files table with zero missing references, and documents deprecated surfaces, conventions, and recovery routes.",
+      "Fast-tier CI runs ruff check, ruff format, mypy, and pytest on every PR across Python 3.11 and 3.13, with a path-gated vitest job and a nightly slow tier keyed to the locked surya-ocr version.",
+      "The release workflow builds the wheel and sdist before tagging, so a broken build can never produce a release tag."
+    ],
+    "aiAgentPractice": {
+      "inspectedSurfaces": [
+        "Rules",
+        "Workflows"
+      ],
+      "coverageRows": [
+        {
+          "surface": "Rules",
+          "scopes": [
+            "Project"
+          ],
+          "count": 1,
+          "paths": [
+            "AGENTS.md"
+          ]
+        },
+        {
+          "surface": "Workflows",
+          "scopes": [
+            "Project"
+          ],
+          "count": 3,
+          "paths": [
+            ".github/workflows/nightly.yml",
+            ".github/workflows/release.yml",
+            ".github/workflows/test.yml"
+          ]
+        },
+        {
+          "surface": "Skills",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "MCP",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Custom Agents",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        }
+      ]
+    },
+    "assignmentSummaries": [],
+    "dimensions": [
+      {
+        "id": "task-understanding",
+        "label": "Task Understanding",
+        "score": 68,
+        "summary": "AGENTS.md, ARCHITECTURE.md, and two spec files give strong context routing and explicit scope and convention boundaries, but no exercised task episode in the window proves applied understanding.",
+        "findingRefs": []
+      },
+      {
+        "id": "controlled-execution",
+        "label": "Controlled Execution",
+        "score": 70,
+        "summary": "A reproducible uv/Makefile/Docker setup, a supported local-deepl-server entrypoint, and enforced security middleware (bearer auth, upload-size cap, rate limit, SSRF guard) are present and wired; operation was not exercised in the window.",
+        "findingRefs": []
+      },
+      {
+        "id": "change-validation",
+        "label": "Change Validation",
+        "score": 60,
+        "summary": "A fast-tier gate exists and runs on every PR, but enforcement is weakened: branch coverage never fails, legacy dead code is unit-tested, the UI smoke and frontend bundle have no CI gate, and the nightly workflow carries a no-op step. No failure or repair was observed in the window.",
+        "findingRefs": [
+          "coverage-gate-disabled",
+          "frontend-bundle-no-drift-gate",
+          "hybrid-legacy-methods-tested-off-path",
+          "playwright-smoke-not-in-ci",
+          "nightly-duplicate-empty-step"
+        ]
+      },
+      {
+        "id": "reliable-delivery",
+        "label": "Reliable Delivery",
+        "score": 58,
+        "summary": "CI acceptance and a build-before-tag release flow are present, but no delivery was observed in the window and the documented recovery route for interrupted runs is not automated (in-memory state, no auto-resume).",
+        "findingRefs": []
+      },
+      {
+        "id": "learning-capture",
+        "label": "Learning Capture",
+        "score": 35,
+        "summary": "A bounded review was completed but could not reach an adequate clean no-candidate decision: normalized lifecycle events are missing and only one of fourteen sessions yielded a retainable episode, so no reusable improvement is supported.",
+        "findingRefs": []
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "coverage-gate-disabled",
+      "title": "Branch coverage is reported but never gates a merge",
+      "severity": "Medium",
+      "reason": "The fast-tier CI job runs pytest with --cov-branch but passes --cov-fail-under=0, and pyproject.toml defines no [tool.coverage] fail_under. The workflow comment cites branch coverage as the cheapest proxy for exercising every if/elif arm, but with a zero floor the gate is advisory only, so a coverage regression on the OCR pipeline can merge without failing CI.",
+      "expectedOutput": [
+        "Set a real coverage floor via --cov-fail-under or [tool.coverage.report] fail_under so a branch-coverage drop on src/local_deepl fails the fast-tier job."
+      ],
+      "expectedArtifact": "CI gate",
+      "aiFixPrompt": "/better-harness fix this issue\n\nMake the branch-coverage gate enforce a real floor instead of --cov-fail-under=0.\n\n## Evidence\n- .github/workflows/test.yml fast job runs: uv run --with pytest-cov pytest -m \"not slow\" --cov=src/local_deepl --cov-branch --cov-report=term --cov-fail-under=0\n- pyproject.toml has no [tool.coverage] fail_under.\n\n## Repair\n- Read the current branch-coverage percentage from a fast-tier run, choose a conservative floor below it, then set --cov-fail-under=<floor> in test.yml or fail_under under [tool.coverage.report] in pyproject.toml.\n\n## Validation\n- uv run --with pytest-cov pytest -m \"not slow\" --cov=src/local_deepl --cov-branch --cov-report=term\n- Confirm the job fails when coverage drops below the floor and passes at the current level.",
+      "dimensionRefs": [
+        "change-validation"
+      ]
+    },
+    {
+      "id": "frontend-bundle-no-drift-gate",
+      "title": "Committed frontend bundles have no build-drift gate in CI",
+      "severity": "Medium",
+      "reason": "No workflow runs npm run build or compares the committed minified bundles under src/local_deepl/static/assets/ against a fresh build; release.yml runs only uv build for the Python wheel. The CI js job runs vitest contract tests but never rebuilds the bundle, so a stale or mismatched committed bundle can ship inside the wheel undetected. This aligns with the current working-tree diff where the static/assets bundles are among the changed files.",
+      "expectedOutput": [
+        "A CI step builds the frontend and asserts the committed src/local_deepl/static/assets/ match the fresh build, or the release job rebuilds and commits the bundle automatically."
+      ],
+      "expectedArtifact": "CI gate",
+      "aiFixPrompt": "/better-harness fix this issue\n\nAdd a frontend bundle drift gate so a stale committed bundle cannot ship.\n\n## Evidence\n- .github/workflows/test.yml js job runs npm test only; no npm run build.\n- .github/workflows/release.yml runs uv build only; the frontend is not rebuilt.\n- Committed bundles live in src/local_deepl/static/assets/.\n\n## Repair\n- Add a CI step that runs npm run build --prefix frontend and diffs the output against src/local_deepl/static/assets/, failing on mismatch; or rebuild the bundle in the release job and commit it.\n\n## Validation\n- npm run build --prefix frontend\n- git status --porcelain src/local_deepl/static/assets\n- Confirm the gate fails when a committed bundle is stale.",
+      "dimensionRefs": [
+        "change-validation"
+      ]
+    },
+    {
+      "id": "hybrid-legacy-methods-tested-off-path",
+      "title": "Hybrid unit tests assert against legacy methods the production execute path no longer calls",
+      "severity": "Low",
+      "reason": "HybridEngine.execute() runs the staged phases _stage_ocr, _stage_align, _stage_postprocess, and _stage_finalize. _stage_ocr calls _ocr_per_box and perform_ocr rather than the legacy _ocr_pages, and _stage_finalize calls _emit rather than the legacy _finalize, with zero internal callers of either legacy method. Yet tests/test_workflows_hybrid.py calls engine._ocr_pages and engine._finalize directly, so those tests pass against dead code and cannot detect a regression in the staged methods execute() actually runs; the staged path currently has only indirect integration coverage via test_pipeline.py pipe.run().",
+      "expectedOutput": [
+        "Either delete the dead _ocr_pages/_finalize methods and retire their tests, or re-point the tests at the staged _stage_* methods so they cover the production execute() path."
+      ],
+      "expectedArtifact": "Test",
+      "aiFixPrompt": "/better-harness fix this issue\n\nReconcile the hybrid workflow tests with the production execute() path.\n\n## Evidence\n- src/local_deepl/core/workflows/hybrid.py: execute() calls _stage_ocr/_stage_align/_stage_postprocess/_stage_finalize; _stage_ocr calls _ocr_per_box + perform_ocr; _stage_finalize calls _emit. The legacy _ocr_pages and _finalize have no internal callers.\n- tests/test_workflows_hybrid.py calls engine._ocr_pages and engine._finalize directly.\n\n## Repair\n- If _ocr_pages/_finalize are legacy, delete them and remove or replace their tests; otherwise re-point the tests at the _stage_* methods that execute() calls.\n\n## Validation\n- uv run pytest tests/test_workflows_hybrid.py tests/test_pipeline.py -v\n- uv run ruff check src tests && uv run mypy src",
+      "dimensionRefs": [
+        "change-validation"
+      ]
+    },
+    {
+      "id": "playwright-smoke-not-in-ci",
+      "title": "Playwright UI smoke test is documented but not wired into CI",
+      "severity": "Low",
+      "reason": "test_ui.py is a standalone Playwright script at the repo root rather than a pytest test, and no GitHub Actions workflow references it. The Svelte 5 frontend is therefore protected in CI only by the vitest contract tests, so a UI regression can ship undetected. AGENTS.md documents test_ui.py as the headless smoke test, but that documentation does not enforce it.",
+      "expectedOutput": [
+        "A CI or nightly job runs the Playwright smoke against a booted server, or test_ui.py is explicitly documented as local-only with the gap acknowledged."
+      ],
+      "expectedArtifact": "CI gate",
+      "aiFixPrompt": "/better-harness fix this issue\n\nWire the Playwright UI smoke into CI or explicitly mark it local-only.\n\n## Evidence\n- test_ui.py is a standalone async script using playwright.async_api against a local server; it is not collected by pytest.\n- .github/workflows/test.yml and nightly.yml contain no reference to test_ui.py or playwright.\n\n## Repair\n- Add a CI job that boots the server with uv run local-deepl-server, runs the Playwright smoke, and fails on a broken selector; or add an explicit local-only note and rely on the vitest contract tests.\n\n## Validation\n- npm run build --prefix frontend\n- Start the server and run python test_ui.py headless\n- Confirm the smoke fails when a UI selector is broken.",
+      "dimensionRefs": [
+        "change-validation"
+      ]
+    },
+    {
+      "id": "nightly-duplicate-empty-step",
+      "title": "Nightly workflow has a no-op duplicate upload step",
+      "severity": "Low",
+      "reason": "nightly.yml defines two consecutive steps both named 'Upload results on failure'. The first has only a name key with no uses, run, or with, so GitHub Actions silently skips it; the second, guarded by if: failure(), is the real upload. The empty step is a concrete config defect in the slow-tier quality gate, suggesting an incomplete edit, and can confuse future maintenance of the failure-upload path.",
+      "expectedOutput": [
+        "The empty 'Upload results on failure' step is removed, leaving a single failure-upload step."
+      ],
+      "expectedArtifact": "CI gate",
+      "aiFixPrompt": "/better-harness fix this issue\n\nRemove the empty duplicate step from the nightly workflow.\n\n## Evidence\n- .github/workflows/nightly.yml: a step with only name 'Upload results on failure' (no uses/run/with) immediately precedes the real if: failure() upload step.\n\n## Repair\n- Delete the empty named step, keeping the single failure-upload step with if: failure() and actions/upload-artifact@v4.\n\n## Validation\n- Inspect nightly.yml: exactly one 'Upload results on failure' step remains, with if: failure() and actions/upload-artifact@v4.\n- Optionally trigger the workflow via workflow_dispatch and confirm the failure artifact uploads.",
+      "dimensionRefs": [
+        "change-validation"
+      ]
+    }
+  ]
+}

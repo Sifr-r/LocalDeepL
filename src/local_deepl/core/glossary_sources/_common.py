@@ -92,9 +92,7 @@ def finalize(
 ) -> GlossaryImportSummary:
     """Create a summary and count repeated source terms."""
     counts = Counter(
-        str(item.get("source", "")).casefold()
-        for item in entries
-        if item.get("source")
+        str(item.get("source", "")).casefold() for item in entries if item.get("source")
     )
     duplicates = sum(count - 1 for count in counts.values() if count > 1)
     return GlossaryImportSummary(

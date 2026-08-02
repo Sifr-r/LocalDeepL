@@ -8,6 +8,7 @@ from local_deepl.core.processors.base import (
     _KEY_VALUE_RE,
     _LIST_ITEM_RE,
     _TABLE_SPLIT_RE,
+    ProcessorContract,
     _normalize_space,
     _structure_kind,
 )
@@ -17,6 +18,7 @@ class SectionAnalysisProcessor:
     """Group blocks under locally detected section headings."""
 
     name = "section_analysis"
+    contract = ProcessorContract.ANNOTATE_ONLY
 
     def __init__(
         self, heading_max_chars: int = 120, heading_max_words: int = 14

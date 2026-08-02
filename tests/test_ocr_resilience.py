@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -68,27 +69,37 @@ def test_permanent_errors_are_not_retryable(exc):
 
 def test_breaker_stays_closed_below_threshold():
     cb = CircuitBreaker(failure_threshold=3, cooldown_seconds=10.0)
-    cb.record_failure()
-    cb.record_failure()
-    cb.check()  # should not raise
+
+    async def _drive() -> None:
+        await cb.record_failure()
+        await cb.record_failure()
+        await cb.check()  # should not raise
+
+    asyncio.run(_drive())
     assert cb.consecutive_failures == 2
 
 
 def test_breaker_opens_at_threshold():
     cb = CircuitBreaker(failure_threshold=3, cooldown_seconds=10.0)
-    for _ in range(3):
-        cb.record_failure()
-    with pytest.raises(CircuitOpenError, match="3 consecutive"):
-        cb.check()
+
+    async def _drive() -> None:
+        for _ in range(3):
+            await cb.record_failure()
+        with pytest.raises(CircuitOpenError, match="3 consecutive"):
+            await cb.check()
+
+    asyncio.run(_drive())
 
 
 def test_breaker_resets_on_success():
     cb = CircuitBreaker(failure_threshold=2, cooldown_seconds=10.0)
-    cb.record_failure()
-    cb.record_success()
-    assert cb.consecutive_failures == 0
-    cb.record_failure()
-    cb.check()  # only 1 consecutive failure — still closed
+
+    async def _drive() -> None:
+        await cb.record_failure()
+        await cb.record_success()
+        assert cb.consecutive_failures == 0
+        await cb.record_failure()  # only 1 consecutive failure — still closed
+        await cb.check()
 
 
 def test_breaker_half_open_after_cooldown():
@@ -96,14 +107,18 @@ def test_breaker_half_open_after_cooldown():
     cb = CircuitBreaker(
         failure_threshold=2, cooldown_seconds=30.0, clock=lambda: now[0]
     )
-    cb.record_failure()
-    cb.record_failure()
-    assert cb.is_open
 
-    # Advance past cooldown → half-open: check() passes a probe through.
-    now[0] = 31.0
-    assert not cb.is_open
-    cb.check()  # probe allowed
+    async def _drive() -> None:
+        await cb.record_failure()
+        await cb.record_failure()
+        assert cb.is_open
+
+        # Advance past cooldown → half-open: check() passes a probe through.
+        now[0] = 31.0
+        assert not cb.is_open
+        await cb.check()  # probe allowed
+
+    asyncio.run(_drive())
 
 
 def test_breaker_closes_after_successful_probe():
@@ -111,12 +126,16 @@ def test_breaker_closes_after_successful_probe():
     cb = CircuitBreaker(
         failure_threshold=2, cooldown_seconds=30.0, clock=lambda: now[0]
     )
-    cb.record_failure()
-    cb.record_failure()
-    now[0] = 31.0
-    cb.record_success()
-    assert cb.consecutive_failures == 0
-    cb.check()  # fully closed
+
+    async def _drive() -> None:
+        await cb.record_failure()
+        await cb.record_failure()
+        now[0] = 31.0
+        await cb.record_success()
+        assert cb.consecutive_failures == 0
+        await cb.check()  # fully closed
+
+    asyncio.run(_drive())
 
 
 def test_breaker_reopens_after_failed_probe():
@@ -124,12 +143,16 @@ def test_breaker_reopens_after_failed_probe():
     cb = CircuitBreaker(
         failure_threshold=2, cooldown_seconds=30.0, clock=lambda: now[0]
     )
-    cb.record_failure()
-    cb.record_failure()
-    now[0] = 31.0
-    cb.record_failure()  # probe failed
-    with pytest.raises(CircuitOpenError):
-        cb.check()
+
+    async def _drive() -> None:
+        await cb.record_failure()
+        await cb.record_failure()
+        now[0] = 31.0
+        await cb.record_failure()  # probe failed
+        with pytest.raises(CircuitOpenError):
+            await cb.check()
+
+    asyncio.run(_drive())
 
 
 # ---------------------------------------------------------------------------

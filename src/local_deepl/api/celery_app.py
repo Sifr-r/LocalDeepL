@@ -22,7 +22,8 @@ class _MissingCeleryTask:
         bind: bool = False,
     ) -> None:
         self._func = func
-        self._name = name or getattr(func, "__name__", "celery_task")
+        resolved_name = name or getattr(func, "__name__", "celery_task")
+        self._name = resolved_name if isinstance(resolved_name, str) else "celery_task"
         self._bind = bind
         self.__name__ = func.__name__
         self.__doc__ = func.__doc__

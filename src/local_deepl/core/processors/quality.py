@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from local_deepl.core.document import DocumentResult
-from local_deepl.core.processors.base import _bbox_area
+from local_deepl.core.processors.base import ProcessorContract, _bbox_area
 
 
 class QualityAnalysisProcessor:
@@ -15,6 +15,7 @@ class QualityAnalysisProcessor:
     """
 
     name = "quality_analysis"
+    contract = ProcessorContract.ANNOTATE_ONLY
 
     def __init__(
         self,

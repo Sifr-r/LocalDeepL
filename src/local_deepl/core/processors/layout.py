@@ -7,6 +7,7 @@ from collections import Counter
 from local_deepl.core.block_tree import BlockType
 from local_deepl.core.document import DocumentBlock, DocumentResult
 from local_deepl.core.processors.base import (
+    ProcessorContract,
     _bbox_area,
     _normalize_space,
     _page_region,
@@ -18,6 +19,7 @@ class LayoutEnrichmentProcessor:
     """Attach local page-region and document-layout labels to blocks."""
 
     name = "layout_enrichment"
+    contract = ProcessorContract.ANNOTATE_ONLY
 
     async def process(self, document: DocumentResult) -> DocumentResult:
         tree = document.tree

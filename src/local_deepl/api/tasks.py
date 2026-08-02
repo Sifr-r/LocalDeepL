@@ -54,7 +54,7 @@ def process_translation_task(
     from local_deepl.api.routers import state
 
     try:
-        path = state.text_artifacts.get(artifact_id, token)
+        path = asyncio.run(state.text_artifacts.get(artifact_id, token))
     except Exception as exc:
         raise ValueError(f"Could not load artifact {artifact_id}") from exc
 
@@ -84,8 +84,6 @@ def process_translation_task(
         glossary = Glossary.from_dict({"entries": glossary_entries})
 
     # Initialize translation graph
-    import asyncio
-
     from local_deepl.core.translation import run_translation
 
     async def translator_fn(prompt: str, lang: str) -> str:

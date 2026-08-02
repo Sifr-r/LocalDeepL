@@ -1,7 +1,7 @@
 # ruff: noqa: E402
 import logging
 import os
-from typing import Any, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from dotenv import load_dotenv
 
@@ -10,8 +10,18 @@ load_dotenv()
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from local_deepl.api.schemas import ConfigUpdate
+from local_deepl.api.schemas import (
+    AuthTokenUpdate,
+    ConfigUpdate,
+    OcrConfigUpdate,
+    TranslationConfigUpdate,
+)
 from local_deepl.api.services.security import SAFE_API_BASE_ERROR, SERVER_ERROR_MESSAGE
+from local_deepl.api.services.security_config import (
+    ABSOLUTE_MAX_UPLOAD_MB,
+    DEFAULT_MAX_UPLOAD_MB,
+    SecuritySettings,
+)
 from local_deepl.core.translation_config import (
     DEFAULT_TRANSLATION_API_BASE,
     DEFAULT_TRANSLATION_API_KEY,
@@ -19,6 +29,9 @@ from local_deepl.core.translation_config import (
     TranslationSettings,
 )
 from local_deepl.utils.security import is_ssrf_target
+
+if TYPE_CHECKING:
+    from local_deepl.api.services.ai import AIRequestSettings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -100,49 +113,267 @@ _config: RuntimeConfigDict = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _mask_api_key(value: str | None) -> str | None:
+    """Return a ``<first4>...<last4>`` preview of the API key.
+
+    Used both by the legacy ``GET /api/config`` and by the per-namespace
+    ``GET /api/config/{ocr,translation}`` endpoints so the operator
+    sees the same masked preview everywhere.
+    """
+    if not value or value == "lm-studio":
+        return value
+    if len(value) <= 8:
+        return "********"
+    return f"{value[:4]}...{value[-4:]}"
+
+
+def _is_masked_placeholder(value: object) -> bool:
+    """Return True for the masked preview shape the GET endpoints return."""
+    return isinstance(value, str) and ("..." in value or value == "********")
+
+
+class _SSRFRejected(Exception):
+    """Internal signal that ``api_base`` failed SSRF validation.
+
+    Allows the route handler to convert the rejection into a 403
+    response with the shared error envelope (``{"error": "..."}``),
+    matching the legacy ``POST /api/config`` contract.
+    """
+
+
+async def _is_ssrf(value: str) -> bool:
+    """Async shim so the in-memory patch path can mock the SSRF check."""
+    return await is_ssrf_target(value)
+
+
+# ---------------------------------------------------------------------------
+# Settings resolvers — core code should never poke ``_config`` directly.
+# ---------------------------------------------------------------------------
+
+
 def get_translation_settings() -> TranslationSettings:
-    """Return core-owned settings for the optional async translation workflow."""
-    return TranslationSettings.from_mapping(_config)
+    """Return core-owned settings for the optional async translation workflow.
+
+    Namespaced ``translation_*`` keys win over the legacy ``api_*`` keys
+    when both are set; the namespaced values persist the operator's
+    intentional split without being silently clobbered by a legacy
+    POST.
+    """
+    config = cast(dict[str, Any], _config)
+    merged = dict(config)
+    for key in ("api_base", "api_key", "model"):
+        namespaced = config.get(f"translation_{key}")
+        if isinstance(namespaced, str) and namespaced.strip():
+            merged[key] = namespaced
+    return TranslationSettings.from_mapping(merged)
 
 
-# ---- Configuration --------------------------------------------------------
+def get_ocr_settings() -> "AIRequestSettings":
+    """Return AI request settings for the OCR pipeline.
+
+    Namespaced ``ocr_*`` keys win over the legacy ``api_*`` keys when
+    both are set. Imported lazily to avoid a circular import
+    ``api.services.ai -> api.routers.config`` at module load time.
+    """
+    from local_deepl.api.services.ai import AIRequestSettings
+
+    config = cast(dict[str, Any], _config)
+    merged = dict(config)
+    for key in ("api_base", "api_key", "model"):
+        namespaced = config.get(f"ocr_{key}")
+        if isinstance(namespaced, str) and namespaced.strip():
+            merged[key] = namespaced
+    return AIRequestSettings(
+        api_base=merged["api_base"],
+        api_key=merged["api_key"],
+        model=merged["model"],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Legacy /api/config
+# ---------------------------------------------------------------------------
+
+
+def _build_legacy_view() -> dict[str, Any]:
+    """Return the legacy config payload with API key masked + upload cap surfaced."""
+    payload = cast(dict[str, Any], _config).copy()
+    payload["api_key"] = _mask_api_key(payload.get("api_key"))
+    settings = SecuritySettings.from_env()
+    payload["max_upload_bytes"] = settings.max_upload_bytes
+    payload["max_upload_mb"] = settings.max_upload_bytes // (1024 * 1024)
+    payload["max_upload_env"] = _max_upload_env_raw()
+    return payload
+
+
+def _max_upload_env_raw() -> str:
+    """Return the raw string passed to ``LOCAL_DEEPL_MAX_UPLOAD_MB``.
+
+    Empty string when unset. The Settings tab uses this to render an
+    "operator override in effect" hint.
+    """
+    return (os.getenv("LOCAL_DEEPL_MAX_UPLOAD_MB") or "").strip()
 
 
 @router.get("/api/config")
 async def get_config():
-    """Return the current runtime configuration, masking the API key."""
-    safe_config = _config.copy()
-    if safe_config.get("api_key") and safe_config["api_key"] != "lm-studio":
-        key = safe_config["api_key"]
-        safe_config["api_key"] = (
-            f"{key[:4]}...{key[-4:]}" if len(key) > 8 else "********"
-        )
-    return JSONResponse(content=safe_config)
+    """Return the current runtime configuration, masking the API key.
+
+    The payload also surfaces the operator-visible upload cap
+    (``max_upload_bytes``, ``max_upload_mb``, ``max_upload_env``) so
+    the Settings tab can render the documented 10 GB default.
+    """
+    return JSONResponse(content=_build_legacy_view())
 
 
 @router.post("/api/config")
 async def update_config(body: ConfigUpdate):
-    """
-    Update runtime configuration.
+    """Update legacy configuration.
 
-    Unknown keys and invalid value types fail validation instead of being
-    silently ignored.
+    Only mutates the legacy ``api_*`` keys and the OCR knobs; the
+    per-namespace ``ocr_*`` / ``translation_*`` keys are intentionally
+    untouched so a legacy POST does not silently clobber a deliberate
+    split.
     """
     values = body.model_dump(exclude_unset=True)
+    config = cast(dict[str, Any], _config)
     for key, val in values.items():
-        if (
-            key == "api_key"
-            and isinstance(val, str)
-            and ("..." in val or val == "********")
-        ):
+        if key == "api_key" and isinstance(val, str) and _is_masked_placeholder(val):
             continue
         if key == "api_base" and await is_ssrf_target(val):
             return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
-        cast(dict[str, Any], _config)[key] = val.value if hasattr(val, "value") else val
-    return await get_config()
+        config[key] = val.value if hasattr(val, "value") else val
+    return JSONResponse(content=_build_legacy_view())
 
 
-# ---- Model discovery ------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Per-namespace /api/config/{ocr,translation}
+# ---------------------------------------------------------------------------
+
+
+async def _apply_ocr_update(body: OcrConfigUpdate) -> dict[str, Any]:
+    """Persist the OCR namespace update, ignoring masked-placeholders.
+
+    Returns the resulting namespace mapping. Raises ``_SSRFRejected``
+    when ``ocr_api_base`` fails SSRF validation so the route handler
+    can convert it to a 403 response.
+    """
+    values = body.model_dump(exclude_unset=True)
+    config = cast(dict[str, Any], _config)
+    for key, val in values.items():
+        if key == "ocr_api_key" and _is_masked_placeholder(val):
+            continue
+        if key == "ocr_api_base" and isinstance(val, str) and await _is_ssrf(val):
+            raise _SSRFRejected
+        config[key] = val
+    return {k: config.get(k) for k in body.stored_keys}
+
+
+def _apply_translation_update(body: TranslationConfigUpdate) -> dict[str, Any]:
+    """Persist the translation namespace update, ignoring masked placeholders."""
+    values = body.model_dump(exclude_unset=True)
+    config = cast(dict[str, Any], _config)
+    for key, val in values.items():
+        if key == "translation_api_key" and _is_masked_placeholder(val):
+            continue
+        config[key] = val
+    return {k: config.get(k) for k in body.stored_keys}
+
+
+@router.get("/api/config/ocr")
+async def get_ocr_namespace_config():
+    """Return the OCR-namespace view with the API key masked."""
+    config = cast(dict[str, Any], _config)
+    return JSONResponse(
+        content={
+            "ocr_api_base": config.get("ocr_api_base"),
+            "ocr_api_key": _mask_api_key(config.get("ocr_api_key")),
+            "ocr_model": config.get("ocr_model"),
+            "ocr_provider": config.get("ocr_provider"),
+        }
+    )
+
+
+@router.post("/api/config/ocr")
+async def update_ocr_namespace_config(body: OcrConfigUpdate):
+    """Persist the OCR-namespace update and return the masked view."""
+    try:
+        await _apply_ocr_update(body)
+    except _SSRFRejected:
+        return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
+    config = cast(dict[str, Any], _config)
+    return JSONResponse(
+        content={
+            "ocr_api_base": config.get("ocr_api_base"),
+            "ocr_api_key": _mask_api_key(config.get("ocr_api_key")),
+            "ocr_model": config.get("ocr_model"),
+            "ocr_provider": config.get("ocr_provider"),
+        }
+    )
+
+
+@router.get("/api/config/translation")
+async def get_translation_namespace_config():
+    """Return the translation-namespace view with the API key masked."""
+    config = cast(dict[str, Any], _config)
+    return JSONResponse(
+        content={
+            "translation_api_base": config.get("translation_api_base"),
+            "translation_api_key": _mask_api_key(config.get("translation_api_key")),
+            "translation_model": config.get("translation_model"),
+            "translation_provider": config.get("translation_provider"),
+            "sliding_window_words": config.get("sliding_window_words"),
+            "dual_translate": config.get("dual_translate"),
+        }
+    )
+
+
+@router.post("/api/config/translation")
+async def update_translation_namespace_config(body: TranslationConfigUpdate):
+    """Persist the translation-namespace update and return the masked view."""
+    _apply_translation_update(body)
+    config = cast(dict[str, Any], _config)
+    return JSONResponse(
+        content={
+            "translation_api_base": config.get("translation_api_base"),
+            "translation_api_key": _mask_api_key(config.get("translation_api_key")),
+            "translation_model": config.get("translation_model"),
+            "translation_provider": config.get("translation_provider"),
+            "sliding_window_words": config.get("sliding_window_words"),
+            "dual_translate": config.get("dual_translate"),
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# Per-namespace auth-token updates
+# ---------------------------------------------------------------------------
+
+
+@router.post("/api/config/ocr/auth")
+async def update_ocr_auth_token(body: AuthTokenUpdate):
+    """Persist the per-namespace OCR auth token. ``None`` clears it."""
+    config = cast(dict[str, Any], _config)
+    config["ocr_auth_token"] = body.auth_token
+    return JSONResponse(content={"ocr_auth_token": body.auth_token})
+
+
+@router.post("/api/config/translation/auth")
+async def update_translation_auth_token(body: AuthTokenUpdate):
+    """Persist the per-namespace translation auth token. ``None`` clears it."""
+    config = cast(dict[str, Any], _config)
+    config["translation_auth_token"] = body.auth_token
+    return JSONResponse(content={"translation_auth_token": body.auth_token})
+
+
+# ---------------------------------------------------------------------------
+# Model discovery
+# ---------------------------------------------------------------------------
 
 
 @router.get("/api/models")
@@ -167,3 +398,58 @@ async def list_models():
     except Exception:
         logger.exception("Model discovery failed")
         return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
+
+
+@router.get("/api/models/ocr")
+async def list_ocr_models():
+    """Model discovery for the OCR namespace (uses ``ocr_api_base``)."""
+    config = cast(dict[str, Any], _config)
+    api_base = config.get("ocr_api_base") or config["api_base"]
+    api_key = config.get("ocr_api_key") or config["api_key"]
+    if await is_ssrf_target(api_base):
+        return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
+    try:
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(base_url=api_base, api_key=api_key)
+        response = await client.models.list()
+        model_ids = [m.id for m in response.data] if response.data else []
+        return JSONResponse(content={"models": model_ids})
+    except Exception:
+        logger.exception("OCR model discovery failed")
+        return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
+
+
+@router.get("/api/models/translation")
+async def list_translation_models():
+    """Model discovery for the translation namespace (uses ``translation_api_base``)."""
+    config = cast(dict[str, Any], _config)
+    api_base = config.get("translation_api_base") or config["api_base"]
+    api_key = config.get("translation_api_key") or config["api_key"]
+    if await is_ssrf_target(api_base):
+        return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
+    try:
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(base_url=api_base, api_key=api_key)
+        response = await client.models.list()
+        model_ids = [m.id for m in response.data] if response.data else []
+        return JSONResponse(content={"models": model_ids})
+    except Exception:
+        logger.exception("Translation model discovery failed")
+        return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
+
+
+# ---------------------------------------------------------------------------
+# Re-export the upload cap constants so tests and other modules can import
+# them from a single place.
+# ---------------------------------------------------------------------------
+
+
+__all__ = [
+    "ABSOLUTE_MAX_UPLOAD_MB",
+    "DEFAULT_MAX_UPLOAD_MB",
+    "get_ocr_settings",
+    "get_translation_settings",
+    "router",
+]

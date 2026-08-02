@@ -232,7 +232,7 @@ def test_text_artifact_retrieval_expires_router_store(tmp_path):
     try:
         store = TextArtifactStore(ttl_seconds=5, clock=now, artifact_dir=tmp_path)
         state.text_artifacts = store
-        handle = store.create({0: ["expiring text"]})
+        handle = asyncio.run(store.create({0: ["expiring text"]}))
         client = _api_client()
 
         response = client.get(
@@ -401,7 +401,7 @@ def test_document_export_artifact_is_token_bound(tmp_path: Path):
     state.export_artifacts = TextArtifactStore(artifact_dir=tmp_path / "export")
 
     try:
-        handle = state.text_artifacts.create({0: ["alpha", "beta"]})
+        handle = asyncio.run(state.text_artifacts.create({0: ["alpha", "beta"]}))
         client = _api_client()
         response = client.post(
             "/api/export/document",
@@ -585,8 +585,16 @@ def test_static_js_has_no_html_injection_sinks():
 
 
 def test_security_settings_parses_environment_defaults(monkeypatch):
-    """Empty env ⇒ personal/local posture: no auth, no CORS, no rate limit."""
-    from local_deepl.api.services.security_config import SecuritySettings
+    """Empty env ⇒ personal/local posture: no auth, no CORS, no rate limit.
+
+    The default upload cap is the 10 GB minimum the size-limits tests
+    pin (see ``test_size_limits.py``); we verify the *contract* of the
+    parser here, not the specific Megabyte value.
+    """
+    from local_deepl.api.services.security_config import (
+        DEFAULT_MAX_UPLOAD_MB,
+        SecuritySettings,
+    )
 
     monkeypatch.delenv("LOCAL_DEEPL_AUTH_TOKEN", raising=False)
     monkeypatch.delenv("LOCAL_DEEPL_CORS_ORIGINS", raising=False)
@@ -597,7 +605,7 @@ def test_security_settings_parses_environment_defaults(monkeypatch):
     assert settings.auth_token is None
     assert settings.auth_enabled is False
     assert settings.cors_origins == []
-    assert settings.max_upload_bytes == 100 * 1024 * 1024
+    assert settings.max_upload_bytes == DEFAULT_MAX_UPLOAD_MB * 1024 * 1024
     assert settings.rate_limit_per_minute is None
     assert settings.rate_limit_enabled is False
 
@@ -641,12 +649,15 @@ def test_security_settings_max_upload_clamps(monkeypatch):
 
 
 def test_security_settings_invalid_ints_fall_back_to_default(monkeypatch):
-    from local_deepl.api.services.security_config import SecuritySettings
+    from local_deepl.api.services.security_config import (
+        DEFAULT_MAX_UPLOAD_MB,
+        SecuritySettings,
+    )
 
     monkeypatch.setenv("LOCAL_DEEPL_MAX_UPLOAD_MB", "not-a-number")
     monkeypatch.setenv("LOCAL_DEEPL_RATE_LIMIT_PER_MIN", "garbage")
     settings = SecuritySettings.from_env()
-    assert settings.max_upload_bytes == 100 * 1024 * 1024
+    assert settings.max_upload_bytes == DEFAULT_MAX_UPLOAD_MB * 1024 * 1024
     assert settings.rate_limit_per_minute is None
 
 
@@ -782,3 +793,48 @@ def test_rate_limit_isolates_per_client_ip(monkeypatch):
 
     asyncio.run(drive("10.0.0.1"))
     asyncio.run(drive("10.0.0.2"))
+
+
+def test_namespaced_ocr_and_artifact_aliases_are_registered():
+    client = _api_client()
+
+    assert client.post("/process").status_code == 422
+    assert client.post("/api/process").status_code == 422
+    assert client.post("/process/async").status_code == 422
+    assert client.post("/api/process/async").status_code == 422
+    assert client.get("/process/status/missing").status_code == 404
+    assert client.get("/api/process/status/missing").status_code == 404
+
+    route_paths = {route.path for route in client.app.routes}
+    assert {
+        "/api/text/{artifact_id}",
+        "/api/artifacts/text/{artifact_id}",
+        "/api/metadata/{artifact_id}",
+        "/api/artifacts/metadata/{artifact_id}",
+        "/api/export/{artifact_id}",
+        "/api/artifacts/export/{artifact_id}",
+    } <= route_paths
+
+
+def test_namespaced_text_artifact_aliases_share_legacy_handler():
+    handle = asyncio.run(state.text_artifacts.create({1: ["alias text"]}))
+    client = _api_client()
+    headers = {"Authorization": f"Bearer {handle.token}"}
+    try:
+        legacy = client.get(f"/text/{handle.artifact_id}", headers=headers)
+        canonical = client.get(f"/api/text/{handle.artifact_id}", headers=headers)
+        frontend = client.get(
+            f"/api/artifacts/text/{handle.artifact_id}", headers=headers
+        )
+        assert (
+            legacy.status_code == canonical.status_code == frontend.status_code == 200
+        )
+        assert legacy.json() == canonical.json() == frontend.json()
+    finally:
+        asyncio.run(state.text_artifacts.delete(handle.artifact_id, handle.token))
+
+
+def test_cancel_unknown_background_ocr_job_returns_404():
+    response = _api_client().post("/api/jobs/missing/cancel")
+    assert response.status_code == 404
+    assert response.json() == {"error": "Job not found"}

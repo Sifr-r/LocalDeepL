@@ -78,6 +78,39 @@ DEFAULT_GROUNDING_PROMPT = (
 )
 
 
+def _extract_grounded_crops(
+    b64: str, blocks: list[GroundedBlock], w: int, h: int
+) -> None:
+    if not any(b.label in ("image", "figure") for b in blocks):
+        return
+    import base64
+    import io
+
+    from PIL import Image
+
+    img_data = base64.b64decode(b64)
+    with Image.open(io.BytesIO(img_data)) as img:
+        for b in blocks:
+            if b.label in ("image", "figure"):
+                crop_box = (
+                    b.bbox[0] * w,
+                    b.bbox[1] * h,
+                    b.bbox[2] * w,
+                    b.bbox[3] * h,
+                )
+                crop_box = (
+                    max(0, min(w, crop_box[0])),
+                    max(0, min(h, crop_box[1])),
+                    max(0, min(w, crop_box[2])),
+                    max(0, min(h, crop_box[3])),
+                )
+                if crop_box[2] > crop_box[0] and crop_box[3] > crop_box[1]:
+                    cropped = img.crop(crop_box)
+                    buf = io.BytesIO()
+                    cropped.save(buf, format="PNG")
+                    b.image_bytes = buf.getvalue()
+
+
 class PromptedGroundedOCR:
     """Grounded backend built on an OpenAI-compatible vision LLM endpoint.
 
@@ -153,12 +186,12 @@ class PromptedGroundedOCR:
         raise immediately; the shared circuit breaker fails fast once the
         endpoint is deemed down so remaining pages don't each burn a timeout.
         """
-        self.circuit_breaker.check()
+        await self.circuit_breaker.check()
 
         last_exc: BaseException | None = None
         for attempt in range(self.max_retries + 1):
             if attempt > 0:
-                self.circuit_breaker.check()
+                await self.circuit_breaker.check()
             try:
                 text = await call_llm(
                     model=self.model,
@@ -182,11 +215,11 @@ class PromptedGroundedOCR:
                         }
                     ],
                 )
-                self.circuit_breaker.record_success()
+                await self.circuit_breaker.record_success()
                 return text
             except Exception as e:
                 last_exc = e
-                self.circuit_breaker.record_failure()
+                await self.circuit_breaker.record_failure()
                 if not is_transient_error(e):
                     break
                 if attempt < self.max_retries:
@@ -237,37 +270,9 @@ class PromptedGroundedOCR:
                     blocks = _parse_grounded_json(text, page_idx, w, h)
 
                     if any(b.label in ("image", "figure") for b in blocks):
-                        import base64
-                        import io
-
-                        from PIL import Image
-
-                        img_data = base64.b64decode(b64)
-                        with Image.open(io.BytesIO(img_data)) as img:
-                            for b in blocks:
-                                if b.label in ("image", "figure"):
-                                    crop_box = (
-                                        b.bbox[0] * w,
-                                        b.bbox[1] * h,
-                                        b.bbox[2] * w,
-                                        b.bbox[3] * h,
-                                    )
-                                    # Ensure coordinates are within image bounds
-                                    crop_box = (
-                                        max(0, min(w, crop_box[0])),
-                                        max(0, min(h, crop_box[1])),
-                                        max(0, min(w, crop_box[2])),
-                                        max(0, min(h, crop_box[3])),
-                                    )
-                                    # only crop if area > 0
-                                    if (
-                                        crop_box[2] > crop_box[0]
-                                        and crop_box[3] > crop_box[1]
-                                    ):
-                                        cropped = img.crop(crop_box)
-                                        buf = io.BytesIO()
-                                        cropped.save(buf, format="PNG")
-                                        b.image_bytes = buf.getvalue()
+                        await asyncio.to_thread(
+                            _extract_grounded_crops, b64, blocks, w, h
+                        )
 
                     return page_idx, blocks, None
                 except Exception as e:

@@ -68,7 +68,9 @@ def parse_sql_table(
             result = connection.execute(statement, parameters)
             for row in result:
                 if len(entries) >= _MAX_ROWS:
-                    raise ValueError(f"SQL glossary contains more than {_MAX_ROWS:,} rows.")
+                    raise ValueError(
+                        f"SQL glossary contains more than {_MAX_ROWS:,} rows."
+                    )
                 mapping: Any = row._mapping
                 item = entry_dict(mapping.get("source"), mapping.get("target"))
                 if item is not None:

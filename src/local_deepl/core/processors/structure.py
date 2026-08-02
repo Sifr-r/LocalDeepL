@@ -10,6 +10,7 @@ from local_deepl.core.processors.base import (
     _KEY_VALUE_RE,
     _LIST_ITEM_RE,
     _TABLE_SPLIT_RE,
+    ProcessorContract,
 )
 
 
@@ -17,6 +18,7 @@ class StructureAnalysisProcessor:
     """Attach deterministic block structure hints for local document intelligence."""
 
     name = "structure_analysis"
+    contract = ProcessorContract.ANNOTATE_ONLY
 
     def __init__(
         self,

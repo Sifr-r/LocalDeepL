@@ -34,7 +34,9 @@ async def _fetch_via_urllib(url: str, *, timeout: float) -> bytes:
     def _do_fetch() -> bytes:
         import urllib.request
 
-        with urllib.request.urlopen(url, timeout=timeout) as response:  # validated upstream
+        with urllib.request.urlopen(
+            url, timeout=timeout
+        ) as response:  # validated upstream
             data = response.read()
             if isinstance(data, bytes):
                 return data

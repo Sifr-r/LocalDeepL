@@ -34,34 +34,34 @@ class ManualClock:
         self.value += seconds
 
 
-def test_artifacts_bind_ids_to_separate_access_tokens(tmp_path: Path):
+async def test_artifacts_bind_ids_to_separate_access_tokens(tmp_path: Path):
     store = TextArtifactStore(artifact_dir=tmp_path)
 
-    handle = store.create({0: ["first page"], 1: ["second page"]})
+    handle = await store.create({0: ["first page"], 1: ["second page"]})
 
     assert handle.artifact_id != handle.token
-    assert store.get(handle.artifact_id, handle.token) == handle.path
+    assert await store.get(handle.artifact_id, handle.token) == handle.path
     assert json.loads(Path(handle.path).read_text(encoding="utf-8")) == {
         "0": ["first page"],
         "1": ["second page"],
     }
 
 
-def test_wrong_token_denies_artifact_access(tmp_path: Path):
+async def test_wrong_token_denies_artifact_access(tmp_path: Path):
     store = TextArtifactStore(artifact_dir=tmp_path)
-    handle = store.create({0: ["secret"]})
+    handle = await store.create({0: ["secret"]})
     wrong_token = store.issue_token()
 
     with pytest.raises(ArtifactAccessDeniedError):
-        store.get(handle.artifact_id, wrong_token)
+        await store.get(handle.artifact_id, wrong_token)
 
     assert Path(handle.path).exists()
 
 
-def test_expiry_cleanup_deletes_backing_files(tmp_path: Path):
+async def test_expiry_cleanup_deletes_backing_files(tmp_path: Path):
     clock = ManualClock()
     store = TextArtifactStore(ttl_seconds=5, clock=clock, artifact_dir=tmp_path)
-    handle = store.create({0: ["expires"]})
+    handle = await store.create({0: ["expires"]})
     path = Path(handle.path)
 
     clock.advance(6)
@@ -70,43 +70,43 @@ def test_expiry_cleanup_deletes_backing_files(tmp_path: Path):
     assert not path.exists()
     assert store.cleanup_expired() == []
     with pytest.raises(ArtifactNotFoundError):
-        store.get(handle.artifact_id, handle.token)
+        await store.get(handle.artifact_id, handle.token)
 
 
-def test_max_entry_eviction_deletes_oldest_backing_file(tmp_path: Path):
+async def test_max_entry_eviction_deletes_oldest_backing_file(tmp_path: Path):
     store = TextArtifactStore(max_entries=1, artifact_dir=tmp_path)
-    first = store.create({0: ["old"]})
-    second = store.create({0: ["new"]})
+    first = await store.create({0: ["old"]})
+    second = await store.create({0: ["new"]})
 
     assert not Path(first.path).exists()
     assert Path(second.path).exists()
     with pytest.raises(ArtifactNotFoundError):
-        store.get(first.artifact_id, first.token)
-    assert store.get(second.artifact_id, second.token) == second.path
+        await store.get(first.artifact_id, first.token)
+    assert await store.get(second.artifact_id, second.token) == second.path
 
 
-def test_invalid_artifact_ids_are_rejected(tmp_path: Path):
+async def test_invalid_artifact_ids_are_rejected(tmp_path: Path):
     store = TextArtifactStore(artifact_dir=tmp_path)
     token = store.issue_token()
 
     for artifact_id in ("client-id", "A" * 32, "0" * 31, "../" + "0" * 32):
         with pytest.raises(InvalidArtifactReferenceError):
-            store.get(artifact_id, token)
+            await store.get(artifact_id, token)
 
 
-def test_delete_is_idempotent_and_removes_backing_file(tmp_path: Path):
+async def test_delete_is_idempotent_and_removes_backing_file(tmp_path: Path):
     store = TextArtifactStore(artifact_dir=tmp_path)
-    handle = store.create({0: ["delete me"]})
+    handle = await store.create({0: ["delete me"]})
     path = Path(handle.path)
 
-    assert store.delete(handle.artifact_id, handle.token) is True
+    assert await store.delete(handle.artifact_id, handle.token) is True
     assert not path.exists()
-    assert store.delete(handle.artifact_id, handle.token) is False
+    assert await store.delete(handle.artifact_id, handle.token) is False
 
 
-def test_pop_is_token_bound_and_idempotent_without_deleting_file(tmp_path: Path):
+async def test_pop_is_token_bound_and_idempotent_without_deleting_file(tmp_path: Path):
     store = TextArtifactStore(artifact_dir=tmp_path)
-    handle = store.create({0: ["download once"]})
+    handle = await store.create({0: ["download once"]})
     path = Path(handle.path)
 
     assert store.pop(handle.artifact_id, handle.token) == str(path)

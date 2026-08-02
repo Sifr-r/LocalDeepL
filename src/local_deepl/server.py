@@ -14,7 +14,8 @@ import importlib
 from dotenv import load_dotenv
 
 load_dotenv()
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Protocol, cast
@@ -72,6 +73,8 @@ def create_app() -> ASGIApplication:
         glossary_imports,
         jobs,
         ocr,
+        providers,
+        state,
         translation,
         websocket,
     )
@@ -82,7 +85,15 @@ def create_app() -> ASGIApplication:
         RateLimitMiddleware,
     )
 
-    web_app = fastapi.FastAPI()
+    @asynccontextmanager
+    async def lifespan(_app: Any) -> AsyncIterator[None]:
+        await state.ocr_job_queue.start()
+        try:
+            yield
+        finally:
+            await state.ocr_job_queue.stop()
+
+    web_app = fastapi.FastAPI(lifespan=lifespan)
     security = SecuritySettings.from_env()
 
     if security.cors_origins:
@@ -105,7 +116,16 @@ def create_app() -> ASGIApplication:
             RateLimitMiddleware, per_minute=security.rate_limit_per_minute
         )
     web_app.add_middleware(MaxUploadSizeMiddleware, max_bytes=security.max_upload_bytes)
-    web_app.add_middleware(BearerAuthMiddleware, expected_token=security.auth_token)
+    # Per-service auth tokens (OCR / translation) take precedence over
+    # the global ``auth_token`` for the matching route group. When a
+    # per-service token is configured, the global token does NOT unlock
+    # that namespace — see BearerAuthMiddleware._token_for for details.
+    web_app.add_middleware(
+        BearerAuthMiddleware,
+        expected_token=security.auth_token,
+        ocr_token=security.ocr_auth_token,
+        translation_token=security.translation_auth_token,
+    )
 
     web_app.mount(
         "/static",
@@ -121,6 +141,7 @@ def create_app() -> ASGIApplication:
     web_app.include_router(translation.router)
     web_app.include_router(extraction.router)
     web_app.include_router(glossary_imports.router)
+    web_app.include_router(providers.router)
     web_app.get("/")(read_index)
 
     return cast(ASGIApplication, web_app)

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterable, Sequence
+from copy import deepcopy
+from enum import Enum
 from typing import Protocol
 
 from local_deepl.core.document import DocumentBlock, DocumentResult
@@ -22,6 +24,28 @@ LOCAL_DOCUMENT_PROCESSOR_NAMES = (
     "layout_enrichment",
     "table_extraction",
 )
+
+
+class ProcessorContract(Enum):
+    """Mutation contract that a document processor declares about itself.
+
+    Declared as a class attribute (``contract``) on every processor. The
+    :func:`run_document_processors` strict-mode gate checks the contract
+    against observed mutations: a processor that drops blocks but
+    declared ``ANNOTATE_ONLY`` raises ``ValueError`` instead of silently
+    corrupting output. The gate is opt-in (pass ``strict=True``) so
+    production pipelines keep paying zero overhead.
+    """
+
+    ANNOTATE_ONLY = "annotate_only"
+    """Processor only attaches metadata; block count and order are preserved."""
+
+    MAY_REORDER = "may_reorder"
+    """Processor may reorder blocks but must not drop or duplicate them."""
+
+    MAY_DELETE = "may_delete"
+    """Processor may drop, merge, or otherwise remove blocks (e.g. table extraction)."""
+
 
 _KEY_VALUE_RE = re.compile(r"^\s*([^:\n]{1,50}):\s*(\S.+)$")
 _LIST_ITEM_RE = re.compile(
@@ -120,16 +144,118 @@ def _bbox_area(bbox: Sequence[float]) -> float:
 
 
 async def run_document_processors(
-    document: DocumentResult, processors: Sequence[DocumentProcessor]
+    document: DocumentResult,
+    processors: Sequence[DocumentProcessor],
+    strict: bool = False,
 ) -> DocumentResult:
-    """Run processors in order, passing each mutation to the next stage."""
+    """Run processors in order, passing each mutation to the next stage.
+
+    When ``strict=True`` each processor is checked against its declared
+    :class:`ProcessorContract`:
+
+    - ``ANNOTATE_ONLY`` — block count and order must be unchanged.
+    - ``MAY_REORDER`` — block count and (set of) text identities must be
+      unchanged; block order may change.
+    - ``MAY_DELETE`` — no contract check; processor may drop or merge
+      blocks.
+
+    A processor that violates its declared contract raises ``ValueError``
+    instead of silently corrupting downstream output. ``strict=False``
+    (the default) preserves zero-overhead production runs.
+    """
 
     if document.tree is None:
         from local_deepl.core.block_tree import from_document_result
 
         document.tree = from_document_result(document)
 
+    original_block_count = sum(len(page.blocks) for page in document.pages)
+    original_texts: list[str] = [
+        block.text for page in document.pages for block in page.blocks
+    ]
+
     result = document
     for processor in processors:
+        if strict:
+            pre = deepcopy(result)
         result = await processor.process(result)
+        if strict:
+            _enforce_processor_contract(processor, pre, result)
+
+    if strict:
+        final_count = sum(len(page.blocks) for page in result.pages)
+        final_texts = [block.text for page in result.pages for block in page.blocks]
+        if final_count != original_block_count:
+            raise ValueError(
+                "run_document_processors(strict=True): aggregate block count "
+                f"changed ({original_block_count} -> {final_count}); at least "
+                "one processor with ANNOTATE_ONLY / MAY_REORDER contract "
+                "violated its declaration"
+            )
+        if sorted(final_texts) != sorted(original_texts):
+            # Block text identity changed — only MAY_REORDER/MAY_DELETE are
+            # allowed to alter text multisets. ANNOTATE_ONLY is caught by
+            # the per-processor checks above, so reaching here with the same
+            # count but a different text set implies at least one processor
+            # violated its contract.
+            raise ValueError(
+                "run_document_processors(strict=True): aggregate block text "
+                "multiset changed while block count was preserved; at least "
+                "one processor violated its declared contract"
+            )
     return result
+
+
+def _enforce_processor_contract(
+    processor: DocumentProcessor,
+    before: DocumentResult,
+    after: DocumentResult,
+) -> None:
+    """Raise ``ValueError`` when a processor violates its declared contract."""
+    contract = getattr(processor, "contract", None)
+    if contract is None:
+        # Processors without a contract declaration opt out of strict-mode
+        # enforcement; the pipeline owner should add one when adding a new
+        # processor type.
+        return
+
+    before_count = sum(len(page.blocks) for page in before.pages)
+    after_count = sum(len(page.blocks) for page in after.pages)
+    before_texts = [block.text for page in before.pages for block in page.blocks]
+    after_texts = [block.text for page in after.pages for block in page.blocks]
+
+    name = getattr(processor, "name", type(processor).__name__)
+
+    if contract is ProcessorContract.ANNOTATE_ONLY:
+        if after_count != before_count:
+            raise ValueError(
+                f"Processor {name!r} declares ANNOTATE_ONLY but changed block "
+                f"count {before_count} -> {after_count}"
+            )
+        if after_texts != before_texts:
+            raise ValueError(
+                f"Processor {name!r} declares ANNOTATE_ONLY but reordered or "
+                "rewrote block text"
+            )
+        return
+
+    if contract is ProcessorContract.MAY_REORDER:
+        if after_count != before_count:
+            raise ValueError(
+                f"Processor {name!r} declares MAY_REORDER but changed block "
+                f"count {before_count} -> {after_count}"
+            )
+        if sorted(after_texts) != sorted(before_texts):
+            raise ValueError(
+                f"Processor {name!r} declares MAY_REORDER but dropped or "
+                "duplicated block text identities"
+            )
+        return
+
+    if contract is ProcessorContract.MAY_DELETE:
+        return
+
+    raise ValueError(
+        f"Processor {name!r} declares unknown ProcessorContract value "
+        f"{contract!r}; expected ANNOTATE_ONLY / MAY_REORDER / MAY_DELETE"
+    )

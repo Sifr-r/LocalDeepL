@@ -33,11 +33,7 @@ def _handle_fullpage_fallback(
 ) -> bool:
     nx0, ny0, nx1, ny1 = rect_coords
     is_full_page_fallback = (
-        nx0 <= 0.001
-        and ny0 <= 0.001
-        and nx1 >= 0.999
-        and ny1 >= 0.999
-        and "\n" in text
+        nx0 <= 0.001 and ny0 <= 0.001 and nx1 >= 0.999 and ny1 >= 0.999 and "\n" in text
     )
     if is_full_page_fallback:
         fallback_rect = fitz.Rect(10, 10, page_width - 10, page_height - 10)
@@ -171,21 +167,15 @@ def _draw_invisible_text(
         return
 
     # Phase 1: Handle full-page fallback detection
-    if _handle_fullpage_fallback(
-        page, rect_coords, text, page_width, page_height
-    ):
+    if _handle_fullpage_fallback(page, rect_coords, text, page_width, page_height):
         return
 
     # Phase 2: Handle multi-line block detection and splitting
-    if _split_and_draw_lines(
-        page, rect_coords, text, page_width, page_height
-    ):
+    if _split_and_draw_lines(page, rect_coords, text, page_width, page_height):
         return
 
     # Phase 3: Single-line drawing
-    _draw_single_line_text(
-        page, rect_coords, text, page_width, page_height
-    )
+    _draw_single_line_text(page, rect_coords, text, page_width, page_height)
 
 
 def _embed_from_image_input(
@@ -209,9 +199,7 @@ def _embed_from_image_input(
                 new_page.insert_image(new_page.rect, stream=img_data)
 
                 for rect_coords, text in pages_data.get(page_num, []):
-                    _draw_invisible_text(
-                        new_page, rect_coords, text, width, height
-                    )
+                    _draw_invisible_text(new_page, rect_coords, text, width, height)
         new_doc.save(output_pdf_path)
     finally:
         new_doc.close()
@@ -253,9 +241,7 @@ def embed_structured_text(
             new_page.insert_image(new_page.rect, stream=img_data)
 
             for rect_coords, text in pages_data.get(page_num, []):
-                _draw_invisible_text(
-                    new_page, rect_coords, text, width, height
-                )
+                _draw_invisible_text(new_page, rect_coords, text, width, height)
 
         new_doc.save(output_pdf_path)
     finally:

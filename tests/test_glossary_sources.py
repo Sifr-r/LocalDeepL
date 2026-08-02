@@ -3,6 +3,7 @@
 Each parser returns a `GlossaryImportSummary` that flows into
 `Glossary.from_dict` so we can verify the IR converges on the same shape.
 """
+
 from __future__ import annotations
 
 import json

@@ -1,0 +1,19 @@
+schema_version: 1
+module_path: ""
+title: LocalDeepL Web Platform & Build Configuration
+scope:
+    - README.md
+    - .gitignore
+    - pyproject.toml
+    - Makefile
+    - Dockerfile
+    - compose.yaml
+    - ARCHITECTURE.md
+    - AGENTS.md
+    - .fallowrc.json
+    - .pre-commit-config.yaml
+    - install.ps1
+    - test_ui.py
+source_files: []
+depends_on: []
+related_to: []

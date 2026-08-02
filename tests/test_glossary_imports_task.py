@@ -1,4 +1,5 @@
 """Verify the async glossary import Celery task is importable and runs."""
+
 from __future__ import annotations
 
 
@@ -24,7 +25,7 @@ def test_process_glossary_import_task_runs_sync():
 
     try:
         result = process_glossary_import_task.delay(source_dict, name)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         # If Celery is installed and a worker is required, the test should
         # still confirm the task exists.
         from local_deepl.api.tasks import process_glossary_import_task as t

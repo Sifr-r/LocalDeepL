@@ -6,7 +6,11 @@ from typing import TypedDict
 
 from local_deepl.core.block_tree import BlockNode, BlockType, TableNode
 from local_deepl.core.document import BBox, DocumentBlock, DocumentPage, DocumentResult
-from local_deepl.core.processors.base import _TABLE_SPLIT_RE, _normalize_space
+from local_deepl.core.processors.base import (
+    _TABLE_SPLIT_RE,
+    ProcessorContract,
+    _normalize_space,
+)
 
 
 class _TableCellRecord(TypedDict):
@@ -28,6 +32,7 @@ class TableExtractionProcessor:
     """Extract simple local table structures from aligned OCR boxes."""
 
     name = "table_extraction"
+    contract = ProcessorContract.MAY_DELETE
 
     def __init__(self, row_tolerance: float = 0.018, min_columns: int = 2):
         if row_tolerance <= 0:

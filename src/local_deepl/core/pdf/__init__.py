@@ -22,6 +22,8 @@ from local_deepl.core.pdf.rasterizer import (
     _emit_pymupdf_agpl_notice,
     _images_from_image_file,
     _is_image_path,
+    convert_batches,
+    convert_generator,
     convert_pdf_to_images,
 )
 from local_deepl.core.workflows.base import DocumentResultWriter
@@ -44,6 +46,8 @@ __all__ = [
     "_images_from_image_file",
     "_is_image_path",
     "_split_and_draw_lines",
+    "convert_batches",
+    "convert_generator",
     "convert_pdf_to_images",
     "embed_structured_text",
 ]

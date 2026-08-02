@@ -47,15 +47,18 @@ def parse_tmx(
         if not variants:
             continue
         source = next(
-            (value for language, value in variants if language_matches(language, source_lang)),
+            (
+                value
+                for language, value in variants
+                if language_matches(language, source_lang)
+            ),
             variants[0][1],
         )
         target = next(
             (
                 value
                 for language, value in variants
-                if value != source
-                and not language_matches(language, source_lang)
+                if value != source and not language_matches(language, source_lang)
             ),
             "",
         )

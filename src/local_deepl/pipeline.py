@@ -131,6 +131,12 @@ class OCRPipeline:
                 on_warning=on_warning,
             )
         else:
+            try:
+                normalized_dense_mode = DenseMode(dense_mode)
+            except ValueError as exc:
+                raise ValueError(
+                    f"dense_mode must be a DenseMode or valid value; got {dense_mode!r}"
+                ) from exc
             hybrid_engine = cast(HybridEngine, self._engine)
             return await hybrid_engine.execute(
                 input_path=input_path,
@@ -141,7 +147,7 @@ class OCRPipeline:
                 refine=refine,
                 max_image_dim=max_image_dim,
                 dense_threshold=dense_threshold,
-                dense_mode=dense_mode,
+                dense_mode=normalized_dense_mode,
                 self_correction=self_correction,
                 binarize=binarize,
                 dual_engine=dual_engine,

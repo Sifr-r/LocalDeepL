@@ -10,6 +10,7 @@ Levenshtein distance 1 edit space for exceptional performance.
 """
 
 import asyncio
+import functools
 import gzip
 import json
 import logging
@@ -27,6 +28,36 @@ logger = logging.getLogger("pdf_ocr.postprocess")
 
 # Lock to prevent concurrent dictionary compilation across pages
 _compile_lock = asyncio.Lock()
+
+
+@functools.lru_cache(maxsize=8)
+def load_dictionary(key: str, kind: str = "builtin") -> "SpellChecker | None":
+    """Load and cache a ``SpellChecker`` instance.
+
+    Parameters
+    ----------
+    key:
+        Either a dictionary file path (``kind="custom"``) or a language
+        code such as ``"en"`` (``kind="builtin"``).
+    kind:
+        ``"builtin"`` (default) selects the pyspellchecker built-in
+        dictionary for ``key``. ``"custom"`` loads a compiled
+        ``json.gz`` dictionary from ``key`` as a file path.
+
+    Returns
+    -------
+    The cached :class:`SpellChecker` instance, or ``None`` if pyspellchecker
+    is unavailable or the language cannot be located.
+
+    The cache is process-local and LRU-bounded at 8 entries — enough for
+    the languages and curated dictionaries the API surface actually
+    surfaces without leaking memory on stray inputs.
+    """
+    if not key:
+        return None
+    if kind == "custom":
+        return _load_custom_dictionary(key)
+    return _load_builtin_dictionary(key)
 
 
 def _load_custom_dictionary(dict_path: str) -> "SpellChecker":
@@ -323,13 +354,21 @@ class DictionaryPostProcessor:
             if not cleaned.isalpha():
                 return word
 
-            # If word is already known in dictionary, leave it untouched
-            # pyspellchecker internally lowercases all inputs for known check
-            if spell.known([word]):
+            try:
+                # If word is already known in dictionary, leave it untouched
+                # pyspellchecker internally lowercases all inputs for known check
+                if spell.known([word]):
+                    return word
+
+                # Get spelling candidates at edit distance 1
+                candidates = spell.candidates(word)
+            except Exception as exc:
+                # Spellcheck is advisory; one bad word must not abort the page.
+                # Log so an operator can spot a broken underlying dictionary,
+                # but fall through and leave the original word untouched.
+                logger.warning("Spellcheck failed for word %r: %s", word, exc)
                 return word
 
-            # Get spelling candidates at edit distance 1
-            candidates = spell.candidates(word)
             # Safe auto-correction: only replace if there is exactly 1 highly confident candidate
             if candidates and len(candidates) == 1:
                 corrected = next(iter(candidates))

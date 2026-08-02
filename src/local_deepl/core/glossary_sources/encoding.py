@@ -54,9 +54,7 @@ def detect_encoding(data: bytes) -> tuple[str, str]:
     return "latin-1", "Source was not valid UTF-8; decoded as latin-1."
 
 
-def decode_bytes(
-    data: bytes, encoding: str | None = None
-) -> tuple[str, str, str]:
+def decode_bytes(data: bytes, encoding: str | None = None) -> tuple[str, str, str]:
     """Decode bytes and return text, encoding used, and a warning."""
     if not isinstance(data, (bytes, bytearray)):
         raise ValueError("Glossary source must be bytes.")

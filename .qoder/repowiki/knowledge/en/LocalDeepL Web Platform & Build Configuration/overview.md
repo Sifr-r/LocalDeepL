@@ -1,0 +1,1 @@
+Root configuration and orchestration for LocalDeepL — a FastAPI web platform that converts scanned PDFs and images into searchable, selectable PDFs via hybrid and grounded VLM OCR engines with optional async translation and a browser workstation UI.

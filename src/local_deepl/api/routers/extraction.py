@@ -40,9 +40,9 @@ def _ai_error_response(exc: AIServiceError) -> JSONResponse:
     )
 
 
-def _load_tree_from_artifact(artifact_id: str, token: str) -> Any:
+async def _load_tree_from_artifact(artifact_id: str, token: str) -> Any:
     try:
-        path = state.text_artifacts.get(artifact_id, token)
+        path = await state.text_artifacts.get(artifact_id, token)
 
         import os
         from pathlib import Path
@@ -92,7 +92,7 @@ async def export_docx_tree(req: ExportBlockTreeRequest) -> Response:
     """Generate a structured .docx from a stored DocumentTree artifact."""
     from local_deepl.core.docx_tree_writer import convert_tree_to_docx
 
-    tree = _load_tree_from_artifact(req.text_artifact_id, req.text_artifact_token)
+    tree = await _load_tree_from_artifact(req.text_artifact_id, req.text_artifact_token)
     stream = convert_tree_to_docx(tree)
     return Response(
         content=stream.getvalue(),
@@ -108,7 +108,7 @@ async def export_html(req: ExportHtmlRequest) -> Response:
     """Generate a structured HTML document from a text artifact."""
     from local_deepl.core.html_writer import render_html
 
-    tree = _load_tree_from_artifact(req.text_artifact_id, req.text_artifact_token)
+    tree = await _load_tree_from_artifact(req.text_artifact_id, req.text_artifact_token)
     html = render_html(tree)
     return Response(
         content=html,
@@ -122,11 +122,11 @@ async def export_blocktree(req: ExportBlockTreeRequest) -> JSONResponse:
     """Return the block-tree JSON for a stored text artifact."""
     from local_deepl.core.tree_export import export_json
 
-    tree = _load_tree_from_artifact(req.text_artifact_id, req.text_artifact_token)
+    tree = await _load_tree_from_artifact(req.text_artifact_id, req.text_artifact_token)
 
     if req.metadata_artifact_id and req.metadata_artifact_token:
         try:
-            meta_path = state.metadata_artifacts.get(
+            meta_path = await state.metadata_artifacts.get(
                 req.metadata_artifact_id, req.metadata_artifact_token
             )
             with open(meta_path, encoding="utf-8") as f:

@@ -1,0 +1,154 @@
+/**
+ * LocalDeepL Main Style Sheet
+ *
+ * Tailwind CSS v4 (CSS-first config). Theme tokens previously in
+ * ``tailwind.config.js`` are declared inline via the ``@theme`` block
+ * so the v3 JS config file is no longer needed. The custom HSL design
+ * tokens, typography rules, glassmorphism utilities, and ambient glow
+ * keyframes are kept verbatim.
+ */
+
+@import "tailwindcss";
+
+/**
+ * Tailwind v4 content sources.
+ *
+ * The vite entry is `index.html` -> `src/main.ts`, which imports
+ * `app.css` and `App.svelte`. Tailwind v4's auto-detection only
+ * follows the import graph from the CSS file, so we explicitly point
+ * the scanner at every `.svelte`, `.ts`, and `.html` file under
+ * `frontend/` to make sure utility classes used in components are
+ * actually emitted. Without these directives only the handful of
+ * classes used inside `index.html` and `app.css` itself end up in the
+ * generated CSS, which collapses the entire UI layout.
+ */
+@source "../index.html";
+@source "./App.svelte";
+@source "./main.ts";
+@source "./lib/**/*.{svelte,ts,js}";
+
+/**
+ * Tailwind v4 theme tokens.
+ *
+ * Mirrors the old ``tailwind.config.js`` ``theme.extend`` block so the
+ * generated utility classes (e.g. ``font-sans``, ``font-serif-display``,
+ * dark-variant classes) match the v3 output.
+ */
+@theme {
+  --font-sans: 'Sora', system-ui, -apple-system, sans-serif;
+  --font-serif: 'Fraunces', Georgia, serif;
+  --font-serif-display: 'Fraunces', Georgia, serif;
+}
+
+/**
+ * Custom Theme & Color Tokens (HSL Color Space)
+ */
+:root {
+  /* Surface Tokens */
+  --bg-dark: 222 47% 11%;
+  --bg-darker: 224 71% 4%;
+  --bg-surface: 217 33% 17%;
+  --bg-surface-hover: 215 25% 27%;
+
+  /* Brand Tokens */
+  --brand-primary: 250 84% 67%;
+  --brand-secondary: 190 95% 40%;
+  --brand-success: 142 71% 45%;
+  --brand-warning: 38 92% 50%;
+  --brand-danger: 346 87% 55%;
+
+  /* Ambient Glow Tokens */
+  --glow-1: 260 100% 65%;
+  --glow-2: 195 100% 50%;
+  --glow-3: 320 100% 60%;
+
+  /* Typography & Border Tokens */
+  --text-main: 210 40% 98%;
+  --text-muted: 215 20% 65%;
+  --border-subtle: 217 19% 27%;
+  --border-active: 250 84% 67%;
+}
+
+html.light {
+  --bg-dark: 210 40% 98%;
+  --bg-darker: 0 0% 100%;
+  --bg-surface: 214 32% 91%;
+  --bg-surface-hover: 210 40% 84%;
+  --text-main: 222 47% 11%;
+  --text-muted: 215 16% 47%;
+  --border-subtle: 214 32% 85%;
+}
+
+@layer base {
+  body {
+    font-family: 'Sora', system-ui, -apple-system, sans-serif;
+    color: hsl(var(--text-main));
+    background-color: hsl(var(--bg-darker));
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  h1, h2, h3, .font-serif-display {
+    font-family: 'Fraunces', Georgia, serif;
+  }
+}
+
+@keyframes floatGlow1 {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translate(40px, -30px) scale(1.15);
+    opacity: 0.55;
+  }
+}
+
+@keyframes floatGlow2 {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1);
+    opacity: 0.25;
+  }
+  50% {
+    transform: translate(-35px, 25px) scale(1.2);
+    opacity: 0.45;
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    opacity: 0.4;
+    filter: blur(80px);
+  }
+  50% {
+    opacity: 0.7;
+    filter: blur(100px);
+  }
+}
+
+.ambient-glow-1 {
+  background: radial-gradient(circle, hsl(var(--glow-1)) 0%, transparent 70%);
+  animation: floatGlow1 12s ease-in-out infinite, pulseGlow 8s ease-in-out infinite;
+}
+
+.ambient-glow-2 {
+  background: radial-gradient(circle, hsl(var(--glow-2)) 0%, transparent 70%);
+  animation: floatGlow2 15s ease-in-out infinite, pulseGlow 10s ease-in-out infinite;
+}
+
+.glass-panel {
+  background: hsla(var(--bg-dark), 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid hsla(var(--border-subtle), 0.6);
+}
+
+.glass-panel-hover {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.glass-panel-hover:hover {
+  background: hsla(var(--bg-surface-hover), 0.85);
+  border-color: hsla(var(--brand-primary), 0.5);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}

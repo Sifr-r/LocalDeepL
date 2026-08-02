@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import secrets
 import tempfile
@@ -97,12 +98,17 @@ class TextArtifactStore:
     def issue_token(self) -> str:
         return secrets.token_urlsafe(_TOKEN_BYTES)
 
-    def create(self, page_text: PageText) -> TextArtifactHandle:
-        """Write page text to a temporary JSON file and register its access token."""
+    async def create(self, page_text: PageText) -> TextArtifactHandle:
+        """Write page text to a temporary JSON file and register its access token.
+
+        Async because :mod:`local_deepl.api.services.ocr_chunked_runner`
+        awaits it directly in its per-chunk orchestration loop.
+        """
 
         artifact_id = self.issue_id()
         token = self.issue_token()
-        path = write_page_text_atomic(
+        path = await asyncio.to_thread(
+            write_page_text_atomic,
             page_text,
             directory=self._artifact_dir,
             artifact_id=artifact_id,
@@ -142,7 +148,7 @@ class TextArtifactStore:
             expires_at=expires_at,
         )
 
-    def get(self, artifact_id: str, token: str) -> str:
+    async def get(self, artifact_id: str, token: str) -> str:
         entry = self._require_entry(artifact_id, token)
         return str(entry.path)
 
@@ -162,13 +168,13 @@ class TextArtifactStore:
         self._entries.pop(artifact_id, None)
         return str(entry.path)
 
-    def delete(self, artifact_id: str, token: str) -> bool:
+    async def delete(self, artifact_id: str, token: str) -> bool:
         """Remove a token-bound artifact entry and delete its backing file."""
 
         path = self.pop(artifact_id, token)
         if path is None:
             return False
-        _delete_file(Path(path))
+        await asyncio.to_thread(_delete_file, Path(path))
         return True
 
     def cleanup_expired(self) -> list[str]:

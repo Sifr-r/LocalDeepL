@@ -57,7 +57,10 @@ from local_deepl.core.ocr.prompts import (
     HANDWRITING_PAGE_PROMPT,
     OLMOCR_PAGE_PROMPT,
 )
-from local_deepl.core.ocr.resilience import CircuitBreaker, is_transient_error
+from local_deepl.core.ocr.resilience import (
+    CircuitBreakerRegistry,
+    is_transient_error,
+)
 
 if TYPE_CHECKING:
     from local_deepl.core.trocr_engine import TrOCREngine
@@ -107,6 +110,7 @@ class OCRProcessor:
         trocr_engine: TrOCREngine | None = None,
         handwriting_mode: bool = False,
         confidence_threshold: float = 0.75,
+        circuit_breaker_registry: CircuitBreakerRegistry | None = None,
     ):
         self.api_base: str = (
             api_base or os.getenv("LLM_API_BASE") or "http://localhost:1234/v1"
@@ -119,10 +123,14 @@ class OCRProcessor:
         self.trocr_engine = trocr_engine
         self.handwriting_mode = handwriting_mode
         self.confidence_threshold = confidence_threshold
-        # Per-request circuit breaker: after LOCAL_DEEPL_CB_FAILURE_THRESHOLD
-        # consecutive failures the remaining calls in this job fail fast
-        # instead of each waiting for a full timeout against a dead endpoint.
-        self.circuit_breaker = CircuitBreaker()
+        # Per-(api_base, model) circuit breaker. Without an injected
+        # registry each OCRProcessor gets a private breaker; with one,
+        # processors targeting the same endpoint share one breaker so a
+        # tripped breaker is visible to every concurrent caller.
+        registry = circuit_breaker_registry or CircuitBreakerRegistry()
+        self.circuit_breaker = registry.get_or_create(
+            api_base=self.api_base, model=self.model
+        )
 
     async def ensure_model_loaded(self) -> None:
         """Pre-flight check that ``self.model`` is loaded on the server.
@@ -321,7 +329,7 @@ class OCRProcessor:
         (across all attempts) and fails fast once the endpoint is deemed
         down, so a dead server doesn't serialize N page-timeouts.
         """
-        self.circuit_breaker.check()
+        await self.circuit_breaker.check()
 
         last_exc: Exception | None = None
         for attempt in range(self.MAX_RETRIES + 1):
@@ -329,7 +337,7 @@ class OCRProcessor:
                 # Re-check: a prior attempt may have tripped the breaker.
                 # CircuitOpenError propagates directly (not an LLMCallError)
                 # so the engine's per-page handler sees "endpoint down".
-                self.circuit_breaker.check()
+                await self.circuit_breaker.check()
             try:
                 content = await call_llm(
                     model=self.model,
@@ -353,11 +361,11 @@ class OCRProcessor:
                         }
                     ],
                 )
-                self.circuit_breaker.record_success()
+                await self.circuit_breaker.record_success()
                 return content.strip()
             except Exception as e:
                 last_exc = e
-                self.circuit_breaker.record_failure()
+                await self.circuit_breaker.record_failure()
 
                 if not is_transient_error(e):
                     break  # permanent failure — do not retry

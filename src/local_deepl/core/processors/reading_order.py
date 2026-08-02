@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from local_deepl.core.document import DocumentBlock, DocumentResult
+from local_deepl.core.processors.base import ProcessorContract
 
 
 class ReadingOrderProcessor:
@@ -15,6 +16,7 @@ class ReadingOrderProcessor:
     """
 
     name = "reading_order"
+    contract = ProcessorContract.MAY_REORDER
 
     def __init__(self, row_tolerance: float = 0.02) -> None:
         if row_tolerance <= 0:

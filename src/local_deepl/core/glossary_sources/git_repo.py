@@ -100,7 +100,11 @@ def _ssrf_blocked(url: str) -> bool:
 def _validate_path(path: str) -> str:
     clean = str(path).replace("\\", "/").strip()
     parts = clean.split("/")
-    if not clean or clean.startswith("/") or any(part in {"", ".", ".."} for part in parts):
+    if (
+        not clean
+        or clean.startswith("/")
+        or any(part in {"", ".", ".."} for part in parts)
+    ):
         raise ValueError("Git glossary path is invalid.")
     if "\x00" in clean:
         raise ValueError("Git glossary path is invalid.")
@@ -137,7 +141,10 @@ def _archive_member(archive: bytes, path: str) -> bytes:
     try:
         with tarfile.open(fileobj=io.BytesIO(archive), mode="r:*") as tar:
             for member in tar.getmembers():
-                if member.isfile() and member.name.rsplit("/", 1)[-1] == path.rsplit("/", 1)[-1]:
+                if (
+                    member.isfile()
+                    and member.name.rsplit("/", 1)[-1] == path.rsplit("/", 1)[-1]
+                ):
                     extracted = tar.extractfile(member)
                     if extracted is not None:
                         return extracted.read()

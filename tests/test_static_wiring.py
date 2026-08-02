@@ -2,18 +2,14 @@
 Frontend smoke tests.
 
 Two goals, both designed to catch the "PR compiles but the UI is
-silently broken at runtime" failure mode the JS code base has hit
-before (the static/js/windowDrag.js wrong-relative-path bug):
+silently broken at runtime" failure mode the frontend has hit before:
   1. ``index.html`` references to ``/static/*`` must resolve to actual
      files on disk. Bad paths surface here, not in the browser.
-  2. Each ``.js`` file in ``static/js/`` must parse cleanly under
-     ``node --check``. Adds a syntax-only gate that runs in CI without
-     a browser.
+  2. Each generated JavaScript module in ``static/assets/`` must parse
+     cleanly under ``node --check --input-type=module``.
 
-JS modules in this project are browser ES and use ``window``/``fetch``
-at top level, so we deliberately avoid booting them in Node. The
-HTML-wiring test plus ``node --check`` cover the two most common
-production-busting bugs at near-zero cost.
+The HTML-wiring test plus the generated-module syntax check cover the two
+most common production-busting failures at near-zero cost.
 """
 
 from __future__ import annotations
@@ -103,25 +99,23 @@ def test_static_html_external_links_use_allowlisted_hosts():
 
 
 def test_static_js_passes_node_check():
-    """Each JS file under ``static/js/`` must parse with ``node --check``.
-
-    Skipped when Node is not installed (the test is CI-only by design,
-    but local Windows installs may not have Node on PATH).
-    """
+    """Generated Vite modules must parse as ECMAScript modules under Node."""
     if shutil.which("node") is None:
         pytest.skip("node not installed; install Node 18+ to enable this check")
 
-    js_dir = STATIC_DIR / "js"
-    assert js_dir.is_dir(), f"missing JS directory: {js_dir}"
-    js_files = sorted(js_dir.glob("*.js"))
-    assert js_files, "no JS files to check"
+    assets_dir = STATIC_DIR / "assets"
+    assert assets_dir.is_dir(), f"missing generated assets directory: {assets_dir}"
+    js_files = sorted((*assets_dir.glob("*.js"), *assets_dir.glob("*.mjs")))
+    assert js_files, "no generated JavaScript modules to check"
 
     failures: list[tuple[Path, str]] = []
     for js_file in js_files:
         result = subprocess.run(
-            ["node", "--check", str(js_file)],
+            ["node", "--check", "--input-type=module"],
+            input=js_file.read_text(encoding="utf-8"),
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
         )
         if result.returncode != 0:

@@ -19,13 +19,29 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
 # HTTP status codes that indicate a transient server-side condition.
-RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+RETRYABLE_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
+
+# Python-level exception types that are never worth retrying — they
+# indicate a local programming bug rather than an upstream outage.
+# Listing them by type (not by message substring) catches the
+# "keyerror for missing dict key" / "typeerror on bad arg" cases
+# regardless of wording.
+_PYTHON_BUG_EXCEPTION_TYPES = (
+    KeyError,
+    TypeError,
+    AttributeError,
+    NameError,
+    IndexError,
+    ValueError,
+    AssertionError,
+)
 
 # Substrings in error messages that indicate transient transport failures.
 _TRANSIENT_TERMS = (
@@ -76,15 +92,34 @@ def is_transient_error(exc: BaseException) -> bool:
     Permanent failures (context-length exceeded, auth, invalid model)
     return ``False`` — retrying them wastes time and budget. Transient
     failures (rate limits, 5xx, connection drops, timeouts) return ``True``.
-    Unknown errors default to retryable: the cost of one extra attempt is
-    small compared to silently degrading a page.
+    Python-level bugs (KeyError, TypeError, AttributeError, ...) return
+    ``False`` because retrying them only hides a real code defect.
+    Unknown errors default to retryable: the cost of one extra attempt
+    is small compared to silently degrading a page.
     """
-    status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
-    if isinstance(status, int):
+    # Always-not-transient exception types (programming bugs).
+    if isinstance(exc, _PYTHON_BUG_EXCEPTION_TYPES):
+        return False
+
+    # Status code: try the common attribute names. httpx.HTTPStatusError
+    # exposes the status via ``.response.status_code``; OpenAI / LiteLLM
+    # errors use ``.status_code`` directly. Walk both.
+    status: int | None = None
+    direct = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+    if isinstance(direct, int):
+        status = direct
+    else:
+        response = getattr(exc, "response", None)
+        if response is not None:
+            resp_status = getattr(response, "status_code", None)
+            if isinstance(resp_status, int):
+                status = resp_status
+
+    if status is not None:
         if status in RETRYABLE_STATUS_CODES:
             return True
         if 400 <= status < 500:
-            # 4xx other than 429 is a client-side permanent failure.
+            # 4xx other than RETRYABLE_STATUS_CODES is a client-side permanent failure.
             return False
 
     msg = str(exc).lower()
@@ -97,8 +132,13 @@ def is_transient_error(exc: BaseException) -> bool:
     if "timeout" in msg or "timed out" in msg:
         return True
 
-    # Default: retry unknown errors once rather than degrade silently.
-    return True
+    # Bare generic exceptions (RuntimeError / Exception with no signal in
+    # the message) are NOT worth retrying: an unidentified RuntimeError
+    # is almost always a code bug or an upstream API edge case that
+    # retrying will not resolve. Treat as permanent.
+    # Default: retry unknown non-RuntimeError exceptions once rather
+    # than degrade silently.
+    return not isinstance(exc, RuntimeError)
 
 
 class CircuitOpenError(RuntimeError):
@@ -171,21 +211,21 @@ class CircuitBreaker:
     def consecutive_failures(self) -> int:
         return self._consecutive_failures
 
-    def check(self) -> None:
+    async def check(self) -> None:
         """Raise :class:`CircuitOpenError` if the circuit is open."""
         if self.is_open:
             assert self._opened_at is not None
             retry_after = self.cooldown_seconds - (self._clock() - self._opened_at)
             raise CircuitOpenError(self._consecutive_failures, max(0.0, retry_after))
 
-    def record_success(self) -> None:
+    async def record_success(self) -> None:
         """Record a successful call; closes the circuit if it was probing."""
         if self._opened_at is not None:
             logger.info("LLM circuit breaker closed after successful probe")
         self._consecutive_failures = 0
         self._opened_at = None
 
-    def record_failure(self) -> None:
+    async def record_failure(self) -> None:
         """Record a failed call; opens the circuit at the threshold.
 
         A failure while half-open (cooldown expired, probe in flight)
@@ -210,10 +250,102 @@ class CircuitBreaker:
                 self.cooldown_seconds,
             )
 
+    # Async-friendly shims. Async OCR call sites awaiting the breaker
+    # API surface are first-class: pipeline code uniformly awaits
+    # ``cb.acheck()`` / ``cb.arecord_failure()`` regardless of whether
+    # the underlying implementation needs the event loop. The shims
+    # simply proxy to the synchronous implementations when there is
+    # no actual awaitable work; the registry's lock guarantees the
+    # bookkeeping stays consistent even under concurrent awaits.
+    async def acheck(self) -> None:
+        await self.check()
+
+    async def arecord_success(self) -> None:
+        await self.record_success()
+
+    async def arecord_failure(self) -> None:
+        await self.record_failure()
+
+
+class CircuitBreakerRegistry:
+    """Process-wide pool of :class:`CircuitBreaker` keyed by endpoint.
+
+    Two ``OCRProcessor`` instances constructed against the same
+    ``(api_base, model)`` should share a circuit breaker: a breaker
+    tripped by one processor must be visible to a second processor
+    that started after the first had already exhausted its retries. A
+    dedicated registry makes this sharing explicit; the default
+    registry returned by :func:`get_default_circuit_breaker_registry`
+    is a process-wide singleton so production pipeline runs naturally
+    share breakers across HTTP requests.
+
+    Thread-safety: the registry holds a :class:`threading.Lock` for
+    registration / lookup, held only for the duration of a dict
+    mutation so contention is minimal.
+    """
+
+    def __init__(self) -> None:
+        self._breakers: dict[tuple[str, str], CircuitBreaker] = {}
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _key(api_base: str, model: str) -> tuple[str, str]:
+        return (api_base, model)
+
+    def get_or_create(self, api_base: str, model: str) -> CircuitBreaker:
+        """Return the breaker for ``(api_base, model)``; create on first call."""
+        key = self._key(api_base, model)
+        with self._lock:
+            breaker = self._breakers.get(key)
+            if breaker is None:
+                breaker = CircuitBreaker()
+                self._breakers[key] = breaker
+            return breaker
+
+    def get(self, api_base: str, model: str) -> CircuitBreaker | None:
+        """Return the breaker for ``(api_base, model)`` or ``None`` if absent."""
+        with self._lock:
+            return self._breakers.get(self._key(api_base, model))
+
+    def clear(self) -> None:
+        """Drop every registered breaker. Test helper."""
+        with self._lock:
+            self._breakers.clear()
+
+
+_default_registry: CircuitBreakerRegistry | None = None
+_default_registry_lock = threading.Lock()
+
+
+def get_default_circuit_breaker_registry() -> CircuitBreakerRegistry:
+    """Return the process-wide default :class:`CircuitBreakerRegistry`.
+
+    Lazily constructed on first call; subsequent calls return the
+    same instance so two ``OCRProcessor`` objects built from
+    different request handlers share one breaker when configured
+    against the same endpoint.
+    """
+    global _default_registry
+    if _default_registry is None:
+        with _default_registry_lock:
+            if _default_registry is None:
+                _default_registry = CircuitBreakerRegistry()
+    return _default_registry
+
+
+def reset_default_circuit_breaker_registry() -> None:
+    """Drop the default registry. Test helper."""
+    global _default_registry
+    with _default_registry_lock:
+        _default_registry = None
+
 
 __all__ = [
     "RETRYABLE_STATUS_CODES",
     "CircuitBreaker",
+    "CircuitBreakerRegistry",
     "CircuitOpenError",
+    "get_default_circuit_breaker_registry",
     "is_transient_error",
+    "reset_default_circuit_breaker_registry",
 ]
