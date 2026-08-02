@@ -87,6 +87,12 @@ comet = [
     "unbabel-comet>=2.2.0",
 ]
 
+# Voice transcription extra: faster-whisper local model engine & openai client.
+transcription = [
+    "faster-whisper>=1.0.0",
+    "openai>=2.11.0",
+]
+
 # Glossary multi-source import: optional XLSX, SQL pair-table, git archive
 # fetchers, safe XML parsers (XLIFF/TBX/TMX), and encoding auto-detection.
 # Every parser tolerates the dep being missing by raising

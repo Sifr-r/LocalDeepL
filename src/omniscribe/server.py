@@ -75,6 +75,7 @@ def create_app() -> ASGIApplication:
         ocr,
         providers,
         state,
+        transcription,
         translation,
         websocket,
     )
@@ -116,7 +117,7 @@ def create_app() -> ASGIApplication:
             RateLimitMiddleware, per_minute=security.rate_limit_per_minute
         )
     web_app.add_middleware(MaxUploadSizeMiddleware, max_bytes=security.max_upload_bytes)
-    # Per-service auth tokens (OCR / translation) take precedence over
+    # Per-service auth tokens (OCR / translation / transcription) take precedence over
     # the global ``auth_token`` for the matching route group. When a
     # per-service token is configured, the global token does NOT unlock
     # that namespace — see BearerAuthMiddleware._token_for for details.
@@ -125,6 +126,7 @@ def create_app() -> ASGIApplication:
         expected_token=security.auth_token,
         ocr_token=security.ocr_auth_token,
         translation_token=security.translation_auth_token,
+        transcription_token=security.transcription_auth_token,
     )
 
     web_app.mount(
@@ -139,6 +141,7 @@ def create_app() -> ASGIApplication:
     web_app.include_router(jobs.router)
     web_app.include_router(artifacts.router)
     web_app.include_router(translation.router)
+    web_app.include_router(transcription.router)
     web_app.include_router(extraction.router)
     web_app.include_router(glossary_imports.router)
     web_app.include_router(providers.router)

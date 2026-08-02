@@ -3,65 +3,34 @@ schema_version: 1
 locale: en-US
 branch: main
 nodes_managed: true
-exported_at: "2026-07-27T00:51:35Z"
+exported_at: "2026-08-02T20:06:19Z"
 modules:
     "":
-        dir_name: LocalDeepL OCR & Translation Web Platform
-        title: LocalDeepL OCR & Translation Web Platform
+        dir_name: OmniScribe — Surya OCR + Grounded_Hybrid LLM PDF Pipeline
+        title: OmniScribe — Surya OCR + Grounded/Hybrid LLM PDF Pipeline
         scope:
             - README.md
-            - .gitignore
-            - pyproject.toml
-            - Makefile
-            - compose.yaml
-            - Dockerfile
-            - AGENTS.md
             - ARCHITECTURE.md
-            - .env.example
-            - .fallowrc.json
+            - AGENTS.md
+            - .gitignore
             - .pre-commit-config.yaml
-            - LICENSE
+            - pyproject.toml
+            - Dockerfile
+            - compose.yaml
             - install.ps1
             - phase2_reqs.txt
             - phase3_text.txt
-            - screenshot_full.png
-            - screenshot_new_ui.png
             - test_ui.py
-            - user_prompt.json
-            - uv.lock
+            - .fallowrc.json
         source_files: []
         children:
-            - docs_and_plans
-            - package_root
-            - scripts
+            - scripts_and_examples
             - tests
         depends_on: []
         related_to: []
-    docs_and_plans:
-        dir_name: God-Module Decomposition Plan & Design Specs
-        title: God-Module Decomposition Plan & Design Specs
-        scope:
-            - docs/
-            - .mavis/
-        source_files: []
-        children: []
-        depends_on: []
-        related_to: []
-    package_root:
-        dir_name: LocalDeepL Web Server, OCR Pipeline & Evaluation
-        title: LocalDeepL Web Server, OCR Pipeline & Evaluation
-        scope:
-            - src/local_deepl/server.py
-            - src/local_deepl/pipeline.py
-            - src/local_deepl/evaluation.py
-        source_files: []
-        children: []
-        depends_on: []
-        related_to:
-            - path: tests
-    scripts:
-        dir_name: Development, Evaluation & Debugging Scripts
-        title: Development, Evaluation & Debugging Scripts
+    scripts_and_examples:
+        dir_name: Development Scripts & Example Utilities
+        title: Development Scripts & Example Utilities
         scope:
             - scripts/
         source_files: []
@@ -70,13 +39,12 @@ modules:
         related_to:
             - path: tests
     tests:
-        dir_name: Pytest Test Suite for LocalDeepL OCR Pipeline
-        title: Pytest Test Suite for LocalDeepL OCR Pipeline
+        dir_name: Pytest Test Suite for LocalDeepL Pipeline & Workflows
+        title: Pytest Test Suite for LocalDeepL Pipeline & Workflows
         scope:
             - tests/
         source_files: []
         children: []
         depends_on: []
         related_to:
-            - path: package_root
-            - path: scripts
+            - path: scripts_and_examples

@@ -1,0 +1,1 @@
+Root of the OmniScribe Python package that wires Surya OCR, grounded/hybrid LLM pipelines, a FastAPI server, and optional Celery workers into a searchable-PDF pipeline with shared build, lint, Docker/Compose orchestration.

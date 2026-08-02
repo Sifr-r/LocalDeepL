@@ -1,4 +1,0 @@
-- Optional third-party imports are deferred inside a `_load_optional_module` helper that wraps `importlib.import_module` and re-raises `ModuleNotFoundError` as a `RuntimeError` with a user-facing hint about installing the correct extra.
-- Async interfaces use explicit type aliases for ASGI types (`ASGIReceive`, `ASGISend`, `ASGIScope`) and a `Protocol` (`ASGIApplication`) to type the lazy wrapper without importing FastAPI at module load time.
-- Data structures representing evaluation results are defined as `@dataclass` objects with computed properties (e.g. `block_recall`, `avg_text_similarity`, `matched`) rather than ad-hoc dicts.
-- Configuration is read from environment variables through a settings class (`SecuritySettings.from_env()`) instead of inline defaults, keeping server behavior configurable without code changes.

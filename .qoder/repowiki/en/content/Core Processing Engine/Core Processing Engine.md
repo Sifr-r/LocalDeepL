@@ -2,26 +2,33 @@
 
 <cite>
 **Referenced Files in This Document**
-- [base.py](file://src/local_deepl/core/workflows/base.py)
-- [grounded.py](file://src/local_deepl/core/workflows/grounded.py)
-- [hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
-- [utils.py](file://src/local_deepl/core/workflows/utils.py)
-- [processor.py](file://src/local_deepl/core/ocr/processor.py)
-- [client.py](file://src/local_deepl/core/ocr/client.py)
-- [resilience.py](file://src/local_deepl/core/ocr/resilience.py)
-- [preprocessing.py](file://src/local_deepl/core/preprocessing.py)
-- [handwriting_preprocessor.py](file://src/local_deepl/core/handwriting_preprocessor.py)
-- [quality.py](file://src/local_deepl/core/processors/quality.py)
-- [callbacks.py](file://src/local_deepl/core/callbacks.py)
-- [document.py](file://src/local_deepl/core/document.py)
-- [translation.py](file://src/local_deepl/core/translation.py)
-- [dual_translator.py](file://src/local_deepl/core/dual_translator.py)
-- [artifacts.py](file://src/local_deepl/api/services/artifacts.py)
-- [ocr_pipeline_factory.py](file://src/local_deepl/api/services/ocr_pipeline_factory.py)
-- [ocr_settings.py](file://src/local_deepl/api/services/ocr_settings.py)
-- [progress.py](file://src/local_deepl/api/services/progress.py)
-- [jobs.py](file://src/local_deepl/api/services/jobs.py)
-- [tasks.py](file://src/local_deepl/api/tasks.py)
+- [pipeline.py](file://src/local_deepl/pipeline.py)
+- [core/document.py](file://src/local_deepl/core/document.py)
+- [core/preprocessing.py](file://src/local_deepl/core/preprocessing.py)
+- [core/ocr/processor.py](file://src/local_deepl/core/ocr/processor.py)
+- [core/workflows/base.py](file://src/local_deepl/core/workflows/base.py)
+- [core/workflows/grounded.py](file://src/local_deepl/core/workflows/grounded.py)
+- [core/workflows/hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
+- [api/services/ocr_pipeline_factory.py](file://src/local_deepl/api/services/ocr_pipeline_factory.py)
+- [api/services/workflow.py](file://src/local_deepl/api/services/workflow.py)
+- [core/callbacks.py](file://src/local_deepl/core/callbacks.py)
+- [core/postprocess.py](file://src/local_deepl/core/postprocess.py)
+- [core/docx_writer.py](file://src/local_deepl/core/docx_writer.py)
+- [core/html_writer.py](file://src/local_deepl/core/html_writer.py)
+- [core/tree_export.py](file://src/local_deepl/core/tree_export.py)
+- [core/routing.py](file://src/local_deepl/core/routing.py)
+- [core/pdf.py](file://src/local_deepl/core/pdf.py)
+- [core/block_tree.py](file://src/local_deepl/core/block_tree.py)
+- [core/aligner.py](file://src/local_deepl/core/aligner.py)
+- [core/glossary.py](file://src/local_deepl/core/glossary.py)
+- [core/dual_translator.py](file://src/local_deepl/core/dual_translator.py)
+- [core/translation_config.py](file://src/local_deepl/core/translation_config.py)
+- [core/llm_client.py](file://src/local_deepl/core/llm_client.py)
+- [core/nllb_engine.py](file://src/local_deepl/core/nllb_engine.py)
+- [core/trocr_engine.py](file://src/local_deepl/core/trocr_engine.py)
+- [core/handwriting_preprocessor.py](file://src/local_deepl/core/handwriting_preprocessor.py)
+- [api/tasks.py](file://src/local_deepl/api/tasks.py)
+- [api/celery_app.py](file://src/local_deepl/api/celery_app.py)
 </cite>
 
 ## Table of Contents
@@ -37,422 +44,669 @@
 10. [Appendices](#appendices)
 
 ## Introduction
-This document explains the core processing engine that powers OCR-driven document workflows. It focuses on the workflow system architecture, including base workflow abstractions, grounded OCR workflows, and hybrid strategies that combine multiple OCR backends. It also documents the OCR processor abstraction layer, preprocessing pipeline for image enhancement, quality assessment mechanisms, configuration options, callback-based progress tracking, error handling patterns, and integration points with translation services and artifact storage. The goal is to make the system accessible to beginners while providing sufficient depth for experienced developers extending or customizing the pipeline.
+This document explains LocalDeepL’s core processing engine with a focus on document processing pipelines and workflow orchestration. It covers the end-to-end flow from input validation through format detection, preprocessing, OCR extraction, translation, alignment, and output generation. It also documents the pluggable processor architecture, grounded vs hybrid workflow strategies, error handling, pipeline pattern implementation, callback systems, progress tracking, performance optimization, memory management, and batch processing capabilities.
 
 ## Project Structure
-The core processing engine spans several modules:
-- Workflows define high-level orchestration (base, grounded, hybrid).
-- OCR subsystem provides a unified processor abstraction over multiple backends.
-- Preprocessing enhances input images for better OCR accuracy.
-- Quality processors assess OCR output reliability.
-- Callbacks and progress services enable real-time updates.
-- Translation and artifacts integrate downstream processing and persistence.
+The core processing engine is implemented under src/local_deepl/core and exposed via API services and Celery tasks for asynchronous execution. The key modules include:
+- Pipeline orchestration and routing
+- Document model and block tree representation
+- Preprocessing and OCR processors
+- Workflow strategies (base, grounded, hybrid)
+- Postprocessing and export writers
+- Callbacks and progress tracking
+- Translation engines and configuration
+- Asynchronous task execution
 
 ```mermaid
 graph TB
-subgraph "Workflows"
-WF_Base["Base Workflow"]
-WF_Grounded["Grounded Workflow"]
-WF_Hybrid["Hybrid Workflow"]
+subgraph "API Layer"
+A_tasks["Tasks"]
+A_services["Workflow Service"]
+A_factory["OCR Pipeline Factory"]
 end
-subgraph "OCR Layer"
-Proc["OCR Processor"]
-Client["OCR Client(s)"]
-Resil["Resilience & Retries"]
+subgraph "Core Engine"
+P["Pipeline Orchestrator"]
+D["Document Model"]
+R["Routing"]
+PP["Preprocessing"]
+OCR["OCR Processor"]
+WF_base["Workflow Base"]
+WF_g["Grounded Workflow"]
+WF_h["Hybrid Workflow"]
+PO["Postprocessing"]
+CB["Callbacks"]
+TR["Translation Config & Engines"]
+EX["Export Writers"]
 end
-subgraph "Preprocessing"
-Pre["Image Preprocessing"]
-Hand["Handwriting Preprocessor"]
-end
-subgraph "Quality"
-QA["Quality Assessment"]
-end
-subgraph "Integration"
-Trans["Translation Services"]
-Artifacts["Artifact Storage"]
-Progress["Progress & Callbacks"]
-end
-WF_Base --> Proc
-WF_Grounded --> Proc
-WF_Hybrid --> Proc
-Proc --> Client
-Proc --> Resil
-Proc --> Pre
-Proc --> Hand
-Proc --> QA
-WF_Base --> Progress
-WF_Grounded --> Progress
-WF_Hybrid --> Progress
-WF_Base --> Trans
-WF_Grounded --> Trans
-WF_Hybrid --> Trans
-WF_Base --> Artifacts
-WF_Grounded --> Artifacts
-WF_Hybrid --> Artifacts
+A_tasks --> A_services
+A_services --> P
+A_factory --> P
+P --> R
+P --> D
+P --> PP
+P --> OCR
+P --> WF_base
+WF_base --> WF_g
+WF_base --> WF_h
+P --> PO
+P --> CB
+P --> TR
+P --> EX
 ```
 
 **Diagram sources**
-- [base.py](file://src/local_deepl/core/workflows/base.py)
-- [grounded.py](file://src/local_deepl/core/workflows/grounded.py)
-- [hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
-- [processor.py](file://src/local_deepl/core/ocr/processor.py)
-- [client.py](file://src/local_deepl/core/ocr/client.py)
-- [resilience.py](file://src/local_deepl/core/ocr/resilience.py)
-- [preprocessing.py](file://src/local_deepl/core/preprocessing.py)
-- [handwriting_preprocessor.py](file://src/local_deepl/core/handwriting_preprocessor.py)
-- [quality.py](file://src/local_deepl/core/processors/quality.py)
-- [progress.py](file://src/local_deepl/api/services/progress.py)
-- [translation.py](file://src/local_deepl/core/translation.py)
-- [artifacts.py](file://src/local_deepl/api/services/artifacts.py)
+- [api/tasks.py](file://src/local_deepl/api/tasks.py)
+- [api/services/workflow.py](file://src/local_deepl/api/services/workflow.py)
+- [api/services/ocr_pipeline_factory.py](file://src/local_deepl/api/services/ocr_pipeline_factory.py)
+- [pipeline.py](file://src/local_deepl/pipeline.py)
+- [core/document.py](file://src/local_deepl/core/document.py)
+- [core/routing.py](file://src/local_deepl/core/routing.py)
+- [core/preprocessing.py](file://src/local_deepl/core/preprocessing.py)
+- [core/ocr/processor.py](file://src/local_deepl/core/ocr/processor.py)
+- [core/workflows/base.py](file://src/local_deepl/core/workflows/base.py)
+- [core/workflows/grounded.py](file://src/local_deepl/core/workflows/grounded.py)
+- [core/workflows/hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
+- [core/postprocess.py](file://src/local_deepl/core/postprocess.py)
+- [core/callbacks.py](file://src/local_deepl/core/callbacks.py)
+- [core/translation_config.py](file://src/local_deepl/core/translation_config.py)
+- [core/docx_writer.py](file://src/local_deepl/core/docx_writer.py)
+- [core/html_writer.py](file://src/local_deepl/core/html_writer.py)
+- [core/tree_export.py](file://src/local_deepl/core/tree_export.py)
 
 **Section sources**
-- [base.py](file://src/local_deepl/core/workflows/base.py)
-- [grounded.py](file://src/local_deepl/core/workflows/grounded.py)
-- [hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
-- [processor.py](file://src/local_deepl/core/ocr/processor.py)
-- [client.py](file://src/local_deepl/core/ocr/client.py)
-- [resilience.py](file://src/local_deepl/core/ocr/resilience.py)
-- [preprocessing.py](file://src/local_deepl/core/preprocessing.py)
-- [handwriting_preprocessor.py](file://src/local_deepl/core/handwriting_preprocessor.py)
-- [quality.py](file://src/local_deepl/core/processors/quality.py)
-- [progress.py](file://src/local_deepl/api/services/progress.py)
-- [translation.py](file://src/local_deepl/core/translation.py)
-- [artifacts.py](file://src/local_deepl/api/services/artifacts.py)
+- [pipeline.py](file://src/local_deepl/pipeline.py)
+- [core/document.py](file://src/local_deepl/core/document.py)
+- [core/routing.py](file://src/local_deepl/core/routing.py)
+- [core/preprocessing.py](file://src/local_deepl/core/preprocessing.py)
+- [core/ocr/processor.py](file://src/local_deepl/core/ocr/processor.py)
+- [core/workflows/base.py](file://src/local_deepl/core/workflows/base.py)
+- [core/workflows/grounded.py](file://src/local_deepl/core/workflows/grounded.py)
+- [core/workflows/hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
+- [core/postprocess.py](file://src/local_deepl/core/postprocess.py)
+- [core/callbacks.py](file://src/local_deepl/core/callbacks.py)
+- [core/translation_config.py](file://src/local_deepl/core/translation_config.py)
+- [core/docx_writer.py](file://src/local_deepl/core/docx_writer.py)
+- [core/html_writer.py](file://src/local_deepl/core/html_writer.py)
+- [core/tree_export.py](file://src/local_deepl/core/tree_export.py)
+- [api/tasks.py](file://src/local_deepl/api/tasks.py)
+- [api/services/workflow.py](file://src/local_deepl/api/services/workflow.py)
+- [api/services/ocr_pipeline_factory.py](file://src/local_deepl/api/services/ocr_pipeline_factory.py)
 
 ## Core Components
-- Base workflow defines the common orchestration contract, lifecycle hooks, and shared utilities used by all concrete workflows.
-- Grounded workflow implements an OCR-first strategy with grounding steps to align extracted text with original layout or structure.
-- Hybrid workflow orchestrates multiple OCR backends, combining results via voting or confidence-weighted merging, and falls back when needed.
-- OCR processor abstracts backend calls, normalizes outputs, and integrates resilience/retry logic.
-- Preprocessing pipeline prepares images (enhancement, deskewing, binarization) and includes specialized handwriting preprocessor.
-- Quality assessment evaluates OCR confidence and structural coherence to guide fallbacks and merges.
-- Callbacks and progress services provide event-driven updates for long-running jobs.
-- Translation services and artifact storage integrate downstream tasks and persist intermediate/final artifacts.
+- Pipeline orchestrator: coordinates stages, manages state, invokes callbacks, and handles errors.
+- Document model: represents parsed content, blocks, and metadata; used across stages.
+- Routing: selects appropriate processors based on file type and settings.
+- Preprocessing: normalizes inputs, prepares images/PDFs, and applies optional handwriting preprocessor.
+- OCR processor: abstracts OCR backends and integrates with LLM-based parsing when needed.
+- Workflows: base strategy plus grounded and hybrid variants that differ in how text is extracted and aligned.
+- Postprocessing: merges results, resolves conflicts, and finalizes structures.
+- Export writers: generate DOCX, HTML, or structured tree artifacts.
+- Callbacks and progress: decoupled event system to report stage completion and partial results.
+- Translation subsystem: configuration, dual translator, and engines (NLLB, TROCR).
+- Async execution: Celery app and tasks for background job processing.
 
 **Section sources**
-- [base.py](file://src/local_deepl/core/workflows/base.py)
-- [grounded.py](file://src/local_deepl/core/workflows/grounded.py)
-- [hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
-- [processor.py](file://src/local_deepl/core/ocr/processor.py)
-- [client.py](file://src/local_deepl/core/ocr/client.py)
-- [resilience.py](file://src/local_deepl/core/ocr/resilience.py)
-- [preprocessing.py](file://src/local_deepl/core/preprocessing.py)
-- [handwriting_preprocessor.py](file://src/local_deepl/core/handwriting_preprocessor.py)
-- [quality.py](file://src/local_deepl/core/processors/quality.py)
-- [callbacks.py](file://src/local_deepl/core/callbacks.py)
-- [progress.py](file://src/local_deepl/api/services/progress.py)
-- [translation.py](file://src/local_deepl/core/translation.py)
-- [artifacts.py](file://src/local_deepl/api/services/artifacts.py)
+- [pipeline.py](file://src/local_deepl/pipeline.py)
+- [core/document.py](file://src/local_deepl/core/document.py)
+- [core/routing.py](file://src/local_deepl/core/routing.py)
+- [core/preprocessing.py](file://src/local_deepl/core/preprocessing.py)
+- [core/ocr/processor.py](file://src/local_deepl/core/ocr/processor.py)
+- [core/workflows/base.py](file://src/local_deepl/core/workflows/base.py)
+- [core/workflows/grounded.py](file://src/local_deepl/core/workflows/grounded.py)
+- [core/workflows/hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
+- [core/postprocess.py](file://src/local_deepl/core/postprocess.py)
+- [core/docx_writer.py](file://src/local_deepl/core/docx_writer.py)
+- [core/html_writer.py](file://src/local_deepl/core/html_writer.py)
+- [core/tree_export.py](file://src/local_deepl/core/tree_export.py)
+- [core/callbacks.py](file://src/local_deepl/core/callbacks.py)
+- [core/translation_config.py](file://src/local_deepl/core/translation_config.py)
+- [core/dual_translator.py](file://src/local_deepl/core/dual_translator.py)
+- [core/nllb_engine.py](file://src/local_deepl/core/nllb_engine.py)
+- [core/trocr_engine.py](file://src/local_deepl/core/trocr_engine.py)
+- [api/tasks.py](file://src/local_deepl/api/tasks.py)
+- [api/celery_app.py](file://src/local_deepl/api/celery_app.py)
 
 ## Architecture Overview
-The processing engine follows a layered architecture:
-- API layer exposes endpoints and job management.
-- Workflow layer orchestrates steps and coordinates components.
-- OCR layer abstracts backends and ensures robustness.
-- Preprocessing and quality layers improve accuracy and reliability.
-- Integration layer handles translation and artifact persistence.
+The processing engine follows a pipeline pattern with pluggable processors and strategy-based workflows. Input documents are validated and routed to the appropriate workflow. Each workflow composes stages such as preprocessing, OCR, translation, alignment, and postprocessing. Progress and events are emitted via callbacks, enabling real-time UI updates and external monitoring.
 
 ```mermaid
 sequenceDiagram
-participant API as "API Router"
-participant Jobs as "Jobs Service"
-participant Task as "Celery Task"
-participant WF as "Workflow (Base/Grounded/Hybrid)"
-participant Proc as "OCR Processor"
-participant Client as "OCR Client(s)"
-participant Pre as "Preprocessing"
-participant QA as "Quality Assessment"
-participant Trans as "Translation"
-participant Art as "Artifacts"
-participant Prog as "Progress/CB"
-API->>Jobs : Create extraction job
-Jobs->>Task : Enqueue task
-Task->>WF : Instantiate workflow with config
-WF->>Prog : Emit start event
-WF->>Pre : Enhance images
-WF->>Proc : Run OCR with client(s)
-Proc->>Client : Call backend(s)
-Client-->>Proc : Raw OCR results
-Proc->>QA : Assess quality
-alt Quality below threshold
-WF->>Proc : Fallback or retry
-Proc->>Client : Retry with alternate backend
-else Quality acceptable
-WF->>Trans : Translate if configured
-WF->>Art : Persist artifacts
+participant Client as "Client"
+participant Tasks as "Celery Tasks"
+participant Svc as "Workflow Service"
+participant Pipe as "Pipeline Orchestrator"
+participant Rout as "Routing"
+participant Proc as "Processors"
+participant Wf as "Workflow Strategy"
+participant Cb as "Callbacks"
+participant Out as "Export Writers"
+Client->>Tasks : Submit job
+Tasks->>Svc : Enqueue processing
+Svc->>Pipe : Initialize pipeline
+Pipe->>Rout : Detect format and select strategy
+Rout-->>Pipe : Selected workflow + processors
+Pipe->>Wf : Execute workflow steps
+loop For each step
+Pipe->>Proc : Run processor(s)
+Proc-->>Pipe : Stage result
+Pipe->>Cb : Emit progress/event
 end
-WF->>Prog : Emit completion events
-Task-->>API : Job status/result
+Pipe->>Out : Generate outputs
+Out-->>Pipe : Artifacts
+Pipe-->>Svc : Final result
+Svc-->>Tasks : Job complete
+Tasks-->>Client : Status and artifacts
 ```
 
 **Diagram sources**
-- [jobs.py](file://src/local_deepl/api/services/jobs.py)
-- [tasks.py](file://src/local_deepl/api/tasks.py)
-- [base.py](file://src/local_deepl/core/workflows/base.py)
-- [grounded.py](file://src/local_deepl/core/workflows/grounded.py)
-- [hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
-- [processor.py](file://src/local_deepl/core/ocr/processor.py)
-- [client.py](file://src/local_deepl/core/ocr/client.py)
-- [preprocessing.py](file://src/local_deepl/core/preprocessing.py)
-- [quality.py](file://src/local_deepl/core/processors/quality.py)
-- [translation.py](file://src/local_deepl/core/translation.py)
-- [artifacts.py](file://src/local_deepl/api/services/artifacts.py)
-- [progress.py](file://src/local_deepl/api/services/progress.py)
+- [api/tasks.py](file://src/local_deepl/api/tasks.py)
+- [api/services/workflow.py](file://src/local_deepl/api/services/workflow.py)
+- [pipeline.py](file://src/local_deepl/pipeline.py)
+- [core/routing.py](file://src/local_deepl/core/routing.py)
+- [core/workflows/base.py](file://src/local_deepl/core/workflows/base.py)
+- [core/workflows/grounded.py](file://src/local_deepl/core/workflows/grounded.py)
+- [core/workflows/hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
+- [core/callbacks.py](file://src/local_deepl/core/callbacks.py)
+- [core/docx_writer.py](file://src/local_deepl/core/docx_writer.py)
+- [core/html_writer.py](file://src/local_deepl/core/html_writer.py)
+- [core/tree_export.py](file://src/local_deepl/core/tree_export.py)
 
 ## Detailed Component Analysis
 
-### Workflow System Architecture
-The workflow system provides a consistent interface for orchestrating OCR and post-processing steps.
+### Pipeline Orchestrator
+Responsibilities:
+- Initialize and manage lifecycle of processing stages
+- Coordinate data passing between processors
+- Invoke callbacks for progress and intermediate artifacts
+- Handle errors and retries per stage
+- Support both synchronous and asynchronous execution contexts
 
-- Base workflow: Defines lifecycle methods, parameter validation, and shared utilities. Concrete workflows inherit and override specific steps.
-- Grounded workflow: Implements OCR-first extraction followed by grounding to align text with original structure; suitable for structured documents.
-- Hybrid workflow: Combines multiple OCR backends, applies quality checks, and merges results using confidence scores or voting.
+Key behaviors:
+- Validates inputs and config before starting
+- Selects workflow strategy via routing
+- Iterates over ordered steps, capturing results and emitting events
+- Aggregates outputs and delegates to exporters
 
 ```mermaid
 classDiagram
-class BaseWorkflow {
-+run(document, config, callbacks) Result
-+validate_config(config) bool
-+on_start() void
-+on_step(step_name, payload) void
-+on_complete(result) void
-+on_error(error) void
+class PipelineOrchestrator {
++initialize(config)
++execute(document)
++run_step(step, context)
++emit_event(event)
++handle_error(error, step)
++finalize()
+}
+class Routing {
++detect_format(file)
++select_workflow(strategy_hint)
+}
+class WorkflowBase {
++build_steps()
++execute(context)
+}
+class GroundedWorkflow
+class HybridWorkflow
+class Callbacks {
++on_progress(stage, pct)
++on_artifact(name, payload)
++on_error(message)
+}
+PipelineOrchestrator --> Routing : "uses"
+PipelineOrchestrator --> WorkflowBase : "instantiates"
+WorkflowBase <|-- GroundedWorkflow
+WorkflowBase <|-- HybridWorkflow
+PipelineOrchestrator --> Callbacks : "emits events"
+```
+
+**Diagram sources**
+- [pipeline.py](file://src/local_deepl/pipeline.py)
+- [core/routing.py](file://src/local_deepl/core/routing.py)
+- [core/workflows/base.py](file://src/local_deepl/core/workflows/base.py)
+- [core/workflows/grounded.py](file://src/local_deepl/core/workflows/grounded.py)
+- [core/workflows/hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
+- [core/callbacks.py](file://src/local_deepl/core/callbacks.py)
+
+**Section sources**
+- [pipeline.py](file://src/local_deepl/pipeline.py)
+- [core/routing.py](file://src/local_deepl/core/routing.py)
+- [core/workflows/base.py](file://src/local_deepl/core/workflows/base.py)
+- [core/workflows/grounded.py](file://src/local_deepl/core/workflows/grounded.py)
+- [core/workflows/hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
+- [core/callbacks.py](file://src/local_deepl/core/callbacks.py)
+
+### Document Model and Block Tree
+Responsibilities:
+- Represent document structure, pages, blocks, and spans
+- Provide utilities for traversal and transformation
+- Maintain metadata and provenance information
+
+Key relationships:
+- Document contains pages and blocks
+- Blocks contain spans and annotations
+- Aligner maps source spans to target spans after translation
+
+```mermaid
+classDiagram
+class Document {
++metadata
++pages
++blocks
++add_block(block)
++to_dict()
+}
+class BlockTree {
++root
++insert(node)
++traverse(callback)
+}
+class Aligner {
++align(source_spans, target_text)
++map_positions(mappings)
+}
+Document --> BlockTree : "contains"
+Document --> Aligner : "uses"
+```
+
+**Diagram sources**
+- [core/document.py](file://src/local_deepl/core/document.py)
+- [core/block_tree.py](file://src/local_deepl/core/block_tree.py)
+- [core/aligner.py](file://src/local_deepl/core/aligner.py)
+
+**Section sources**
+- [core/document.py](file://src/local_deepl/core/document.py)
+- [core/block_tree.py](file://src/local_deepl/core/block_tree.py)
+- [core/aligner.py](file://src/local_deepl/core/aligner.py)
+
+### Preprocessing and OCR
+Responsibilities:
+- Normalize inputs (PDF rasterization, image enhancement)
+- Prepare content for OCR or direct text extraction
+- Integrate OCR backends and LLM-based parsers
+
+Processing logic:
+- Format detection determines whether to use PDF-native text, OCR, or hybrid path
+- Handwriting preprocessor can be applied for scanned or handwritten content
+- OCR processor returns structured text with bounding boxes and confidence scores
+
+```mermaid
+flowchart TD
+Start(["Start"]) --> Detect["Detect format and content type"]
+Detect --> IsDigital{"Digital text available?"}
+IsDigital --> |Yes| UseNative["Use native text extraction"]
+IsDigital --> |No| Prep["Preprocess images/PDF"]
+Prep --> HWP{"Handwriting detected?"}
+HWP --> |Yes| HP["Apply handwriting preprocessor"]
+HWP --> |No| SkipHP["Skip handwriting preprocessor"]
+HP --> OCR["Run OCR processor"]
+SkipHP --> OCR
+OCR --> Structured["Build structured OCR result"]
+UseNative --> Structured
+Structured --> End(["End"])
+```
+
+**Diagram sources**
+- [core/preprocessing.py](file://src/local_deepl/core/preprocessing.py)
+- [core/handwriting_preprocessor.py](file://src/local_deepl/core/handwriting_preprocessor.py)
+- [core/ocr/processor.py](file://src/local_deepl/core/ocr/processor.py)
+- [core/pdf.py](file://src/local_deepl/core/pdf.py)
+
+**Section sources**
+- [core/preprocessing.py](file://src/local_deepl/core/preprocessing.py)
+- [core/handwriting_preprocessor.py](file://src/local_deepl/core/handwriting_preprocessor.py)
+- [core/ocr/processor.py](file://src/local_deepl/core/ocr/processor.py)
+- [core/pdf.py](file://src/local_deepl/core/pdf.py)
+
+### Workflow Strategies: Grounded vs Hybrid
+Responsibilities:
+- Define ordering and composition of stages
+- Decide when to rely on OCR vs native text
+- Control alignment and translation integration points
+
+Differences:
+- Grounded workflow emphasizes strict grounding of translations to source positions using OCR-derived anchors
+- Hybrid workflow blends native text where possible and falls back to OCR for missing or unreliable regions
+
+```mermaid
+classDiagram
+class WorkflowBase {
++name
++steps
++execute(document, config)
 }
 class GroundedWorkflow {
-+run(document, config, callbacks) Result
--ground_text(text_blocks) AlignedBlocks
--apply_layout_constraints(blocks) Blocks
++prefer_anchors(true)
++strict_alignment(true)
 }
 class HybridWorkflow {
-+run(document, config, callbacks) Result
--select_backends(config) Backend[]
--merge_results(results) MergedResult
--fallback_strategy(results) Result
++blend_native_and_ocr(true)
++fallback_to_ocr_on_confidence(false)
 }
-BaseWorkflow <|-- GroundedWorkflow
-BaseWorkflow <|-- HybridWorkflow
+WorkflowBase <|-- GroundedWorkflow
+WorkflowBase <|-- HybridWorkflow
 ```
 
 **Diagram sources**
-- [base.py](file://src/local_deepl/core/workflows/base.py)
-- [grounded.py](file://src/local_deepl/core/workflows/grounded.py)
-- [hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
+- [core/workflows/base.py](file://src/local_deepl/core/workflows/base.py)
+- [core/workflows/grounded.py](file://src/local_deepl/core/workflows/grounded.py)
+- [core/workflows/hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
 
 **Section sources**
-- [base.py](file://src/local_deepl/core/workflows/base.py)
-- [grounded.py](file://src/local_deepl/core/workflows/grounded.py)
-- [hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
+- [core/workflows/base.py](file://src/local_deepl/core/workflows/base.py)
+- [core/workflows/grounded.py](file://src/local_deepl/core/workflows/grounded.py)
+- [core/workflows/hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
 
-### OCR Processor Abstraction Layer
-The OCR processor abstracts backend interactions and normalizes outputs across different engines.
+### Postprocessing and Output Generation
+Responsibilities:
+- Merge intermediate results, resolve overlaps, and finalize structures
+- Write outputs to multiple formats (DOCX, HTML, tree artifacts)
 
-- Unified interface: Accepts images and configuration, returns standardized OCR results.
-- Backend selection: Chooses appropriate clients based on configuration and capabilities.
-- Resilience: Implements retries, timeouts, and fallback strategies.
-- Error handling: Normalizes exceptions and provides actionable diagnostics.
+Output writers:
+- DOCX writer preserves layout and embedded artifacts
+- HTML writer generates web-friendly representations
+- Tree exporter serializes internal structures for inspection and downstream tools
 
 ```mermaid
-flowchart TD
-Start(["OCR Process Entry"]) --> Validate["Validate Input & Config"]
-Validate --> Select["Select Backend(s)"]
-Select --> Preprocess["Run Preprocessing"]
-Preprocess --> CallClient["Call OCR Client(s)"]
-CallClient --> Normalize["Normalize Results"]
-Normalize --> QualityCheck["Assess Quality"]
-QualityCheck --> Threshold{"Quality >= Threshold?"}
-Threshold --> |Yes| ReturnOK["Return Standardized Result"]
-Threshold --> |No| Fallback["Apply Fallback Strategy"]
-Fallback --> RetryOrSwitch["Retry or Switch Backend"]
-RetryOrSwitch --> CallClient
-ReturnOK --> End(["Exit"])
+classDiagram
+class Postprocessor {
++merge_results(results)
++resolve_conflicts(conflicts)
++finalize(document)
+}
+class DocxWriter {
++write(document, path)
+}
+class HtmlWriter {
++write(document, path)
+}
+class TreeExporter {
++export(document, path)
+}
+Postprocessor --> DocxWriter : "delegates"
+Postprocessor --> HtmlWriter : "delegates"
+Postprocessor --> TreeExporter : "delegates"
 ```
 
 **Diagram sources**
-- [processor.py](file://src/local_deepl/core/ocr/processor.py)
-- [client.py](file://src/local_deepl/core/ocr/client.py)
-- [resilience.py](file://src/local_deepl/core/ocr/resilience.py)
-- [preprocessing.py](file://src/local_deepl/core/preprocessing.py)
-- [quality.py](file://src/local_deepl/core/processors/quality.py)
+- [core/postprocess.py](file://src/local_deepl/core/postprocess.py)
+- [core/docx_writer.py](file://src/local_deepl/core/docx_writer.py)
+- [core/html_writer.py](file://src/local_deepl/core/html_writer.py)
+- [core/tree_export.py](file://src/local_deepl/core/tree_export.py)
 
 **Section sources**
-- [processor.py](file://src/local_deepl/core/ocr/processor.py)
-- [client.py](file://src/local_deepl/core/ocr/client.py)
-- [resilience.py](file://src/local_deepl/core/ocr/resilience.py)
+- [core/postprocess.py](file://src/local_deepl/core/postprocess.py)
+- [core/docx_writer.py](file://src/local_deepl/core/docx_writer.py)
+- [core/html_writer.py](file://src/local_deepl/core/html_writer.py)
+- [core/tree_export.py](file://src/local_deepl/core/tree_export.py)
 
-### Preprocessing Pipeline for Image Enhancement
-Preprocessing improves OCR accuracy by enhancing input images before recognition.
+### Callbacks and Progress Tracking
+Responsibilities:
+- Decouple pipeline internals from observers (UI, logging, metrics)
+- Emit standardized events for progress, artifacts, and errors
+- Support streaming updates and resumable jobs
 
-- Common enhancements: Deskewing, noise reduction, contrast adjustment, binarization.
-- Handwriting-specific: Specialized filters and normalization for handwritten content.
-- Configurable stages: Allows tuning per document type or backend requirements.
+Event types:
+- Progress updates with stage names and percentages
+- Artifact notifications for intermediate files or payloads
+- Error reports with contextual details for diagnostics
 
 ```mermaid
-flowchart TD
-Ingest["Ingest Image"] --> Detect["Detect Orientation & Skew"]
-Detect --> Correct["Correct Orientation & Skew"]
-Correct --> Denoise["Denoise & Clean"]
-Denoise --> Enhance["Enhance Contrast & Sharpen"]
-Enhance --> Binarize["Binarize / Threshold"]
-Binarize --> Output["Output Enhanced Image"]
+sequenceDiagram
+participant Pipe as "Pipeline"
+participant Step as "Processor Step"
+participant Cb as "Callbacks"
+participant Obs as "Observers"
+Pipe->>Step : execute()
+Step-->>Pipe : partial_result
+Pipe->>Cb : on_progress("stage", percent)
+Cb-->>Obs : emit(progress)
+Pipe->>Cb : on_artifact("name", payload)
+Cb-->>Obs : emit(artifact)
+Pipe->>Cb : on_error("message")
+Cb-->>Obs : emit(error)
 ```
 
 **Diagram sources**
-- [preprocessing.py](file://src/local_deepl/core/preprocessing.py)
-- [handwriting_preprocessor.py](file://src/local_deepl/core/handwriting_preprocessor.py)
+- [core/callbacks.py](file://src/local_deepl/core/callbacks.py)
+- [pipeline.py](file://src/local_deepl/pipeline.py)
 
 **Section sources**
-- [preprocessing.py](file://src/local_deepl/core/preprocessing.py)
-- [handwriting_preprocessor.py](file://src/local_deepl/core/handwriting_preprocessor.py)
+- [core/callbacks.py](file://src/local_deepl/core/callbacks.py)
+- [pipeline.py](file://src/local_deepl/pipeline.py)
 
-### Quality Assessment Mechanisms
-Quality assessment evaluates OCR output reliability to guide fallbacks and merges.
+### Translation Subsystem
+Responsibilities:
+- Configure translation engines and providers
+- Manage dual translation paths and fallbacks
+- Integrate with LLM clients for advanced processing
 
-- Confidence scoring: Aggregates per-block and global confidence metrics.
-- Structural coherence: Checks alignment, spacing, and layout consistency.
-- Thresholding: Triggers fallback strategies when quality is insufficient.
+Engines:
+- NLLB engine for neural machine translation
+- TROCR engine for OCR-related tasks
+- LLM client abstraction for provider-agnostic calls
 
 ```mermaid
-flowchart TD
-StartQA["Start Quality Assessment"] --> ComputeConf["Compute Confidence Scores"]
-ComputeConf --> CheckStructure["Check Structural Coherence"]
-CheckStructure --> Aggregate["Aggregate Metrics"]
-Aggregate --> Compare{"Score >= Threshold?"}
-Compare --> |Yes| Pass["Pass to Next Stage"]
-Compare --> |No| Fail["Trigger Fallback or Retry"]
-Pass --> EndQA["End"]
-Fail --> EndQA
+classDiagram
+class TranslationConfig {
++source_lang
++target_lang
++engine
++provider_settings
+}
+class DualTranslator {
++translate(text_pairs)
++fallback_strategy
+}
+class NllbEngine {
++translate_batch(pairs)
+}
+class TrocrEngine {
++recognize(image)
+}
+class LlmClient {
++call(provider, prompt)
+}
+DualTranslator --> TranslationConfig : "reads"
+DualTranslator --> NllbEngine : "uses"
+DualTranslator --> TrocrEngine : "uses"
+DualTranslator --> LlmClient : "uses"
 ```
 
 **Diagram sources**
-- [quality.py](file://src/local_deepl/core/processors/quality.py)
+- [core/translation_config.py](file://src/local_deepl/core/translation_config.py)
+- [core/dual_translator.py](file://src/local_deepl/core/dual_translator.py)
+- [core/nllb_engine.py](file://src/local_deepl/core/nllb_engine.py)
+- [core/trocr_engine.py](file://src/local_deepl/core/trocr_engine.py)
+- [core/llm_client.py](file://src/local_deepl/core/llm_client.py)
 
 **Section sources**
-- [quality.py](file://src/local_deepl/core/processors/quality.py)
+- [core/translation_config.py](file://src/local_deepl/core/translation_config.py)
+- [core/dual_translator.py](file://src/local_deepl/core/dual_translator.py)
+- [core/nllb_engine.py](file://src/local_deepl/core/nllb_engine.py)
+- [core/trocr_engine.py](file://src/local_deepl/core/trocr_engine.py)
+- [core/llm_client.py](file://src/local_deepl/core/llm_client.py)
 
-### Configuration Options for OCR Strategies
-Configuration controls which workflows and backends are used, along with behavior parameters.
+### Glossary and Entity Memory
+Responsibilities:
+- Apply glossary terms during translation to ensure consistency
+- Maintain entity memory across segments to preserve terminology
 
-- Strategy selection: Choose grounded or hybrid workflows based on document characteristics.
-- Backend settings: Configure OCR clients, timeouts, and retry policies.
-- Preprocessing options: Tune enhancement steps and thresholds.
-- Quality thresholds: Set minimum confidence levels for acceptance.
-
-**Section sources**
-- [ocr_settings.py](file://src/local_deepl/api/services/ocr_settings.py)
-- [ocr_pipeline_factory.py](file://src/local_deepl/api/services/ocr_pipeline_factory.py)
-
-### Callback Mechanisms for Progress Tracking
-Callbacks provide event-driven updates during long-running operations.
-
-- Lifecycle events: Start, step completion, errors, and final result.
-- Real-time updates: Integrated with progress services for UI feedback.
-- Decoupled design: Workflows emit events without tight coupling to consumers.
+Integration:
+- Glossary lookup hooks in translation pipeline
+- Entity memory persistence and retrieval within workflow steps
 
 **Section sources**
-- [callbacks.py](file://src/local_deepl/core/callbacks.py)
-- [progress.py](file://src/local_deepl/api/services/progress.py)
+- [core/glossary.py](file://src/local_deepl/core/glossary.py)
+- [core/entity_memory.py](file://src/local_deepl/core/entity_memory.py)
 
-### Error Handling Patterns
-Robust error handling ensures resilience and actionable diagnostics.
+### Asynchronous Execution
+Responsibilities:
+- Queue long-running jobs via Celery
+- Track job status and results
+- Provide retry and failure handling at the task level
 
-- Normalized exceptions: Consistent error types across backends.
-- Retry logic: Automatic retries with exponential backoff where appropriate.
-- Fallback strategies: Switch backends or reduce complexity when failures occur.
-- Logging and tracing: Detailed logs for debugging and monitoring.
+```mermaid
+sequenceDiagram
+participant Client as "Client"
+participant Celery as "Celery App"
+participant Task as "Task"
+participant Svc as "Workflow Service"
+participant Pipe as "Pipeline"
+Client->>Celery : enqueue(job)
+Celery->>Task : dispatch
+Task->>Svc : process(job_id, params)
+Svc->>Pipe : run_pipeline(params)
+Pipe-->>Svc : result
+Svc-->>Task : mark_complete(job_id)
+Task-->>Celery : update_status
+Celery-->>Client : notify_completion
+```
+
+**Diagram sources**
+- [api/celery_app.py](file://src/local_deepl/api/celery_app.py)
+- [api/tasks.py](file://src/local_deepl/api/tasks.py)
+- [api/services/workflow.py](file://src/local_deepl/api/services/workflow.py)
+- [pipeline.py](file://src/local_deepl/pipeline.py)
 
 **Section sources**
-- [resilience.py](file://src/local_deepl/core/ocr/resilience.py)
-- [processor.py](file://src/local_deepl/core/ocr/processor.py)
-
-### Integration with Translation Services and Artifact Storage
-Downstream integration enables translation and persistent storage of results.
-
-- Translation: Optional translation step after OCR, configurable per language pair.
-- Artifacts: Store intermediate and final artifacts for auditability and reuse.
-- Document model: Central representation linking OCR results, translations, and metadata.
-
-**Section sources**
-- [translation.py](file://src/local_deepl/core/translation.py)
-- [dual_translator.py](file://src/local_deepl/core/dual_translator.py)
-- [artifacts.py](file://src/local_deepl/api/services/artifacts.py)
-- [document.py](file://src/local_deepl/core/document.py)
+- [api/celery_app.py](file://src/local_deepl/api/celery_app.py)
+- [api/tasks.py](file://src/local_deepl/api/tasks.py)
+- [api/services/workflow.py](file://src/local_deepl/api/services/workflow.py)
+- [pipeline.py](file://src/local_deepl/pipeline.py)
 
 ## Dependency Analysis
-The core processing engine exhibits clear separation of concerns with minimal coupling between layers.
+The core engine exhibits clear separation of concerns:
+- Pipeline orchestrator depends on routing, workflows, processors, callbacks, and exporters
+- Workflows depend on preprocessing, OCR, translation, and aligner components
+- Exporters depend on document model and postprocessed results
+- Async layer depends on services and pipeline
 
 ```mermaid
-graph TB
-WF_Base["Base Workflow"] --> Proc["OCR Processor"]
-WF_Grounded["Grounded Workflow"] --> Proc
-WF_Hybrid["Hybrid Workflow"] --> Proc
-Proc --> Client["OCR Client(s)"]
-Proc --> Pre["Preprocessing"]
-Proc --> QA["Quality Assessment"]
-WF_Base --> Trans["Translation"]
-WF_Grounded --> Trans
-WF_Hybrid --> Trans
-WF_Base --> Art["Artifacts"]
-WF_Grounded --> Art
-WF_Hybrid --> Art
-WF_Base --> Prog["Progress/CB"]
-WF_Grounded --> Prog
-WF_Hybrid --> Prog
+graph LR
+Pipe["Pipeline Orchestrator"] --> Rout["Routing"]
+Pipe --> WF["Workflow Base"]
+WF --> GWF["Grounded Workflow"]
+WF --> HWF["Hybrid Workflow"]
+Pipe --> Pre["Preprocessing"]
+Pipe --> OCR["OCR Processor"]
+Pipe --> Trans["Translation Config & Engines"]
+Pipe --> Align["Aligner"]
+Pipe --> Post["Postprocessor"]
+Post --> DX["Docx Writer"]
+Post --> HT["Html Writer"]
+Post --> TE["Tree Exporter"]
+Pipe --> CB["Callbacks"]
 ```
 
 **Diagram sources**
-- [base.py](file://src/local_deepl/core/workflows/base.py)
-- [grounded.py](file://src/local_deepl/core/workflows/grounded.py)
-- [hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
-- [processor.py](file://src/local_deepl/core/ocr/processor.py)
-- [client.py](file://src/local_deepl/core/ocr/client.py)
-- [preprocessing.py](file://src/local_deepl/core/preprocessing.py)
-- [quality.py](file://src/local_deepl/core/processors/quality.py)
-- [translation.py](file://src/local_deepl/core/translation.py)
-- [artifacts.py](file://src/local_deepl/api/services/artifacts.py)
-- [progress.py](file://src/local_deepl/api/services/progress.py)
+- [pipeline.py](file://src/local_deepl/pipeline.py)
+- [core/routing.py](file://src/local_deepl/core/routing.py)
+- [core/workflows/base.py](file://src/local_deepl/core/workflows/base.py)
+- [core/workflows/grounded.py](file://src/local_deepl/core/workflows/grounded.py)
+- [core/workflows/hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
+- [core/preprocessing.py](file://src/local_deepl/core/preprocessing.py)
+- [core/ocr/processor.py](file://src/local_deepl/core/ocr/processor.py)
+- [core/translation_config.py](file://src/local_deepl/core/translation_config.py)
+- [core/dual_translator.py](file://src/local_deepl/core/dual_translator.py)
+- [core/nllb_engine.py](file://src/local_deepl/core/nllb_engine.py)
+- [core/trocr_engine.py](file://src/local_deepl/core/trocr_engine.py)
+- [core/aligner.py](file://src/local_deepl/core/aligner.py)
+- [core/postprocess.py](file://src/local_deepl/core/postprocess.py)
+- [core/docx_writer.py](file://src/local_deepl/core/docx_writer.py)
+- [core/html_writer.py](file://src/local_deepl/core/html_writer.py)
+- [core/tree_export.py](file://src/local_deepl/core/tree_export.py)
+- [core/callbacks.py](file://src/local_deepl/core/callbacks.py)
 
 **Section sources**
-- [base.py](file://src/local_deepl/core/workflows/base.py)
-- [grounded.py](file://src/local_deepl/core/workflows/grounded.py)
-- [hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
-- [processor.py](file://src/local_deepl/core/ocr/processor.py)
-- [client.py](file://src/local_deepl/core/ocr/client.py)
-- [preprocessing.py](file://src/local_deepl/core/preprocessing.py)
-- [quality.py](file://src/local_deepl/core/processors/quality.py)
-- [translation.py](file://src/local_deepl/core/translation.py)
-- [artifacts.py](file://src/local_deepl/api/services/artifacts.py)
-- [progress.py](file://src/local_deepl/api/services/progress.py)
+- [pipeline.py](file://src/local_deepl/pipeline.py)
+- [core/routing.py](file://src/local_deepl/core/routing.py)
+- [core/workflows/base.py](file://src/local_deepl/core/workflows/base.py)
+- [core/workflows/grounded.py](file://src/local_deepl/core/workflows/grounded.py)
+- [core/workflows/hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)
+- [core/preprocessing.py](file://src/local_deepl/core/preprocessing.py)
+- [core/ocr/processor.py](file://src/local_deepl/core/ocr/processor.py)
+- [core/translation_config.py](file://src/local_deepl/core/translation_config.py)
+- [core/dual_translator.py](file://src/local_deepl/core/dual_translator.py)
+- [core/nllb_engine.py](file://src/local_deepl/core/nllb_engine.py)
+- [core/trocr_engine.py](file://src/local_deepl/core/trocr_engine.py)
+- [core/aligner.py](file://src/local_deepl/core/aligner.py)
+- [core/postprocess.py](file://src/local_deepl/core/postprocess.py)
+- [core/docx_writer.py](file://src/local_deepl/core/docx_writer.py)
+- [core/html_writer.py](file://src/local_deepl/core/html_writer.py)
+- [core/tree_export.py](file://src/local_deepl/core/tree_export.py)
+- [core/callbacks.py](file://src/local_deepl/core/callbacks.py)
 
 ## Performance Considerations
-- Parallel backend calls: Hybrid workflow can invoke multiple OCR clients concurrently to reduce latency.
-- Caching: Cache preprocessing results and OCR outputs for repeated inputs.
-- Adaptive preprocessing: Dynamically adjust enhancement steps based on image characteristics.
-- Resource limits: Configure timeouts and memory usage to prevent overload.
-- Batch processing: Group similar documents to optimize resource utilization.
+- Batch processing: group segments or pages to reduce overhead in OCR and translation calls
+- Streaming: emit artifacts incrementally via callbacks to avoid large in-memory payloads
+- Caching: reuse OCR results and translation lookups where possible
+- Resource limits: cap concurrent workers and set timeouts for external services
+- Memory management: release intermediate buffers after each stage; prefer generators for large sequences
+- Algorithmic choices: prefer native text extraction when available; limit OCR to problematic regions
 
 [No sources needed since this section provides general guidance]
 
 ## Troubleshooting Guide
-Common issues and solutions:
-- Low OCR accuracy: Adjust preprocessing parameters, switch backends, or increase confidence thresholds.
-- Timeout errors: Increase timeouts or reduce image resolution; implement retry with backoff.
-- Memory issues: Limit batch sizes and enable garbage collection between steps.
-- Inconsistent results: Use hybrid strategy with consensus merging; log detailed diagnostics.
-- Translation failures: Verify language pairs and credentials; fall back to source text if necessary.
+Common issues and remedies:
+- Format detection failures: verify supported file types and MIME detection; inspect routing decisions
+- OCR errors: check backend availability, image quality, and preprocessing options
+- Translation failures: validate language codes, provider credentials, and rate limits
+- Alignment mismatches: review span mappings and confidence thresholds
+- Progress not updating: ensure callbacks are registered and observers handle events correctly
+- Job hangs: monitor Celery worker health, queue depth, and task timeouts
+
+Operational checks:
+- Inspect artifact outputs for intermediate stages
+- Enable detailed logs in pipeline and workflow steps
+- Validate configuration for translation engines and OCR backends
 
 **Section sources**
-- [resilience.py](file://src/local_deepl/core/ocr/resilience.py)
-- [quality.py](file://src/local_deepl/core/processors/quality.py)
-- [ocr_settings.py](file://src/local_deepl/api/services/ocr_settings.py)
+- [core/routing.py](file://src/local_deepl/core/routing.py)
+- [core/ocr/processor.py](file://src/local_deepl/core/ocr/processor.py)
+- [core/translation_config.py](file://src/local_deepl/core/translation_config.py)
+- [core/aligner.py](file://src/local_deepl/core/aligner.py)
+- [core/callbacks.py](file://src/local_deepl/core/callbacks.py)
+- [api/tasks.py](file://src/local_deepl/api/tasks.py)
+- [api/celery_app.py](file://src/local_deepl/api/celery_app.py)
 
 ## Conclusion
-The core processing engine provides a flexible, robust framework for OCR-driven document processing. By separating workflow orchestration, OCR abstraction, preprocessing, quality assessment, and integration layers, it supports diverse strategies and backends while maintaining performance and reliability. Developers can extend the system by implementing new backends, preprocessing steps, or quality metrics, leveraging the established interfaces and patterns.
+LocalDeepL’s core processing engine implements a robust, extensible pipeline with strategy-driven workflows. The design separates concerns across routing, preprocessing, OCR, translation, alignment, and export, while providing a decoupled callback system for progress and artifacts. Grounded and hybrid workflows offer flexible trade-offs between accuracy and speed. With async execution, batch processing, and careful resource management, the engine scales to diverse document types and workloads.
 
 [No sources needed since this section summarizes without analyzing specific files]
 
 ## Appendices
-- Example workflow instantiation: Refer to API routers and job services for concrete usage patterns.
-- Parameter configuration: Consult OCR settings and pipeline factory for available options.
-- Result processing: Examine document model and artifact storage for data structures and persistence.
 
-[No sources needed since this section provides general guidance]
+### Practical Examples
+
+#### Custom Processor Development
+Steps:
+- Implement a processor adhering to the expected interface (input/output contracts)
+- Register it in the routing or factory configuration
+- Emit progress and artifacts via callbacks
+- Add unit tests covering edge cases and error paths
+
+Implementation references:
+- Processor interface and usage patterns
+- Registration and selection mechanisms
+
+**Section sources**
+- [core/ocr/processor.py](file://src/local_deepl/core/ocr/processor.py)
+- [api/services/ocr_pipeline_factory.py](file://src/local_deepl/api/services/ocr_pipeline_factory.py)
+- [core/routing.py](file://src/local_deepl/core/routing.py)
+- [core/callbacks.py](file://src/local_deepl/core/callbacks.py)
+
+#### Workflow Customization
+Steps:
+- Extend the workflow base to define custom step ordering
+- Override decision points (e.g., when to fall back to OCR)
+- Integrate additional translators or aligners
+- Test with representative documents and measure outcomes
+
+Implementation references:
+- Workflow base and strategy classes
+- Grounded and hybrid implementations for reference
+
+**Section sources**
+- [core/workflows/base.py](file://src/local_deepl/core/workflows/base.py)
+- [core/workflows/grounded.py](file://src/local_deepl/core/workflows/grounded.py)
+- [core/workflows/hybrid.py](file://src/local_deepl/core/workflows/hybrid.py)

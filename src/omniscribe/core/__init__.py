@@ -23,10 +23,18 @@ from omniscribe.core.processors import (
     build_document_processors,
     run_document_processors,
 )
-from omniscribe.core.routing import QualityRoutingOptions, QualityRoutingPolicy
+from omniscribe.core.transcription import (
+    AudioValidationError,
+    TranscriptionError,
+    TranscriptionResult,
+    TranscriptionSegment,
+    get_transcription_engine,
+    validate_audio_input,
+)
 
 __all__ = (
     "LOCAL_DOCUMENT_PROCESSOR_NAMES",
+    "AudioValidationError",
     "DocumentBlock",
     "DocumentPage",
     "DocumentProcessor",
@@ -47,7 +55,12 @@ __all__ = (
     "SectionAnalysisProcessor",
     "StructureAnalysisProcessor",
     "TableExtractionProcessor",
+    "TranscriptionError",
+    "TranscriptionResult",
+    "TranscriptionSegment",
     "build_document_processors",
     "evaluate_document",
+    "get_transcription_engine",
     "run_document_processors",
+    "validate_audio_input",
 )

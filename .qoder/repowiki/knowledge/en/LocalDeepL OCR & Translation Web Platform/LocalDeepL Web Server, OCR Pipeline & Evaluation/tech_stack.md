@@ -1,1 +1,0 @@
-FastAPI + Uvicorn for the ASGI server, dotenv for configuration loading, argparse for CLI args, difflib.SequenceMatcher for text similarity, and json for GLM-OCR fixture parsing. Optional web extras are loaded lazily via `_load_optional_module` to keep the base install lightweight.

@@ -1,1 +1,0 @@
-Pytest-based test suite covering the LocalDeepL OCR pipeline, including unit tests for individual components, integration tests against real PDFs with stubbed LLMs, and fixture-driven evaluation against ground-truth layout JSON files.

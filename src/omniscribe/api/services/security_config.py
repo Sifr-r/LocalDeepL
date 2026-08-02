@@ -172,6 +172,7 @@ class SecuritySettings:
     auth_token: str | None = None
     ocr_auth_token: str | None = None
     translation_auth_token: str | None = None
+    transcription_auth_token: str | None = None
     cors_origins: list[str] = field(default_factory=list)
     max_upload_bytes: int = DEFAULT_MAX_UPLOAD_MB * 1024 * 1024
     rate_limit_per_minute: int | None = None
@@ -189,9 +190,16 @@ class SecuritySettings:
         return bool(self.translation_auth_token)
 
     @property
+    def transcription_auth_enabled(self) -> bool:
+        return bool(self.transcription_auth_token)
+
+    @property
     def any_auth_enabled(self) -> bool:
         return (
-            self.auth_enabled or self.ocr_auth_enabled or self.translation_auth_enabled
+            self.auth_enabled
+            or self.ocr_auth_enabled
+            or self.translation_auth_enabled
+            or self.transcription_auth_enabled
         )
 
     @property
@@ -210,6 +218,8 @@ class SecuritySettings:
             OCR routes.
           * ``OMNISCRIBE_TRANSLATION_AUTH_TOKEN`` — same as above for
             translation routes.
+          * ``OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN`` — same as above for
+            transcription routes.
           * ``OMNISCRIBE_CORS_ORIGINS`` — comma-separated allowlist for
             cross-origin browser requests. Empty = same-origin only.
           * ``OMNISCRIBE_MAX_UPLOAD_MB`` — reject request bodies above
@@ -229,6 +239,10 @@ class SecuritySettings:
         translation_token = _validate_auth_token(
             "OMNISCRIBE_TRANSLATION_AUTH_TOKEN",
             _env_str("OMNISCRIBE_TRANSLATION_AUTH_TOKEN"),
+        )
+        transcription_token = _validate_auth_token(
+            "OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN",
+            _env_str("OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN"),
         )
         origins = _env_list_csv("OMNISCRIBE_CORS_ORIGINS")
         max_mb = _env_int("OMNISCRIBE_MAX_UPLOAD_MB", DEFAULT_MAX_UPLOAD_MB)
@@ -267,6 +281,7 @@ class SecuritySettings:
             auth_token=token,
             ocr_auth_token=ocr_token,
             translation_auth_token=translation_token,
+            transcription_auth_token=transcription_token,
             cors_origins=origins,
             max_upload_bytes=max_mb * 1024 * 1024,
             rate_limit_per_minute=rate,

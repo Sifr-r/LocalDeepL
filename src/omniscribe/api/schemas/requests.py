@@ -574,3 +574,67 @@ class AuthTokenUpdate(BaseModel):
     @classmethod
     def _validate(cls, value: Any) -> Any:
         return _validate_auth_token_value(value)
+
+
+class TranscriptionEngineType(StrEnum):
+    API = "api"
+    WHISPER_API = "whisper_api"
+    LOCAL = "local"
+    WHISPER_LOCAL = "whisper_local"
+    AUTO = "auto"
+
+
+_TRANSCRIPTION_CONFIG_KEYS: tuple[str, ...] = (
+    "api_base",
+    "api_key",
+    "transcription_api_key",
+    "model",
+    "engine",
+    "language",
+    "prompt",
+    "temperature",
+)
+
+
+class TranscriptionConfigUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    api_base: str | None = None
+    api_key: str | None = None
+    transcription_api_key: str | None = None
+    model: str | None = None
+    engine: TranscriptionEngineType | None = None
+    language: str | None = None
+    prompt: str | None = None
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+
+    @field_validator(
+        "api_base",
+        "api_key",
+        "transcription_api_key",
+        "model",
+        "language",
+        "prompt",
+        mode="before",
+    )
+    @classmethod
+    def _validate_optional_strings(cls, value: Any) -> Any:
+        return _validate_optional_string(value)
+
+    @property
+    def stored_keys(self) -> tuple[str, ...]:
+        return _TRANSCRIPTION_CONFIG_KEYS
+
+
+class TranscriptionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model: str | None = None
+    engine: TranscriptionEngineType | None = None
+    api_base: str | None = None
+    api_key: str | None = None
+    language: str | None = None
+    prompt: str | None = None
+    temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    translate_to: str | None = None
+    channel_id: str | None = None

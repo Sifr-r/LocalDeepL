@@ -1,4 +1,4 @@
-"""Typed API request schemas."""
+"""Typed API request and response schemas."""
 
 from .requests import (
     AuthTokenUpdate,
@@ -13,9 +13,17 @@ from .requests import (
     PipelineMode,
     ProcessSettings,
     SpellcheckMode,
+    TranscriptionConfigUpdate,
+    TranscriptionEngineType,
+    TranscriptionRequest,
     TranslationConfigUpdate,
     TranslationRequest,
     TreeTranslationRequest,
+)
+from .responses import (
+    ModelsResponse,
+    TranscriptionConfigResponse,
+    TranscriptionJobResponse,
 )
 
 __all__ = [
@@ -27,10 +35,16 @@ __all__ = [
     "DocumentProcessorName",
     "ExportDocxRequest",
     "ExtractionRequest",
+    "ModelsResponse",
     "OcrConfigUpdate",
     "PipelineMode",
     "ProcessSettings",
     "SpellcheckMode",
+    "TranscriptionConfigResponse",
+    "TranscriptionConfigUpdate",
+    "TranscriptionEngineType",
+    "TranscriptionJobResponse",
+    "TranscriptionRequest",
     "TranslationConfigUpdate",
     "TranslationRequest",
     "TreeTranslationRequest",

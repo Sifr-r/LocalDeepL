@@ -1,0 +1,1 @@
+Run fast unit tests only: `uv run pytest -m "not slow"`. Run integration tests that load Surya models: `uv run pytest -m slow`. The `examples/digital.pdf|hybrid.pdf|handwritten.pdf` files must be present or `example_pdfs` fixture skips the test. Nightly CI runs `-m slow` with an HF Hub cache snapshot for Surya.

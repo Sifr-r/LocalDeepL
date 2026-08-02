@@ -1,1 +1,0 @@
-Verification at every phase boundary uses: `uv run pytest -q -x -m "not slow"`, `uv run ruff check src tests && uv run mypy src`, and `python -c "from local_deepl import OCRPipeline, OCRProcessor, PromptedGroundedOCR"`. Phase-specific smoke checks include collecting tests via `uv run pytest tests/test_ocr.py tests/test_ocr_trocr_integration.py -q --co`.

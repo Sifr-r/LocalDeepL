@@ -55,7 +55,7 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
-class RuntimeConfigDict(TypedDict):
+class RuntimeConfigDict(TypedDict, total=False):
     api_base: str
     api_key: str
     model: str
@@ -80,6 +80,13 @@ class RuntimeConfigDict(TypedDict):
     crop_cleanup: bool
     quality_routing: bool
     document_processors: list[str]
+    transcription_api_base: str
+    transcription_api_key: str
+    transcription_model: str
+    transcription_engine: str
+    transcription_language: str
+    transcription_prompt: str
+    transcription_temperature: float
 
 
 # ---------------------------------------------------------------------------
@@ -110,6 +117,20 @@ _config: RuntimeConfigDict = {
     "crop_cleanup": _env_bool("OCR_CROP_CLEANUP", False),
     "quality_routing": _env_bool("OCR_QUALITY_ROUTING", False),
     "document_processors": [],
+    "transcription_api_base": os.getenv(
+        "OMNISCRIBE_TRANSCRIPTION_API_BASE",
+        os.getenv("LLM_API_BASE", "https://api.openai.com/v1"),
+    ),
+    "transcription_api_key": os.getenv(
+        "OMNISCRIBE_TRANSCRIPTION_API_KEY", os.getenv("LLM_API_KEY", "")
+    ),
+    "transcription_model": os.getenv("OMNISCRIBE_TRANSCRIPTION_MODEL", "whisper-1"),
+    "transcription_engine": os.getenv("OMNISCRIBE_TRANSCRIPTION_ENGINE", "api"),
+    "transcription_language": os.getenv("OMNISCRIBE_TRANSCRIPTION_LANGUAGE", ""),
+    "transcription_prompt": os.getenv("OMNISCRIBE_TRANSCRIPTION_PROMPT", ""),
+    "transcription_temperature": float(
+        os.getenv("OMNISCRIBE_TRANSCRIPTION_TEMPERATURE", "0.0")
+    ),
 }
 
 

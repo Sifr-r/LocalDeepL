@@ -193,6 +193,33 @@ class NLLBTranslationResponse(BaseModel):
     target_lang: str
 
 
+class TranscriptionConfigResponse(BaseModel):
+    """Transcription-namespace runtime configuration."""
+
+    transcription_api_base: str
+    transcription_api_key: str
+    transcription_model: str
+    transcription_engine: str
+    transcription_auth_token: str | None = None
+    language: str | None = None
+    prompt: str | None = None
+    temperature: float = 0.0
+
+
+class TranscriptionJobResponse(BaseModel):
+    """Response returned upon transcription execution."""
+
+    text: str
+    language: str | None = None
+    duration: float | None = None
+    text_artifact_id: str | None = None
+    text_artifact_token: str | None = None
+    metadata_artifact_id: str | None = None
+    metadata_artifact_token: str | None = None
+    job_id: str | None = None
+    segments: list[dict[str, Any]] = []
+
+
 __all__ = [
     "AsyncTranslationResponse",
     "ClearJobsResponse",
@@ -207,6 +234,8 @@ __all__ = [
     "OCRConfigResponse",
     "OCRStatusResponse",
     "ProcessResponse",
+    "TranscriptionConfigResponse",
+    "TranscriptionJobResponse",
     "TranslationConfigResponse",
     "TranslationJobStatusResponse",
     "TranslationResponse",

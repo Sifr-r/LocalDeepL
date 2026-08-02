@@ -1,6 +1,0 @@
-- Optional features are declared as `pyproject.toml` extras and imported lazily so core modules never fail when an extra is missing, with deterministic error messages returned by shared helpers.
-- Router modules stay thin orchestrators that delegate validation, pipeline construction, and response assembly to dedicated `api/services/*.py` modules following a single-responsibility pattern.
-- Process-wide singletons (text/metadata/export artifact stores, job history, progress service) live in `api/routers/state.py` and are imported directly by every router rather than passed as arguments.
-- Token-bound artifact access uses a uniform opaque hex-id / bearer-token pair across text, metadata, and export surfaces, exposed via matching `X-*Artifact-Id` / `X-*Artifact-Token` headers.
-- Public APIs are validated with typed Pydantic schemas in `api/schemas/requests.py` and StrEnums, with stable error envelopes returned by shared helpers in `api/services/security.py`.
-- Core production code under `local_deepl.core.*` requires explicit type annotations enforced by mypy overrides in `pyproject.toml` with `disallow_untyped_defs = true`.

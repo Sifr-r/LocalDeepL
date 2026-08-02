@@ -3,8 +3,8 @@
 <cite>
 **Referenced Files in This Document**
 - [websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [jobs.py](file://src/local_deepl/api/services/jobs.py)
 - [progress.py](file://src/local_deepl/api/services/progress.py)
+- [jobs.py](file://src/local_deepl/api/services/jobs.py)
 - [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
 - [server.py](file://src/local_deepl/server.py)
 - [test_websocket_handler.py](file://tests/test_websocket_handler.py)
@@ -23,293 +23,366 @@
 10. [Appendices](#appendices)
 
 ## Introduction
-This document describes LocalDeepL’s real-time communication interface over WebSocket. It explains how clients establish a connection, authenticate, subscribe to progress updates and job status events, handle errors, and manage the lifecycle of long-running operations. It also provides guidance on reconnection strategies, message serialization formats, debugging techniques, monitoring approaches, and performance considerations for robust client implementations.
+This document describes the WebSocket-based real-time communication interface for LocalDeepL. It covers connection establishment, authentication handshake, message formats, event types, and protocol specifications. It also explains real-time progress updates, streaming responses, bidirectional communication patterns, and connection lifecycle management. Guidance is provided for client implementations in JavaScript and Python, along with event-driven architecture, message queuing, error handling strategies, and reconnection mechanisms. Security considerations, connection limits, and performance optimization techniques are included to help you build robust integrations.
 
 ## Project Structure
-The WebSocket API is implemented as an ASGI-compatible endpoint that integrates with the application’s job management and progress services. The key files involved are:
-- WebSocket router defining the endpoint and message handling
-- Job service managing task lifecycle and state
-- Progress service emitting structured progress events
-- Security middleware enforcing authentication and authorization
-- Server wiring that mounts the WebSocket route
-- Tests validating behavior and edge cases
+The WebSocket feature is implemented as an ASGI route within the FastAPI application. The router defines the WebSocket endpoint, while services handle progress tracking and job state. A security middleware enforces access control on connections. Tests validate handler behavior.
 
 ```mermaid
 graph TB
-Client["Client"] --> WS["WebSocket Endpoint<br/>routers/websocket.py"]
-WS --> Auth["Security Middleware<br/>services/security_middleware.py"]
-WS --> Jobs["Job Service<br/>services/jobs.py"]
+Client["Client (Browser or Script)"] --> WS["WebSocket Endpoint<br/>routers/websocket.py"]
 WS --> Progress["Progress Service<br/>services/progress.py"]
-WS --> Server["Server Wiring<br/>server.py"]
+WS --> Jobs["Jobs Service<br/>services/jobs.py"]
+WS --> SecMW["Security Middleware<br/>services/security_middleware.py"]
+App["FastAPI Server<br/>server.py"] --> WS
 ```
 
 **Diagram sources**
 - [websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [jobs.py](file://src/local_deepl/api/services/jobs.py)
 - [progress.py](file://src/local_deepl/api/services/progress.py)
+- [jobs.py](file://src/local_deepl/api/services/jobs.py)
+- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
 - [server.py](file://src/local_deepl/server.py)
 
 **Section sources**
 - [websocket.py](file://src/local_deepl/api/routers/websocket.py)
+- [progress.py](file://src/local_deepl/api/services/progress.py)
+- [jobs.py](file://src/local_deepl/api/services/jobs.py)
+- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
 - [server.py](file://src/local_deepl/server.py)
 
 ## Core Components
-- WebSocket Router: Defines the endpoint path, accepts connections, performs authentication, and routes messages to appropriate handlers.
-- Job Service: Manages creation, execution, and lifecycle of jobs; exposes methods to query status and update state.
-- Progress Service: Emits structured progress events (percent complete, stage names, timestamps) and supports subscriptions per job or session.
-- Security Middleware: Validates tokens or credentials from the handshake, enforces permissions, and attaches user context to the connection scope.
-- Server Wiring: Mounts the WebSocket route into the ASGI application and configures global settings like timeouts and limits.
+- WebSocket Router: Defines the WebSocket endpoint and manages the connection lifecycle, including authentication checks and dispatching messages.
+- Progress Service: Publishes and streams progress events to connected clients.
+- Jobs Service: Provides job-related state and metadata used by the WebSocket handler.
+- Security Middleware: Validates credentials and permissions before allowing a WebSocket connection.
+- Server: Registers the WebSocket route within the FastAPI application.
 
 Key responsibilities:
-- Connection establishment and handshake
+- Connection acceptance and handshake
 - Authentication and authorization
-- Message parsing and validation
-- Event emission and subscription management
-- Error propagation and graceful degradation
+- Event publishing and subscription
+- Error propagation and graceful disconnects
 
 **Section sources**
 - [websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [jobs.py](file://src/local_deepl/api/services/jobs.py)
 - [progress.py](file://src/local_deepl/api/services/progress.py)
+- [jobs.py](file://src/local_deepl/api/services/jobs.py)
 - [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
 - [server.py](file://src/local_deepl/server.py)
 
 ## Architecture Overview
-The WebSocket architecture follows a clear separation of concerns:
-- Clients connect via WebSocket to the server-mounted endpoint.
-- The security middleware authenticates the connection using tokens or credentials provided during the handshake.
-- Upon successful authentication, the router establishes a session-scoped channel for the client.
-- Clients can subscribe to job-specific progress streams and receive periodic updates.
-- Long-running operations emit structured events through the progress service, which fans out to subscribers.
-- Errors are propagated as standardized error messages with actionable details.
+The WebSocket API follows an event-driven pattern where clients connect to a single endpoint, authenticate, and then subscribe to real-time updates. The server pushes progress and status events to all relevant subscribers.
 
 ```mermaid
 sequenceDiagram
 participant C as "Client"
-participant S as "Server"
-participant W as "WebSocket Router"
-participant A as "Security Middleware"
-participant J as "Job Service"
+participant S as "FastAPI Server"
+participant W as "WebSocket Handler"
 participant P as "Progress Service"
-C->>S : "Connect WebSocket"
-S->>W : "Route request"
-W->>A : "Authenticate handshake"
-A-->>W : "Authenticated context"
-W-->>C : "Connection established"
-C->>W : "Subscribe to job progress"
-W->>J : "Validate job ID and permissions"
-J-->>W : "Job exists and accessible"
-W->>P : "Register subscriber"
-P-->>W : "Subscription confirmed"
-W-->>C : "Ack subscription"
-loop "Progress Updates"
-P-->>W : "Emit event"
-W-->>C : "Forward event"
+participant J as "Jobs Service"
+participant M as "Security Middleware"
+C->>S : "Connect /ws"
+S->>W : "Upgrade to WebSocket"
+W->>M : "Authenticate and authorize"
+M-->>W : "Auth result"
+alt "Authorized"
+W->>P : "Subscribe to progress events"
+W->>J : "Fetch job context if needed"
+loop "Real-time updates"
+P-->>W : "Progress event"
+W-->>C : "Send JSON event"
 end
-C->>W : "Unsubscribe / Close"
-W->>P : "Remove subscriber"
-W-->>C : "Close frame"
+else "Unauthorized"
+W-->>C : "Close with error code"
+end
 ```
 
 **Diagram sources**
 - [websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [jobs.py](file://src/local_deepl/api/services/jobs.py)
 - [progress.py](file://src/local_deepl/api/services/progress.py)
+- [jobs.py](file://src/local_deepl/api/services/jobs.py)
+- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
 - [server.py](file://src/local_deepl/server.py)
 
 ## Detailed Component Analysis
 
 ### WebSocket Router
 Responsibilities:
-- Accepts WebSocket connections at the configured endpoint path.
-- Performs authentication using the security middleware before allowing any message processing.
-- Parses incoming messages, validates schemas, and dispatches to handlers for subscribe/unsubscribe/status queries.
-- Maintains per-connection state for active subscriptions and forwards events from the progress service.
-- Handles disconnects by cleaning up subscriptions and releasing resources.
+- Accept WebSocket connections at the configured path
+- Perform authentication via middleware
+- Manage client subscriptions to progress events
+- Send structured JSON messages for events and errors
+- Handle disconnects and resource cleanup
 
-Message flow:
-- On connect: validate token/credentials, attach user context, send initial handshake acknowledgment.
-- Subscribe: parse job identifiers, verify permissions, register with progress service, confirm subscription.
-- Unsubscribe: remove registration, stop forwarding events.
-- Status queries: retrieve current job state and return immediately.
-- Error handling: propagate standardized error payloads with codes and messages.
+Connection lifecycle:
+- On connect: validate credentials, initialize session context
+- On message: parse command, perform action, acknowledge
+- On progress: forward events from the progress service
+- On disconnect: unsubscribe and release resources
 
-```mermaid
-flowchart TD
-Start(["WebSocket Connect"]) --> Auth["Authenticate via Security Middleware"]
-Auth --> |Success| Handshake["Send Acknowledgment"]
-Auth --> |Failure| Reject["Reject Connection"]
-Handshake --> Listen["Listen for Messages"]
-Listen --> Parse["Parse and Validate Message"]
-Parse --> Type{"Message Type?"}
-Type --> |Subscribe| Sub["Validate Job ID and Permissions"]
-Sub --> Reg["Register Subscriber with Progress Service"]
-Reg --> Confirm["Send Subscription Confirmed"]
-Type --> |Unsubscribe| Unsub["Remove Subscriber"]
-Unsub --> Done(["Done"])
-Type --> |Status| Query["Query Job State"]
-Query --> Return["Return Current State"]
-Type --> |Error| Err["Handle and Forward Error"]
-Err --> Done
-Confirm --> Listen
-Return --> Listen
-Done --> End(["Disconnect Cleanup"])
-```
-
-**Diagram sources**
-- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [jobs.py](file://src/local_deepl/api/services/jobs.py)
-- [progress.py](file://src/local_deepl/api/services/progress.py)
+Error handling:
+- Close with appropriate codes for auth failures
+- Send error events for invalid commands or internal failures
+- Ensure graceful shutdown on exceptions
 
 **Section sources**
 - [websocket.py](file://src/local_deepl/api/routers/websocket.py)
-
-### Job Service
-Responsibilities:
-- Creates and manages job lifecycles (pending, running, completed, failed).
-- Provides methods to check job existence, permissions, and current status.
-- Integrates with background tasks to execute long-running operations.
-- Exposes state transitions and metadata required for progress reporting.
-
-Integration points:
-- Called by the WebSocket router to validate job IDs and permissions.
-- Used by the progress service to correlate events with specific jobs.
-- Supports querying final states for completion signals.
-
-**Section sources**
-- [jobs.py](file://src/local_deepl/api/services/jobs.py)
 
 ### Progress Service
 Responsibilities:
-- Emits structured progress events including percent complete, stage names, timestamps, and optional payload data.
-- Manages subscriptions per job or session, ensuring efficient fan-out to connected clients.
-- Guarantees ordering within a single stream and handles backpressure gracefully.
-- Supports filtering by event types and stages if needed.
+- Maintain a publish/subscribe mechanism for progress events
+- Emit typed events such as start, update, complete, and error
+- Provide methods for clients to subscribe/unsubscribe safely
 
-Event structure:
-- Includes fields such as job identifier, event type, timestamp, progress percentage, stage name, and additional metadata.
-- Standardized error events include error codes and human-readable messages.
+Event model:
+- Events include a type field and payload with contextual data
+- Payload may contain job identifiers, percentages, and status details
+
+Concurrency:
+- Thread-safe broadcasting to multiple subscribers
+- Backpressure-aware delivery to avoid overwhelming clients
 
 **Section sources**
 - [progress.py](file://src/local_deepl/api/services/progress.py)
 
+### Jobs Service
+Responsibilities:
+- Provide job metadata and current state
+- Support queries required during WebSocket initialization
+- Coordinate with background tasks that generate progress events
+
+Integration points:
+- Used by the WebSocket handler to resolve job context
+- Supplies stable identifiers for correlating events across sessions
+
+**Section sources**
+- [jobs.py](file://src/local_deepl/api/services/jobs.py)
+
 ### Security Middleware
 Responsibilities:
-- Authenticates WebSocket handshakes using tokens or credentials passed in headers or query parameters.
-- Enforces authorization rules based on user roles and job ownership.
-- Attaches authenticated user context to the connection scope for downstream use.
-- Returns rejection responses for invalid or expired credentials.
+- Validate tokens or credentials presented during the WebSocket handshake
+- Enforce role-based or scope-based access controls
+- Return clear rejection signals when unauthorized
 
-Authentication flow:
-- Extracts credentials from the handshake.
-- Validates against configured providers or internal stores.
-- Sets session-scoped identity and permissions.
+Security posture:
+- Reject connections without valid credentials
+- Limit exposure of sensitive information in error messages
+- Integrate with existing authentication infrastructure
 
 **Section sources**
 - [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
 
-### Server Wiring
+### Server Registration
 Responsibilities:
-- Mounts the WebSocket endpoint into the ASGI application.
-- Configures global settings such as maximum connections, timeouts, and rate limits.
-- Ensures consistent routing and middleware chain execution.
+- Register the WebSocket route within the FastAPI app
+- Configure lifespan hooks if necessary
+- Ensure consistent routing and middleware ordering
 
 **Section sources**
 - [server.py](file://src/local_deepl/server.py)
 
+### Client Implementation Examples
+
+#### JavaScript (Browser)
+- Establish a WebSocket connection to the configured endpoint
+- Authenticate using a token or credential passed in the initial handshake
+- Subscribe to progress events and handle them in a callback
+- Implement exponential backoff reconnection on disconnect
+- Close the connection gracefully on page unload
+
+Implementation guidance:
+- Use a small queue to buffer outgoing messages if needed
+- Parse incoming JSON events and map them to UI updates
+- Log errors and surface user-friendly messages
+
+[No sources needed since this section provides general implementation guidance]
+
+#### Python (Asyncio)
+- Connect using an async WebSocket client library
+- Authenticate during connection setup
+- Listen for events in a loop and process them asynchronously
+- Reconnect with jittered backoff on transient failures
+- Clean up resources on exit
+
+Implementation guidance:
+- Use a task per connection to avoid blocking
+- Serialize event processing to maintain order
+- Capture and report exceptions with context
+
+[No sources needed since this section provides general implementation guidance]
+
+### Protocol Specifications
+
+#### Connection Establishment
+- Endpoint: WebSocket URL under the FastAPI host
+- Handshake: Include authentication credentials as defined by the security middleware
+- Upgrade: Standard HTTP upgrade to WebSocket
+
+#### Message Format
+All messages are JSON objects with a top-level type field.
+
+Common fields:
+- type: string indicating the event or command category
+- id: optional string for correlation across requests and events
+- payload: object containing event-specific data
+
+Command examples:
+- subscribe: request to receive progress updates for a specific job
+- unsubscribe: cancel subscription
+- ping: keepalive probe; server responds with pong
+
+Event examples:
+- progress_update: includes percentage, stage, and status
+- job_started: indicates initiation of a long-running operation
+- job_completed: final status and result reference
+- error: reports failure with a human-readable message
+
+Delivery guarantees:
+- Best-effort delivery; clients should implement reconnection and idempotent processing
+- Events are ordered per subscriber
+
+**Section sources**
+- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
+- [progress.py](file://src/local_deepl/api/services/progress.py)
+
+### Event-Driven Architecture
+The system uses an event-driven model where background jobs emit progress events. The progress service fans out these events to all subscribed WebSocket clients. Clients react to events to update their UI or trigger downstream actions.
+
+```mermaid
+flowchart TD
+Start(["Background Job"]) --> Emit["Emit Progress Event"]
+Emit --> PubSub["Progress Service (Pub/Sub)"]
+PubSub --> Subscribers["Connected WebSocket Clients"]
+Subscribers --> Update["Client Updates UI/State"]
+Update --> End(["Done"])
+```
+
+**Diagram sources**
+- [progress.py](file://src/local_deepl/api/services/progress.py)
+- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
+
+### Message Queuing and Ordering
+- In-memory queues are used to fan out events to subscribers
+- Messages are delivered in order per subscriber
+- Backpressure is managed by dropping or buffering based on capacity policies
+
+Operational notes:
+- Monitor queue sizes to detect slow consumers
+- Consider scaling horizontally by sharding jobs across processes
+
+**Section sources**
+- [progress.py](file://src/local_deepl/api/services/progress.py)
+
+### Error Handling Strategies
+- Authentication failures close the connection immediately
+- Invalid commands return error events with descriptive messages
+- Internal errors send error events and ensure clean disconnection
+- Clients should treat transient network errors as recoverable and reconnect
+
+**Section sources**
+- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
+- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
+
+### Reconnection Mechanisms
+Recommended client behavior:
+- Detect disconnects and attempt reconnection with exponential backoff and jitter
+- Re-authenticate on each reconnect attempt
+- Resubscribe to relevant events after successful reconnection
+- Maintain a small in-memory buffer for missed events if supported by the server
+
+**Section sources**
+- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
+
+### Security Considerations
+- Require strong authentication for WebSocket connections
+- Validate scopes and roles before granting access
+- Avoid leaking sensitive information in error messages
+- Rate-limit connections and enforce maximum concurrent connections per user
+
+**Section sources**
+- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
+
+### Connection Limits
+- Enforce per-user and global connection caps
+- Reject new connections when limits are reached
+- Gracefully degrade by closing idle or least active connections under pressure
+
+**Section sources**
+- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
+
+### Performance Optimization Techniques
+- Batch small events when possible to reduce overhead
+- Use efficient serialization and minimal payloads
+- Apply backpressure to prevent memory growth
+- Scale horizontally by distributing jobs and subscribers across workers
+
+**Section sources**
+- [progress.py](file://src/local_deepl/api/services/progress.py)
+- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
+
 ## Dependency Analysis
-The WebSocket router depends on:
-- Security middleware for authentication and authorization
-- Job service for lifecycle and permission checks
-- Progress service for event emission and subscription management
-- Server wiring for mounting and configuration
+The WebSocket router depends on the progress and jobs services and integrates with the security middleware. The server registers the route and wires middleware into the application pipeline.
 
 ```mermaid
 graph LR
-Router["WebSocket Router"] --> Auth["Security Middleware"]
-Router --> Jobs["Job Service"]
-Router --> Progress["Progress Service"]
-Server["Server Wiring"] --> Router
+WS["WebSocket Router<br/>routers/websocket.py"] --> PR["Progress Service<br/>services/progress.py"]
+WS --> JB["Jobs Service<br/>services/jobs.py"]
+WS --> SM["Security Middleware<br/>services/security_middleware.py"]
+SRV["Server<br/>server.py"] --> WS
 ```
 
 **Diagram sources**
 - [websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [jobs.py](file://src/local_deepl/api/services/jobs.py)
 - [progress.py](file://src/local_deepl/api/services/progress.py)
+- [jobs.py](file://src/local_deepl/api/services/jobs.py)
+- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
 - [server.py](file://src/local_deepl/server.py)
 
 **Section sources**
 - [websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [jobs.py](file://src/local_deepl/api/services/jobs.py)
 - [progress.py](file://src/local_deepl/api/services/progress.py)
+- [jobs.py](file://src/local_deepl/api/services/jobs.py)
 - [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
 - [server.py](file://src/local_deepl/server.py)
 
 ## Performance Considerations
-- Connection pooling and reuse: Implement persistent connections with keep-alive to reduce handshake overhead.
-- Backpressure handling: Apply flow control to prevent memory growth when clients cannot consume events fast enough.
-- Efficient serialization: Use compact JSON structures and avoid unnecessary fields to minimize bandwidth usage.
-- Subscription scoping: Limit subscriptions to relevant jobs and stages to reduce event volume.
-- Concurrency limits: Configure maximum concurrent connections and per-client message rates to protect server resources.
-- Monitoring: Track metrics such as connection count, event throughput, latency, and error rates for observability.
+- Keep event payloads small and focused
+- Avoid heavy computation in the event loop; offload to background tasks
+- Monitor memory usage and adjust queue capacities
+- Use connection pooling and reuse where applicable on the client side
+- Profile latency and throughput under realistic workloads
 
 [No sources needed since this section provides general guidance]
 
 ## Troubleshooting Guide
 Common issues and resolutions:
-- Authentication failures: Verify token validity, expiration, and permissions; ensure credentials are correctly transmitted in the handshake.
-- Subscription errors: Confirm job IDs exist and are accessible; check role-based permissions and ownership constraints.
-- Missing progress events: Ensure the job is actively running and the progress service is emitting events; verify client subscription registration.
-- Disconnections: Implement reconnection with exponential backoff; handle transient network errors gracefully.
-- High memory usage: Monitor subscription counts and event queues; implement cleanup on disconnect and enforce rate limits.
+- Authentication failures: verify credentials and scopes; check middleware logs
+- No events received: confirm subscription commands and job IDs; inspect progress service
+- Frequent disconnects: review network stability and reconnection logic; check server-side connection limits
+- High memory usage: analyze queue sizes and event rates; tune backpressure settings
 
-Debugging techniques:
-- Log handshake attempts, authentication results, and subscription changes.
-- Emit diagnostic events for connection lifecycle and error conditions.
-- Use structured logging with correlation IDs to trace requests across components.
-
-Monitoring approaches:
-- Instrument metrics for connection uptime, event delivery success rates, and error frequencies.
-- Set alerts for abnormal patterns such as sudden spikes in disconnections or failed authentications.
+Validation aids:
+- Use the test suite to simulate WebSocket interactions and verify expected behaviors
 
 **Section sources**
 - [test_websocket_handler.py](file://tests/test_websocket_handler.py)
 
 ## Conclusion
-LocalDeepL’s WebSocket API provides a robust, secure, and scalable real-time communication interface for progress tracking and job status updates. By following the authentication, subscription, and error-handling patterns outlined here, clients can reliably integrate with long-running operations and deliver responsive user experiences. Adhering to performance best practices and implementing comprehensive monitoring ensures stable operation under varying loads.
+LocalDeepL’s WebSocket API provides a secure, event-driven interface for real-time progress updates and streaming responses. By following the protocol specifications, implementing robust reconnection logic, and adhering to security and performance best practices, clients can build responsive and reliable integrations.
 
 [No sources needed since this section summarizes without analyzing specific files]
 
 ## Appendices
 
-### Connection Establishment and Authentication
-- Establish a WebSocket connection to the configured endpoint.
-- Include authentication credentials in the handshake (token or credentials).
-- Receive an acknowledgment upon successful authentication.
-- Handle rejection responses with appropriate error codes and messages.
+### Appendix A: Example Client Code Paths
+- JavaScript example: see browser integration patterns and reconnection strategy
+- Python example: see asyncio-based client with backoff and resubscription
 
-### Message Formats
-- Subscribe message: includes job identifiers and desired event filters.
-- Progress event: contains job ID, event type, timestamp, progress percentage, stage name, and optional payload.
-- Status query: returns current job state and metadata.
-- Error event: includes error code, message, and contextual details.
+[No sources needed since this section references general guidance]
 
-### Lifecycle Management
-- Connect and authenticate.
-- Subscribe to job progress streams.
-- Process real-time events and update UI/state accordingly.
-- Unsubscribe and close connections cleanly.
-- Implement reconnection logic with backoff and jitter.
+### Appendix B: Test Coverage
+- Unit tests cover handler behavior, event flow, and error conditions
 
-### Client Implementation Guidelines
-- Use persistent connections and handle reconnects automatically.
-- Validate all incoming messages and ignore unknown types.
-- Implement backpressure handling to avoid overwhelming consumers.
-- Log and monitor connection health and event delivery.
-- Provide user feedback for errors and retries.
-
-[No sources needed since this section provides general guidance]
+**Section sources**
+- [test_websocket_handler.py](file://tests/test_websocket_handler.py)

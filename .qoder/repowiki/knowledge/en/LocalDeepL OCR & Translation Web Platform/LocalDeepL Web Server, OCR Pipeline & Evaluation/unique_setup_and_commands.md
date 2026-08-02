@@ -1,1 +1,0 @@
-The server is started via `python -m local_deepl.server` (or `uvicorn local_deepl.server:app`). Optional web dependencies must be installed with `uv sync --extra web` or `pip install 'local-deepl[web]'`; otherwise `create_app` raises a RuntimeError explaining the missing extras. The CLI accepts `--host`, `--port`, and `--reload` flags.

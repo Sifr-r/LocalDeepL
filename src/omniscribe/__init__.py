@@ -43,6 +43,10 @@ _EXPORT_MODULES = {
     "DEFAULT_GROUNDING_PROMPT": "omniscribe.core.grounded",
     "parse_glm_layout_details": "omniscribe.core.grounded",
     "parse_page_range": "omniscribe.pipeline",
+    "TranscriptionResult": "omniscribe.core.transcription",
+    "TranscriptionSegment": "omniscribe.core.transcription",
+    "validate_audio_input": "omniscribe.core.transcription",
+    "get_transcription_engine": "omniscribe.core.transcription",
 }
 
 
@@ -80,8 +84,12 @@ __all__ = [
     "PromptedGroundedOCR",
     "QualityAnalysisProcessor",
     "ReadingOrderProcessor",
+    "TranscriptionResult",
+    "TranscriptionSegment",
     "__version__",
+    "get_transcription_engine",
     "parse_glm_layout_details",
     "parse_page_range",
     "run_document_processors",
+    "validate_audio_input",
 ]

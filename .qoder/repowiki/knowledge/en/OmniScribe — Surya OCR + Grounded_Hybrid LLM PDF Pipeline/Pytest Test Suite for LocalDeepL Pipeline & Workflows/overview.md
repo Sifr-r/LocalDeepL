@@ -1,0 +1,1 @@
+Pytest-based suite exercising the LocalDeepL OCR pipeline, HybridEngine workflows, FastAPI surface, evaluation metrics against JSON ground-truth fixtures, and repo-hygiene invariants across PDF I/O, Surya detection, and infrastructure files.

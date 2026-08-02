@@ -117,15 +117,29 @@ def _is_translation_route(path: str) -> bool:
     )
 
 
+def _is_transcription_route(path: str) -> bool:
+    """Return True when ``path`` is a transcription route namespace."""
+    if path == "/api/transcribe" or path.startswith("/api/transcribe/"):
+        return True
+    return bool(
+        path == "/api/models/transcription"
+        or path.startswith("/api/models/transcription/")
+        or path == "/api/config/transcription"
+        or path.startswith("/api/config/transcription/")
+    )
+
+
 class BearerAuthMiddleware:
     """Reject any HTTP request whose bearer token does not match.
 
-    Constructor accepts three independent tokens:
+    Constructor accepts independent tokens:
 
     * ``expected_token`` — global fallback; accepted on every route.
     * ``ocr_token`` — required for OCR routes; takes precedence over
       the global token on those routes.
     * ``translation_token`` — required for translation routes; takes
+      precedence over the global token on those routes.
+    * ``transcription_token`` — required for transcription routes; takes
       precedence over the global token on those routes.
 
     Whitespace-only values are normalised to ``None`` so a stray
@@ -140,15 +154,17 @@ class BearerAuthMiddleware:
         expected_token: str | None,
         ocr_token: str | None = None,
         translation_token: str | None = None,
+        transcription_token: str | None = None,
     ) -> None:
         self.app = app
         self.expected_token = _normalize_token(expected_token)
         self.ocr_token = _normalize_token(ocr_token)
         self.translation_token = _normalize_token(translation_token)
+        self.transcription_token = _normalize_token(transcription_token)
 
     @staticmethod
     def route_group_for(path: str) -> str:
-        """Classify an HTTP path into ``"ocr"``, ``"translation"`` or ``"other"``.
+        """Classify an HTTP path into ``"ocr"``, ``"translation"``, ``"transcription"`` or ``"other"``.
 
         Used by tests to pin the per-route token mapping and by callers
         that want to know which token to attach when both a global and
@@ -158,23 +174,25 @@ class BearerAuthMiddleware:
             return "ocr"
         if _is_translation_route(path):
             return "translation"
+        if _is_transcription_route(path):
+            return "transcription"
         return "other"
 
     def _token_for(self, path: str) -> str | None:
         """Pick the token that applies to ``path``.
 
-        Per-service tokens (OCR / translation) win over the global
-        token when both are set. When only the global token is set,
+        Per-service tokens (OCR / translation / transcription) win over the global
+        token when set. When only the global token is set,
         every route uses it. When neither is set, returns ``None``
         and the caller is open.
         """
-        if self.route_group_for(path) == "ocr" and self.ocr_token is not None:
+        group = self.route_group_for(path)
+        if group == "ocr" and self.ocr_token is not None:
             return self.ocr_token
-        if (
-            self.route_group_for(path) == "translation"
-            and self.translation_token is not None
-        ):
+        if group == "translation" and self.translation_token is not None:
             return self.translation_token
+        if group == "transcription" and self.transcription_token is not None:
+            return self.transcription_token
         return self.expected_token
 
     async def __call__(self, scope, receive, send) -> None:

@@ -1,1 +1,0 @@
-Collection of standalone Python utilities for building fixtures, running confidence evaluations against ground-truth, debugging OCR pipelines, visualizing results, and managing the dev environment.
