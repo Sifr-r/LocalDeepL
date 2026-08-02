@@ -9,9 +9,9 @@ from unittest.mock import patch
 
 import pytest
 
-from local_deepl.api.tasks import process_translation_task
-from local_deepl.core.translation import chunk_text, evaluate_node
-from local_deepl.utils.security import is_ssrf_target
+from omniscribe.api.tasks import process_translation_task
+from omniscribe.core.translation import chunk_text, evaluate_node
+from omniscribe.utils.security import is_ssrf_target
 
 
 def test_is_ssrf_target_defaults():
@@ -118,7 +118,7 @@ def test_celery_task_raises_value_error_on_missing_artifact():
 
 def test_extract_data_robust_json_parsing():
     """`parse_extraction_json` returns {} on unrecoverable JSON, never raises."""
-    from local_deepl.api.services import ai
+    from omniscribe.api.services import ai
 
     # Direct object — happy path
     assert ai.parse_extraction_json('{"vendor": "Acme"}') == {"vendor": "Acme"}

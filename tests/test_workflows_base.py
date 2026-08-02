@@ -8,9 +8,9 @@ exercised both here in isolation and through the engine tests in
 
 from __future__ import annotations
 
-from local_deepl.core.document import DocumentResult
-from local_deepl.core.processors import DocumentProcessor
-from local_deepl.core.workflows.base import EngineBase
+from omniscribe.core.document import DocumentResult
+from omniscribe.core.processors import DocumentProcessor
+from omniscribe.core.workflows.base import EngineBase
 
 
 def _noop_writer(_in: str, _out: str, _pages: dict, _dpi: int) -> None:
@@ -127,7 +127,7 @@ class TestBuildDocumentResult:
                 return text + " [corrected " + self.lang + "]"
 
         monkeypatch.setattr(
-            "local_deepl.core.postprocess.DictionaryPostProcessor", _StubSpellchecker
+            "omniscribe.core.postprocess.DictionaryPostProcessor", _StubSpellchecker
         )
 
         engine = _engine()

@@ -32,14 +32,14 @@ sys.path.insert(0, str(ROOT))
 from rich.console import Console  # noqa: E402
 from rich.table import Table  # noqa: E402
 
-from local_deepl import (  # noqa: E402
+from omniscribe import (  # noqa: E402
     HybridAligner,
     OCRPipeline,
     OCRProcessor,
     PDFHandler,
     PromptedGroundedOCR,
 )
-from local_deepl.evaluation import (  # noqa: E402
+from omniscribe.evaluation import (  # noqa: E402
     ConfidenceReport,
     compute_report,
     load_ground_truth,

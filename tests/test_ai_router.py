@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from local_deepl.api.routers import config, extraction, translation
-from local_deepl.api.services.security import SAFE_API_BASE_ERROR
+from omniscribe.api.routers import config, extraction, translation
+from omniscribe.api.services.security import SAFE_API_BASE_ERROR
 
 
 def _api_client() -> TestClient:
@@ -25,10 +25,10 @@ def test_translate_provider_error_response_is_stable():
     client = _api_client()
     with (
         patch(
-            "local_deepl.api.services.ai.is_ssrf_target",
+            "omniscribe.api.services.ai.is_ssrf_target",
             new=AsyncMock(return_value=False),
         ),
-        patch("local_deepl.api.services.ai.call_llm", fail_completion),
+        patch("omniscribe.api.services.ai.call_llm", fail_completion),
     ):
         response = client.post(
             "/api/translate",
@@ -54,10 +54,10 @@ def test_extract_invalid_json_returns_empty_object():
     client = _api_client()
     with (
         patch(
-            "local_deepl.api.services.ai.is_ssrf_target",
+            "omniscribe.api.services.ai.is_ssrf_target",
             new=AsyncMock(return_value=False),
         ),
-        patch("local_deepl.api.services.ai.call_llm", invalid_json_completion),
+        patch("omniscribe.api.services.ai.call_llm", invalid_json_completion),
     ):
         response = client.post(
             "/api/extract",
@@ -78,7 +78,7 @@ def test_translate_blocks_unsafe_api_base():
     client = _api_client()
     with (
         patch.dict("os.environ", {"ALLOW_SSRF_LOCAL": "false"}, clear=True),
-        patch("local_deepl.api.services.ai._complete_text") as completion,
+        patch("omniscribe.api.services.ai._complete_text") as completion,
     ):
         response = client.post(
             "/api/translate",
@@ -106,9 +106,7 @@ def test_translation_status_success_shape():
 
     client = _api_client()
     with (
-        patch(
-            "local_deepl.api.celery_app.celery_app.AsyncResult", return_value=_Task()
-        ),
+        patch("omniscribe.api.celery_app.celery_app.AsyncResult", return_value=_Task()),
     ):
         response = client.get("/api/translate/status/job-1")
 

@@ -35,8 +35,8 @@ def test_dockerfile_pins_python_and_uv_installs_extras():
     for extra in ("--extra web", "--extra async-translation"):
         assert extra in dockerfile, f"Dockerfile missing `{extra}` flag"
 
-    # Uses ``local-deepl-server`` so the console script is on PATH.
-    assert "local-deepl-server" in dockerfile
+    # Uses ``omniscribe-server`` so the console script is on PATH.
+    assert "omniscribe-server" in dockerfile
 
 
 def test_compose_yaml_defines_api_redis_and_async_profile_worker():

@@ -1,0 +1,153 @@
+from __future__ import annotations
+
+from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING
+
+from omniscribe.core.document import SpellcheckMode
+from omniscribe.core.grounded import (
+    GroundedBlock,
+    GroundedOCRBackend,
+    GroundedResponse,
+)
+from omniscribe.core.processors import DocumentProcessor
+from omniscribe.core.workflows.base import (
+    AnyOutputWriter,
+    EngineBase,
+    PagesData,
+    ProgressCallback,
+    WarningCallback,
+)
+
+if TYPE_CHECKING:
+    from omniscribe.core.callbacks import BlockCallbackSet
+
+
+class GroundedEngine(EngineBase):
+    def __init__(
+        self,
+        grounded_backend: GroundedOCRBackend,
+        output_writer: AnyOutputWriter,
+        document_processors: Sequence[DocumentProcessor] | None = None,
+        block_callbacks: BlockCallbackSet | None = None,
+    ) -> None:
+        # Phase B (review M2) — the grounded path also accepts the
+        # callback set for symmetry with HybridEngine. The current
+        # execute() doesn't yet emit per-block events (only the
+        # generic `progress` callback); that parity work is a
+        # follow-up. Wiring the parameter through now means
+        # `OCRPipeline(grounded_backend=..., block_callbacks=...)`
+        # doesn't have to grow a special case.
+        super().__init__(
+            output_writer=output_writer,
+            document_processors=document_processors,
+            block_callbacks=block_callbacks,
+        )
+        self.grounded_backend = grounded_backend
+
+    async def _emit_block_callbacks(
+        self,
+        response: GroundedResponse,
+    ) -> None:
+        """Drive the per-block / per-page observer hooks from the backend response.
+
+        Mirrors :meth:`HybridEngine._ocr_pages` so the UI sees the same
+        ``block_complete`` + ``page_complete`` frames for both engines
+        (Phase B review M2 wired the parameter through; this method is
+        the parity work the docstring originally punted on).
+        """
+        cb = self.block_callbacks
+        if cb.on_block is None and cb.on_page_complete is None:
+            return
+
+        pages_data = self._accumulate_pages(response.blocks)
+        for page_index in sorted(pages_data):
+            page_blocks = pages_data[page_index]
+            for block_idx, (bbox, text) in enumerate(page_blocks):
+                if cb.on_block is not None and text and text.strip():
+                    await cb.on_block(
+                        page_index,
+                        block_idx,
+                        list(bbox),
+                        text,
+                        "text",
+                        None,
+                    )
+            if cb.on_page_complete is not None:
+                await cb.on_page_complete(page_index)
+
+    async def execute(
+        self,
+        input_path: str,
+        output_path: str,
+        *,
+        dpi: int,
+        spellcheck: SpellcheckMode = SpellcheckMode.NONE,
+        cross_page: bool = False,
+        progress: ProgressCallback | None = None,
+        on_warning: WarningCallback | None = None,
+    ) -> dict[int, list[str]]:
+        """
+        Grounded path: the backend returns (bbox, text) pairs directly.
+        No Surya, no DP, no refine — the model already knows where the text is.
+        """
+        self._reset_run_state()
+
+        response = await self.grounded_backend.ocr_document(
+            input_path, progress=progress, on_warning=on_warning
+        )
+        if response.failed_pages:
+            self.last_failed_pages.extend(response.failed_pages)
+
+        pages_data = self._accumulate_pages(response.blocks)
+        page_nums = sorted(pages_data)
+
+        # Phase B review M2 — drive per-block / per-page observers so
+        # the grounded path emits the same WebSocket frames as the
+        # hybrid path. Done before `_build_document_result` so the
+        # block order matches what the backend produced.
+        await self._emit_block_callbacks(response)
+
+        # Phase E (review E.5) — `block_metadata_overlays` is the
+        # shape `EngineBase._build_document_result` expects for its
+        # `block_metadata_overlays` kwarg: a dict keyed by
+        # `page_index`, each value a list of per-block overlay dicts
+        # in the same order as the page's blocks. The grounded path
+        # produces this directly from the backend response instead of
+        # through the `_build_document_result` indirection; the
+        # annotation here is the only place the overlay shape is
+        # documented in the codebase.
+        block_metadata_overlays: dict[int, list[dict[str, object]]] = {}
+        for block in response.blocks:
+            page_overlays = block_metadata_overlays.setdefault(block.page_index, [])
+            page_overlays.append(
+                {"label": block.label, "image_bytes": block.image_bytes}
+            )
+
+        document_result = await self._build_document_result(
+            pages_data=pages_data,
+            page_nums=page_nums,
+            source_path=input_path,
+            source_processor="grounded",
+            spellcheck=spellcheck,
+            cross_page=cross_page,
+            page_metadata_overlays=None,
+            block_metadata_overlays=block_metadata_overlays,
+        )
+
+        return await self._emit(
+            input_path=input_path,
+            output_path=output_path,
+            document_result=document_result,
+            dpi=dpi,
+            progress=progress,
+        )
+
+    @staticmethod
+    def _accumulate_pages(
+        blocks: Iterable[GroundedBlock],
+    ) -> PagesData:
+        """Group backend blocks by page index, preserving backend ordering."""
+        pages_data: PagesData = {}
+        for block in blocks:
+            pages_data.setdefault(block.page_index, []).append((block.bbox, block.text))
+        return pages_data

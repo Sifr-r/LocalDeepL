@@ -11,8 +11,8 @@ the bug; this test exercises the production path.
 
 from __future__ import annotations
 
-from local_deepl.core.document import DocumentResult
-from local_deepl.core.processors import (
+from omniscribe.core.document import DocumentResult
+from omniscribe.core.processors import (
     TableExtractionProcessor,
     run_document_processors,
 )

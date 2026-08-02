@@ -1,10 +1,10 @@
 """
-Tests for local_deepl.utils.tqdm_patch soft import and monkeypatching.
+Tests for omniscribe.utils.tqdm_patch soft import and monkeypatching.
 """
 
 from __future__ import annotations
 
-from local_deepl.utils.tqdm_patch import SilentTqdm, apply
+from omniscribe.utils.tqdm_patch import SilentTqdm, apply
 
 
 def test_silent_tqdm_basic() -> None:

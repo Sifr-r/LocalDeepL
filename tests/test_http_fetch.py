@@ -21,7 +21,7 @@ from unittest import mock
 import httpx
 import pytest
 
-from local_deepl.api.services import http_fetch
+from omniscribe.api.services import http_fetch
 
 
 @pytest.fixture

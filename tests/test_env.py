@@ -1,5 +1,5 @@
 """
-Tests for homegrown local_deepl.utils.env load_dotenv implementation.
+Tests for homegrown omniscribe.utils.env load_dotenv implementation.
 """
 
 from __future__ import annotations
@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from local_deepl.utils import load_dotenv
-from local_deepl.utils.env import _parse_env_line
+from omniscribe.utils import load_dotenv
+from omniscribe.utils.env import _parse_env_line
 
 
 def test_parse_env_line_basic() -> None:

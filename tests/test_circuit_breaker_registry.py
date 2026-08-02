@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from local_deepl.core.ocr.processor import OCRProcessor
-from local_deepl.core.ocr.resilience import (
+from omniscribe.core.ocr.processor import OCRProcessor
+from omniscribe.core.ocr.resilience import (
     CircuitBreaker,
     CircuitBreakerRegistry,
     CircuitOpenError,

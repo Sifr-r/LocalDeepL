@@ -4,8 +4,8 @@ import base64
 
 import pytest
 
-from local_deepl.core.document import DocumentResult
-from local_deepl.core.processors import (
+from omniscribe.core.document import DocumentResult
+from omniscribe.core.processors import (
     DocumentProcessorRegistry,
     QualityAnalysisProcessor,
     ReadingOrderProcessor,
@@ -13,7 +13,7 @@ from local_deepl.core.processors import (
     StructureAnalysisProcessor,
     run_document_processors,
 )
-from local_deepl.pipeline import OCRPipeline
+from omniscribe.pipeline import OCRPipeline
 
 
 def test_document_result_from_pages_data_preserves_order_and_text():

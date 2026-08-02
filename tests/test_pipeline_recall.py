@@ -27,15 +27,15 @@ from pathlib import Path
 
 import pytest
 
-from local_deepl.core.aligner import HybridAligner
-from local_deepl.core.document import BBox
-from local_deepl.core.ocr import OCRProcessor
-from local_deepl.core.pdf import PDFHandler
-from local_deepl.evaluation import (
+from omniscribe.core.aligner import HybridAligner
+from omniscribe.core.document import BBox
+from omniscribe.core.ocr import OCRProcessor
+from omniscribe.core.pdf import PDFHandler
+from omniscribe.evaluation import (
     compute_report,
     load_ground_truth,
 )
-from local_deepl.pipeline import OCRPipeline
+from omniscribe.pipeline import OCRPipeline
 
 pytestmark = pytest.mark.slow
 

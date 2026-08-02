@@ -7,7 +7,7 @@ import subprocess
 import sys
 from types import SimpleNamespace
 
-from local_deepl.core.translation_config import TranslationSettings
+from omniscribe.core.translation_config import TranslationSettings
 
 
 def test_translation_base_imports_do_not_require_async_extras():
@@ -26,8 +26,8 @@ class BlockAsyncExtras(importlib.abc.MetaPathFinder):
 
 sys.meta_path.insert(0, BlockAsyncExtras())
 
-from local_deepl.api.tasks import process_translation_task
-from local_deepl.core.translation import chunk_text, evaluate_node
+from omniscribe.api.tasks import process_translation_task
+from omniscribe.core.translation import chunk_text, evaluate_node
 
 assert chunk_text("hello") == ["hello"]
 assert asyncio.run(evaluate_node({"source_chunk": ".", "translated_chunk": "", "attempts": 1}))["evaluation_score"] == 1.0
@@ -87,7 +87,7 @@ def test_optional_extras_split_chromadb_into_memory():
 
 
 def test_translate_node_uses_injected_settings(monkeypatch):
-    import local_deepl.core.translation as translation
+    import omniscribe.core.translation as translation
 
     captured = {}
 

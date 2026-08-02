@@ -2,18 +2,18 @@
 
 Covers the new modules added in the DocuVerse upgrade:
 
-- :class:`local_deepl.core.block_tree` (DocumentTree IR)
-- :class:`local_deepl.core.glossary` (Glossary)
-- :class:`local_deepl.core.entity_memory` (EntityMemory)
-- :class:`local_deepl.core.handwriting_preprocessor` (Sauvola + stroke + slant)
-- :class:`local_deepl.core.translation_tree` (tree translation, sliding window)
-- :class:`local_deepl.core.html_writer` (HTML export)
-- :class:`local_deepl.core.docx_tree_writer` (DOCX export from tree)
-- :class:`local_deepl.core.tree_export` (JSON export)
-- :class:`local_deepl.core.dual_translator` (dual-translate)
-- :class:`local_deepl.core.trocr_engine` (TrOCR lazy + heuristic confidence)
-- :class:`local_deepl.core.nllb_engine` (NLLB language code resolver)
-- :class:`local_deepl.core.translation_tree` (sliding window context)
+- :class:`omniscribe.core.block_tree` (DocumentTree IR)
+- :class:`omniscribe.core.glossary` (Glossary)
+- :class:`omniscribe.core.entity_memory` (EntityMemory)
+- :class:`omniscribe.core.handwriting_preprocessor` (Sauvola + stroke + slant)
+- :class:`omniscribe.core.translation_tree` (tree translation, sliding window)
+- :class:`omniscribe.core.html_writer` (HTML export)
+- :class:`omniscribe.core.docx_tree_writer` (DOCX export from tree)
+- :class:`omniscribe.core.tree_export` (JSON export)
+- :class:`omniscribe.core.dual_translator` (dual-translate)
+- :class:`omniscribe.core.trocr_engine` (TrOCR lazy + heuristic confidence)
+- :class:`omniscribe.core.nllb_engine` (NLLB language code resolver)
+- :class:`omniscribe.core.translation_tree` (sliding window context)
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ import asyncio
 
 import numpy as np
 
-from local_deepl.core.block_tree import (
+from omniscribe.core.block_tree import (
     BlockNode,
     BlockType,
     DocumentTree,
@@ -30,25 +30,25 @@ from local_deepl.core.block_tree import (
     TableNode,
     from_pages_data,
 )
-from local_deepl.core.docx_tree_writer import convert_tree_to_docx
-from local_deepl.core.dual_translator import dual_translate
-from local_deepl.core.entity_memory import EntityMemory
-from local_deepl.core.glossary import Glossary, GlossaryEntry
-from local_deepl.core.handwriting_preprocessor import (
+from omniscribe.core.docx_tree_writer import convert_tree_to_docx
+from omniscribe.core.dual_translator import dual_translate
+from omniscribe.core.entity_memory import EntityMemory
+from omniscribe.core.glossary import Glossary, GlossaryEntry
+from omniscribe.core.handwriting_preprocessor import (
     HandwritingOptions,
     estimate_stroke_width,
     is_handwritten_page,
     normalize_stroke_width,
     sauvola_binarize,
 )
-from local_deepl.core.html_writer import render_html
-from local_deepl.core.nllb_engine import LANGUAGE_CODE_MAP, resolve_nllb_code
-from local_deepl.core.translation_tree import (
+from omniscribe.core.html_writer import render_html
+from omniscribe.core.nllb_engine import LANGUAGE_CODE_MAP, resolve_nllb_code
+from omniscribe.core.translation_tree import (
     build_context_block,
     translate_tree,
 )
-from local_deepl.core.tree_export import export_json, export_json_bytes
-from local_deepl.core.trocr_engine import _heuristic_confidence
+from omniscribe.core.tree_export import export_json, export_json_bytes
+from omniscribe.core.trocr_engine import _heuristic_confidence
 
 # ---------------------------------------------------------------------------
 # block_tree IR
@@ -539,7 +539,7 @@ def test_translate_tree_dual_translate_chooses_secondary_when_closer():
 
 def test_translate_node_includes_glossary_and_memory(monkeypatch):
     """When the new optional state fields are populated, they must end up in the prompt."""
-    from local_deepl.core import translation as translation_mod
+    from omniscribe.core import translation as translation_mod
 
     captured: dict[str, object] = {}
 
@@ -857,7 +857,7 @@ def test_trocr_heuristic_confidence():
 
 
 def test_trocr_engine_is_available():
-    from local_deepl.core.trocr_engine import TrOCREngine
+    from omniscribe.core.trocr_engine import TrOCREngine
 
     eng = TrOCREngine()
     # The function must return a bool; the actual value depends on env

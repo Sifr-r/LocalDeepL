@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to LocalDeepL are documented here. The format is
+All notable changes to OmniScribe are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project adheres to [Semantic Versioning](https://semver.org/).
 
@@ -13,15 +13,15 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 - **DEPLOYMENT.md** — three deployment profiles (local, LAN, public)
   with Caddy + docker-compose reference. (D1)
 - **CHANGELOG.md** — this file. (D1)
-- `LOCAL_DEEPL_AUTH_TOKEN`, `LOCAL_DEEPL_OCR_AUTH_TOKEN`,
-  `LOCAL_DEEPL_TRANSLATION_AUTH_TOKEN` reject well-known placeholder
+- `OMNISCRIBE_AUTH_TOKEN`, `OMNISCRIBE_OCR_AUTH_TOKEN`,
+  `OMNISCRIBE_TRANSLATION_AUTH_TOKEN` reject well-known placeholder
   values at startup (e.g. `change-me-in-prod`). (M10)
 - `AuthTokenUpdate.auth_token` field carries `min_length=32` and a
   custom weak-pattern check. (M1)
 - `urllib` redirect handler validates every `Location` hop through
   `is_ssrf_target` (no more silent walk to `169.254.169.254`).
   (M2)
-- `LOCAL_DEEPL_MAX_UPLOAD_MB` default bumped to 10 GB; absolute
+- `OMNISCRIBE_MAX_UPLOAD_MB` default bumped to 10 GB; absolute
   ceiling 100 GB.
 - `MaxUploadSizeMiddleware` rejects oversized chunked uploads
   (cumulative byte accounting; was per-chunk before). (T2 / H2)
@@ -29,7 +29,7 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   detected overflow actually emits a 413, not the inner app's
   empty-body 422. (T2 / H2)
 - `BearerAuthMiddleware` accepts per-service tokens
-  (`LOCAL_DEEPL_OCR_AUTH_TOKEN`, `LOCAL_DEEPL_TRANSLATION_AUTH_TOKEN`)
+  (`OMNISCRIBE_OCR_AUTH_TOKEN`, `OMNISCRIBE_TRANSLATION_AUTH_TOKEN`)
   for OCR- and translation-only routes.
 - Dockerfile base image is digest-pinned. (M7)
 - Dockerfile uv install is version-pinned. (M8)
@@ -110,5 +110,5 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 - Svelte 5 + Tailwind CSS v4 workstation UI.
 - Single-worker FastAPI server with optional Celery background jobs.
 
-[Unreleased]: https://github.com/Sifr-r/LocalDeepL/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/Sifr-r/LocalDeepL/releases/tag/v0.1.0
+[Unreleased]: https://github.com/Sifr-r/OmniScribe/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Sifr-r/OmniScribe/releases/tag/v0.1.0

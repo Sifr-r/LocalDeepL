@@ -21,7 +21,7 @@ REQUIRED_TARGETS = {
 
 def _load_dev_script() -> ModuleType:
     assert DEV_SCRIPT.exists(), "scripts/dev.py must provide clean and doctor commands"
-    spec = importlib.util.spec_from_file_location("local_deepl_dev", DEV_SCRIPT)
+    spec = importlib.util.spec_from_file_location("omniscribe_dev", DEV_SCRIPT)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

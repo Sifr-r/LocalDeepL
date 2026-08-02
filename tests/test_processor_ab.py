@@ -17,15 +17,15 @@ from __future__ import annotations
 
 import pytest
 
-from local_deepl.core.document import DocumentBlock, DocumentPage, DocumentResult
-from local_deepl.core.processors.base import (
+from omniscribe.core.document import DocumentBlock, DocumentPage, DocumentResult
+from omniscribe.core.processors.base import (
     LOCAL_DOCUMENT_PROCESSOR_NAMES,
     ProcessorContract,
     build_document_processors,
     run_document_processors,
 )
-from local_deepl.core.processors.quality import QualityAnalysisProcessor
-from local_deepl.core.processors.reading_order import ReadingOrderProcessor
+from omniscribe.core.processors.quality import QualityAnalysisProcessor
+from omniscribe.core.processors.reading_order import ReadingOrderProcessor
 
 
 def _make_doc_result() -> DocumentResult:

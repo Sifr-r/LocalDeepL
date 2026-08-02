@@ -13,8 +13,8 @@ per-namespace config endpoints:
   *that* token specifically — the global token does not unlock the group.
 * When neither the global nor a per-service token is configured, the
   middleware is a no-op.
-* ``SecuritySettings.from_env`` reads ``LOCAL_DEEPL_OCR_AUTH_TOKEN`` and
-  ``LOCAL_DEEPL_TRANSLATION_AUTH_TOKEN`` from the environment.
+* ``SecuritySettings.from_env`` reads ``OMNISCRIBE_OCR_AUTH_TOKEN`` and
+  ``OMNISCRIBE_TRANSLATION_AUTH_TOKEN`` from the environment.
 """
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ from typing import Any, cast
 
 import pytest
 
-from local_deepl.api.services.security_config import SecuritySettings
-from local_deepl.api.services.security_middleware import BearerAuthMiddleware
+from omniscribe.api.services.security_config import SecuritySettings
+from omniscribe.api.services.security_middleware import BearerAuthMiddleware
 
 # ---------------------------------------------------------------------------
 # Pure ASGI helpers
@@ -432,9 +432,9 @@ async def test_whitespace_global_token_is_ignored() -> None:
 def test_security_settings_loads_per_service_tokens(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("LOCAL_DEEPL_AUTH_TOKEN", "global-secret")
-    monkeypatch.setenv("LOCAL_DEEPL_OCR_AUTH_TOKEN", "ocr-secret")
-    monkeypatch.setenv("LOCAL_DEEPL_TRANSLATION_AUTH_TOKEN", "translation-secret")
+    monkeypatch.setenv("OMNISCRIBE_AUTH_TOKEN", "global-secret")
+    monkeypatch.setenv("OMNISCRIBE_OCR_AUTH_TOKEN", "ocr-secret")
+    monkeypatch.setenv("OMNISCRIBE_TRANSLATION_AUTH_TOKEN", "translation-secret")
 
     settings = SecuritySettings.from_env()
 
@@ -447,9 +447,9 @@ def test_security_settings_loads_per_service_tokens(
 
 
 def test_security_settings_only_ocr_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("LOCAL_DEEPL_AUTH_TOKEN", raising=False)
-    monkeypatch.delenv("LOCAL_DEEPL_TRANSLATION_AUTH_TOKEN", raising=False)
-    monkeypatch.setenv("LOCAL_DEEPL_OCR_AUTH_TOKEN", "ocr-secret")
+    monkeypatch.delenv("OMNISCRIBE_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("OMNISCRIBE_TRANSLATION_AUTH_TOKEN", raising=False)
+    monkeypatch.setenv("OMNISCRIBE_OCR_AUTH_TOKEN", "ocr-secret")
 
     settings = SecuritySettings.from_env()
 
@@ -464,9 +464,9 @@ def test_security_settings_only_ocr_token(monkeypatch: pytest.MonkeyPatch) -> No
 def test_security_settings_only_translation_token(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("LOCAL_DEEPL_AUTH_TOKEN", raising=False)
-    monkeypatch.delenv("LOCAL_DEEPL_OCR_AUTH_TOKEN", raising=False)
-    monkeypatch.setenv("LOCAL_DEEPL_TRANSLATION_AUTH_TOKEN", "translation-secret")
+    monkeypatch.delenv("OMNISCRIBE_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("OMNISCRIBE_OCR_AUTH_TOKEN", raising=False)
+    monkeypatch.setenv("OMNISCRIBE_TRANSLATION_AUTH_TOKEN", "translation-secret")
 
     settings = SecuritySettings.from_env()
 
@@ -480,9 +480,9 @@ def test_security_settings_only_translation_token(
 def test_security_settings_empty_tokens_are_none(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("LOCAL_DEEPL_AUTH_TOKEN", "   ")
-    monkeypatch.setenv("LOCAL_DEEPL_OCR_AUTH_TOKEN", "")
-    monkeypatch.setenv("LOCAL_DEEPL_TRANSLATION_AUTH_TOKEN", "\t\n")
+    monkeypatch.setenv("OMNISCRIBE_AUTH_TOKEN", "   ")
+    monkeypatch.setenv("OMNISCRIBE_OCR_AUTH_TOKEN", "")
+    monkeypatch.setenv("OMNISCRIBE_TRANSLATION_AUTH_TOKEN", "\t\n")
 
     settings = SecuritySettings.from_env()
 
@@ -495,9 +495,9 @@ def test_security_settings_empty_tokens_are_none(
 def test_security_settings_trims_token_whitespace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("LOCAL_DEEPL_AUTH_TOKEN", "  trimmed-global  ")
-    monkeypatch.setenv("LOCAL_DEEPL_OCR_AUTH_TOKEN", "  trimmed-ocr  ")
-    monkeypatch.setenv("LOCAL_DEEPL_TRANSLATION_AUTH_TOKEN", "  trimmed-tr  ")
+    monkeypatch.setenv("OMNISCRIBE_AUTH_TOKEN", "  trimmed-global  ")
+    monkeypatch.setenv("OMNISCRIBE_OCR_AUTH_TOKEN", "  trimmed-ocr  ")
+    monkeypatch.setenv("OMNISCRIBE_TRANSLATION_AUTH_TOKEN", "  trimmed-tr  ")
 
     settings = SecuritySettings.from_env()
 
@@ -510,9 +510,9 @@ def test_security_settings_no_env_returns_none_tokens(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     for name in (
-        "LOCAL_DEEPL_AUTH_TOKEN",
-        "LOCAL_DEEPL_OCR_AUTH_TOKEN",
-        "LOCAL_DEEPL_TRANSLATION_AUTH_TOKEN",
+        "OMNISCRIBE_AUTH_TOKEN",
+        "OMNISCRIBE_OCR_AUTH_TOKEN",
+        "OMNISCRIBE_TRANSLATION_AUTH_TOKEN",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -532,11 +532,11 @@ def test_security_settings_no_env_returns_none_tokens(
 @pytest.mark.parametrize(
     "env_name, placeholder",
     [
-        ("LOCAL_DEEPL_AUTH_TOKEN", "change-me-in-prod"),
-        ("LOCAL_DEEPL_AUTH_TOKEN", "Change-Me-In-Prod"),
-        ("LOCAL_DEEPL_AUTH_TOKEN", "  password  "),
-        ("LOCAL_DEEPL_OCR_AUTH_TOKEN", "secret"),
-        ("LOCAL_DEEPL_TRANSLATION_AUTH_TOKEN", "admin"),
+        ("OMNISCRIBE_AUTH_TOKEN", "change-me-in-prod"),
+        ("OMNISCRIBE_AUTH_TOKEN", "Change-Me-In-Prod"),
+        ("OMNISCRIBE_AUTH_TOKEN", "  password  "),
+        ("OMNISCRIBE_OCR_AUTH_TOKEN", "secret"),
+        ("OMNISCRIBE_TRANSLATION_AUTH_TOKEN", "admin"),
     ],
 )
 def test_security_settings_rejects_placeholder_auth_token(
@@ -547,9 +547,9 @@ def test_security_settings_rejects_placeholder_auth_token(
     on incoming ``AuthTokenUpdate`` requests, so a copy-pasted ``.env``
     never lets the server come up with an attacker-guessable credential.
     """
-    monkeypatch.delenv("LOCAL_DEEPL_AUTH_TOKEN", raising=False)
-    monkeypatch.delenv("LOCAL_DEEPL_OCR_AUTH_TOKEN", raising=False)
-    monkeypatch.delenv("LOCAL_DEEPL_TRANSLATION_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("OMNISCRIBE_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("OMNISCRIBE_OCR_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("OMNISCRIBE_TRANSLATION_AUTH_TOKEN", raising=False)
     monkeypatch.setenv(env_name, placeholder)
 
     with pytest.raises(RuntimeError, match="placeholder"):
@@ -562,9 +562,9 @@ def test_security_settings_accepts_32_char_secret(
     """A real 32+ char secret is accepted verbatim, no fail-fast."""
     real_secret = "a" * 32 + "real-secret-with-enough-entropy"
     for name in (
-        "LOCAL_DEEPL_AUTH_TOKEN",
-        "LOCAL_DEEPL_OCR_AUTH_TOKEN",
-        "LOCAL_DEEPL_TRANSLATION_AUTH_TOKEN",
+        "OMNISCRIBE_AUTH_TOKEN",
+        "OMNISCRIBE_OCR_AUTH_TOKEN",
+        "OMNISCRIBE_TRANSLATION_AUTH_TOKEN",
     ):
         monkeypatch.setenv(name, real_secret)
 

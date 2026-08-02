@@ -15,7 +15,7 @@ pytest.importorskip("fastapi")
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from local_deepl.api.routers import (
+from omniscribe.api.routers import (
     artifacts,
     config,
     extraction,
@@ -25,13 +25,13 @@ from local_deepl.api.routers import (
     translation,
     websocket,
 )
-from local_deepl.api.services.artifacts import TextArtifactStore
-from local_deepl.api.services.security import (
+from omniscribe.api.services.artifacts import TextArtifactStore
+from omniscribe.api.services.security import (
     UploadValidationError,
     save_validated_upload,
 )
-from local_deepl.core.document import DocumentResult
-from local_deepl.utils.security import is_ssrf_target
+from omniscribe.core.document import DocumentResult
+from omniscribe.utils.security import is_ssrf_target
 
 
 class _AsyncUpload:
@@ -101,7 +101,7 @@ def test_ssrf_fails_closed_and_requires_explicit_local_allowance():
     import asyncio
 
     with patch.dict(os.environ, {}, clear=True):
-        with patch("local_deepl.utils.security.socket.getaddrinfo") as getaddrinfo:
+        with patch("omniscribe.utils.security.socket.getaddrinfo") as getaddrinfo:
             getaddrinfo.side_effect = _public_dns
             assert asyncio.run(is_ssrf_target("http://api.openai.com/v1")) is False
             assert asyncio.run(is_ssrf_target("localhost:1234/v1")) is True
@@ -109,7 +109,7 @@ def test_ssrf_fails_closed_and_requires_explicit_local_allowance():
             assert asyncio.run(is_ssrf_target(None)) is True
 
     with patch.dict(os.environ, {}, clear=True):
-        with patch("local_deepl.utils.security.socket.getaddrinfo") as getaddrinfo:
+        with patch("omniscribe.utils.security.socket.getaddrinfo") as getaddrinfo:
             getaddrinfo.side_effect = socket.gaierror(-2, "Name or service not known")
             assert (
                 asyncio.run(is_ssrf_target("http://does-not-resolve.example/v1"))
@@ -165,20 +165,20 @@ def test_process_issues_opaque_text_artifact_ids_and_prevents_client_id_lookup(
     client = _api_client()
 
     with (
-        patch("local_deepl.utils.security.socket.getaddrinfo", side_effect=_public_dns),
+        patch("omniscribe.utils.security.socket.getaddrinfo", side_effect=_public_dns),
         patch(
-            "local_deepl.api.services.ocr_pipeline_factory.OCRPipeline", DummyPipeline
+            "omniscribe.api.services.ocr_pipeline_factory.OCRPipeline", DummyPipeline
         ),
         patch(
-            "local_deepl.api.services.ocr_pipeline_factory.OCRProcessor",
+            "omniscribe.api.services.ocr_pipeline_factory.OCRProcessor",
             lambda *args, **kwargs: SimpleNamespace(),
         ),
         patch(
-            "local_deepl.api.services.ocr_pipeline_factory.HybridAligner",
+            "omniscribe.api.services.ocr_pipeline_factory.HybridAligner",
             lambda *args, **kwargs: SimpleNamespace(),
         ),
         patch(
-            "local_deepl.api.services.ocr_pipeline_factory.PDFHandler",
+            "omniscribe.api.services.ocr_pipeline_factory.PDFHandler",
             lambda *args, **kwargs: SimpleNamespace(),
         ),
     ):
@@ -271,15 +271,15 @@ def test_process_omits_document_metadata_artifact_when_no_report(tmp_path: Path)
         client = _api_client()
         with (
             patch(
-                "local_deepl.utils.security.socket.getaddrinfo",
+                "omniscribe.utils.security.socket.getaddrinfo",
                 side_effect=_public_dns,
             ),
             patch(
-                "local_deepl.api.services.ocr_pipeline_factory.OCRPipeline",
+                "omniscribe.api.services.ocr_pipeline_factory.OCRPipeline",
                 DummyPipeline,
             ),
-            patch("local_deepl.api.services.ocr_pipeline_factory.HybridAligner"),
-            patch("local_deepl.api.services.ocr_pipeline_factory.PDFHandler"),
+            patch("omniscribe.api.services.ocr_pipeline_factory.HybridAligner"),
+            patch("omniscribe.api.services.ocr_pipeline_factory.PDFHandler"),
         ):
             response = client.post(
                 "/process", data=_process_form(), files={"file": _pdf_upload()}
@@ -348,15 +348,15 @@ def test_process_exposes_token_bound_document_metadata_artifact(tmp_path: Path):
         client = _api_client()
         with (
             patch(
-                "local_deepl.utils.security.socket.getaddrinfo",
+                "omniscribe.utils.security.socket.getaddrinfo",
                 side_effect=_public_dns,
             ),
             patch(
-                "local_deepl.api.services.ocr_pipeline_factory.OCRPipeline",
+                "omniscribe.api.services.ocr_pipeline_factory.OCRPipeline",
                 DummyPipeline,
             ),
-            patch("local_deepl.api.services.ocr_pipeline_factory.HybridAligner"),
-            patch("local_deepl.api.services.ocr_pipeline_factory.PDFHandler"),
+            patch("omniscribe.api.services.ocr_pipeline_factory.HybridAligner"),
+            patch("omniscribe.api.services.ocr_pipeline_factory.PDFHandler"),
         ):
             response = client.post(
                 "/process", data=_process_form(), files={"file": _pdf_upload()}
@@ -477,13 +477,13 @@ def test_process_surfaces_partial_page_failures_in_headers_and_history(tmp_path:
     client = _api_client()
 
     with (
-        patch("local_deepl.utils.security.socket.getaddrinfo", side_effect=_public_dns),
+        patch("omniscribe.utils.security.socket.getaddrinfo", side_effect=_public_dns),
         patch(
-            "local_deepl.api.services.ocr_pipeline_factory.OCRPipeline",
+            "omniscribe.api.services.ocr_pipeline_factory.OCRPipeline",
             _FailingDummyPipeline,
         ),
-        patch("local_deepl.api.services.ocr_pipeline_factory.HybridAligner"),
-        patch("local_deepl.api.services.ocr_pipeline_factory.PDFHandler"),
+        patch("omniscribe.api.services.ocr_pipeline_factory.HybridAligner"),
+        patch("omniscribe.api.services.ocr_pipeline_factory.PDFHandler"),
     ):
         response = client.post(
             "/process",
@@ -506,7 +506,7 @@ def test_websocket_manager_emits_warning_flag():
     """The ConnectionManager.send_progress path must serialize the
     ``warning`` flag in the WebSocket frame so the UI can render a
     partial-failure indicator without parsing the message text."""
-    from local_deepl.api.routers.websocket import ConnectionManager
+    from omniscribe.api.routers.websocket import ConnectionManager
 
     sent_frames: list[dict] = []
 
@@ -550,8 +550,8 @@ def test_translate_error_response_does_not_expose_internal_exception():
 
     client = _api_client()
     with (
-        patch("local_deepl.utils.security.socket.getaddrinfo", side_effect=_public_dns),
-        patch("local_deepl.api.services.ai.call_llm", fail_completion),
+        patch("omniscribe.utils.security.socket.getaddrinfo", side_effect=_public_dns),
+        patch("omniscribe.api.services.ai.call_llm", fail_completion),
     ):
         response = client.post(
             "/api/translate",
@@ -571,7 +571,7 @@ def test_translate_error_response_does_not_expose_internal_exception():
 
 
 def test_static_js_has_no_html_injection_sinks():
-    static_js = Path("src/local_deepl/static/js")
+    static_js = Path("src/omniscribe/static/js")
     for path in static_js.glob("*.js"):
         source = path.read_text(encoding="utf-8")
         assert "innerHTML" not in source
@@ -591,15 +591,15 @@ def test_security_settings_parses_environment_defaults(monkeypatch):
     pin (see ``test_size_limits.py``); we verify the *contract* of the
     parser here, not the specific Megabyte value.
     """
-    from local_deepl.api.services.security_config import (
+    from omniscribe.api.services.security_config import (
         DEFAULT_MAX_UPLOAD_MB,
         SecuritySettings,
     )
 
-    monkeypatch.delenv("LOCAL_DEEPL_AUTH_TOKEN", raising=False)
-    monkeypatch.delenv("LOCAL_DEEPL_CORS_ORIGINS", raising=False)
-    monkeypatch.delenv("LOCAL_DEEPL_MAX_UPLOAD_MB", raising=False)
-    monkeypatch.delenv("LOCAL_DEEPL_RATE_LIMIT_PER_MIN", raising=False)
+    monkeypatch.delenv("OMNISCRIBE_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("OMNISCRIBE_CORS_ORIGINS", raising=False)
+    monkeypatch.delenv("OMNISCRIBE_MAX_UPLOAD_MB", raising=False)
+    monkeypatch.delenv("OMNISCRIBE_RATE_LIMIT_PER_MIN", raising=False)
 
     settings = SecuritySettings.from_env()
     assert settings.auth_token is None
@@ -611,10 +611,10 @@ def test_security_settings_parses_environment_defaults(monkeypatch):
 
 
 def test_security_settings_cors_parses_csv_and_trims(monkeypatch):
-    from local_deepl.api.services.security_config import SecuritySettings
+    from omniscribe.api.services.security_config import SecuritySettings
 
     monkeypatch.setenv(
-        "LOCAL_DEEPL_CORS_ORIGINS",
+        "OMNISCRIBE_CORS_ORIGINS",
         "https://app.example.com, https://admin.example.com ,, ",
     )
     settings = SecuritySettings.from_env()
@@ -625,37 +625,37 @@ def test_security_settings_cors_parses_csv_and_trims(monkeypatch):
 
 
 def test_security_settings_rate_limit_zero_disables(monkeypatch):
-    from local_deepl.api.services.security_config import SecuritySettings
+    from omniscribe.api.services.security_config import SecuritySettings
 
-    monkeypatch.setenv("LOCAL_DEEPL_RATE_LIMIT_PER_MIN", "0")
+    monkeypatch.setenv("OMNISCRIBE_RATE_LIMIT_PER_MIN", "0")
     settings = SecuritySettings.from_env()
     assert settings.rate_limit_per_minute is None
     assert settings.rate_limit_enabled is False
 
 
 def test_security_settings_max_upload_clamps(monkeypatch):
-    from local_deepl.api.services.security_config import (
+    from omniscribe.api.services.security_config import (
         ABSOLUTE_MAX_UPLOAD_MB,
         SecuritySettings,
     )
 
-    monkeypatch.setenv("LOCAL_DEEPL_MAX_UPLOAD_MB", "999999")
+    monkeypatch.setenv("OMNISCRIBE_MAX_UPLOAD_MB", "999999")
     settings = SecuritySettings.from_env()
     assert settings.max_upload_bytes == ABSOLUTE_MAX_UPLOAD_MB * 1024 * 1024
 
-    monkeypatch.setenv("LOCAL_DEEPL_MAX_UPLOAD_MB", "0")
+    monkeypatch.setenv("OMNISCRIBE_MAX_UPLOAD_MB", "0")
     settings = SecuritySettings.from_env()
     assert settings.max_upload_bytes == 1 * 1024 * 1024
 
 
 def test_security_settings_invalid_ints_fall_back_to_default(monkeypatch):
-    from local_deepl.api.services.security_config import (
+    from omniscribe.api.services.security_config import (
         DEFAULT_MAX_UPLOAD_MB,
         SecuritySettings,
     )
 
-    monkeypatch.setenv("LOCAL_DEEPL_MAX_UPLOAD_MB", "not-a-number")
-    monkeypatch.setenv("LOCAL_DEEPL_RATE_LIMIT_PER_MIN", "garbage")
+    monkeypatch.setenv("OMNISCRIBE_MAX_UPLOAD_MB", "not-a-number")
+    monkeypatch.setenv("OMNISCRIBE_RATE_LIMIT_PER_MIN", "garbage")
     settings = SecuritySettings.from_env()
     assert settings.max_upload_bytes == DEFAULT_MAX_UPLOAD_MB * 1024 * 1024
     assert settings.rate_limit_per_minute is None
@@ -663,13 +663,13 @@ def test_security_settings_invalid_ints_fall_back_to_default(monkeypatch):
 
 def _create_app_with_security(monkeypatch, **env):
     """Build the full app via `create_app()` so middleware is wired."""
-    from local_deepl import server
+    from omniscribe import server
 
     for key in (
-        "LOCAL_DEEPL_AUTH_TOKEN",
-        "LOCAL_DEEPL_CORS_ORIGINS",
-        "LOCAL_DEEPL_MAX_UPLOAD_MB",
-        "LOCAL_DEEPL_RATE_LIMIT_PER_MIN",
+        "OMNISCRIBE_AUTH_TOKEN",
+        "OMNISCRIBE_CORS_ORIGINS",
+        "OMNISCRIBE_MAX_UPLOAD_MB",
+        "OMNISCRIBE_RATE_LIMIT_PER_MIN",
     ):
         monkeypatch.delenv(key, raising=False)
     for key, value in env.items():
@@ -683,7 +683,7 @@ def _create_app_with_security(monkeypatch, **env):
 
 
 def test_bearer_auth_required_when_token_set(monkeypatch):
-    app = _create_app_with_security(monkeypatch, LOCAL_DEEPL_AUTH_TOKEN="s3cret")
+    app = _create_app_with_security(monkeypatch, OMNISCRIBE_AUTH_TOKEN="s3cret")
     client = TestClient(app)
 
     unauthorized = client.get("/api/config")
@@ -701,14 +701,14 @@ def test_bearer_auth_required_when_token_set(monkeypatch):
 
 
 def test_bearer_auth_accepts_lowercase_scheme(monkeypatch):
-    app = _create_app_with_security(monkeypatch, LOCAL_DEEPL_AUTH_TOKEN="token")
+    app = _create_app_with_security(monkeypatch, OMNISCRIBE_AUTH_TOKEN="token")
     client = TestClient(app)
     response = client.get("/api/config", headers={"Authorization": "bearer token"})
     assert response.status_code == 200
 
 
 def test_max_upload_size_rejects_oversized_content_length(monkeypatch):
-    app = _create_app_with_security(monkeypatch, LOCAL_DEEPL_MAX_UPLOAD_MB="1")
+    app = _create_app_with_security(monkeypatch, OMNISCRIBE_MAX_UPLOAD_MB="1")
     client = TestClient(app)
     response = client.post(
         "/api/config",
@@ -721,14 +721,14 @@ def test_max_upload_size_rejects_oversized_content_length(monkeypatch):
 
 
 def test_max_upload_size_passes_undersized(monkeypatch):
-    app = _create_app_with_security(monkeypatch, LOCAL_DEEPL_MAX_UPLOAD_MB="10")
+    app = _create_app_with_security(monkeypatch, OMNISCRIBE_MAX_UPLOAD_MB="10")
     client = TestClient(app)
     response = client.get("/api/config")
     assert response.status_code == 200
 
 
 def test_rate_limit_rejects_after_cap(monkeypatch):
-    app = _create_app_with_security(monkeypatch, LOCAL_DEEPL_RATE_LIMIT_PER_MIN="3")
+    app = _create_app_with_security(monkeypatch, OMNISCRIBE_RATE_LIMIT_PER_MIN="3")
     client = TestClient(app)
 
     for _ in range(3):
@@ -746,7 +746,7 @@ def test_rate_limit_isolates_per_client_ip(monkeypatch):
     the same client; the underlying deque-by-key isolation is what
     the property is exercising.
     """
-    from local_deepl.api.services.security_middleware import RateLimitMiddleware
+    from omniscribe.api.services.security_middleware import RateLimitMiddleware
 
     fake_app_calls: list[str] = []
 

@@ -1,4 +1,4 @@
-"""Live HTTP probe of the LocalDeepL API surface."""
+"""Live HTTP probe of the OmniScribe API surface."""
 
 import json
 import os
@@ -8,7 +8,7 @@ from urllib.request import Request, urlopen
 
 from websockets.sync.client import connect
 
-BASE_URL = os.getenv("LOCAL_DEEPL_PROBE_BASE", "http://127.0.0.1:8000").rstrip("/")
+BASE_URL = os.getenv("OMNISCRIBE_PROBE_BASE", "http://127.0.0.1:8000").rstrip("/")
 WS_BASE_URL = BASE_URL.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
 
 

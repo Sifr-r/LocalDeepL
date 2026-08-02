@@ -13,7 +13,7 @@ from pathlib import Path
 import fitz
 import pytest
 
-from local_deepl.core.pdf import PDFHandler
+from omniscribe.core.pdf import PDFHandler
 
 
 @pytest.fixture
@@ -190,7 +190,7 @@ def test_embed_multiframe_tiff_produces_multipage_pdf(
 
 
 def test_image_extension_detection():
-    from local_deepl.core.pdf import _is_image_path
+    from omniscribe.core.pdf import _is_image_path
 
     assert _is_image_path("scan.jpg")
     assert _is_image_path("SCAN.JPEG")
@@ -213,7 +213,7 @@ def test_is_blank_crop_distinguishes_blank_from_text(tmp_path: Path):
 
     from PIL import Image, ImageDraw
 
-    from local_deepl.utils.image import is_blank_crop
+    from omniscribe.utils.image import is_blank_crop
 
     # Build a page-like image: top half blank-white, bottom half has text.
     img = Image.new("RGB", (800, 1000), "white")

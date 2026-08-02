@@ -17,9 +17,9 @@ from pathlib import Path
 import fitz
 import pytest
 
-from local_deepl.core.ocr import OCRProcessor
-from local_deepl.core.pdf import PDFHandler
-from local_deepl.pipeline import OCRPipeline
+from omniscribe.core.ocr import OCRProcessor
+from omniscribe.core.pdf import PDFHandler
+from omniscribe.pipeline import OCRPipeline
 
 pytestmark = pytest.mark.slow
 

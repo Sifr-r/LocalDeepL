@@ -6,7 +6,7 @@ Two contracts pinned here:
   * ``manager.send_progress`` produces the documented JSON wire frame
     shape, including the ``warning`` flag for partial-failure frames.
   * ``BearerAuthMiddleware`` is transparent to ``ws://`` traffic -
-    enabling ``LOCAL_DEEPL_AUTH_TOKEN`` does not break UI clients.
+    enabling ``OMNISCRIBE_AUTH_TOKEN`` does not break UI clients.
 
 Negative handshake tests live in ``test_api_safety.py`` as
 ``test_progress_session_uses_token_bound_websocket_channels``: that
@@ -40,7 +40,7 @@ def _make_stub_ws(frames: list[str]) -> Any:
 
 def test_ws_send_progress_round_trips_through_manager():
     """``manager.send_progress`` enqueues the documented wire frame."""
-    from local_deepl.api.routers.websocket import ConnectionManager
+    from omniscribe.api.routers.websocket import ConnectionManager
 
     sent: list[str] = []
     stub = _make_stub_ws(sent)
@@ -74,7 +74,7 @@ def test_ws_send_progress_round_trips_through_manager():
 
 def test_ws_send_progress_with_unknown_channel_is_noop():
     """Pushing to a channel that has no subscriber must not raise."""
-    from local_deepl.api.routers.websocket import ConnectionManager
+    from omniscribe.api.routers.websocket import ConnectionManager
 
     captured: dict[str, Any] = {}
 
@@ -96,7 +96,7 @@ def test_ws_send_progress_with_unknown_channel_is_noop():
 
 def test_bearer_middleware_is_transparent_to_websocket_scope():
     """Set ``Authorization: Bearer x`` on a WS scope - middleware passes through."""
-    from local_deepl.api.services.security_middleware import BearerAuthMiddleware
+    from omniscribe.api.services.security_middleware import BearerAuthMiddleware
 
     forward_called = {"yes": False}
     forwarded_scope: dict[str, Any] = {}
@@ -126,7 +126,7 @@ def test_bearer_middleware_is_transparent_to_websocket_scope():
 
 def test_bearer_middleware_rejects_http_without_token():
     """Sanity: the same middleware still rejects HTTP without a token."""
-    from local_deepl.api.services.security_middleware import BearerAuthMiddleware
+    from omniscribe.api.services.security_middleware import BearerAuthMiddleware
 
     captured_status: list[int] = []
 

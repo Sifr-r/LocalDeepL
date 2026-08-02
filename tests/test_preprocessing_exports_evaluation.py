@@ -7,21 +7,21 @@ from pathlib import Path
 
 from PIL import Image
 
-from local_deepl.api.services.document_exports import (
+from omniscribe.api.services.document_exports import (
     build_document_export,
     write_document_export_atomic,
 )
-from local_deepl.core.document import DocumentResult
-from local_deepl.core.evaluation import evaluate_document
-from local_deepl.core.preprocessing import (
+from omniscribe.core.document import DocumentResult
+from omniscribe.core.evaluation import evaluate_document
+from omniscribe.core.preprocessing import (
     LocalPagePreprocessor,
     PagePreprocessingOptions,
 )
-from local_deepl.core.processors import (
+from omniscribe.core.processors import (
     LayoutEnrichmentProcessor,
     TableExtractionProcessor,
 )
-from local_deepl.core.routing import QualityRoutingOptions, QualityRoutingPolicy
+from omniscribe.core.routing import QualityRoutingOptions, QualityRoutingPolicy
 
 
 def _image_b64() -> str:

@@ -21,12 +21,12 @@ from pathlib import Path
 
 import pytest
 
-from local_deepl.api.services.tree_artifact import (
+from omniscribe.api.services.tree_artifact import (
     TreeArtifactError,
     read_tree,
     write_tree_atomic,
 )
-from local_deepl.core.block_tree import (
+from omniscribe.core.block_tree import (
     BlockNode,
     BlockType,
     DocumentTree,

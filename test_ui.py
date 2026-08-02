@@ -31,8 +31,9 @@ async def run():
             print("dense.pdf not found, just taking empty screenshot.")
 
         # Take screenshot
-        screenshot_path = "C:\\Users\\rahin\\.gemini\\antigravity\\brain\\744a3706-987c-4902-b0e3-244629f68fdb\\scratch\\screenshot.png"
-        os.makedirs(os.path.dirname(screenshot_path), exist_ok=True)
+        screenshot_path = os.getenv("SCREENSHOT_PATH", "screenshot.png")
+        if os.path.dirname(screenshot_path):
+            os.makedirs(os.path.dirname(screenshot_path), exist_ok=True)
         await page.screenshot(path=screenshot_path)
         print("Screenshot saved to", screenshot_path)
 

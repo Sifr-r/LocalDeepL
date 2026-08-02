@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from local_deepl import HybridAligner, OCRPipeline, OCRProcessor, PDFHandler
+from omniscribe import HybridAligner, OCRPipeline, OCRProcessor, PDFHandler
 
 
 async def main(image_path: str, output_pdf: str) -> None:

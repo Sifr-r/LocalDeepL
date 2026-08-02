@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from local_deepl.api.schemas import ConfigUpdate, ProcessSettings
-from local_deepl.core.processors import (
+from omniscribe.api.schemas import ConfigUpdate, ProcessSettings
+from omniscribe.core.processors import (
     LayoutEnrichmentProcessor,
     QualityAnalysisProcessor,
     ReadingOrderProcessor,

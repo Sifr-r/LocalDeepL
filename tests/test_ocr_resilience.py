@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from local_deepl.core.ocr.exceptions import LLMCallError
-from local_deepl.core.ocr.processor import OCRProcessor
-from local_deepl.core.ocr.resilience import (
+from omniscribe.core.ocr.exceptions import LLMCallError
+from omniscribe.core.ocr.processor import OCRProcessor
+from omniscribe.core.ocr.resilience import (
     CircuitBreaker,
     CircuitOpenError,
     is_transient_error,
@@ -177,7 +177,7 @@ async def test_chat_retries_transient_error_and_succeeds():
             "  recovered text  ",
         ]
     )
-    with patch("local_deepl.core.ocr.processor.call_llm", mock_call):
+    with patch("omniscribe.core.ocr.processor.call_llm", mock_call):
         result = await p._chat("prompt", "aW1n", timeout=10, max_tokens=100)
 
     assert result == "recovered text"
@@ -187,7 +187,7 @@ async def test_chat_retries_transient_error_and_succeeds():
 async def test_chat_exhausts_retries_then_raises_llm_call_error():
     p = _make_processor()
     mock_call = AsyncMock(side_effect=_FakeHTTPError("Service Unavailable", 503))
-    with patch("local_deepl.core.ocr.processor.call_llm", mock_call):
+    with patch("omniscribe.core.ocr.processor.call_llm", mock_call):
         with pytest.raises(LLMCallError, match="Service Unavailable"):
             await p._chat("prompt", "aW1n", timeout=10, max_tokens=100)
 
@@ -199,7 +199,7 @@ async def test_chat_does_not_retry_permanent_context_size_error():
     mock_call = AsyncMock(
         side_effect=_FakeHTTPError("context_length_exceeded: 12000 > 8192")
     )
-    with patch("local_deepl.core.ocr.processor.call_llm", mock_call):
+    with patch("omniscribe.core.ocr.processor.call_llm", mock_call):
         with pytest.raises(LLMCallError, match="Context Size Limit"):
             await p._chat("prompt", "aW1n", timeout=10, max_tokens=100)
 
@@ -209,7 +209,7 @@ async def test_chat_does_not_retry_permanent_context_size_error():
 async def test_chat_does_not_retry_auth_error():
     p = _make_processor()
     mock_call = AsyncMock(side_effect=_FakeHTTPError("Invalid API key", 401))
-    with patch("local_deepl.core.ocr.processor.call_llm", mock_call):
+    with patch("omniscribe.core.ocr.processor.call_llm", mock_call):
         with pytest.raises(LLMCallError, match="Invalid API key"):
             await p._chat("prompt", "aW1n", timeout=10, max_tokens=100)
 
@@ -221,7 +221,7 @@ async def test_circuit_breaker_fails_fast_after_consecutive_failures():
     p.circuit_breaker = CircuitBreaker(failure_threshold=3, cooldown_seconds=60.0)
     mock_call = AsyncMock(side_effect=_FakeHTTPError("Connection refused"))
 
-    with patch("local_deepl.core.ocr.processor.call_llm", mock_call):
+    with patch("omniscribe.core.ocr.processor.call_llm", mock_call):
         # First call: 3 attempts all fail → breaker at 3 → open.
         with pytest.raises(LLMCallError):
             await p._chat("prompt", "aW1n", timeout=10, max_tokens=100)
@@ -240,7 +240,7 @@ async def test_successful_call_resets_breaker_for_next_page():
     transient = _FakeHTTPError("Bad Gateway", 502)
     mock_call = AsyncMock(side_effect=[transient, transient, "ok", "ok"])
 
-    with patch("local_deepl.core.ocr.processor.call_llm", mock_call):
+    with patch("omniscribe.core.ocr.processor.call_llm", mock_call):
         result = await p._chat("prompt", "aW1n", timeout=10, max_tokens=100)
         assert result == "ok"
         # 2 failures then success → breaker reset to 0.

@@ -12,7 +12,7 @@ fastapi = pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from local_deepl.api.routers import glossary_imports, state  # noqa: E402
+from omniscribe.api.routers import glossary_imports, state  # noqa: E402
 
 FIXTURES = Path(__file__).parent / "fixtures" / "glossary"
 
@@ -21,8 +21,8 @@ FIXTURES = Path(__file__).parent / "fixtures" / "glossary"
 def library_dir(tmp_path, monkeypatch):
     artifact = tmp_path / "artifacts"
     artifact.mkdir(exist_ok=True)
-    monkeypatch.setenv("LOCAL_DEEPL_ARTIFACT_DIR", str(artifact))
-    from local_deepl.core.glossary_library import GlossaryLibrary
+    monkeypatch.setenv("OMNISCRIBE_ARTIFACT_DIR", str(artifact))
+    from omniscribe.core.glossary_library import GlossaryLibrary
 
     state.glossary_library = GlossaryLibrary(artifact_dir=artifact)
     yield artifact

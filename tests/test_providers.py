@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from local_deepl.core.providers import PROVIDERS_CATALOG, get_provider
-from local_deepl.server import create_app
+from omniscribe.core.providers import PROVIDERS_CATALOG, get_provider
+from omniscribe.server import create_app
 
 
 def test_providers_catalog_structure():

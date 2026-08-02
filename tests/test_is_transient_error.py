@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import httpx
 
-from local_deepl.core.ocr.resilience import (
+from omniscribe.core.ocr.resilience import (
     RETRYABLE_STATUS_CODES,
     is_transient_error,
 )

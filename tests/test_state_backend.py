@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
-from local_deepl.api.routers import state as router_state
-from local_deepl.api.services.artifacts import TextArtifactStore
-from local_deepl.api.services.jobs import JobHistory
-from local_deepl.api.services.ocr_jobs import OCRJobQueue
-from local_deepl.api.services.progress import ProgressService
-from local_deepl.api.services.state_backend import (
+import pytest
+
+from omniscribe.api.routers import state as router_state
+from omniscribe.api.services.artifacts import TextArtifactStore
+from omniscribe.api.services.jobs import JobHistory
+from omniscribe.api.services.ocr_jobs import OCRJobQueue
+from omniscribe.api.services.progress import ProgressService
+from omniscribe.api.services.state_backend import (
     LocalStateBackend,
     StateBackend,
 )
-from local_deepl.core.glossary_library import GlossaryLibrary
+from omniscribe.core.glossary_library import GlossaryLibrary
 
 
 def test_local_state_backend_from_env_has_seven_attributes():
@@ -61,7 +63,8 @@ def test_module_level_backend_is_local_state_backend():
 
 
 def test_redis_state_backend_satisfies_protocol_without_connecting(tmp_path):
-    from local_deepl.api.services.state_backend_redis import RedisStateBackend
+    pytest.importorskip("redis")
+    from omniscribe.api.services.state_backend_redis import RedisStateBackend
 
     backend = RedisStateBackend("redis://localhost:6379/0", artifact_dir=tmp_path)
     assert isinstance(backend, StateBackend)

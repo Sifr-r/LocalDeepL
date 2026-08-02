@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from local_deepl.core.glossary_library import (
+from omniscribe.core.glossary_library import (
     GlossaryLibrary,
     GlossaryNotFoundError,
 )

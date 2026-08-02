@@ -2,7 +2,7 @@
 
 ## System Shape
 
-`local-deepl` is a Python 3.11+ Web UI/API OCR application with a shared
+`omniscribe` is a Python 3.11+ Web UI/API OCR application with a shared
 pipeline behind the FastAPI server. Inputs are PDFs or images. Outputs are
 searchable sandwich PDFs with normalized OCR bounding boxes embedded as an
 invisible text layer.
@@ -20,72 +20,72 @@ PDF/image -> grounded bbox-native VLM OCR -> optional post-process -> DocumentRe
 
 | Path | Single Responsibility |
 | --- | --- |
-| `src/local_deepl/__init__.py` | Lazy package-level public exports that avoid loading OCR or web dependencies during unrelated submodule imports |
-| `src/local_deepl/server.py` | Lazy optional-web dependency loading, FastAPI application setup, CLI argument parsing for `--host/--port/--reload`, and `local-deepl-server` script entry point |
-| `src/local_deepl/pipeline.py` | `OCRPipeline` facade — thin orchestration layer that delegates to `HybridEngine` or `GroundedEngine` based on injected components |
-| `src/local_deepl/evaluation.py` | Package-root confidence evaluator: GLM-OCR fixture loader, greedy IoU matching, and per-document `ConfidenceReport` for the `scripts/confidence_*.py` tooling |
-| `src/local_deepl/core/document.py` | Normalized `DocumentResult` IR, pages, blocks, spans, text aggregation, and legacy pages-data adapter |
-| `src/local_deepl/core/processors/__init__.py` | Package-level re-exports for backward-compatible import of `DocumentProcessor`, `DocumentProcessorRegistry`, built-in processors, and helper functions |
-| `src/local_deepl/core/processors/base.py` | Core `DocumentProcessor` protocol, `DocumentProcessorFactory`, `DocumentProcessorRegistry`, processor name lists, shared regexes, helper functions (`_structure_kind`, `_normalize_space`, `_page_region`, `_bbox_area`), `build_document_processors`, and `run_document_processors` |
-| `src/local_deepl/core/processors/reading_order.py` | `ReadingOrderProcessor` — row-major block ordering based on normalized bounding box coordinates |
-| `src/local_deepl/core/processors/quality.py` | `QualityAnalysisProcessor` — page-level OCR quality findings (empty pages, sparse text, large empty blocks) |
-| `src/local_deepl/core/processors/structure.py` | `StructureAnalysisProcessor` — deterministic block structure hints (headings, list items, key-values, table candidates) |
-| `src/local_deepl/core/processors/section.py` | `SectionAnalysisProcessor` — section heading detection and block grouping across page boundaries |
-| `src/local_deepl/core/processors/layout.py` | `LayoutEnrichmentProcessor` — page region and layout role labeling (headers, footers, page numbers, figures, captions) |
-| `src/local_deepl/core/processors/table.py` | `TableExtractionProcessor` — table grid structure extraction from aligned text blocks |
-| `src/local_deepl/core/aligner.py` | Surya detection and DP text-to-box alignment |
-| `src/local_deepl/core/ocr/` | OpenAI-compatible VLM client, `OCRProcessor`, prompts, response filters, limits, exceptions, retry, and circuit-breaker resilience; `__init__.py` preserves the public import surface |
-| `src/local_deepl/core/pdf/__init__.py` | Package re-exports for `PDFHandler`, `DocumentResultWriter`, `IMAGE_EXTENSIONS`, `_emit_pymupdf_agpl_notice`, and public PDF symbols |
-| `src/local_deepl/core/pdf/rasterizer.py` | PyMuPDF AGPL warning emission, safe DPI calculation, image extension validation, and PDF/image rasterization to JPEG/PNG base64 |
-| `src/local_deepl/core/pdf/embedder.py` | Invisible text layer PDF rendering over rasterized backgrounds, normalized bbox coordinate transformations, and font sizing calculation |
-| `src/local_deepl/core/pdf/handler.py` | `PDFHandler` class facade implementing `DocumentResultWriter` protocol for high-level workflow orchestration |
-| `src/local_deepl/core/grounded/` | Grounded OCR models, prompted backend, rasterization, and bbox-native response parsers; `__init__.py` preserves the public import surface |
-| `src/local_deepl/core/postprocess.py` | Dictionary-based spellcheck post-processing |
-| `src/local_deepl/core/preprocessing.py` | Local hybrid-path page preprocessing (orientation detection, deskew, denoise, contrast normalization, crop cleanup) |
-| `src/local_deepl/core/handwriting_preprocessor.py` | Local handwriting image preprocessor for specialized handwriting pipeline paths |
-| `src/local_deepl/core/routing.py` | Quality routing recommendation metadata and policy recorder |
-| `src/local_deepl/core/evaluation.py` | Lightweight `EvaluationMetrics` dataclass and `evaluate_document` helper for in-process processor result scoring |
-| `src/local_deepl/core/docx_writer.py` | Markdown → `.docx` converter used by the docx export route |
-| `src/local_deepl/core/translation_config.py` | Core-owned typed settings and optional-feature errors for async translation |
-| `src/local_deepl/core/translation.py` | Optional LangGraph translation workflow |
-| `src/local_deepl/core/workflows/base.py` | `EngineBase`, `OutputWriter`, `ProgressCallback`, `WarningCallback` shared by both engines |
-| `src/local_deepl/core/workflows/hybrid.py` | `HybridEngine` — Surya detect → VLM OCR (sparse/dense) → DP align → optional refine → post-process → processors → output |
-| `src/local_deepl/core/workflows/grounded.py` | `GroundedEngine` — single bbox-native VLM call → post-process → processors → output |
-| `src/local_deepl/core/workflows/utils.py` | Stand-alone workflow helper functions (`parse_page_range`, `_estimate_confidence`, `_decode_page_image`, `_normalize_for_dedup`, `_drop_refined_duplicates`, `_is_refinable`) and workflow constants (`REFINABLE_MIN_WIDTH`, `REFINABLE_MIN_HEIGHT`, `DETECT_CHUNK_SIZE`) |
-| `src/local_deepl/core/workflows/__init__.py` | Re-exports `EngineBase`, `HybridEngine`, `GroundedEngine`, public helper `parse_page_range`, constants, and callback type aliases |
-| `src/local_deepl/resources/dictionaries/` | Packaged compiled spellcheck dictionaries loaded before legacy repository-root dictionaries |
-| `src/local_deepl/api/routers/config.py` | Runtime configuration and model discovery routes (`GET/POST /api/config`) |
-| `src/local_deepl/api/routers/ocr.py` | Thin `POST /api/process` orchestrator — validate the request, build the pipeline, run it, build the response, record the job; delegates all heavy lifting to `api/services/ocr_*.py` |
-| `src/local_deepl/api/routers/websocket.py` | Token-bound WebSocket progress transport and progress session issuance |
-| `src/local_deepl/api/routers/jobs.py` | `GET/DELETE /api/jobs` — recent job history and clear-all |
-| `src/local_deepl/api/routers/artifacts.py` | Token-bound artifact download routes for text, metadata, and document exports |
-| `src/local_deepl/api/routers/translation.py` | Synchronous `POST /api/translate`, async `POST /api/translate/async`, tree translation `POST /api/translate/tree`, glossary and NLLB endpoints |
-| `src/local_deepl/api/routers/extraction.py` | `POST /api/extract` — structured data extraction, plus document export routes |
-| `src/local_deepl/api/routers/state.py` | Compatibility aliases over the `LocalStateBackend` singleton, plus the process-local glossary library |
-| `src/local_deepl/api/routers/providers.py` | OpenAI-compatible provider catalog and provider detail routes |
-| `src/local_deepl/api/routers/common.py` | Shared router helpers: `_stable_server_error`, `_extract_bearer_token`, `_path_exists`, `_cleanup` |
+| `src/omniscribe/__init__.py` | Lazy package-level public exports that avoid loading OCR or web dependencies during unrelated submodule imports |
+| `src/omniscribe/server.py` | Lazy optional-web dependency loading, FastAPI application setup, CLI argument parsing for `--host/--port/--reload`, and `omniscribe-server` script entry point |
+| `src/omniscribe/pipeline.py` | `OCRPipeline` facade — thin orchestration layer that delegates to `HybridEngine` or `GroundedEngine` based on injected components |
+| `src/omniscribe/evaluation.py` | Package-root confidence evaluator: GLM-OCR fixture loader, greedy IoU matching, and per-document `ConfidenceReport` for the `scripts/confidence_*.py` tooling |
+| `src/omniscribe/core/document.py` | Normalized `DocumentResult` IR, pages, blocks, spans, text aggregation, and legacy pages-data adapter |
+| `src/omniscribe/core/processors/__init__.py` | Package-level re-exports for backward-compatible import of `DocumentProcessor`, `DocumentProcessorRegistry`, built-in processors, and helper functions |
+| `src/omniscribe/core/processors/base.py` | Core `DocumentProcessor` protocol, `DocumentProcessorFactory`, `DocumentProcessorRegistry`, processor name lists, shared regexes, helper functions (`_structure_kind`, `_normalize_space`, `_page_region`, `_bbox_area`), `build_document_processors`, and `run_document_processors` |
+| `src/omniscribe/core/processors/reading_order.py` | `ReadingOrderProcessor` — row-major block ordering based on normalized bounding box coordinates |
+| `src/omniscribe/core/processors/quality.py` | `QualityAnalysisProcessor` — page-level OCR quality findings (empty pages, sparse text, large empty blocks) |
+| `src/omniscribe/core/processors/structure.py` | `StructureAnalysisProcessor` — deterministic block structure hints (headings, list items, key-values, table candidates) |
+| `src/omniscribe/core/processors/section.py` | `SectionAnalysisProcessor` — section heading detection and block grouping across page boundaries |
+| `src/omniscribe/core/processors/layout.py` | `LayoutEnrichmentProcessor` — page region and layout role labeling (headers, footers, page numbers, figures, captions) |
+| `src/omniscribe/core/processors/table.py` | `TableExtractionProcessor` — table grid structure extraction from aligned text blocks |
+| `src/omniscribe/core/aligner.py` | Surya detection and DP text-to-box alignment |
+| `src/omniscribe/core/ocr/` | OpenAI-compatible VLM client, `OCRProcessor`, prompts, response filters, limits, exceptions, retry, and circuit-breaker resilience; `__init__.py` preserves the public import surface |
+| `src/omniscribe/core/pdf/__init__.py` | Package re-exports for `PDFHandler`, `DocumentResultWriter`, `IMAGE_EXTENSIONS`, `_emit_pymupdf_agpl_notice`, and public PDF symbols |
+| `src/omniscribe/core/pdf/rasterizer.py` | PyMuPDF AGPL warning emission, safe DPI calculation, image extension validation, and PDF/image rasterization to JPEG/PNG base64 |
+| `src/omniscribe/core/pdf/embedder.py` | Invisible text layer PDF rendering over rasterized backgrounds, normalized bbox coordinate transformations, and font sizing calculation |
+| `src/omniscribe/core/pdf/handler.py` | `PDFHandler` class facade implementing `DocumentResultWriter` protocol for high-level workflow orchestration |
+| `src/omniscribe/core/grounded/` | Grounded OCR models, prompted backend, rasterization, and bbox-native response parsers; `__init__.py` preserves the public import surface |
+| `src/omniscribe/core/postprocess.py` | Dictionary-based spellcheck post-processing |
+| `src/omniscribe/core/preprocessing.py` | Local hybrid-path page preprocessing (orientation detection, deskew, denoise, contrast normalization, crop cleanup) |
+| `src/omniscribe/core/handwriting_preprocessor.py` | Local handwriting image preprocessor for specialized handwriting pipeline paths |
+| `src/omniscribe/core/routing.py` | Quality routing recommendation metadata and policy recorder |
+| `src/omniscribe/core/evaluation.py` | Lightweight `EvaluationMetrics` dataclass and `evaluate_document` helper for in-process processor result scoring |
+| `src/omniscribe/core/docx_writer.py` | Markdown → `.docx` converter used by the docx export route |
+| `src/omniscribe/core/translation_config.py` | Core-owned typed settings and optional-feature errors for async translation |
+| `src/omniscribe/core/translation.py` | Optional LangGraph translation workflow |
+| `src/omniscribe/core/workflows/base.py` | `EngineBase`, `OutputWriter`, `ProgressCallback`, `WarningCallback` shared by both engines |
+| `src/omniscribe/core/workflows/hybrid.py` | `HybridEngine` — Surya detect → VLM OCR (sparse/dense) → DP align → optional refine → post-process → processors → output |
+| `src/omniscribe/core/workflows/grounded.py` | `GroundedEngine` — single bbox-native VLM call → post-process → processors → output |
+| `src/omniscribe/core/workflows/utils.py` | Stand-alone workflow helper functions (`parse_page_range`, `_estimate_confidence`, `_decode_page_image`, `_normalize_for_dedup`, `_drop_refined_duplicates`, `_is_refinable`) and workflow constants (`REFINABLE_MIN_WIDTH`, `REFINABLE_MIN_HEIGHT`, `DETECT_CHUNK_SIZE`) |
+| `src/omniscribe/core/workflows/__init__.py` | Re-exports `EngineBase`, `HybridEngine`, `GroundedEngine`, public helper `parse_page_range`, constants, and callback type aliases |
+| `src/omniscribe/resources/dictionaries/` | Packaged compiled spellcheck dictionaries loaded before legacy repository-root dictionaries |
+| `src/omniscribe/api/routers/config.py` | Runtime configuration and model discovery routes (`GET/POST /api/config`) |
+| `src/omniscribe/api/routers/ocr.py` | Thin `POST /api/process` orchestrator — validate the request, build the pipeline, run it, build the response, record the job; delegates all heavy lifting to `api/services/ocr_*.py` |
+| `src/omniscribe/api/routers/websocket.py` | Token-bound WebSocket progress transport and progress session issuance |
+| `src/omniscribe/api/routers/jobs.py` | `GET/DELETE /api/jobs` — recent job history and clear-all |
+| `src/omniscribe/api/routers/artifacts.py` | Token-bound artifact download routes for text, metadata, and document exports |
+| `src/omniscribe/api/routers/translation.py` | Synchronous `POST /api/translate`, async `POST /api/translate/async`, tree translation `POST /api/translate/tree`, glossary and NLLB endpoints |
+| `src/omniscribe/api/routers/extraction.py` | `POST /api/extract` — structured data extraction, plus document export routes |
+| `src/omniscribe/api/routers/state.py` | Compatibility aliases over the `LocalStateBackend` singleton, plus the process-local glossary library |
+| `src/omniscribe/api/routers/providers.py` | OpenAI-compatible provider catalog and provider detail routes |
+| `src/omniscribe/api/routers/common.py` | Shared router helpers: `_stable_server_error`, `_extract_bearer_token`, `_path_exists`, `_cleanup` |
 
-| `src/local_deepl/api/schemas/__init__.py` | Re-exports the typed request models and StrEnums |
-| `src/local_deepl/api/schemas/requests.py` | `ConfigUpdate`, `ProcessSettings`, `TranslationRequest`, `ExtractionRequest`, `ExtractionTemplate`, `DocumentExportRequest`, `DocumentExportFormat`, `ExportDocxRequest`; enums: `PipelineMode`, `DenseMode`, `SpellcheckMode`, `DocumentProcessorName` |
-| `src/local_deepl/api/services/ocr_settings.py` | Form-parameter resolution for `POST /api/process` — "form field wins, config falls back" merge that produces a validated `ProcessSettings` |
-| `src/local_deepl/api/services/ocr_pipeline_factory.py` | Pipeline construction for `POST /api/process` — branches on `pipeline_mode` (hybrid vs grounded), wires WebSocket-bound per-block callbacks, decides whether to plug in the TrOCR handwriting specialist, and exposes backend-model verification |
-| `src/local_deepl/api/services/ocr_response.py` | Response assembly for `POST /api/process` — validation-error JSON, FileResponse construction with token-bound headers (`X-Document-Quality`, `X-Document-Structure`, `X-Document-Sections`, artifact-id/token pairs), and stable error envelopes |
-| `src/local_deepl/api/services/ocr_chunked_runner.py` | Bounded-page PDF execution, per-chunk progress frames, text/page remapping, and merged searchable-PDF output |
-| `src/local_deepl/api/services/ocr_jobs.py` | Single-worker asyncio OCR queue, background job lifecycle records, status serialization, and cancellation semantics |
-| `src/local_deepl/api/services/state_backend.py` | `StateBackend` protocol and process-local `LocalStateBackend`, including artifacts, history, progress, glossary, and OCR queue |
-| `src/local_deepl/api/services/security.py` | API upload validation, stable error constants, temporary-file cleanup, and opaque text artifact IDs |
-| `src/local_deepl/api/services/artifacts.py` | `TextArtifactStore`, `PageText`, `TextArtifactHandle`, and the opaque artifact-id / token primitives shared by text, metadata, and export stores |
-| `src/local_deepl/api/services/jobs.py` | `JobHistory`, `JobRecord`, `JobStatus` — durable job history with per-page failure tracking |
-| `src/local_deepl/api/services/progress.py` | `ProgressService`, `ProgressChannel`, stage weights, channel/session token validation |
-| `src/local_deepl/api/services/document_metadata.py` | Compact JSON report builder and atomic writer for token-bound `DocumentResult` metadata artifacts |
-| `src/local_deepl/api/services/document_exports.py` | Token-bound JSON, Markdown, text, Docling-compatible, and MinerU-compatible export artifact builder |
-| `src/local_deepl/api/services/workflow.py` | Aggregated orchestration tracking, unifying Celery and synchronous pipeline state |
-| `src/local_deepl/api/services/ai.py` | AI service module backing `POST /api/translate` and `POST /api/extract` — OpenAI-compatible calls with fenced-JSON parsing, retry, and stable error mapping |
-| `src/local_deepl/api/tasks.py` | Optional Celery translation task execution |
-| `src/local_deepl/utils/image.py` | Image crop, blank-region detection, and crop encoding helpers |
-| `src/local_deepl/utils/security.py` | SSRF target validation |
-| `src/local_deepl/utils/tqdm_patch.py` | Surya progress-bar suppression |
-| `src/local_deepl/static/` | Built Svelte 5 workstation assets served by FastAPI |
+| `src/omniscribe/api/schemas/__init__.py` | Re-exports the typed request models and StrEnums |
+| `src/omniscribe/api/schemas/requests.py` | `ConfigUpdate`, `ProcessSettings`, `TranslationRequest`, `ExtractionRequest`, `ExtractionTemplate`, `DocumentExportRequest`, `DocumentExportFormat`, `ExportDocxRequest`; enums: `PipelineMode`, `DenseMode`, `SpellcheckMode`, `DocumentProcessorName` |
+| `src/omniscribe/api/services/ocr_settings.py` | Form-parameter resolution for `POST /api/process` — "form field wins, config falls back" merge that produces a validated `ProcessSettings` |
+| `src/omniscribe/api/services/ocr_pipeline_factory.py` | Pipeline construction for `POST /api/process` — branches on `pipeline_mode` (hybrid vs grounded), wires WebSocket-bound per-block callbacks, decides whether to plug in the TrOCR handwriting specialist, and exposes backend-model verification |
+| `src/omniscribe/api/services/ocr_response.py` | Response assembly for `POST /api/process` — validation-error JSON, FileResponse construction with token-bound headers (`X-Document-Quality`, `X-Document-Structure`, `X-Document-Sections`, artifact-id/token pairs), and stable error envelopes |
+| `src/omniscribe/api/services/ocr_chunked_runner.py` | Bounded-page PDF execution, per-chunk progress frames, text/page remapping, and merged searchable-PDF output |
+| `src/omniscribe/api/services/ocr_jobs.py` | Single-worker asyncio OCR queue, background job lifecycle records, status serialization, and cancellation semantics |
+| `src/omniscribe/api/services/state_backend.py` | `StateBackend` protocol and process-local `LocalStateBackend`, including artifacts, history, progress, glossary, and OCR queue |
+| `src/omniscribe/api/services/security.py` | API upload validation, stable error constants, temporary-file cleanup, and opaque text artifact IDs |
+| `src/omniscribe/api/services/artifacts.py` | `TextArtifactStore`, `PageText`, `TextArtifactHandle`, and the opaque artifact-id / token primitives shared by text, metadata, and export stores |
+| `src/omniscribe/api/services/jobs.py` | `JobHistory`, `JobRecord`, `JobStatus` — durable job history with per-page failure tracking |
+| `src/omniscribe/api/services/progress.py` | `ProgressService`, `ProgressChannel`, stage weights, channel/session token validation |
+| `src/omniscribe/api/services/document_metadata.py` | Compact JSON report builder and atomic writer for token-bound `DocumentResult` metadata artifacts |
+| `src/omniscribe/api/services/document_exports.py` | Token-bound JSON, Markdown, text, Docling-compatible, and MinerU-compatible export artifact builder |
+| `src/omniscribe/api/services/workflow.py` | Aggregated orchestration tracking, unifying Celery and synchronous pipeline state |
+| `src/omniscribe/api/services/ai.py` | AI service module backing `POST /api/translate` and `POST /api/extract` — OpenAI-compatible calls with fenced-JSON parsing, retry, and stable error mapping |
+| `src/omniscribe/api/tasks.py` | Optional Celery translation task execution |
+| `src/omniscribe/utils/image.py` | Image crop, blank-region detection, and crop encoding helpers |
+| `src/omniscribe/utils/security.py` | SSRF target validation |
+| `src/omniscribe/utils/tqdm_patch.py` | Surya progress-bar suppression |
+| `src/omniscribe/static/` | Built Svelte 5 workstation assets served by FastAPI |
 | `frontend/` | Svelte 5 + Tailwind CSS v4 source, Vite configuration, and production build pipeline |
 | `scripts/` | Repo-root developer utilities: confidence eval, fixture builder, debug/inspection scripts, bbox visualizers |
 | `examples/` | Sample PDFs and images used by `tests/`, `test_ui.py`, and the confidence scripts |
@@ -119,7 +119,7 @@ list can be passed via `ConfigUpdate.document_processors` or the multipart OCR
 
 ## Shared State and Artifacts
 
-Process-local singletons live in `src/local_deepl/api/routers/state.py` and are
+Process-local singletons live in `src/omniscribe/api/routers/state.py` and are
 imported by every router that needs them. Three independent `TextArtifactStore`
 instances back the three artifact surfaces:
 
@@ -150,10 +150,10 @@ requires a shared backend.
 ### Authentication and runtime security
 
 `SecuritySettings.from_env()` configures the ASGI boundary. A per-service
-`LOCAL_DEEPL_OCR_AUTH_TOKEN` or `LOCAL_DEEPL_TRANSLATION_AUTH_TOKEN` takes
-precedence over the global `LOCAL_DEEPL_AUTH_TOKEN` for its route group.
-`LOCAL_DEEPL_MAX_UPLOAD_MB`, `LOCAL_DEEPL_RATE_LIMIT_PER_MIN`, and
-`LOCAL_DEEPL_CORS_ORIGINS` control upload limits, per-IP request throttling, and
+`OMNISCRIBE_OCR_AUTH_TOKEN` or `OMNISCRIBE_TRANSLATION_AUTH_TOKEN` takes
+precedence over the global `OMNISCRIBE_AUTH_TOKEN` for its route group.
+`OMNISCRIBE_MAX_UPLOAD_MB`, `OMNISCRIBE_RATE_LIMIT_PER_MIN`, and
+`OMNISCRIBE_CORS_ORIGINS` control upload limits, per-IP request throttling, and
 CORS respectively. Artifact IDs use a separate artifact token supplied through
 `Authorization: Bearer ...`; artifact tokens must not be placed in query strings.
 
@@ -210,26 +210,26 @@ issued by `POST /api/progress/session`.
 | Metadata artifact | `GET /api/metadata/{artifact_id}` | `GET /metadata/{artifact_id}` |
 | Export artifact | `GET /api/export/{artifact_id}` | `GET /export/{artifact_id}` |
 
-### 2026-07-25: Core PDF Decomposition into `src/local_deepl/core/pdf/` Package
+### 2026-07-25: Core PDF Decomposition into `src/omniscribe/core/pdf/` Package
 
-Refactored `src/local_deepl/core/pdf.py` (~18 KB) into a clean, single-responsibility subpackage `src/local_deepl/core/pdf/`. Separated PyMuPDF/image rasterization, safe DPI calculations, and image extension handling into `rasterizer.py`, invisible text layer rendering, font sizing, and coordinate transformation into `embedder.py`, and high-level workflow orchestration into `handler.py`. Preserved 100% backward compatibility via `__init__.py` re-exports for `PDFHandler`, `DocumentResultWriter`, `IMAGE_EXTENSIONS`, `_emit_pymupdf_agpl_notice`, and all public/internal symbols.
+Refactored `src/omniscribe/core/pdf.py` (~18 KB) into a clean, single-responsibility subpackage `src/omniscribe/core/pdf/`. Separated PyMuPDF/image rasterization, safe DPI calculations, and image extension handling into `rasterizer.py`, invisible text layer rendering, font sizing, and coordinate transformation into `embedder.py`, and high-level workflow orchestration into `handler.py`. Preserved 100% backward compatibility via `__init__.py` re-exports for `PDFHandler`, `DocumentResultWriter`, `IMAGE_EXTENSIONS`, `_emit_pymupdf_agpl_notice`, and all public/internal symbols.
 
 | File | Responsibility |
 | --- | --- |
-| `src/local_deepl/core/pdf/rasterizer.py` | PyMuPDF AGPL warning emission, safe DPI calculation, image extension validation, and PDF/image rasterization to JPEG/PNG base64 |
-| `src/local_deepl/core/pdf/embedder.py` | Invisible text layer PDF rendering over rasterized backgrounds, normalized bbox coordinate transformations, and font sizing calculation |
-| `src/local_deepl/core/pdf/handler.py` | `PDFHandler` class facade implementing `DocumentResultWriter` protocol for high-level workflow orchestration |
-| `src/local_deepl/core/pdf/__init__.py` | Re-exports `PDFHandler`, `DocumentResultWriter`, `IMAGE_EXTENSIONS`, `_emit_pymupdf_agpl_notice`, and public PDF symbols |
+| `src/omniscribe/core/pdf/rasterizer.py` | PyMuPDF AGPL warning emission, safe DPI calculation, image extension validation, and PDF/image rasterization to JPEG/PNG base64 |
+| `src/omniscribe/core/pdf/embedder.py` | Invisible text layer PDF rendering over rasterized backgrounds, normalized bbox coordinate transformations, and font sizing calculation |
+| `src/omniscribe/core/pdf/handler.py` | `PDFHandler` class facade implementing `DocumentResultWriter` protocol for high-level workflow orchestration |
+| `src/omniscribe/core/pdf/__init__.py` | Re-exports `PDFHandler`, `DocumentResultWriter`, `IMAGE_EXTENSIONS`, `_emit_pymupdf_agpl_notice`, and public PDF symbols |
 
 ### 2026-07-25: Refactor stand-alone workflow helpers into `core/workflows/utils.py`
 
-Extracted stand-alone helper functions (`parse_page_range`, `_estimate_confidence`, `_decode_page_image`, `_normalize_for_dedup`, `_drop_refined_duplicates`, `_is_refinable`) and constants (`REFINABLE_MIN_WIDTH`, `REFINABLE_MIN_HEIGHT`, `DETECT_CHUNK_SIZE`) out of `hybrid.py` into `local_deepl.core.workflows.utils`. Re-exported public helpers in `local_deepl.core.workflows.__init__.py` and maintained backward compatibility in `hybrid.py`.
+Extracted stand-alone helper functions (`parse_page_range`, `_estimate_confidence`, `_decode_page_image`, `_normalize_for_dedup`, `_drop_refined_duplicates`, `_is_refinable`) and constants (`REFINABLE_MIN_WIDTH`, `REFINABLE_MIN_HEIGHT`, `DETECT_CHUNK_SIZE`) out of `hybrid.py` into `omniscribe.core.workflows.utils`. Re-exported public helpers in `omniscribe.core.workflows.__init__.py` and maintained backward compatibility in `hybrid.py`.
 
 | File | Responsibility |
 | --- | --- |
-| `src/local_deepl/core/workflows/utils.py` | Stand-alone workflow helper functions and constants |
-| `src/local_deepl/core/workflows/hybrid.py` | Imports and uses `local_deepl.core.workflows.utils` while re-exporting helpers |
-| `src/local_deepl/core/workflows/__init__.py` | Re-exports public workflow helpers (`parse_page_range`, constants) |
+| `src/omniscribe/core/workflows/utils.py` | Stand-alone workflow helper functions and constants |
+| `src/omniscribe/core/workflows/hybrid.py` | Imports and uses `omniscribe.core.workflows.utils` while re-exporting helpers |
+| `src/omniscribe/core/workflows/__init__.py` | Re-exports public workflow helpers (`parse_page_range`, constants) |
 
 ### 2026-07-25: LiteLLM Cleanup, Handwriting Preprocessing, and DocuVerse CSS UI System
 
@@ -237,10 +237,10 @@ Streamlined provider selection by replacing `litellm_provider.py` with direct Op
 
 | File | Responsibility |
 | --- | --- |
-| `src/local_deepl/core/handwriting_preprocessor.py` | Local handwriting image preprocessor |
-| `src/local_deepl/core/llm_client.py` | Direct OpenAI-compatible VLM client integration and resilience handlers |
-| `src/local_deepl/static/css/` | DocuVerse CSS system (`variables.css`, `layout.css`, `components.css`, `workspace.css`, `modals.css`) |
-| `src/local_deepl/static/index.html` | Restructured workstation layout with theme toggle, floating control dock, and modal system |
+| `src/omniscribe/core/handwriting_preprocessor.py` | Local handwriting image preprocessor |
+| `src/omniscribe/core/llm_client.py` | Direct OpenAI-compatible VLM client integration and resilience handlers |
+| `src/omniscribe/static/css/` | DocuVerse CSS system (`variables.css`, `layout.css`, `components.css`, `workspace.css`, `modals.css`) |
+| `src/omniscribe/static/index.html` | Restructured workstation layout with theme toggle, floating control dock, and modal system |
 ### 2026-07-13: God-module decomposition — `core/ocr/`, `core/grounded/`, `api/services/ocr_*.py`
 
 A four-phase decomposition targeted the two largest god-modules in the
@@ -249,18 +249,18 @@ codebase (`core/ocr.py` and `core/grounded.py`) and the
 
 | File | Responsibility |
 | --- | --- |
-| `src/local_deepl/core/ocr/__init__.py` | Re-exports the public OCR surface (`OCRProcessor`, helpers, prompts) for backwards compatibility |
-| `src/local_deepl/core/ocr/processor.py` | LiteLLM-backed `OCRProcessor.run` and per-page retry/filter orchestration |
-| `src/local_deepl/core/ocr/prompts.py` | System + user prompt templates, OCR-specific limits, response filters |
-| `src/local_deepl/core/grounded/__init__.py` | Re-exports the grounded OCR backend, models, parsers, and hosted adapters |
-| `src/local_deepl/core/grounded/models.py` | Grounded block/response models and backend protocol |
-| `src/local_deepl/core/grounded/prompted.py` | Prompted and hosted grounded OCR backends |
-| `src/local_deepl/core/grounded/parsers.py` | Bbox-native JSON response parsers and axis-order normalization |
-| `src/local_deepl/core/grounded/rasterize.py` | Grounded PDF/image rasterization helpers |
-| `src/local_deepl/api/services/ocr_settings.py` | Form-parameter resolution for `POST /api/process` |
-| `src/local_deepl/api/services/ocr_pipeline_factory.py` | Pipeline construction and backend-model verification for `POST /api/process` |
-| `src/local_deepl/api/services/ocr_response.py` | Response assembly, validation-error envelopes, and `FileResponse` construction with token-bound headers |
-| `src/local_deepl/api/routers/ocr.py` | Shrunk to a thin orchestrator that just chains the services above |
+| `src/omniscribe/core/ocr/__init__.py` | Re-exports the public OCR surface (`OCRProcessor`, helpers, prompts) for backwards compatibility |
+| `src/omniscribe/core/ocr/processor.py` | LiteLLM-backed `OCRProcessor.run` and per-page retry/filter orchestration |
+| `src/omniscribe/core/ocr/prompts.py` | System + user prompt templates, OCR-specific limits, response filters |
+| `src/omniscribe/core/grounded/__init__.py` | Re-exports the grounded OCR backend, models, parsers, and hosted adapters |
+| `src/omniscribe/core/grounded/models.py` | Grounded block/response models and backend protocol |
+| `src/omniscribe/core/grounded/prompted.py` | Prompted and hosted grounded OCR backends |
+| `src/omniscribe/core/grounded/parsers.py` | Bbox-native JSON response parsers and axis-order normalization |
+| `src/omniscribe/core/grounded/rasterize.py` | Grounded PDF/image rasterization helpers |
+| `src/omniscribe/api/services/ocr_settings.py` | Form-parameter resolution for `POST /api/process` |
+| `src/omniscribe/api/services/ocr_pipeline_factory.py` | Pipeline construction and backend-model verification for `POST /api/process` |
+| `src/omniscribe/api/services/ocr_response.py` | Response assembly, validation-error envelopes, and `FileResponse` construction with token-bound headers |
+| `src/omniscribe/api/routers/ocr.py` | Shrunk to a thin orchestrator that just chains the services above |
 | `tests/test_api_safety.py` | Patches updated to point at `api.services.ocr_pipeline_factory.*` instead of `api.routers.ocr.*` |
 | `ARCHITECTURE.md` | Directory table updated to reflect the four new service modules and the corrected `ai.py` role |
 
@@ -274,20 +274,20 @@ the three services.
 
 | File | Responsibility |
 | --- | --- |
-| `src/local_deepl/core/workflows/base.py` | New `EngineBase` plus `OutputWriter`, `ProgressCallback`, `WarningCallback`, and `_notify` helpers shared by both engines |
-| `src/local_deepl/core/workflows/hybrid.py` | New `HybridEngine` — extract the existing hybrid orchestration from `pipeline.py` (Surya detect → VLM OCR → DP align → refine → post-process → processors → output) |
-| `src/local_deepl/core/workflows/grounded.py` | New `GroundedEngine` — single bbox-native VLM call → post-process → processors → output |
-| `src/local_deepl/core/workflows/__init__.py` | Re-export the engines and callback aliases |
-| `src/local_deepl/pipeline.py` | Shrink `OCRPipeline` to a facade that picks `HybridEngine` or `GroundedEngine` based on injected components |
+| `src/omniscribe/core/workflows/base.py` | New `EngineBase` plus `OutputWriter`, `ProgressCallback`, `WarningCallback`, and `_notify` helpers shared by both engines |
+| `src/omniscribe/core/workflows/hybrid.py` | New `HybridEngine` — extract the existing hybrid orchestration from `pipeline.py` (Surya detect → VLM OCR → DP align → refine → post-process → processors → output) |
+| `src/omniscribe/core/workflows/grounded.py` | New `GroundedEngine` — single bbox-native VLM call → post-process → processors → output |
+| `src/omniscribe/core/workflows/__init__.py` | Re-export the engines and callback aliases |
+| `src/omniscribe/pipeline.py` | Shrink `OCRPipeline` to a facade that picks `HybridEngine` or `GroundedEngine` based on injected components |
 | `ARCHITECTURE.md` | Document the new sub-package and the facade pattern in `pipeline.py` |
 
 ### 2026-06-14: DOCX export route + `core/docx_writer.py`
 
 | File | Responsibility |
 | --- | --- |
-| `src/local_deepl/core/docx_writer.py` | New `convert_markdown_to_docx(markdown_text: str) -> io.BytesIO` helper |
-| `src/local_deepl/api/schemas/requests.py` | New `ExportDocxRequest` typed schema |
-| `src/local_deepl/api/routers/extraction.py` | New `POST /api/export/docx` route that streams the generated `.docx` |
+| `src/omniscribe/core/docx_writer.py` | New `convert_markdown_to_docx(markdown_text: str) -> io.BytesIO` helper |
+| `src/omniscribe/api/schemas/requests.py` | New `ExportDocxRequest` typed schema |
+| `src/omniscribe/api/routers/extraction.py` | New `POST /api/export/docx` route that streams the generated `.docx` |
 | `pyproject.toml` | Already lists `python-docx>=1.1.0` (no change required) |
 | `ARCHITECTURE.md` | Document the docx export in the directory table and the Web API surface |
 
@@ -295,7 +295,7 @@ the three services.
 
 | File | Responsibility |
 | --- | --- |
-| `src/local_deepl/evaluation.py` | New package-root module: `GTBlock`, `BlockMatch`, `ConfidenceReport`, `load_ground_truth`, `text_similarity`, `compute_report`, `iou` (auto-detects `[x0,y0,x1,y1]` vs `[y0,x0,y1,x1]` fixture axis order) |
+| `src/omniscribe/evaluation.py` | New package-root module: `GTBlock`, `BlockMatch`, `ConfidenceReport`, `load_ground_truth`, `text_similarity`, `compute_report`, `iou` (auto-detects `[x0,y0,x1,y1]` vs `[y0,x0,y1,x1]` fixture axis order) |
 | `scripts/confidence_eval.py` | New developer script — runs hybrid and grounded paths against `examples/*.pdf` and reports per-document block recall, IoU, and text similarity |
 | `scripts/confidence_image.py` | New developer script — same comparison on a single image, defaults to `examples/image.avif` |
 | `examples/` | New sample inputs (`dense.pdf`, `digital.pdf`, `handwritten.pdf`, `hybrid.pdf`, `image.png`, `image.avif`, `notes.pdf`) |
@@ -306,9 +306,9 @@ the three services.
 
 | File | Responsibility |
 | --- | --- |
-| `src/local_deepl/api/schemas/requests.py` | New `ExtractionTemplate` StrEnum (`invoice`, `resume`, `academic`, `custom`) and the `ExtractionRequest` model with `template` and `custom_prompt` fields |
-| `src/local_deepl/api/routers/ai.py` | New `extract_structured_data` service with fenced-JSON parsing, retry, and stable error mapping |
-| `src/local_deepl/api/routers/extraction.py` | New router that wires the schema, the AI service, and the SSRF guard for `api_base` |
+| `src/omniscribe/api/schemas/requests.py` | New `ExtractionTemplate` StrEnum (`invoice`, `resume`, `academic`, `custom`) and the `ExtractionRequest` model with `template` and `custom_prompt` fields |
+| `src/omniscribe/api/routers/ai.py` | New `extract_structured_data` service with fenced-JSON parsing, retry, and stable error mapping |
+| `src/omniscribe/api/routers/extraction.py` | New router that wires the schema, the AI service, and the SSRF guard for `api_base` |
 | `tests/test_extraction.py` | Cover template dispatch, custom-prompt fallback, and SSRF fail-closed behavior |
 | `ARCHITECTURE.md` | Document the new router and the four extraction templates in the Web API surface |
 
@@ -316,57 +316,57 @@ the three services.
 
 | File | Responsibility |
 | --- | --- |
-| `src/local_deepl/core/document.py` | Provide the normalized `DocumentResult` handoff used by post-OCR document processors |
-| `src/local_deepl/core/processors.py` | Define built-in local processors and map user-facing names to deterministic processor instances |
-| `src/local_deepl/api/schemas/requests.py` | Validate `document_processors` for config JSON and multipart OCR requests |
-| `src/local_deepl/api/routers/ocr.py` | Instantiate selected processors, pass them into `OCRPipeline`, and expose quality metadata through `X-Document-Quality` when available |
-| `src/local_deepl/static/js/state_and_api.js` | Persist and submit web-selected document processors |
-| `src/local_deepl/static/index.html` | Expose Reading Order, Quality Analysis, Structure Analysis, and Section Analysis toggles in Advanced Configuration |
+| `src/omniscribe/core/document.py` | Provide the normalized `DocumentResult` handoff used by post-OCR document processors |
+| `src/omniscribe/core/processors.py` | Define built-in local processors and map user-facing names to deterministic processor instances |
+| `src/omniscribe/api/schemas/requests.py` | Validate `document_processors` for config JSON and multipart OCR requests |
+| `src/omniscribe/api/routers/ocr.py` | Instantiate selected processors, pass them into `OCRPipeline`, and expose quality metadata through `X-Document-Quality` when available |
+| `src/omniscribe/static/js/state_and_api.js` | Persist and submit web-selected document processors |
+| `src/omniscribe/static/index.html` | Expose Reading Order, Quality Analysis, Structure Analysis, and Section Analysis toggles in Advanced Configuration |
 | `tests/test_document_processor_selection.py` | Cover processor selection parsing, validation, and factory mapping |
 
 ### 2026-06-09: Stage 2 local structure analysis processor
 
 | File | Responsibility |
 | --- | --- |
-| `src/local_deepl/core/processors.py` | Add `structure_analysis`, a deterministic local processor that classifies blocks as headings, paragraphs, list items, key-values, table candidates, or empty blocks |
-| `src/local_deepl/api/routers/ocr.py` | Expose page-level structure summaries through `X-Document-Structure` when structure metadata is present |
-| `src/local_deepl/static/index.html` | Add the Structure Analysis opt-in control |
+| `src/omniscribe/core/processors.py` | Add `structure_analysis`, a deterministic local processor that classifies blocks as headings, paragraphs, list items, key-values, table candidates, or empty blocks |
+| `src/omniscribe/api/routers/ocr.py` | Expose page-level structure summaries through `X-Document-Structure` when structure metadata is present |
+| `src/omniscribe/static/index.html` | Add the Structure Analysis opt-in control |
 | `tests/test_document.py` | Cover block classification without rewriting output text |
 
 ### 2026-06-09: Stage 3 local section analysis processor
 
 | File | Responsibility |
 | --- | --- |
-| `src/local_deepl/core/processors.py` | Add `section_analysis`, a deterministic local processor that assigns blocks to detected heading sections across page boundaries |
-| `src/local_deepl/api/routers/ocr.py` | Expose page-level section summaries through `X-Document-Sections` when section metadata is present |
-| `src/local_deepl/static/index.html` | Add the Section Analysis opt-in control |
+| `src/omniscribe/core/processors.py` | Add `section_analysis`, a deterministic local processor that assigns blocks to detected heading sections across page boundaries |
+| `src/omniscribe/api/routers/ocr.py` | Expose page-level section summaries through `X-Document-Sections` when section metadata is present |
+| `src/omniscribe/static/index.html` | Add the Section Analysis opt-in control |
 | `tests/test_document.py` | Cover section grouping while preserving original block text |
 
 ### 2026-06-09: Stage 4 document metadata artifact surface
 
 | File | Responsibility |
 | --- | --- |
-| `src/local_deepl/api/services/document_metadata.py` | Build compact JSON-safe metadata reports from `DocumentResult` page/block processor annotations and write them atomically as temporary artifacts |
-| `src/local_deepl/api/routers/ocr.py` | Issue `X-Document-Metadata-Artifact-Id` and `X-Document-Metadata-Artifact-Token` only when report content exists, and serve protected `GET /metadata/{artifact_id}` |
+| `src/omniscribe/api/services/document_metadata.py` | Build compact JSON-safe metadata reports from `DocumentResult` page/block processor annotations and write them atomically as temporary artifacts |
+| `src/omniscribe/api/routers/ocr.py` | Issue `X-Document-Metadata-Artifact-Id` and `X-Document-Metadata-Artifact-Token` only when report content exists, and serve protected `GET /metadata/{artifact_id}` |
 | `tests/test_api_safety.py` | Cover token-bound metadata artifact access and payload shape without changing text artifact behavior |
 
 ### 2026-06-09: Stage 5-12 Web/API document intelligence
 
 | File | Responsibility |
 | --- | --- |
-| `pyproject.toml` | Deprecate the user-facing `local-deepl` CLI script and drop the CLI-only `rich` dependency; keep `local-deepl-server`. `OCRPipeline` is still importable for in-process programmatic use. |
-| `src/local_deepl/core/preprocessing.py` | Add opt-in local page preprocessing diagnostics for the hybrid image path |
-| `src/local_deepl/core/processors.py` | Add `layout_enrichment` and `table_extraction` deterministic processors |
-| `src/local_deepl/api/services/document_exports.py` | Add token-bound JSON, Markdown, text, Docling-compatible, and MinerU-compatible exports |
-| `src/local_deepl/core/routing.py` | Record default-off quality routing recommendations in document metadata |
-| `src/local_deepl/api/services/workflow.py` | Expose deterministic Web/API workflow summaries |
-| `src/local_deepl/core/evaluation.py` | Add local evaluation metrics for text, bbox, reading-order, and table coverage |
+| `pyproject.toml` | Deprecate the user-facing `omniscribe` CLI script and drop the CLI-only `rich` dependency; keep `omniscribe-server`. `OCRPipeline` is still importable for in-process programmatic use. |
+| `src/omniscribe/core/preprocessing.py` | Add opt-in local page preprocessing diagnostics for the hybrid image path |
+| `src/omniscribe/core/processors.py` | Add `layout_enrichment` and `table_extraction` deterministic processors |
+| `src/omniscribe/api/services/document_exports.py` | Add token-bound JSON, Markdown, text, Docling-compatible, and MinerU-compatible exports |
+| `src/omniscribe/core/routing.py` | Record default-off quality routing recommendations in document metadata |
+| `src/omniscribe/api/services/workflow.py` | Expose deterministic Web/API workflow summaries |
+| `src/omniscribe/core/evaluation.py` | Add local evaluation metrics for text, bbox, reading-order, and table coverage |
 
 ### 2026-06-02: Direct grounded PDF pixmap conversion
 
 | File | Responsibility |
 | --- | --- |
-| `src/local_deepl/core/grounded/rasterize.py` | Convert PDF pixmaps directly into Pillow images before emitting the final grounded OCR thumbnail JPEG |
+| `src/omniscribe/core/grounded/rasterize.py` | Convert PDF pixmaps directly into Pillow images before emitting the final grounded OCR thumbnail JPEG |
 | `tests/test_grounded.py` | Guard against restoring the redundant intermediate JPEG decode |
 | `ARCHITECTURE.md` | Record the existing module layout and the direct pixmap conversion invariant |
 
@@ -374,14 +374,14 @@ the three services.
 
 | File | Responsibility |
 | --- | --- |
-| `src/local_deepl/api/schemas/requests.py` | Validate config JSON, OCR multipart settings, translation requests, and extraction requests with explicit enums, booleans, and numeric ranges |
-| `src/local_deepl/api/services/security.py` | Enforce streaming upload byte limits, content-signature upload type detection, stable API error messages, and server-issued text artifact IDs |
-| `src/local_deepl/api/routers/config.py` | Apply typed config validation, SSRF checks, safe environment parsing, and non-leaking model discovery errors |
-| `src/local_deepl/api/routers/ocr.py` | Apply typed OCR/AI boundary validation, hardened upload dispatch, opaque text artifact retrieval, SSRF checks, and stable client-facing errors |
-| `src/local_deepl/utils/security.py` | Fail closed for malformed, unsupported, or unresolvable URLs and only allow local/private endpoints when `ALLOW_SSRF_LOCAL=true` is explicitly set |
-| `src/local_deepl/static/js/app.js` | Use server-issued text artifact IDs and render extraction status/errors/cards without HTML injection |
-| `src/local_deepl/static/js/state_and_api.js` | Build model select placeholder with DOM APIs before appending model-controlled option text |
-| `src/local_deepl/static/js/workspace_ui.js` | Provide safe DOM helpers for clearing elements and rendering extraction status cards |
+| `src/omniscribe/api/schemas/requests.py` | Validate config JSON, OCR multipart settings, translation requests, and extraction requests with explicit enums, booleans, and numeric ranges |
+| `src/omniscribe/api/services/security.py` | Enforce streaming upload byte limits, content-signature upload type detection, stable API error messages, and server-issued text artifact IDs |
+| `src/omniscribe/api/routers/config.py` | Apply typed config validation, SSRF checks, safe environment parsing, and non-leaking model discovery errors |
+| `src/omniscribe/api/routers/ocr.py` | Apply typed OCR/AI boundary validation, hardened upload dispatch, opaque text artifact retrieval, SSRF checks, and stable client-facing errors |
+| `src/omniscribe/utils/security.py` | Fail closed for malformed, unsupported, or unresolvable URLs and only allow local/private endpoints when `ALLOW_SSRF_LOCAL=true` is explicitly set |
+| `src/omniscribe/static/js/app.js` | Use server-issued text artifact IDs and render extraction status/errors/cards without HTML injection |
+| `src/omniscribe/static/js/state_and_api.js` | Build model select placeholder with DOM APIs before appending model-controlled option text |
+| `src/omniscribe/static/js/workspace_ui.js` | Provide safe DOM helpers for clearing elements and rendering extraction status cards |
 | `tests/test_api_safety.py` | Cover config validation, SSRF fail-closed behavior, streaming upload validation, opaque text artifacts, stable API errors, and static JS sink removal |
 | `tests/test_security_qa.py` | Keep extraction JSON parsing deterministic under fail-closed SSRF validation |
 
@@ -389,12 +389,12 @@ the three services.
 
 | File | Responsibility |
 | --- | --- |
-| `src/local_deepl/core/translation_config.py` | Own typed translation settings and the deterministic optional-feature error used by core and API boundaries |
-| `src/local_deepl/core/translation.py` | Keep chunking and evaluation helpers importable without async extras, lazily build the LangGraph workflow, and accept injected translation settings |
-| `src/local_deepl/api/routers/config.py` | Adapt the mutable web runtime config into core-owned translation settings without exposing `_config` to core modules |
-| `src/local_deepl/api/celery_app.py` | Guard Celery imports and provide an import-safe fallback task facade when async extras are not installed |
-| `src/local_deepl/api/tasks.py` | Validate async translation task inputs and pass explicit translation settings into the core workflow |
-| `src/local_deepl/api/routers/ocr.py` | Validate async translation route inputs and return deterministic 503 responses when optional async extras are unavailable |
+| `src/omniscribe/core/translation_config.py` | Own typed translation settings and the deterministic optional-feature error used by core and API boundaries |
+| `src/omniscribe/core/translation.py` | Keep chunking and evaluation helpers importable without async extras, lazily build the LangGraph workflow, and accept injected translation settings |
+| `src/omniscribe/api/routers/config.py` | Adapt the mutable web runtime config into core-owned translation settings without exposing `_config` to core modules |
+| `src/omniscribe/api/celery_app.py` | Guard Celery imports and provide an import-safe fallback task facade when async extras are not installed |
+| `src/omniscribe/api/tasks.py` | Validate async translation task inputs and pass explicit translation settings into the core workflow |
+| `src/omniscribe/api/routers/ocr.py` | Validate async translation route inputs and return deterministic 503 responses when optional async extras are unavailable |
 | `pyproject.toml` | Move Celery, Redis, LangGraph, ChromaDB, and sentence-transformers into the `async-translation` extra with `translation` as an alias extra |
 | `tests/test_translation_boundary.py` | Cover guarded imports without async extras and explicit translation settings injection |
 
@@ -402,9 +402,9 @@ the three services.
 
 | File | Responsibility |
 | --- | --- |
-| `src/local_deepl/resources/dictionaries/ara.json.gz` | Packaged Arabic compiled spellcheck dictionary for installed distributions |
-| `src/local_deepl/resources/dictionaries/eng.json.gz` | Packaged English compiled spellcheck dictionary for installed distributions |
-| `src/local_deepl/core/postprocess.py` | Load packaged dictionaries first while retaining legacy repository-root and user-cache fallbacks |
+| `src/omniscribe/resources/dictionaries/ara.json.gz` | Packaged Arabic compiled spellcheck dictionary for installed distributions |
+| `src/omniscribe/resources/dictionaries/eng.json.gz` | Packaged English compiled spellcheck dictionary for installed distributions |
+| `src/omniscribe/core/postprocess.py` | Load packaged dictionaries first while retaining legacy repository-root and user-cache fallbacks |
 | `pyproject.toml` | Exclude bytecode cache artifacts from Hatch package builds |
 | `tests/test_dictionary_postprocess.py` | Cover packaged dictionary lookup and legacy repository-root fallback |
 
@@ -412,18 +412,18 @@ the three services.
 
 | File | Responsibility |
 | --- | --- |
-| `src/local_deepl/__init__.py` | Preserve package-level OCR exports through lazy lookups so `import local_deepl.server` does not load OCR core dependencies first |
-| `src/local_deepl/server.py` | Preserve `local_deepl.server:app` and `local_deepl.server:main` while deferring FastAPI, router, static-file, and uvicorn imports until the web app is created or run |
-| `tests/test_server_lazy_imports.py` | Verify base-install-safe `local_deepl.server` imports and deterministic missing-web-extra errors without uninstalling FastAPI |
+| `src/omniscribe/__init__.py` | Preserve package-level OCR exports through lazy lookups so `import omniscribe.server` does not load OCR core dependencies first |
+| `src/omniscribe/server.py` | Preserve `omniscribe.server:app` and `omniscribe.server:main` while deferring FastAPI, router, static-file, and uvicorn imports until the web app is created or run |
+| `tests/test_server_lazy_imports.py` | Verify base-install-safe `omniscribe.server` imports and deterministic missing-web-extra errors without uninstalling FastAPI |
 | `ARCHITECTURE.md` | Record the optional-web lazy import boundary for the server module |
 
 ### 2026-08-02: Quality Audit & YAGNI Improvements
 
 | File | Responsibility |
 | --- | --- |
-| `src/local_deepl/core/workflows/hybrid.py` | Re-raise `CircuitOpenError` explicitly in crop/box OCR exception handlers to prevent swallowing endpoint failures |
-| `src/local_deepl/core/grounded/prompted.py` | Offload grounded PIL crop and PNG buffer generation to thread pool via `asyncio.to_thread` |
-| `src/local_deepl/api/routers/ocr.py` | Handle `asyncio.CancelledError` on client disconnect without logging 500 stack traces, and wrap file cleanup calls in `asyncio.to_thread` |
-| `src/local_deepl/api/services/security.py` | Add parent directory confinement check in `cleanup_files` to ensure deleted paths reside in temporary storage |
+| `src/omniscribe/core/workflows/hybrid.py` | Re-raise `CircuitOpenError` explicitly in crop/box OCR exception handlers to prevent swallowing endpoint failures |
+| `src/omniscribe/core/grounded/prompted.py` | Offload grounded PIL crop and PNG buffer generation to thread pool via `asyncio.to_thread` |
+| `src/omniscribe/api/routers/ocr.py` | Handle `asyncio.CancelledError` on client disconnect without logging 500 stack traces, and wrap file cleanup calls in `asyncio.to_thread` |
+| `src/omniscribe/api/services/security.py` | Add parent directory confinement check in `cleanup_files` to ensure deleted paths reside in temporary storage |
 | `frontend/src/lib/components/workstation/RightControlDock.svelte` | Add `role="button"`, `tabindex="0"`, and `onkeydown` keyboard trigger to target document drop zone for accessibility compliance |
 | `frontend/src/lib/components/workstation/BottomProgressDock.svelte` | Rename outer container ID to `workstation-progress-dock` to eliminate duplicate DOM ID conflicts |

@@ -1642,126 +1642,6 @@ wheels = [
 ]
 
 [[package]]
-name = "local-deepl"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "httpx" },
-    { name = "openai" },
-    { name = "pillow" },
-    { name = "pymupdf" },
-    { name = "pyspellchecker" },
-    { name = "python-docx" },
-    { name = "python-dotenv" },
-    { name = "requests" },
-    { name = "surya-ocr" },
-    { name = "torch" },
-    { name = "torchvision" },
-    { name = "tqdm" },
-]
-
-[package.optional-dependencies]
-async-translation = [
-    { name = "celery" },
-    { name = "langgraph" },
-    { name = "redis" },
-]
-comet = [
-    { name = "unbabel-comet" },
-]
-glossary = [
-    { name = "chardet" },
-    { name = "defusedxml" },
-    { name = "gitpython" },
-    { name = "openpyxl" },
-    { name = "sqlalchemy" },
-]
-memory = [
-    { name = "chromadb" },
-    { name = "sentence-transformers" },
-]
-nllb = [
-    { name = "sentencepiece" },
-    { name = "transformers" },
-]
-preprocessing = [
-    { name = "numpy" },
-    { name = "opencv-python-headless" },
-]
-quality = [
-    { name = "sacrebleu" },
-]
-trocr = [
-    { name = "safetensors" },
-    { name = "sentencepiece" },
-    { name = "transformers" },
-]
-web = [
-    { name = "fastapi" },
-    { name = "python-multipart" },
-    { name = "uvicorn" },
-    { name = "websockets" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pyyaml" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "celery", marker = "extra == 'async-translation'", specifier = ">=5.4.0" },
-    { name = "chardet", marker = "extra == 'glossary'", specifier = ">=5.2.0" },
-    { name = "chromadb", marker = "extra == 'memory'", specifier = ">=0.5.0" },
-    { name = "defusedxml", marker = "extra == 'glossary'", specifier = ">=0.7.1" },
-    { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.124.4" },
-    { name = "gitpython", marker = "extra == 'glossary'", specifier = ">=3.1.0" },
-    { name = "httpx", specifier = ">=0.27.0" },
-    { name = "langgraph", marker = "extra == 'async-translation'", specifier = ">=0.1.0" },
-    { name = "numpy", marker = "extra == 'preprocessing'", specifier = ">=1.24.0" },
-    { name = "openai", specifier = ">=2.11.0" },
-    { name = "opencv-python-headless", marker = "extra == 'preprocessing'", specifier = ">=4.8.0" },
-    { name = "openpyxl", marker = "extra == 'glossary'", specifier = ">=3.1.0" },
-    { name = "pillow", specifier = ">=11.3" },
-    { name = "pymupdf", specifier = ">=1.26.7" },
-    { name = "pyspellchecker", specifier = ">=0.8.1" },
-    { name = "python-docx", specifier = ">=1.1.0" },
-    { name = "python-dotenv", specifier = ">=1.2.1" },
-    { name = "python-multipart", marker = "extra == 'web'", specifier = ">=0.0.20" },
-    { name = "redis", marker = "extra == 'async-translation'", specifier = ">=5.0.0" },
-    { name = "requests", specifier = ">=2.31" },
-    { name = "sacrebleu", marker = "extra == 'quality'", specifier = ">=2.4.0" },
-    { name = "safetensors", marker = "extra == 'trocr'", specifier = ">=0.4.0" },
-    { name = "sentence-transformers", marker = "extra == 'memory'", specifier = ">=5.5.1" },
-    { name = "sentencepiece", marker = "extra == 'nllb'", specifier = ">=0.2.0" },
-    { name = "sentencepiece", marker = "extra == 'trocr'", specifier = ">=0.2.0" },
-    { name = "sqlalchemy", marker = "extra == 'glossary'", specifier = ">=2.0.0" },
-    { name = "surya-ocr", specifier = ">=0.17.0" },
-    { name = "torch", specifier = ">=2.0.0" },
-    { name = "torchvision", specifier = ">=0.15.0" },
-    { name = "tqdm", specifier = ">=4.67.1" },
-    { name = "transformers", marker = "extra == 'nllb'", specifier = ">=4.45.0" },
-    { name = "transformers", marker = "extra == 'trocr'", specifier = ">=4.45.0" },
-    { name = "unbabel-comet", marker = "extra == 'comet'", specifier = ">=2.2.0" },
-    { name = "uvicorn", marker = "extra == 'web'", specifier = ">=0.38.0" },
-    { name = "websockets", marker = "extra == 'web'", specifier = ">=10.0,<14.0" },
-]
-provides-extras = ["web", "preprocessing", "async-translation", "memory", "trocr", "nllb", "quality", "comet", "glossary"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "mypy", specifier = ">=1.9.0" },
-    { name = "pytest", specifier = ">=8.0" },
-    { name = "pytest-asyncio", specifier = ">=0.23" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "ruff", specifier = ">=0.3.0" },
-]
-
-[[package]]
 name = "lxml"
 version = "6.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2452,6 +2332,126 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/0b/5f/19930f824ffeb0ad4372da4812c50edbd1434f678c90c2733e1188edfc63/oauthlib-3.3.1.tar.gz", hash = "sha256:0f0f8aa759826a193cf66c12ea1af1637f87b9b4622d46e866952bb022e538c9", size = 185918, upload-time = "2025-06-19T22:48:08.269Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/be/9c/92789c596b8df838baa98fa71844d84283302f7604ed565dafe5a6b5041a/oauthlib-3.3.1-py3-none-any.whl", hash = "sha256:88119c938d2b8fb88561af5f6ee0eec8cc8d552b7bb1f712743136eb7523b7a1", size = 160065, upload-time = "2025-06-19T22:48:06.508Z" },
+]
+
+[[package]]
+name = "omniscribe"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "httpx" },
+    { name = "openai" },
+    { name = "pillow" },
+    { name = "pymupdf" },
+    { name = "pyspellchecker" },
+    { name = "python-docx" },
+    { name = "python-dotenv" },
+    { name = "requests" },
+    { name = "surya-ocr" },
+    { name = "torch" },
+    { name = "torchvision" },
+    { name = "tqdm" },
+]
+
+[package.optional-dependencies]
+async-translation = [
+    { name = "celery" },
+    { name = "langgraph" },
+    { name = "redis" },
+]
+comet = [
+    { name = "unbabel-comet" },
+]
+glossary = [
+    { name = "chardet" },
+    { name = "defusedxml" },
+    { name = "gitpython" },
+    { name = "openpyxl" },
+    { name = "sqlalchemy" },
+]
+memory = [
+    { name = "chromadb" },
+    { name = "sentence-transformers" },
+]
+nllb = [
+    { name = "sentencepiece" },
+    { name = "transformers" },
+]
+preprocessing = [
+    { name = "numpy" },
+    { name = "opencv-python-headless" },
+]
+quality = [
+    { name = "sacrebleu" },
+]
+trocr = [
+    { name = "safetensors" },
+    { name = "sentencepiece" },
+    { name = "transformers" },
+]
+web = [
+    { name = "fastapi" },
+    { name = "python-multipart" },
+    { name = "uvicorn" },
+    { name = "websockets" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pyyaml" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "celery", marker = "extra == 'async-translation'", specifier = ">=5.4.0" },
+    { name = "chardet", marker = "extra == 'glossary'", specifier = ">=5.2.0" },
+    { name = "chromadb", marker = "extra == 'memory'", specifier = ">=0.5.0" },
+    { name = "defusedxml", marker = "extra == 'glossary'", specifier = ">=0.7.1" },
+    { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.124.4" },
+    { name = "gitpython", marker = "extra == 'glossary'", specifier = ">=3.1.0" },
+    { name = "httpx", specifier = ">=0.27.0" },
+    { name = "langgraph", marker = "extra == 'async-translation'", specifier = ">=0.1.0" },
+    { name = "numpy", marker = "extra == 'preprocessing'", specifier = ">=1.24.0" },
+    { name = "openai", specifier = ">=2.11.0" },
+    { name = "opencv-python-headless", marker = "extra == 'preprocessing'", specifier = ">=4.8.0" },
+    { name = "openpyxl", marker = "extra == 'glossary'", specifier = ">=3.1.0" },
+    { name = "pillow", specifier = ">=11.3" },
+    { name = "pymupdf", specifier = ">=1.26.7" },
+    { name = "pyspellchecker", specifier = ">=0.8.1" },
+    { name = "python-docx", specifier = ">=1.1.0" },
+    { name = "python-dotenv", specifier = ">=1.2.1" },
+    { name = "python-multipart", marker = "extra == 'web'", specifier = ">=0.0.20" },
+    { name = "redis", marker = "extra == 'async-translation'", specifier = ">=5.0.0" },
+    { name = "requests", specifier = ">=2.31" },
+    { name = "sacrebleu", marker = "extra == 'quality'", specifier = ">=2.4.0" },
+    { name = "safetensors", marker = "extra == 'trocr'", specifier = ">=0.4.0" },
+    { name = "sentence-transformers", marker = "extra == 'memory'", specifier = ">=5.5.1" },
+    { name = "sentencepiece", marker = "extra == 'nllb'", specifier = ">=0.2.0" },
+    { name = "sentencepiece", marker = "extra == 'trocr'", specifier = ">=0.2.0" },
+    { name = "sqlalchemy", marker = "extra == 'glossary'", specifier = ">=2.0.0" },
+    { name = "surya-ocr", specifier = ">=0.17.0" },
+    { name = "torch", specifier = ">=2.0.0" },
+    { name = "torchvision", specifier = ">=0.15.0" },
+    { name = "tqdm", specifier = ">=4.67.1" },
+    { name = "transformers", marker = "extra == 'nllb'", specifier = ">=4.45.0" },
+    { name = "transformers", marker = "extra == 'trocr'", specifier = ">=4.45.0" },
+    { name = "unbabel-comet", marker = "extra == 'comet'", specifier = ">=2.2.0" },
+    { name = "uvicorn", marker = "extra == 'web'", specifier = ">=0.38.0" },
+    { name = "websockets", marker = "extra == 'web'", specifier = ">=10.0,<14.0" },
+]
+provides-extras = ["web", "preprocessing", "async-translation", "memory", "trocr", "nllb", "quality", "comet", "glossary"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.9.0" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-asyncio", specifier = ">=0.23" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "ruff", specifier = ">=0.3.0" },
 ]
 
 [[package]]

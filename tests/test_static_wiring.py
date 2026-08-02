@@ -23,7 +23,7 @@ from urllib.parse import urlparse
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-STATIC_DIR = ROOT / "src" / "local_deepl" / "static"
+STATIC_DIR = ROOT / "src" / "omniscribe" / "static"
 INDEX_HTML = STATIC_DIR / "index.html"
 
 # External hosts we explicitly whitelist in ``index.html``. Anything not
@@ -74,7 +74,7 @@ def test_static_html_references_resolve_to_disk():
 
     for url in referenced:
         relative = url.lstrip("/")  # ''static/...'' on disk
-        target = ROOT / "src" / "local_deepl" / relative
+        target = ROOT / "src" / "omniscribe" / relative
         assert target.is_file(), (
             f"{url} referenced in index.html but missing on disk (looked at {target})"
         )

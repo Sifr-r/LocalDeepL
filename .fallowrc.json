@@ -1,10 +1,10 @@
 {
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
   "entry": [
-    "src/local_deepl/static/js/app.js",
-    "src/local_deepl/static/js/state_and_api.js",
-    "src/local_deepl/static/js/workspace_ui.js",
-    "src/local_deepl/static/index.html"
+    "src/omniscribe/static/js/app.js",
+    "src/omniscribe/static/js/state_and_api.js",
+    "src/omniscribe/static/js/workspace_ui.js",
+    "src/omniscribe/static/index.html"
   ],
   "rules": {
     "unresolved-imports": "off",

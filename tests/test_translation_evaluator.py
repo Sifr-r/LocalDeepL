@@ -19,8 +19,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from local_deepl.core import translation
-from local_deepl.core.translation import (
+from omniscribe.core import translation
+from omniscribe.core.translation import (
     MAX_TRANSLATION_ATTEMPTS,
     TranslationState,
     build_evaluation_prompt,

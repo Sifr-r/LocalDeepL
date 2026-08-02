@@ -6,8 +6,8 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
-from local_deepl.core.document import DenseMode
-from local_deepl.core.workflows.hybrid import HybridEngine
+from omniscribe.core.document import DenseMode
+from omniscribe.core.workflows.hybrid import HybridEngine
 
 
 def _structured(

@@ -1,5 +1,5 @@
 [project]
-name = "local-deepl"
+name = "omniscribe"
 version = "0.1.0"
 description = "Transform scanned and written documents into fully searchable, selectable PDFs using the power of Local LLM Vision"
 readme = "README.md"
@@ -8,7 +8,7 @@ license = { file = "LICENSE" }
 authors = [
     { name = "Ahnaf An Nafee", email = "ahnafnafee@gmail.com" },
 ]
-keywords = ["ocr", "pdf", "vision", "llm", "olmocr", "surya"]
+keywords = ["ocr", "pdf", "vision", "llm", "olmocr", "surya", "omniscribe"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "License :: OSI Approved :: MIT License",
@@ -102,12 +102,12 @@ glossary = [
 
 
 [project.scripts]
-local-deepl-server = "local_deepl.server:main"
+omniscribe-server = "omniscribe.server:main"
 
 [project.urls]
-Homepage = "https://github.com/Sifr-r/LocalDeepL"
-Repository = "https://github.com/Sifr-r/LocalDeepL"
-Issues = "https://github.com/Sifr-r/LocalDeepL/issues"
+Homepage = "https://github.com/Sifr-r/OmniScribe"
+Repository = "https://github.com/Sifr-r/OmniScribe"
+Issues = "https://github.com/Sifr-r/OmniScribe/issues"
 
 [build-system]
 requires = ["hatchling"]
@@ -120,11 +120,11 @@ exclude = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/local_deepl"]
+packages = ["src/omniscribe"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "src/local_deepl",
+    "src/omniscribe",
     "README.md",
     "LICENSE",
     "pyproject.toml",
@@ -202,27 +202,27 @@ ignore = [
 # Pre-existing violations surfaced when SIM/RUF/G were enabled. Each entry
 # defers the cleanup to a follow-up PR so the new rules stay active for new
 # code without bundling unrelated fixes into this commit.
-"src/local_deepl/api/routers/config.py" = ["RUF003"]
-"src/local_deepl/api/routers/extraction.py" = ["SIM105"]
-"src/local_deepl/api/routers/ocr.py" = ["RUF003"]
-"src/local_deepl/api/services/security.py" = ["SIM115"]
+"src/omniscribe/api/routers/config.py" = ["RUF003"]
+"src/omniscribe/api/routers/extraction.py" = ["SIM105"]
+"src/omniscribe/api/routers/ocr.py" = ["RUF003"]
+"src/omniscribe/api/services/security.py" = ["SIM115"]
 # SIM113 in core/grounded/zai.py: the manual counter in the Z.AI
 # poll loop is intentional — we need the elapsed-time accounting
 # alongside `poll_count` for the progress message.
-"src/local_deepl/core/grounded/zai.py" = ["SIM113"]
+"src/omniscribe/core/grounded/zai.py" = ["SIM113"]
 # RUF022 in core/{ocr,grounded}/__init__.py: the public/private grouping in
 # __all__ is intentional and more scannable than strict alphabetical.
-"src/local_deepl/core/grounded/__init__.py" = ["RUF022"]
-"src/local_deepl/core/ocr/__init__.py" = ["RUF022"]
+"src/omniscribe/core/grounded/__init__.py" = ["RUF022"]
+"src/omniscribe/core/ocr/__init__.py" = ["RUF022"]
 # SIM113 in core/grounded/prompted.py: the manual `completed` counter in the
 # `asyncio.as_completed` loop is intentional — we cannot use enumerate()
 # because `as_completed` yields futures, not indices.
-"src/local_deepl/core/grounded/prompted.py" = ["SIM113"]
+"src/omniscribe/core/grounded/prompted.py" = ["SIM113"]
 # RUF001 in core/ocr/filters.py: the curly quotes in `_trim` are intentional —
 # OCR can emit curly quotes that need stripping, not ASCII apostrophes.
-"src/local_deepl/core/ocr/filters.py" = ["RUF001"]
-"src/local_deepl/core/processors.py" = ["RUF002", "RUF005"]
-"src/local_deepl/evaluation.py" = ["RUF002"]
+"src/omniscribe/core/ocr/filters.py" = ["RUF001"]
+"src/omniscribe/core/processors.py" = ["RUF002", "RUF005"]
+"src/omniscribe/evaluation.py" = ["RUF002"]
 "tests/**/*.py" = [
     "RUF002", # × in docstring comments
     "RUF003", # × in inline comments
@@ -248,7 +248,7 @@ ignore_missing_imports = true
 # `core/` is the production hot path — require explicit type annotations
 # on every public function and method. Adds one extra line per function
 # in exchange for runtime safety and a faster mypy loop.
-module = "local_deepl.core.*"
+module = "omniscribe.core.*"
 disallow_untyped_defs = true
 check_untyped_defs = true
 

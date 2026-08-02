@@ -22,8 +22,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from local_deepl.api.routers import config
-from local_deepl.api.services.ai import resolve_ai_settings
+from omniscribe.api.routers import config
+from omniscribe.api.services.ai import resolve_ai_settings
 
 
 @pytest.fixture
@@ -46,7 +46,7 @@ def _reset_config():
 def _mock_is_ssrf_target():
     """Globally mock SSRF validation for config tests unless a test explicitly tests it."""
     with patch(
-        "local_deepl.api.routers.config.is_ssrf_target",
+        "omniscribe.api.routers.config.is_ssrf_target",
         new=AsyncMock(return_value=False),
     ):
         yield
@@ -130,7 +130,7 @@ def test_post_ocr_config_ignores_masked_placeholder(client: TestClient) -> None:
 
 def test_post_ocr_config_rejects_ssrf_base(client: TestClient) -> None:
     with patch(
-        "local_deepl.api.routers.config.is_ssrf_target",
+        "omniscribe.api.routers.config.is_ssrf_target",
         new=AsyncMock(return_value=True),
     ):
         response = client.post(
@@ -295,7 +295,7 @@ async def test_resolve_ai_settings_uses_namespaced_translation_key() -> None:
     }
 
     with patch(
-        "local_deepl.api.services.ai.is_ssrf_target",
+        "omniscribe.api.services.ai.is_ssrf_target",
         new=AsyncMock(return_value=False),
     ):
         settings = await resolve_ai_settings(
@@ -318,7 +318,7 @@ async def test_resolve_ai_settings_request_overrides_win() -> None:
     }
 
     with patch(
-        "local_deepl.api.services.ai.is_ssrf_target",
+        "omniscribe.api.services.ai.is_ssrf_target",
         new=AsyncMock(return_value=False),
     ):
         settings = await resolve_ai_settings(

@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import base64
 
-from local_deepl.core.document import DocumentResult
-from local_deepl.core.processors import (
+from omniscribe.core.document import DocumentResult
+from omniscribe.core.processors import (
     LayoutEnrichmentProcessor,
     QualityAnalysisProcessor,
     ReadingOrderProcessor,
@@ -23,8 +23,8 @@ from local_deepl.core.processors import (
     StructureAnalysisProcessor,
     TableExtractionProcessor,
 )
-from local_deepl.core.workflows.base import DocumentResultWriter
-from local_deepl.pipeline import OCRPipeline
+from omniscribe.core.workflows.base import DocumentResultWriter
+from omniscribe.pipeline import OCRPipeline
 
 # ---------------------------------------------------------------------------
 # Pure IR round-trip

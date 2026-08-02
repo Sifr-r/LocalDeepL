@@ -7,7 +7,7 @@ import io
 
 from PIL import Image
 
-from local_deepl.utils.image import (
+from omniscribe.utils.image import (
     crop_box_to_base64,
     crop_for_ocr,
     crop_for_ocr_from_image,

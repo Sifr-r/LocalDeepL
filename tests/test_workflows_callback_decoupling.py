@@ -7,7 +7,7 @@ those callbacks to the transport.
 
 Two angles of coverage:
   1. Static AST scan — `core/workflows/hybrid.py` must not import
-     from `local_deepl.api`. This is the cheap invariant test that
+     from `omniscribe.api`. This is the cheap invariant test that
      makes the dependency direction enforceable going forward.
   2. Behavioral — a `HybridEngine` built with a recording callback
      set emits per-block and per-page events for the right blocks.
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from local_deepl.core.callbacks import BlockCallbackSet
+from omniscribe.core.callbacks import BlockCallbackSet
 
 # ---------------------------------------------------------------------------
 # 1. Static dependency-direction check
@@ -32,32 +32,32 @@ from local_deepl.core.callbacks import BlockCallbackSet
 # sub-packages; each member file is included individually so a
 # regression in any one of them surfaces a clear failure.
 _CORE_FILES_TO_CHECK = [
-    Path("src/local_deepl/core/workflows/hybrid.py"),
-    Path("src/local_deepl/core/workflows/grounded.py"),
-    Path("src/local_deepl/core/workflows/base.py"),
-    Path("src/local_deepl/core/ocr/client.py"),
-    Path("src/local_deepl/core/ocr/exceptions.py"),
-    Path("src/local_deepl/core/ocr/filters.py"),
-    Path("src/local_deepl/core/ocr/processor.py"),
-    Path("src/local_deepl/core/ocr/prompts.py"),
-    Path("src/local_deepl/core/grounded/models.py"),
-    Path("src/local_deepl/core/grounded/parsers.py"),
-    Path("src/local_deepl/core/grounded/prompted.py"),
-    Path("src/local_deepl/core/grounded/rasterize.py"),
-    Path("src/local_deepl/core/pdf/rasterizer.py"),
-    Path("src/local_deepl/core/pdf/embedder.py"),
-    Path("src/local_deepl/core/pdf/handler.py"),
-    Path("src/local_deepl/core/aligner.py"),
-    Path("src/local_deepl/core/processors/base.py"),
-    Path("src/local_deepl/core/processors/reading_order.py"),
-    Path("src/local_deepl/core/processors/quality.py"),
-    Path("src/local_deepl/core/processors/structure.py"),
-    Path("src/local_deepl/core/processors/section.py"),
-    Path("src/local_deepl/core/processors/layout.py"),
-    Path("src/local_deepl/core/processors/table.py"),
-    Path("src/local_deepl/core/block_tree.py"),
-    Path("src/local_deepl/core/document.py"),
-    Path("src/local_deepl/core/translation_tree.py"),
+    Path("src/omniscribe/core/workflows/hybrid.py"),
+    Path("src/omniscribe/core/workflows/grounded.py"),
+    Path("src/omniscribe/core/workflows/base.py"),
+    Path("src/omniscribe/core/ocr/client.py"),
+    Path("src/omniscribe/core/ocr/exceptions.py"),
+    Path("src/omniscribe/core/ocr/filters.py"),
+    Path("src/omniscribe/core/ocr/processor.py"),
+    Path("src/omniscribe/core/ocr/prompts.py"),
+    Path("src/omniscribe/core/grounded/models.py"),
+    Path("src/omniscribe/core/grounded/parsers.py"),
+    Path("src/omniscribe/core/grounded/prompted.py"),
+    Path("src/omniscribe/core/grounded/rasterize.py"),
+    Path("src/omniscribe/core/pdf/rasterizer.py"),
+    Path("src/omniscribe/core/pdf/embedder.py"),
+    Path("src/omniscribe/core/pdf/handler.py"),
+    Path("src/omniscribe/core/aligner.py"),
+    Path("src/omniscribe/core/processors/base.py"),
+    Path("src/omniscribe/core/processors/reading_order.py"),
+    Path("src/omniscribe/core/processors/quality.py"),
+    Path("src/omniscribe/core/processors/structure.py"),
+    Path("src/omniscribe/core/processors/section.py"),
+    Path("src/omniscribe/core/processors/layout.py"),
+    Path("src/omniscribe/core/processors/table.py"),
+    Path("src/omniscribe/core/block_tree.py"),
+    Path("src/omniscribe/core/document.py"),
+    Path("src/omniscribe/core/translation_tree.py"),
 ]
 
 
@@ -65,7 +65,7 @@ _CORE_FILES_TO_CHECK = [
 def test_core_file_does_not_import_from_api(path: Path):
     """core/* must not import from api/* — the dependency direction
     is one-way. Pre-Phase-B this caught `hybrid.py` importing
-    `local_deepl.api.routers.websocket.manager` to push per-block
+    `omniscribe.api.routers.websocket.manager` to push per-block
     WebSocket frames, which made the engine un-importable in pure-core
     contexts (tests, in-process programmatic use)."""
     src = path.read_text(encoding="utf-8")
@@ -76,14 +76,14 @@ def test_core_file_does_not_import_from_api(path: Path):
         if isinstance(node, ast.ImportFrom):
             module = node.module
         elif isinstance(node, ast.Import):
-            # `import local_deepl.api.routers.websocket` shows up here.
+            # `import omniscribe.api.routers.websocket` shows up here.
             module = node.names[0].name if node.names else None
         else:
             continue
-        if module and "local_deepl.api" in module:
+        if module and "omniscribe.api" in module:
             offenders.append(f"line {node.lineno}: {module}")
     assert not offenders, (
-        f"{path} imports from local_deepl.api — core must not depend on api:\n"
+        f"{path} imports from omniscribe.api — core must not depend on api:\n"
         + "\n".join(offenders)
     )
 
@@ -164,7 +164,7 @@ def _build_minimal_ocr_processor_stub():
 async def test_hybrid_engine_invokes_per_block_callback(tmp_path):
     """The engine must call `on_block` once per non-empty block on
     each page, with a strictly monotonic `block_idx`."""
-    from local_deepl.core.workflows.hybrid import HybridEngine
+    from omniscribe.core.workflows.hybrid import HybridEngine
 
     aligner, ocr_processor, pdf_handler = _build_minimal_ocr_processor_stub()
 
@@ -202,7 +202,7 @@ async def test_hybrid_engine_skips_callbacks_when_not_provided(tmp_path):
     Pre-fix the engine imported the WS manager unconditionally,
     so even programmatic users (no WS) paid the import cost. The
     new code path is gated by `if cb.on_block is not None`."""
-    from local_deepl.core.workflows.hybrid import HybridEngine
+    from omniscribe.core.workflows.hybrid import HybridEngine
 
     aligner, ocr_processor, pdf_handler = _build_minimal_ocr_processor_stub()
     engine = HybridEngine(

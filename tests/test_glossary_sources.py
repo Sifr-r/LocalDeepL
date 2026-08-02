@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from local_deepl.core.glossary import Glossary
-from local_deepl.core.glossary_sources import (
+from omniscribe.core.glossary import Glossary
+from omniscribe.core.glossary_sources import (
     FormatNotAvailableError,
     GlossaryImportLimitError,
     parse,

@@ -15,8 +15,8 @@ import io
 
 from PIL import Image
 
-from local_deepl.core.ocr import OCRProcessor
-from local_deepl.core.trocr_engine import TrOCRResult
+from omniscribe.core.ocr import OCRProcessor
+from omniscribe.core.trocr_engine import TrOCRResult
 
 
 class _FakeTrOCREngine:
@@ -48,11 +48,11 @@ async def test_trocr_fallback_uses_recognize_with_raw_bytes(monkeypatch):
     `ocr(image_base64)` from the pre-fix code path."""
 
     # Replace `call_llm` inside the processor's namespace (not llm_client.py)
-    # because OCRProcessor imports it directly: `from local_deepl.core
+    # because OCRProcessor imports it directly: `from omniscribe.core
     # .llm_client import call_llm`. Patching the source module won't
     # affect the already-bound reference. After the P1 god-module split,
-    # the binding lives in `local_deepl.core.ocr.processor`.
-    from local_deepl.core.ocr import processor as processor_module
+    # the binding lives in `omniscribe.core.ocr.processor`.
+    from omniscribe.core.ocr import processor as processor_module
 
     async def _fake_call_llm(**kwargs) -> str:
         return "x"
@@ -88,7 +88,7 @@ async def test_trocr_fallback_swallows_engine_errors(monkeypatch):
         async def recognize(self, image_bytes: bytes) -> TrOCRResult:
             raise RuntimeError("synthetic TrOCR failure")
 
-    from local_deepl.core.ocr import processor as processor_module
+    from omniscribe.core.ocr import processor as processor_module
 
     async def _fake_call_llm(**kwargs) -> str:
         return "x"

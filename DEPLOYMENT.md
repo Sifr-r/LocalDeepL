@@ -1,6 +1,6 @@
 # Deployment Guide
 
-This document walks through deploying LocalDeepL in three common
+This document walks through deploying OmniScribe in three common
 profiles. **Start at the top, stop at the profile that matches your
 use case.** The local-desktop default is correct for almost every
 user; only step up to LAN / public-internet when you actually need
@@ -8,12 +8,12 @@ to.
 
 ## Profile 1: Local Desktop (Default)
 
-You're running LocalDeepL on your own laptop. You open the browser to
+You're running OmniScribe on your own laptop. You open the browser to
 `http://localhost:8000` and use it.
 
 ```bash
 uv sync --extra web
-uv run local-deepl-server --port 8000
+uv run omniscribe-server --port 8000
 ```
 
 That's it. No auth, no reverse proxy, no Docker. The Settings tab
@@ -37,11 +37,11 @@ You have a small home-lab or office server. You want to reach it from
 your laptop on the same Wi-Fi.
 
 ```bash
-export LOCAL_DEEPL_AUTH_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export OMNISCRIBE_AUTH_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 export ALLOW_SSRF_LOCAL=false
-export LOCAL_DEEPL_MAX_UPLOAD_MB=2048
-export LOCAL_DEEPL_RATE_LIMIT_PER_MIN=30
-uv run local-deepl-server --host 0.0.0.0 --port 8000
+export OMNISCRIBE_MAX_UPLOAD_MB=2048
+export OMNISCRIBE_RATE_LIMIT_PER_MIN=30
+uv run omniscribe-server --host 0.0.0.0 --port 8000
 ```
 
 Add the bearer token to the Settings tab's "API Token" field on each
@@ -50,7 +50,7 @@ persists across reloads (per-origin only).
 
 **What changed from profile 1:**
 
-- `LOCAL_DEEPL_AUTH_TOKEN` is required for every HTTP route. The
+- `OMNISCRIBE_AUTH_TOKEN` is required for every HTTP route. The
   WebSocket handshake also requires the per-channel session token
   (`X-Session-Token`).
 - `ALLOW_SSRF_LOCAL=false` blocks the URL fetcher from reaching
@@ -60,8 +60,8 @@ persists across reloads (per-origin only).
 
 ## Profile 3: Public Internet (Reverse Proxy)
 
-You're hosting LocalDeepL on a VPS or behind a domain. **Do not skip
-the reverse proxy** — LocalDeepL ships no TLS termination and you do
+You're hosting OmniScribe on a VPS or behind a domain. **Do not skip
+the reverse proxy** — OmniScribe ships no TLS termination and you do
 not want credentials in cleartext on a public IP.
 
 The reference deployment uses [Caddy](https://caddyserver.com/) for
@@ -87,10 +87,10 @@ services:
     ports:
       - "127.0.0.1:8000:8000"   # M9: localhost only
     environment:
-      LOCAL_DEEPL_AUTH_TOKEN: "${LOCAL_DEEPL_AUTH_TOKEN:?required}"
+      OMNISCRIBE_AUTH_TOKEN: "${OMNISCRIBE_AUTH_TOKEN:?required}"
       ALLOW_SSRF_LOCAL: "false"
-      LOCAL_DEEPL_MAX_UPLOAD_MB: "1024"
-      LOCAL_DEEPL_RATE_LIMIT_PER_MIN: "30"
+      OMNISCRIBE_MAX_UPLOAD_MB: "1024"
+      OMNISCRIBE_RATE_LIMIT_PER_MIN: "30"
       LLM_API_BASE: "${LLM_API_BASE:-http://host.docker.internal:1234/v1}"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
@@ -105,8 +105,8 @@ silent crashes; configure your orchestrator accordingly.
 ### Generate a Token
 
 ```bash
-export LOCAL_DEEPL_AUTH_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
-echo "$LOCAL_DEEPL_AUTH_TOKEN" >> ~/.config/localdeepl/token
+export OMNISCRIBE_AUTH_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
+echo "$OMNISCRIBE_AUTH_TOKEN" >> ~/.config/localdeepl/token
 ```
 
 The placeholder-check (M10) refuses to start if the value is the
@@ -118,8 +118,8 @@ If you want OCR and translation to accept different tokens (e.g. a
 read-only OCR key for an internal script):
 
 ```bash
-export LOCAL_DEEPL_AUTH_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
-export LOCAL_DEEPL_TRANSLATION_AUTH_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
+export OMNISCRIBE_AUTH_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
+export OMNISCRIBE_TRANSLATION_AUTH_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
 ```
 
 Routes under `/api/process*`, `/api/models/ocr*`, `/api/config/ocr*`
@@ -161,7 +161,7 @@ automatically. See `compose.yaml` for the full layout.
 
 ## Backup & Recovery
 
-LocalDeepL keeps all job artifacts in process memory
+OmniScribe keeps all job artifacts in process memory
 (`api/routers/state.py`). **A restart loses history.** There is no
 on-disk job database in the current release.
 
@@ -173,7 +173,7 @@ for the protocol.
 ## Upgrading
 
 1. `uv sync` (or `docker compose pull`)
-2. `uv run local-deepl-server` (or `docker compose up -d`)
+2. `uv run omniscribe-server` (or `docker compose up -d`)
 3. Visit `/api/health` to confirm the new version
 4. Review the [CHANGELOG](CHANGELOG.md) for breaking changes
 
@@ -184,7 +184,7 @@ server-side state. A version upgrade does not lose user settings.
 
 ```bash
 # Local install
-uv pip uninstall local-deepl
+uv pip uninstall omniscribe
 
 # Docker
 docker compose down --rmi all --volumes

@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from local_deepl.core.callbacks import BlockCallbackSet
-from local_deepl.core.grounded import GroundedBlock, GroundedResponse
-from local_deepl.core.workflows.grounded import GroundedEngine
+from omniscribe.core.callbacks import BlockCallbackSet
+from omniscribe.core.grounded import GroundedBlock, GroundedResponse
+from omniscribe.core.workflows.grounded import GroundedEngine
 
 
 class _StubGroundedBackend:

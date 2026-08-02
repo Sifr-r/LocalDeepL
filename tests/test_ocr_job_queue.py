@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from local_deepl.api.services.ocr_jobs import (
+from omniscribe.api.services.ocr_jobs import (
     OCRJobQueue,
     OCRJobResult,
     OCRJobStatus,

@@ -15,8 +15,8 @@ from PIL import Image, ImageDraw
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from local_deepl.core.aligner import HybridAligner
-from local_deepl.core.ocr import OCRProcessor
+from omniscribe.core.aligner import HybridAligner
+from omniscribe.core.ocr import OCRProcessor
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

@@ -31,7 +31,7 @@ sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from local_deepl import PromptedGroundedOCR  # noqa: E402
+from omniscribe import PromptedGroundedOCR  # noqa: E402
 
 
 async def main() -> None:

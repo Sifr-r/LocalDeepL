@@ -1,4 +1,4 @@
-# Multi-stage Dockerfile for the LocalDeepL web app.
+# Multi-stage Dockerfile for the OmniScribe web app.
 #
 # Two stages:
 #   1. ``runtime-base`` installs ``uv`` and the pinned dependency set.
@@ -32,8 +32,8 @@ WORKDIR /app
 # Copy dependency manifest first so the install layer is cacheable
 # independent of the source tree.
 COPY pyproject.toml uv.lock ./
-RUN mkdir -p /app/src/local_deepl \
- && touch /app/src/local_deepl/__init__.py \
+RUN mkdir -p /app/src/omniscribe \
+ && touch /app/src/omniscribe/__init__.py \
  && uv sync --extra web --extra async-translation --no-install-project
 
 # Copy the project source and complete the install.
@@ -51,4 +51,4 @@ EXPOSE 8000
 # Default: bind on all interfaces so the container is reachable from
 # the host on non-loopback adapters. Use ``--host 127.0.0.1`` when
 # running behind a reverse proxy that does not need LAN exposure.
-CMD ["local-deepl-server", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["omniscribe-server", "--host", "0.0.0.0", "--port", "8000"]

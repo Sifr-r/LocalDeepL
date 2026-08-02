@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from local_deepl.core.ocr import (
+from omniscribe.core.ocr import (
     CROP_PROMPT,
     OLMOCR_PAGE_PROMPT,
     LLMCallError,
@@ -90,7 +90,7 @@ class TestHallucinationFilter:
         in the searchable text layer."""
         import asyncio
 
-        from local_deepl.core.ocr import OCRProcessor
+        from omniscribe.core.ocr import OCRProcessor
 
         ocr = OCRProcessor.__new__(OCRProcessor)  # skip real init
         ocr.client = None  # type: ignore[assignment]  # never used; we override _chat below
@@ -107,7 +107,7 @@ class TestHallucinationFilter:
     def test_normal_crop_response_passes_through(self):
         import asyncio
 
-        from local_deepl.core.ocr import OCRProcessor
+        from omniscribe.core.ocr import OCRProcessor
 
         ocr = OCRProcessor.__new__(OCRProcessor)
         ocr.client = None  # type: ignore[assignment]
@@ -129,7 +129,7 @@ class TestHallucinationFilter:
         # when the response IS the pangram, not when it merely contains it.
         import asyncio
 
-        from local_deepl.core.ocr import OCRProcessor
+        from omniscribe.core.ocr import OCRProcessor
 
         ocr = OCRProcessor.__new__(OCRProcessor)
         ocr.client = None  # type: ignore[assignment]
@@ -152,7 +152,7 @@ class TestHallucinationFilter:
         # normalization must still recognise it as the fallback.
         import asyncio
 
-        from local_deepl.core.ocr import OCRProcessor
+        from omniscribe.core.ocr import OCRProcessor
 
         def _make_fake(response: str):
             async def _fake(*a, **kw):

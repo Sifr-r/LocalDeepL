@@ -1,4 +1,4 @@
-# Pre-commit hooks for LocalDeepL.
+# Pre-commit hooks for OmniScribe.
 #
 # Install once after cloning: `uv tool run pre-commit install`.
 # The `uv lock` hook keeps ``uv.lock`` in sync with ``pyproject.toml``

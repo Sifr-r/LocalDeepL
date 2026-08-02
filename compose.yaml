@@ -1,4 +1,4 @@
-# Local docker-compose stack for LocalDeepL.
+# Local docker-compose stack for OmniScribe.
 #
 # Services:
 #   * ``api``    - FastAPI web app (port 8000). Always-on.
@@ -16,7 +16,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: local-deepl:app
+    image: omniscribe:app
     ports:
       - "8000:8000"
     environment:
@@ -26,10 +26,10 @@ services:
       # exposes the LM Studio server on.
       LLM_API_BASE: http://host.docker.internal:1234/v1
       # Recommended security defaults. See README "Security" section.
-      LOCAL_DEEPL_MAX_UPLOAD_MB: "100"
-      LOCAL_DEEPL_RATE_LIMIT_PER_MIN: "60"
+      OMNISCRIBE_MAX_UPLOAD_MB: "100"
+      OMNISCRIBE_RATE_LIMIT_PER_MIN: "60"
       # Uncomment and regenerate a strong secret to enable auth.
-      # LOCAL_DEEPL_AUTH_TOKEN: change-me-in-prod
+      # OMNISCRIBE_AUTH_TOKEN: change-me-in-prod
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -39,8 +39,8 @@ services:
     profiles: ["default"]
 
   worker:
-    image: local-deepl:app
-    command: ["celery", "-A", "local_deepl.api.tasks", "worker", "--loglevel=info", "--pool=solo"]
+    image: omniscribe:app
+    command: ["celery", "-A", "omniscribe.api.tasks", "worker", "--loglevel=info", "--pool=solo"]
     environment:
       LLM_API_BASE: http://host.docker.internal:1234/v1
     extra_hosts:
@@ -71,4 +71,4 @@ services:
 
 volumes:
   redis-data:
-    name: local-deepl-redis-data
+    name: omniscribe-redis-data

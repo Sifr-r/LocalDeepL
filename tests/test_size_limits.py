@@ -9,7 +9,7 @@ Pins the new default upload cap (10 GB) and the absolute ceiling (100 GB):
   or under the cap pass through, and returns the documented 413 envelope
   (with the ``limit_bytes`` / ``limit_bytes_mb`` / ``hint`` fields) when
   the body exceeds the cap.
-* ``MAX_UPLOAD_BYTES`` in :mod:`local_deepl.api.services.security` matches
+* ``MAX_UPLOAD_BYTES`` in :mod:`omniscribe.api.services.security` matches
   the security-config default so the in-process upload validator can't
   silently fall behind the middleware cap.
 
@@ -40,9 +40,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 def test_security_settings_default_is_at_least_10gb(monkeypatch: pytest.MonkeyPatch):
     """Default upload cap is at least 10 GB (10240 MB)."""
-    monkeypatch.delenv("LOCAL_DEEPL_MAX_UPLOAD_MB", raising=False)
+    monkeypatch.delenv("OMNISCRIBE_MAX_UPLOAD_MB", raising=False)
 
-    from local_deepl.api.services.security_config import (
+    from omniscribe.api.services.security_config import (
         ABSOLUTE_MAX_UPLOAD_MB,
         DEFAULT_MAX_UPLOAD_MB,
         SecuritySettings,
@@ -61,9 +61,9 @@ def test_security_settings_default_is_at_least_10gb(monkeypatch: pytest.MonkeyPa
 
 def test_security_settings_accepts_10gb_override(monkeypatch: pytest.MonkeyPatch):
     """An explicit 10240 MB override is honoured verbatim."""
-    monkeypatch.setenv("LOCAL_DEEPL_MAX_UPLOAD_MB", "10240")
+    monkeypatch.setenv("OMNISCRIBE_MAX_UPLOAD_MB", "10240")
 
-    from local_deepl.api.services.security_config import SecuritySettings
+    from omniscribe.api.services.security_config import SecuritySettings
 
     settings = SecuritySettings.from_env()
     assert settings.max_upload_bytes == 10240 * 1024 * 1024
@@ -74,9 +74,9 @@ def test_security_settings_accepts_large_overrides(
     monkeypatch: pytest.MonkeyPatch, mb_value: int
 ):
     """Operators can dial the cap anywhere between 10 GB and 100 GB."""
-    monkeypatch.setenv("LOCAL_DEEPL_MAX_UPLOAD_MB", str(mb_value))
+    monkeypatch.setenv("OMNISCRIBE_MAX_UPLOAD_MB", str(mb_value))
 
-    from local_deepl.api.services.security_config import SecuritySettings
+    from omniscribe.api.services.security_config import SecuritySettings
 
     settings = SecuritySettings.from_env()
     assert settings.max_upload_bytes == mb_value * 1024 * 1024
@@ -86,9 +86,9 @@ def test_security_settings_clamps_ridiculous_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Anything above the absolute ceiling is clamped, not honoured verbatim."""
-    monkeypatch.setenv("LOCAL_DEEPL_MAX_UPLOAD_MB", "99999999")
+    monkeypatch.setenv("OMNISCRIBE_MAX_UPLOAD_MB", "99999999")
 
-    from local_deepl.api.services.security_config import (
+    from omniscribe.api.services.security_config import (
         ABSOLUTE_MAX_UPLOAD_MB,
         SecuritySettings,
     )
@@ -100,8 +100,8 @@ def test_security_settings_clamps_ridiculous_overrides(
 def test_security_settings_clamps_zero_and_negative(monkeypatch: pytest.MonkeyPatch):
     """Operators can't lock themselves out by setting a zero/negative cap."""
     for raw in ("0", "-5"):
-        monkeypatch.setenv("LOCAL_DEEPL_MAX_UPLOAD_MB", raw)
-        from local_deepl.api.services.security_config import SecuritySettings
+        monkeypatch.setenv("OMNISCRIBE_MAX_UPLOAD_MB", raw)
+        from omniscribe.api.services.security_config import SecuritySettings
 
         settings = SecuritySettings.from_env()
         assert settings.max_upload_bytes >= 1024 * 1024
@@ -115,8 +115,8 @@ def test_security_settings_module_constant_matches_default():
     a request rejected by one layer can be silently accepted by the
     other.
     """
-    from local_deepl.api.services.security import MAX_UPLOAD_BYTES
-    from local_deepl.api.services.security_config import DEFAULT_MAX_UPLOAD_MB
+    from omniscribe.api.services.security import MAX_UPLOAD_BYTES
+    from omniscribe.api.services.security_config import DEFAULT_MAX_UPLOAD_MB
 
     assert MAX_UPLOAD_BYTES == DEFAULT_MAX_UPLOAD_MB * 1024 * 1024
 
@@ -134,7 +134,7 @@ async def _drive_middleware(
     ``body_dict`` is the decoded JSON body for 413 responses, or ``None``
     when the request passes through to the downstream app.
     """
-    from local_deepl.api.services.security_middleware import MaxUploadSizeMiddleware
+    from omniscribe.api.services.security_middleware import MaxUploadSizeMiddleware
 
     forwarded: dict[str, Any] = {}
 
@@ -232,7 +232,7 @@ def test_middleware_rejects_oversized_with_413_envelope(
     assert body["error"] == "Upload exceeds maximum size"
     assert body["limit_bytes"] == str(max_mb * 1024 * 1024)
     assert body["limit_bytes_mb"] == str(max_mb)
-    assert "LOCAL_DEEPL_MAX_UPLOAD_MB" in body["hint"]
+    assert "OMNISCRIBE_MAX_UPLOAD_MB" in body["hint"]
 
 
 def test_middleware_lets_chunked_request_without_length_through():
@@ -273,12 +273,12 @@ def test_config_endpoint_surfaces_max_upload_cap(
     # The config router reads ``SecuritySettings.from_env()`` on every
     # call, so a monkeypatched env is sufficient — we don't need to
     # reload the module.
-    monkeypatch.setenv("LOCAL_DEEPL_MAX_UPLOAD_MB", "10240")
+    monkeypatch.setenv("OMNISCRIBE_MAX_UPLOAD_MB", "10240")
 
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from local_deepl.api.routers.config import router as config_router
+    from omniscribe.api.routers.config import router as config_router
 
     app = FastAPI()
     app.include_router(config_router)
@@ -305,11 +305,11 @@ def test_env_example_documents_upload_and_chunk_defaults():
     """
     env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
 
-    assert "LOCAL_DEEPL_MAX_UPLOAD_MB=10240" in env_example, (
-        ".env.example must show the 10 GB default for LOCAL_DEEPL_MAX_UPLOAD_MB"
+    assert "OMNISCRIBE_MAX_UPLOAD_MB=10240" in env_example, (
+        ".env.example must show the 10 GB default for OMNISCRIBE_MAX_UPLOAD_MB"
     )
-    assert "LOCAL_DEEPL_CHUNK_PAGES=25" in env_example, (
-        ".env.example must show the 25-page default for LOCAL_DEEPL_CHUNK_PAGES"
+    assert "OMNISCRIBE_CHUNK_PAGES=25" in env_example, (
+        ".env.example must show the 25-page default for OMNISCRIBE_CHUNK_PAGES"
     )
 
 
@@ -331,7 +331,7 @@ async def _drive_middleware_chunked(
       * ``inner_called`` records whether the inner app ran (sanity check
         that the test is exercising the real middleware path).
     """
-    from local_deepl.api.services.security_middleware import MaxUploadSizeMiddleware
+    from omniscribe.api.services.security_middleware import MaxUploadSizeMiddleware
 
     inner_called = {"called": False}
 

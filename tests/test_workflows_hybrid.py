@@ -11,8 +11,8 @@ this file is the per-phase drill-down.
 
 from __future__ import annotations
 
-from local_deepl.core.routing import QualityRoutingOptions
-from local_deepl.core.workflows.hybrid import HybridEngine
+from omniscribe.core.routing import QualityRoutingOptions
+from omniscribe.core.workflows.hybrid import HybridEngine
 from tests.conftest import _StubOCR
 from tests.test_pipeline import _make_tiny_b64_image, _StubAligner, _StubPDF
 
@@ -83,7 +83,7 @@ class TestHybridConvertPages:
 
         preprocessor = _RecordingPreprocessor()
 
-        from local_deepl.core.preprocessing import PagePreprocessingOptions
+        from omniscribe.core.preprocessing import PagePreprocessingOptions
 
         engine = HybridEngine(
             aligner=_StubAligner(),

@@ -5,12 +5,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from local_deepl.api.schemas.requests import (
+from omniscribe.api.schemas.requests import (
     ExtractionRequest,
     ExtractionTemplate,
     TranslationRequest,
 )
-from local_deepl.api.services import ai
+from omniscribe.api.services import ai
 
 
 def _config() -> dict[str, object]:
@@ -38,10 +38,10 @@ async def test_translate_uses_request_settings_and_builds_prompt():
 
     with (
         patch(
-            "local_deepl.api.services.ai.is_ssrf_target",
+            "omniscribe.api.services.ai.is_ssrf_target",
             new=AsyncMock(return_value=False),
         ),
-        patch("local_deepl.api.services.ai.call_llm", capture_completion),
+        patch("omniscribe.api.services.ai.call_llm", capture_completion),
     ):
         translated = await ai.translate_text(request, config=_config())
 
@@ -70,10 +70,10 @@ async def test_extract_uses_template_prompt_and_config_defaults():
 
     with (
         patch(
-            "local_deepl.api.services.ai.is_ssrf_target",
+            "omniscribe.api.services.ai.is_ssrf_target",
             new=AsyncMock(return_value=False),
         ),
-        patch("local_deepl.api.services.ai.call_llm", capture_completion),
+        patch("omniscribe.api.services.ai.call_llm", capture_completion),
     ):
         extracted = await ai.extract_structured_data(request, config=_config())
 
@@ -100,10 +100,10 @@ async def test_extract_invalid_json_returns_empty_object():
 
     with (
         patch(
-            "local_deepl.api.services.ai.is_ssrf_target",
+            "omniscribe.api.services.ai.is_ssrf_target",
             new=AsyncMock(return_value=False),
         ),
-        patch("local_deepl.api.services.ai.call_llm", bad_completion),
+        patch("omniscribe.api.services.ai.call_llm", bad_completion),
     ):
         assert await ai.extract_structured_data(request, config=_config()) == {}
 
@@ -123,10 +123,10 @@ async def test_ssrf_blocking_is_distinct_and_skips_provider_call():
 
     with (
         patch(
-            "local_deepl.api.services.ai.is_ssrf_target",
+            "omniscribe.api.services.ai.is_ssrf_target",
             new=AsyncMock(return_value=True),
         ),
-        patch("local_deepl.api.services.ai.call_llm", unexpected_completion),
+        patch("omniscribe.api.services.ai.call_llm", unexpected_completion),
         pytest.raises(ai.BlockedAPIBaseError) as exc_info,
     ):
         await ai.translate_text(request, config=_config())
@@ -148,10 +148,10 @@ async def test_provider_failure_wraps_without_public_detail_leak():
 
     with (
         patch(
-            "local_deepl.api.services.ai.is_ssrf_target",
+            "omniscribe.api.services.ai.is_ssrf_target",
             new=AsyncMock(return_value=False),
         ),
-        patch("local_deepl.api.services.ai.call_llm", fail_completion),
+        patch("omniscribe.api.services.ai.call_llm", fail_completion),
         pytest.raises(ai.AIProviderError) as exc_info,
     ):
         await ai.translate_text(request, config=_config())

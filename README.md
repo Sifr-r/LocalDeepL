@@ -1,10 +1,10 @@
-# LocalDeepL
+# OmniScribe
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Web_UI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![License](https://img.shields.io/badge/License-MIT-purple?style=for-the-badge)](LICENSE)
 
-LocalDeepL turns scanned PDFs and images into searchable, selectable PDFs using local vision language models. The supported product workflow is the FastAPI Web UI and API; the previous user-facing command-line OCR entrypoint has been deprecated, and advanced document intelligence stays centered on the browser experience. The `OCRPipeline` class is still importable for in-process programmatic use, but no `local-deepl` script entry is shipped.
+OmniScribe turns scanned PDFs and images into searchable, selectable PDFs using local vision language models. The supported product workflow is the FastAPI Web UI and API; the previous user-facing command-line OCR entrypoint has been deprecated, and advanced document intelligence stays centered on the browser experience. The `OCRPipeline` class is still importable for in-process programmatic use, but no `omniscribe` script entry is shipped.
 
 ## Features
 
@@ -18,8 +18,8 @@ LocalDeepL turns scanned PDFs and images into searchable, selectable PDFs using 
 ## Installation
 
 ```bash
-git clone https://github.com/Sifr-r/LocalDeepL.git
-cd LocalDeepL
+git clone https://github.com/Sifr-r/OmniScribe.git
+cd OmniScribe
 uv sync --extra web
 ```
 
@@ -43,7 +43,7 @@ Real OCR requires an OpenAI-compatible VLM endpoint. The local-development defau
 ## Web Workspace
 
 ```bash
-uv run local-deepl-server --port 8000
+uv run omniscribe-server --port 8000
 ```
 
 Open `http://localhost:8000`. The browser interface is the supported user workflow. Advanced document intelligence is exposed through Web UI controls and FastAPI request fields; the user-facing CLI script has been deprecated.
@@ -73,8 +73,8 @@ OCR responses include token-bound text artifact headers. When processor metadata
 
 ```bash
 docker run -d --name redis-local-ocr -p 6379:6379 redis
-uv run celery -A local_deepl.api.tasks worker --loglevel=info --pool=solo
-uv run local-deepl-server --port 8000
+uv run celery -A omniscribe.api.tasks worker --loglevel=info --pool=solo
+uv run omniscribe-server --port 8000
 ```
 
 ## Validation
@@ -96,13 +96,13 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for pipeline details, extension points, a
 
 ## Third-Party Software Notices
 
-LocalDeepL is released under the [MIT License](LICENSE). It depends on
+OmniScribe is released under the [MIT License](LICENSE). It depends on
 PyMuPDF (Artifex Software) for PDF rendering and sandwich-PDF embedding.
 PyMuPDF is dual-licensed under AGPL-3.0 and a commercial license; the
 upstream library itself is AGPL-3.0. The bundled PyMuPDF is for use by
 end users — internal OCR, personal use, and AGPL-compatible use cases.
 
-**If you distribute LocalDeepL (or a derived product) outside your
+**If you distribute OmniScribe (or a derived product) outside your
 organization in a way that is *not* AGPL-3.0-compatible, you are
 responsible for obtaining a commercial PyMuPDF license from Artifex
 Software.** A one-time warning is also logged the first time this

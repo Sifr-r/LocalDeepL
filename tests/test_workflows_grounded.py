@@ -14,10 +14,10 @@ The ``test_pipeline.py`` suite exercises the hybrid path through
 
 from __future__ import annotations
 
-from local_deepl.core.document import DocumentResult
-from local_deepl.core.grounded import GroundedBlock, GroundedResponse
-from local_deepl.core.processors import DocumentProcessor
-from local_deepl.core.workflows.grounded import GroundedEngine
+from omniscribe.core.document import DocumentResult
+from omniscribe.core.grounded import GroundedBlock, GroundedResponse
+from omniscribe.core.processors import DocumentProcessor
+from omniscribe.core.workflows.grounded import GroundedEngine
 
 # ---------------------------------------------------------------------------
 # Stub backend

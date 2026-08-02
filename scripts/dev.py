@@ -128,7 +128,7 @@ def doctor() -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="LocalDeepL developer commands")
+    parser = argparse.ArgumentParser(description="OmniScribe developer commands")
     parser.add_argument("command", choices=("clean", "doctor"))
     args = parser.parse_args()
 

@@ -188,7 +188,7 @@ cython_debug/
 .claude/
 
 # Custom resources. Root dictionaries are retained as a legacy runtime
-# fallback; installable dictionaries live under src/local_deepl/resources.
+# fallback; installable dictionaries live under src/omniscribe/resources.
 /resources/*
 !/resources/dictionaries/
 !/resources/dictionaries/*.json.gz
@@ -198,10 +198,15 @@ cython_debug/
 /chroma_db/
 examples/output_*.pdf
 
-# Stale root-level artifacts
-*.bat
-*.vbs
+# Stale root-level artifacts and scratch files
 /git_index.html
 /original_index*.html
 /temp_old_index.html
+test-results.xml
+user_prompt.json
+phase*.txt
+screenshot*.png
+!install.bat
+!stop_app.bat
+!start_app.vbs
 

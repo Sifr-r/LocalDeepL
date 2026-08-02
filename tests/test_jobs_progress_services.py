@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from local_deepl.api.services.jobs import JobHistory
-from local_deepl.api.services.progress import (
+from omniscribe.api.services.jobs import JobHistory
+from omniscribe.api.services.progress import (
     ProgressService,
     sanitize_display_client_id,
     stage_to_percent,

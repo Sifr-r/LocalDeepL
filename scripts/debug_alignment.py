@@ -15,9 +15,9 @@ import asyncio
 
 from PIL import Image, ImageDraw, ImageFont
 
-from local_deepl.core.aligner import HybridAligner
-from local_deepl.core.ocr import OCRProcessor
-from local_deepl.core.pdf import PDFHandler
+from omniscribe.core.aligner import HybridAligner
+from omniscribe.core.ocr import OCRProcessor
+from omniscribe.core.pdf import PDFHandler
 
 
 def debug_alignment(pdf_path):

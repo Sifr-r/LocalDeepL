@@ -6,8 +6,8 @@ from docx import Document
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from local_deepl.api.routers import ocr
-from local_deepl.core.docx_writer import convert_markdown_to_docx
+from omniscribe.api.routers import ocr
+from omniscribe.core.docx_writer import convert_markdown_to_docx
 
 
 def test_convert_markdown_to_docx_structure():
@@ -62,7 +62,7 @@ Another paragraph.
 def test_export_docx_endpoint():
     app = FastAPI()
     app.include_router(ocr.router)
-    from local_deepl.api.routers import artifacts
+    from omniscribe.api.routers import artifacts
 
     app.include_router(artifacts.router)
     client = TestClient(app)

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from local_deepl.core.aligner import (
+from omniscribe.core.aligner import (
     _SKIP_BOX_COST,
     HybridAligner,
     _dp_align,

@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from local_deepl.core.aligner import HybridAligner
-from local_deepl.core.pdf import PDFHandler
-from local_deepl.core.pdf.rasterizer import convert_batches, convert_generator
+from omniscribe.core.aligner import HybridAligner
+from omniscribe.core.pdf import PDFHandler
+from omniscribe.core.pdf.rasterizer import convert_batches, convert_generator
 
 
 @pytest.fixture
@@ -213,7 +213,7 @@ def test_convert_batches_peak_memory_is_bounded_by_batch_size(
     """
     import tracemalloc
 
-    from local_deepl.core.pdf.rasterizer import convert
+    from omniscribe.core.pdf.rasterizer import convert
 
     input_pdf = str(example_pdfs["digital.pdf"])
 
@@ -249,7 +249,7 @@ async def test_hybrid_engine_convert_pages_uses_batched_streaming(
     silently regresses to the eager ``convert`` API this test fails,
     because the mock spy on ``convert_batches`` records zero calls.
     """
-    from local_deepl.core.workflows.hybrid import HybridEngine
+    from omniscribe.core.workflows.hybrid import HybridEngine
 
     class _SpyPDFHandler(PDFHandler):
         def __init__(self) -> None:
@@ -298,7 +298,7 @@ async def test_hybrid_engine_convert_pages_rasterize_batch_size_override(
     """``rasterize_batch_size`` kwarg is forwarded to ``convert_batches``."""
     from unittest.mock import patch
 
-    from local_deepl.core.workflows.hybrid import HybridEngine
+    from omniscribe.core.workflows.hybrid import HybridEngine
 
     handler = PDFHandler()
     engine = HybridEngine(

@@ -9,7 +9,7 @@ setup: ## Install project and web dependencies
 	uv sync --extra web
 
 run: ## Start the web server on port 8000
-	uv run local-deepl-server --port 8000
+	uv run omniscribe-server --port 8000
 
 test: ## Run the fast test suite
 	uv run pytest -m "not slow"

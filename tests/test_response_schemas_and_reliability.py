@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from local_deepl.api.schemas.responses import (
+from omniscribe.api.schemas.responses import (
     AsyncTranslationResponse,
     ClearJobsResponse,
     ConfigResponse,
@@ -19,10 +19,10 @@ from local_deepl.api.schemas.responses import (
     TranslationResponse,
     TreeTranslationResponse,
 )
-from local_deepl.core.grounded.parsers import (
+from omniscribe.core.grounded.parsers import (
     _parse_grounded_json,
 )
-from local_deepl.core.postprocess import DictionaryPostProcessor, load_dictionary
+from omniscribe.core.postprocess import DictionaryPostProcessor, load_dictionary
 
 
 def test_pydantic_response_models() -> None:

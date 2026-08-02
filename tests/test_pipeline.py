@@ -13,12 +13,12 @@ import io
 import pytest
 from PIL import Image
 
-from local_deepl.core.workflows.hybrid import (
+from omniscribe.core.workflows.hybrid import (
     _drop_refined_duplicates,
     _is_refinable,
     parse_page_range,
 )
-from local_deepl.pipeline import OCRPipeline
+from omniscribe.pipeline import OCRPipeline
 from tests.conftest import _StubOCR
 
 

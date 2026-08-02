@@ -22,7 +22,7 @@ import fitz
 import pytest
 from PIL import Image
 
-from local_deepl.core.grounded import (
+from omniscribe.core.grounded import (
     GroundedBlock,
     GroundedResponse,
     PromptedGroundedOCR,
@@ -30,9 +30,9 @@ from local_deepl.core.grounded import (
     _rasterize_to_jpeg_pages,
     parse_glm_layout_details,
 )
-from local_deepl.core.ocr import LLMCallError, ModelNotLoadedError
-from local_deepl.core.pdf import PDFHandler
-from local_deepl.pipeline import OCRPipeline
+from omniscribe.core.ocr import LLMCallError, ModelNotLoadedError
+from omniscribe.core.pdf import PDFHandler
+from omniscribe.pipeline import OCRPipeline
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -296,7 +296,7 @@ class TestPromptedGroundedResilience:
     async def test_one_failing_page_does_not_lose_others(self, monkeypatch):
         # Build a fake PromptedGroundedOCR that renders 3 fake pages and makes
         # page 1 fail while pages 0 and 2 succeed.
-        from local_deepl.core.grounded import PromptedGroundedOCR
+        from omniscribe.core.grounded import PromptedGroundedOCR
 
         class _FakeClient:
             def __init__(self, *a, **kw):
@@ -357,7 +357,7 @@ class TestPromptedGroundedResilience:
 
                 from openai import AsyncOpenAI
 
-                import local_deepl.core.grounded as _g
+                import omniscribe.core.grounded as _g
 
                 page_imgs = [(_tiny_b64(), 100, 100)] * 3
                 client = AsyncOpenAI(
@@ -505,12 +505,12 @@ class TestPromptedGroundedEnsureModelLoaded:
             return fake_client
 
         # ensure_model_loaded imports AsyncOpenAI at the top of
-        # `local_deepl.core.grounded.prompted`. Patching the source
+        # `omniscribe.core.grounded.prompted`. Patching the source
         # `openai.AsyncOpenAI` is no longer sufficient — we need to
         # patch the module-level binding that PromptedGroundedOCR
         # actually references.
         monkeypatch.setattr(
-            "local_deepl.core.grounded.prompted.AsyncOpenAI",
+            "omniscribe.core.grounded.prompted.AsyncOpenAI",
             _fake_async_openai,
         )
         return fake_client

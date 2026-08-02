@@ -16,14 +16,14 @@ After Phase C:
 
 from __future__ import annotations
 
-from local_deepl.core.block_tree import (
+from omniscribe.core.block_tree import (
     BlockNode,
     BlockType,
     DocumentTree,
     PageTree,
 )
-from local_deepl.core.glossary import Glossary
-from local_deepl.core.translation_tree import translate_tree
+from omniscribe.core.glossary import Glossary
+from omniscribe.core.translation_tree import translate_tree
 
 
 def _build_tree_with_n_blocks(n: int, text_prefix: str = "block") -> DocumentTree:
