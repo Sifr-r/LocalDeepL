@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from typing import Any, Awaitable, Callable
 
 from omniscribe.api.celery_app import celery_app
 from omniscribe.core.translation_config import TranslationSettings
@@ -19,7 +20,86 @@ def _current_translation_settings() -> TranslationSettings:
     return get_translation_settings()
 
 
-@celery_app.task(bind=True, name="process_translation")
+class _CeleryTaskBase:
+    """Mixin consolidating boilerplate shared by every Celery task in this app.
+
+    Two patterns repeat across ``process_translation_task`` and
+    ``process_glossary_import_task``:
+
+    1. **Progress reporting** — ``self.update_state(state="PROGRESS",
+       meta={"progress": <int>, "status": <str>})`` is called at several
+       well-known phases (start, mid, done). The :meth:`emit_progress`
+       helper wraps the boilerplate so callers write a single line per
+       phase and the meta-key names live in exactly one place.
+
+    2. **WebSocket channel authorization** — both tasks optionally accept
+       ``(channel_id, session_token)`` to stream frames back to a UI.
+       The auth check (``manager.is_authorized``) is invoked identically;
+       :meth:`is_authorized_channel` centralizes it and returns ``False``
+       for any malformed pair so callers don't have to repeat the
+       short-circuit logic.
+
+    Why a Python mixin (not a ``celery.Task`` subclass registered with
+    ``@celery_app.task(base=...)``): Celery only supports a single
+    ``base`` class, but multiple tasks already inherit distinct binding
+    configurations (``bind=True``). A separate mixin keeps each task's
+    decorator as-is while still extracting the duplicated logic.
+    """
+
+    def emit_progress(self, progress_pct: int, status: str) -> None:
+        """Update the Celery task state with a percent + status payload.
+
+        Equivalent to the inline ``self.update_state(state="PROGRESS",
+        meta={"progress": <pct>, "status": <str>})`` boilerplate that
+        previously appeared at every progress tick.
+        """
+        self.update_state(  # type: ignore[attr-defined]
+            state="PROGRESS",
+            meta={"progress": progress_pct, "status": status},
+        )
+
+    @staticmethod
+    def is_authorized_channel(
+        channel_id: str | None, session_token: str | None
+    ) -> bool:
+        """Return ``True`` iff ``(channel_id, session_token)`` is a bound channel.
+
+        Short-circuits to ``False`` when either argument is falsy or when
+        the WebSocket manager rejects the binding, so callers don't have
+        to repeat the null-check + ``is_authorized`` dance.
+        """
+        if not channel_id or not session_token:
+            return False
+        from omniscribe.api.routers.websocket import manager
+
+        return manager.is_authorized(channel_id, session_token)
+
+    def run_async_or_schedule(self, coro_factory: Callable[[], Awaitable[Any]]) -> Any:
+        """Run a coroutine factory in whichever async context is available.
+
+        Celery workers run inside their own event loop; tests sometimes
+        don't have one yet. Try to schedule the coroutine on an existing
+        loop (``loop.create_task``), otherwise fall back to ``asyncio.run``
+        so the task is still completed synchronously.
+        """
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = None
+        if loop is not None and loop.is_running():
+            return loop.create_task(coro_factory())
+        return asyncio.run(coro_factory())
+
+
+class _TranslationTask(_CeleryTaskBase):
+    """Apply the mixin to the translation task via dynamic inheritance."""
+
+
+class _GlossaryTask(_CeleryTaskBase):
+    """Apply the mixin to the glossary import task via dynamic inheritance."""
+
+
+@celery_app.task(bind=True, name="process_translation", base=_TranslationTask)
 def process_translation_task(
     self,
     artifact_id: str,
@@ -46,10 +126,7 @@ def process_translation_task(
     logger.info(f"Starting tree translation task for artifact_id={artifact_id}")
 
     # Update state to started
-    self.update_state(
-        state="PROGRESS",
-        meta={"progress": 0, "status": "Loading DocumentTree"},
-    )
+    self.emit_progress(0, "Loading DocumentTree")
 
     from omniscribe.api.routers import state
 
@@ -96,10 +173,7 @@ def process_translation_task(
             settings=_current_translation_settings(),
         )
 
-    self.update_state(
-        state="PROGRESS",
-        meta={"progress": 10, "status": "Translating DocumentTree blocks"},
-    )
+    self.emit_progress(10, "Translating DocumentTree blocks")
 
     # Phase C (review M1) — build the translate_chunk callback that
     # forwards into the WebSocket manager, then pass it to translate_tree
@@ -136,12 +210,7 @@ def process_translation_task(
         # matches before emitting anything. If not bound, drop the
         # callback silently — the WS frames would error out anyway,
         # but a no-op callback keeps the rest of the run working.
-        bound = (
-            channel_id
-            and session_token
-            and manager.is_authorized(channel_id, session_token)
-        )
-        if bound:
+        if self.is_authorized_channel(channel_id, session_token):
             on_translate_chunk = _emit_chunk
         else:
             logger.warning(
@@ -171,10 +240,7 @@ def process_translation_task(
     translated_tree_path = f"{path}_translated.tree.json"
     write_tree_atomic(translated_tree, Path(translated_tree_path))
 
-    self.update_state(
-        state="PROGRESS",
-        meta={"progress": 100, "status": "Translation complete"},
-    )
+    self.emit_progress(100, "Translation complete")
 
     # Return summary dict for status polling
     return {
@@ -184,7 +250,7 @@ def process_translation_task(
     }
 
 
-@celery_app.task(bind=True, name="process_glossary_import")
+@celery_app.task(bind=True, name="process_glossary_import", base=_GlossaryTask)
 def process_glossary_import_task(
     self,
     source_dict: dict,
@@ -205,10 +271,7 @@ def process_glossary_import_task(
     from omniscribe.api.routers.websocket import manager
     from omniscribe.core.glossary_sources import parse
 
-    self.update_state(
-        state="PROGRESS",
-        meta={"progress": 10, "status": "Loading glossary source"},
-    )
+    self.emit_progress(10, "Loading glossary source")
 
     if not isinstance(source_dict, dict):
         raise ValueError("source_dict must be a dict.")
@@ -224,10 +287,7 @@ def process_glossary_import_task(
 
     summary = parse(format=format_name, source_uri=None, **kwargs)
 
-    self.update_state(
-        state="PROGRESS",
-        meta={"progress": 80, "status": "Saving glossary to library"},
-    )
+    self.emit_progress(80, "Saving glossary to library")
 
     library = state.glossary_library
     stored = library.save(
@@ -248,22 +308,12 @@ def process_glossary_import_task(
     )
 
     async def _emit() -> None:
-        if channel_id and manager.is_authorized(channel_id, session_token):
+        if self.is_authorized_channel(channel_id, session_token):
             await manager.send(channel_id, terminal_frame)
 
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = None
-    if loop is not None and loop.is_running():
-        loop.create_task(_emit())
-    else:
-        asyncio.run(_emit())
+    self.run_async_or_schedule(_emit)
 
-    self.update_state(
-        state="PROGRESS",
-        meta={"progress": 100, "status": "Glossary import complete"},
-    )
+    self.emit_progress(100, "Glossary import complete")
 
     return {
         "glossary_id": stored.id,

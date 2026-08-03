@@ -239,7 +239,9 @@ class DictionaryPostProcessor:
                 return True
             except Exception as e:
                 logger.warning(
-                    f"Failed to load packaged dictionary for '{self.tess_lang}': {e}"
+                    "Failed to load packaged dictionary for '%s': %s",
+                    self.tess_lang,
+                    e,
                 )
         return False
 
@@ -293,7 +295,9 @@ class DictionaryPostProcessor:
             )
             return True
         except Exception as e:
-            logger.warning(f"Failed to load custom dictionary {dict_path}: {e}")
+            logger.warning(
+                "Failed to load custom dictionary %s: %s", dict_path, e
+            )
         return False
 
     async def _try_builtin_dict(self) -> None:
@@ -308,7 +312,9 @@ class DictionaryPostProcessor:
             )
         except ValueError:
             logger.warning(
-                f"No spellcheck dictionary available for language '{self.lang}'. Spellcheck disabled."
+                "No spellcheck dictionary available for language '%s'. "
+                "Spellcheck disabled.",
+                self.lang,
             )
             self.spell = None
 

@@ -1,15 +1,21 @@
-"""
-Repo-hygiene sanity tests for the DX/infra files added in Phase 5.
+"""Repo-hygiene sanity tests for the DX/infra files added in Phase 5.
 
 Each test pins a small but meaningful invariant about the
 infrastructure files so a drive-by refactor doesn't silently
 disconnect them. The expected shape is documented in
 ``compose.yaml`` / ``Dockerfile`` / ``.pre-commit-config.yaml`` /
 ``.github/workflows/nightly.yml``.
+
+A second cluster of tests pins architecture-boundary invariants from
+``ARCHITECTURE.md`` so a refactor doesn't silently collapse the seams
+that the recent god-module decompositions established (see the
+``core.workflows`` engine split and the OCR router / state module
+decomposition entries).
 """
 
 from __future__ import annotations
 
+import ast
 import re
 import tomllib
 from pathlib import Path
@@ -21,6 +27,47 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _imports_from(path: Path, *module_prefixes: str) -> list[tuple[str, int]]:
+    """Return ``[(full_module, lineno)]`` for every import matching a prefix.
+
+    Uses :mod:`ast` so docstrings, comments, and dunder strings don't
+    produce false positives — only actual ``import`` and ``from … import``
+    statements are considered. A match is any module whose dotted path
+    equals one of ``module_prefixes`` or starts with one of them
+    followed by ``.``.
+    """
+    tree = ast.parse(_read(path))
+    matches: list[tuple[str, int]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            if node.module is None:
+                continue
+            for alias in node.names:
+                full = f"{node.module}.{alias.name}"
+                if any(
+                    full == prefix or full.startswith(prefix + ".")
+                    for prefix in module_prefixes
+                ):
+                    matches.append((full, node.lineno))
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if any(
+                    alias.name == prefix or alias.name.startswith(prefix + ".")
+                    for prefix in module_prefixes
+                ):
+                    matches.append((alias.name, node.lineno))
+    return matches
+
+
+#: Engine-implementation submodules of ``omniscribe.core.workflows``. Callers
+#: outside the package itself must reach the engines via
+#: ``omniscribe.OCRPipeline`` (or the public ``omniscribe.core.workflows``
+#: re-exports). The ``base`` module is intentionally excluded — it exposes the
+#: public ``DocumentResultWriter`` protocol and callback type aliases that
+#: peers (e.g. ``core/pdf/__init__.py``) reasonably need.
+_WORKFLOW_INTERNAL_SUBMODULES: tuple[str, ...] = ("hybrid", "grounded", "utils")
 
 
 def test_dockerfile_pins_python_and_uv_installs_extras():
@@ -102,3 +149,129 @@ def test_pyproject_extras_present_for_docker_layering():
     ]["optional-dependencies"]
     assert "web" in extras
     assert "async-translation" in extras
+
+
+# ---------------------------------------------------------------------------
+# Architecture-boundary assertions (ARCHITECTURE.md)
+# ---------------------------------------------------------------------------
+#
+# Pin the single-responsibility invariants that the most recent god-module
+# decompositions put in place. A drive-by refactor that quietly imports a
+# workflow implementation submodule, or that bypasses the state singleton,
+# would collapse the seams these boundaries protect. These tests assert
+# against the file tree statically (AST) so they run without booting the
+# OCR pipeline or touching the VLM client.
+
+
+def _is_workflow_internal(module: str) -> bool:
+    """Return True iff ``module`` points at one of the engine implementation
+    submodules (``hybrid`` / ``grounded`` / ``utils``) rather than the public
+    re-export surface ``omniscribe.core.workflows``.
+    """
+    parts = module.split(".")
+    return (
+        len(parts) >= 4
+        and parts[0] == "omniscribe"
+        and parts[1] == "core"
+        and parts[2] == "workflows"
+        and parts[3] in _WORKFLOW_INTERNAL_SUBMODULES
+    )
+
+
+def test_ocr_router_does_not_import_workflow_internals():
+    """``api/routers/ocr.py`` is a thin orchestrator per ARCHITECTURE.md.
+
+    It must delegate to ``OCRPipeline`` + ``api/services/ocr_*.py`` and
+    never reach into ``omniscribe.core.workflows.hybrid`` /
+    ``omniscribe.core.workflows.grounded`` directly. Importing either
+    engine implementation would collapse the ``OCRPipeline`` facade and
+    let the FastAPI router depend on internal engine layout that the
+    engine-split refactor intentionally hid behind the public package
+    surface.
+    """
+    ocr_path = ROOT / "src/omniscribe/api/routers/ocr.py"
+    offenders = [
+        (mod, lineno)
+        for mod, lineno in _imports_from(ocr_path, "omniscribe.core.workflows")
+        if _is_workflow_internal(mod)
+    ]
+    assert not offenders, (
+        "OCR router must not import `omniscribe.core.workflows.{hybrid,grounded,utils}` "
+        "directly; go through `omniscribe.OCRPipeline` and `api/services/ocr_*.py`. "
+        f"Found: {offenders}"
+    )
+
+
+def test_api_layer_does_not_import_workflow_internals():
+    """Generalization of the OCR router boundary to the whole API surface.
+
+    Every router and service under ``src/omniscribe/api/`` must keep the
+    engine implementation details behind the ``OCRPipeline`` facade.
+    This walker-driven test catches the same boundary violation in any
+    router or service, not just the one highlighted by the dedicated
+    OCR router test above.
+    """
+    api_root = ROOT / "src/omniscribe/api"
+    offenders: list[str] = []
+    for path in sorted(api_root.rglob("*.py")):
+        for mod, lineno in _imports_from(path, "omniscribe.core.workflows"):
+            if _is_workflow_internal(mod):
+                rel = path.relative_to(ROOT).as_posix()
+                offenders.append(f"{rel}:{lineno}: {mod}")
+    assert not offenders, (
+        "API layer must not import `omniscribe.core.workflows.{hybrid,grounded,utils}` "
+        "directly; go through `omniscribe.OCRPipeline` and `api/services/ocr_*.py`.\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_state_module_is_singleton_boundary():
+    """``api/routers/state.py`` is the single source of state singletons.
+
+    Per ARCHITECTURE.md, the ``StateBackend`` protocol is the swap-point
+    for alternative backends (Redis, file-backed). To keep that promise,
+    the module must hold exactly one ``backend`` instance and every
+    module-level alias must point at the same instance on the backend;
+    otherwise a backend swap would leave orphan references behind.
+
+    ``glossary_library`` is intentionally a peer instance (its
+    ``artifact_dir`` is configured separately so the on-disk glossary
+    index is preserved across swaps), so this test only asserts the six
+    backend-backed aliases.
+    """
+    state_path = ROOT / "src/omniscribe/api/routers/state.py"
+    state_text = _read(state_path)
+
+    # Exactly one `backend = ...` assignment at module level. A second
+    # one would be a recipe for two state surfaces with no clear winner.
+    backend_assignments = re.findall(r"^backend\s*=", state_text, re.MULTILINE)
+    assert len(backend_assignments) == 1, (
+        f"state.py must declare exactly one `backend = ...` assignment; "
+        f"found {len(backend_assignments)}"
+    )
+
+    # Runtime: the singleton is a LocalStateBackend and the six
+    # backend-backed aliases resolve to the same instance on the backend.
+    from omniscribe.api.routers import state as router_state
+    from omniscribe.api.services.state_backend import (
+        LocalStateBackend,
+        StateBackend,
+    )
+
+    assert isinstance(router_state.backend, LocalStateBackend)
+    assert isinstance(router_state.backend, StateBackend)
+
+    for name in (
+        "text_artifacts",
+        "metadata_artifacts",
+        "export_artifacts",
+        "job_history",
+        "progress_service",
+        "ocr_job_queue",
+    ):
+        bound = getattr(router_state.backend, name)
+        aliased = getattr(router_state, name)
+        assert bound is not None and aliased is bound, (
+            f"state.{name} must be the same instance as state.backend.{name} "
+            "so a backend swap stays transparent to all consumers"
+        )

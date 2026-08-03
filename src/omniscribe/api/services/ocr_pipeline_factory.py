@@ -30,6 +30,7 @@ from omniscribe import (
 )
 from omniscribe.api.schemas import ProcessSettings
 from omniscribe.core.callbacks import BlockCallbackSet
+from omniscribe.core.ocr.resilience import get_default_circuit_breaker_registry
 from omniscribe.core.preprocessing import (
     PagePreprocessingOptions,
     PagePreprocessor,
@@ -107,6 +108,7 @@ def build_pipeline(
             model=settings.model,
             handwriting_mode=settings.handwriting_hint,
             trocr_engine=TrOCREngine() if settings.handwriting_hint else None,
+            circuit_breaker_registry=get_default_circuit_breaker_registry(),
         )
         pipeline = OCRPipeline(
             aligner=HybridAligner(),

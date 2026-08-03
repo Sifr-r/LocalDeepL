@@ -1,4 +1,5 @@
 import asyncio
+from http import HTTPStatus
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -27,5 +28,7 @@ async def cancel_job(job_id: str):
     """Cancel a queued or running background OCR job."""
     record = await state.ocr_job_queue.cancel(job_id)
     if record is None:
-        return JSONResponse(status_code=404, content={"error": "Job not found"})
+        return JSONResponse(
+            status_code=HTTPStatus.NOT_FOUND, content={"error": "Job not found"}
+        )
     return {"status": "cancelled", "job_id": job_id}

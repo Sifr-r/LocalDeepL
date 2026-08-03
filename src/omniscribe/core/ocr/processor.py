@@ -205,6 +205,65 @@ class OCRProcessor:
         lines = [line.strip() for line in body.split("\n") if line.strip()]
         return _strip_runaway_repetition(lines)
 
+    async def _run_trocr_arbitration(
+        self,
+        vlm_result: str,
+        image_base64: str,
+        vlm_confidence: float,
+    ) -> str:
+        """Arbitrate between VLM and TrOCR outputs; return the higher-confidence text.
+
+        Args:
+            vlm_result: Text from VLM model
+            image_base64: Base64-encoded image for TrOCR
+            vlm_confidence: Confidence score from VLM heuristic
+
+        Returns:
+            Winning text (VLM, TrOCR, or VLM-corrected)
+            Returns vlm_result if TrOCR is unavailable or fails.
+        """
+        if self.trocr_engine is None:
+            return vlm_result
+
+        try:
+            import base64
+
+            from omniscribe.core.trocr_engine import _heuristic_confidence
+
+            image_bytes = base64.b64decode(image_base64)
+            trocr_res = await self.trocr_engine.recognize(image_bytes)
+            if trocr_res.confidence > vlm_confidence:
+                correction_prompt = DUAL_ENGINE_CROP_PROMPT.replace(
+                    "{draft_text}", trocr_res.text
+                )
+                vlm_corrected = await self._chat(
+                    correction_prompt,
+                    image_base64,
+                    timeout=self.CROP_TIMEOUT_S,
+                    max_tokens=self.CROP_MAX_TOKENS,
+                )
+                vlm_corrected_body = _strip_yaml_front_matter(vlm_corrected)
+                vlm_corrected_res = " ".join(
+                    line.strip()
+                    for line in vlm_corrected_body.split("\n")
+                    if line.strip()
+                )
+                if _is_fallback_response(vlm_corrected_res):
+                    vlm_corrected_res = ""
+
+                vlm_corr_conf = _heuristic_confidence(vlm_corrected_res)
+                if trocr_res.confidence > vlm_corr_conf:
+                    return trocr_res.text
+                else:
+                    return vlm_corrected_res
+            else:
+                return vlm_result
+        except Exception as e:
+            # TrOCR is optional; a failure here must not poison the
+            # surrounding OCR result. Log and return the VLM's best effort.
+            logger.warning("TrOCR arbitration failed: %s", e)
+            return vlm_result
+
     async def perform_ocr_on_crop(
         self,
         image_base64: str,
@@ -257,58 +316,15 @@ class OCRProcessor:
             result = ""
 
         # Phase A.2 (review M3) — TrOCR dual-engine arbitration.
-        # The VLM gets first crack at every handwriting crop. Only when its
-        # output looks low-confidence (heuristic < threshold) do we hand the
-        # same image bytes to TrOCR, which is purpose-built for handwriting.
-        # If TrOCR is more confident than the VLM, we send the TrOCR text
-        # back to the VLM as a "draft" and let it produce a corrected read;
-        # whichever side is more confident wins. This avoids the failure
-        # mode where the VLM hallucinates cursive characters and the user's
-        # only recourse is to manually re-transcribe.
-        #
-        # Pre-fix this branch was dead code: it called `self.trocr_engine.ocr`
-        # (no such method) with `image_base64` (wrong arg type; the real
-        # `recognize` takes raw bytes). The `try/except` swallowed the
-        # AttributeError, so the bug was invisible to the fast test suite.
+        # See _run_trocr_arbitration() for details on the arbitration logic.
         if getattr(self, "handwriting_mode", False) and self.trocr_engine is not None:
             from omniscribe.core.trocr_engine import _heuristic_confidence
 
             vlm_conf = _heuristic_confidence(result)
             if vlm_conf < self.confidence_threshold:
-                try:
-                    import base64
-
-                    image_bytes = base64.b64decode(image_base64)
-                    trocr_res = await self.trocr_engine.recognize(image_bytes)
-                    if trocr_res.confidence > vlm_conf:
-                        correction_prompt = DUAL_ENGINE_CROP_PROMPT.replace(
-                            "{draft_text}", trocr_res.text
-                        )
-                        vlm_corrected = await self._chat(
-                            correction_prompt,
-                            image_base64,
-                            timeout=self.CROP_TIMEOUT_S,
-                            max_tokens=self.CROP_MAX_TOKENS,
-                        )
-                        vlm_corrected_body = _strip_yaml_front_matter(vlm_corrected)
-                        vlm_corrected_res = " ".join(
-                            line.strip()
-                            for line in vlm_corrected_body.split("\n")
-                            if line.strip()
-                        )
-                        if _is_fallback_response(vlm_corrected_res):
-                            vlm_corrected_res = ""
-
-                        vlm_corr_conf = _heuristic_confidence(vlm_corrected_res)
-                        if trocr_res.confidence > vlm_corr_conf:
-                            result = trocr_res.text
-                        else:
-                            result = vlm_corrected_res
-                except Exception as e:
-                    # TrOCR is optional; a failure here must not poison the
-                    # surrounding OCR result. Log and return the VLM's
-                    # best-effort output.
-                    logger.warning("TrOCR fallback failed: %s", e)
+                result = await self._run_trocr_arbitration(
+                    result, image_base64, vlm_conf
+                )
 
         return result
 

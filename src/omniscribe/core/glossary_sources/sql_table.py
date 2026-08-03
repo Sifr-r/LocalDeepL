@@ -56,6 +56,11 @@ def parse_sql_table(
 
     try:
         predicate, parameters = _build_where(where_clause)
+        # SQL injection is prevented via three layers:
+        # 1. validate_identifier() in _common.py enforces regex ^[A-Za-z_][A-Za-z0-9_]*$ on table/column names
+        # 2. engine.dialect.identifier_preparer.quote() quotes identifiers per database dialect
+        # 3. WHERE clause uses parameterized placeholders (line 68: connection.execute(statement, parameters))
+        # No user input is directly concatenated into the query.
         quoted_table = engine.dialect.identifier_preparer.quote(table)
         quoted_source = engine.dialect.identifier_preparer.quote(source)
         quoted_target = engine.dialect.identifier_preparer.quote(target)

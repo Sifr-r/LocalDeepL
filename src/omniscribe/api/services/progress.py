@@ -7,6 +7,38 @@ The protocol now supports two frame kinds, both sent over the same WebSocket:
    "bbox", "text", "kind", "confidence"}``
 3. Translation frame (new): ``{"type": "translate_chunk_complete",
    "chunk_idx", "source_chars", "translated_text"}``
+
+Process-lifetime boundary
+-------------------------
+
+:class:`ProgressService` is itself stateless: every frame builder and
+helper here is a pure function of its arguments. The "in-memory state"
+it participates in is the tokens it creates and validates on behalf of
+process-bound WebSocket channels:
+
+- :meth:`ProgressService.create_channel` mints a ``channel_id`` and
+  ``session_token`` pair from ``secrets.token_urlsafe``. Those tokens
+  are only meaningful while the current process is alive; a restart
+  yields fresh tokens and any client that tries to reconnect with the
+  old pair will fail :meth:`ProgressService.validate_channel_id` /
+  :meth:`validate_session_token` because the active-channel registry
+  lives in :class:`ConnectionManager` (in
+  :mod:`omniscribe.api.routers.websocket`), not here.
+- :meth:`ProgressService.is_bound` compares inbound tokens against
+  expected tokens via ``hmac.compare_digest``; the *expected* token is
+  whatever the :class:`ConnectionManager` last stored for that channel.
+
+The ``ProgressService`` instance is held as ``state.progress_service``
+on the :class:`LocalStateBackend` singleton and as
+``_progress_service`` in :mod:`omniscribe.api.routers.websocket`. Because
+the service is stateless, swapping the backend does not affect progress
+math, but the channel IDs it validates are still bound to whatever
+process minted them.
+
+See the *Known Tech Debt* section of ``AGENTS.md`` for the project-level
+acknowledgement: "Job/artifact state is in-memory only
+(``api/routers/state.py`` singletons) — restarts lose history; no
+horizontal scaling."
 """
 
 from __future__ import annotations

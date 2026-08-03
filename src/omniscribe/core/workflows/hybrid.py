@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 from collections import defaultdict
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
@@ -38,6 +39,8 @@ from omniscribe.core.workflows.utils import (
     _is_refinable,
     parse_page_range,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class HybridEngine(EngineBase):
@@ -363,9 +366,9 @@ class HybridEngine(EngineBase):
             except CircuitOpenError:
                 raise
             except Exception as e:
-                import logging
-
-                logging.warning(f"OCR failed for page {p_num}: {type(e).__name__}: {e}")
+                logger.warning(
+                    "OCR failed for page %s: %s: %s", p_num, type(e).__name__, e
+                )
                 return p_num, pages_structured[p_num], e
 
         completed = 0
@@ -524,10 +527,8 @@ class HybridEngine(EngineBase):
             except CircuitOpenError:
                 raise
             except Exception as e:
-                import logging
-
-                logging.warning(
-                    f"Dense OCR failed for box {idx}: {type(e).__name__}: {e}"
+                logger.warning(
+                    "Dense OCR failed for box %s: %s: %s", idx, type(e).__name__, e
                 )
                 return idx, ""
 
@@ -593,10 +594,12 @@ class HybridEngine(EngineBase):
             except CircuitOpenError:
                 raise
             except Exception as e:
-                import logging
-
-                logging.warning(
-                    f"Refine failed for page {p_num} box {idx}: {type(e).__name__}: {e}"
+                logger.warning(
+                    "Refine failed for page %s box %s: %s: %s",
+                    p_num,
+                    idx,
+                    type(e).__name__,
+                    e,
                 )
                 return p_num, idx, ""
 

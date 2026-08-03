@@ -2,13 +2,24 @@
 
 <cite>
 **Referenced Files in This Document**
-- [config.py](file://src/local_deepl/api/routers/config.py)
-- [ocr_settings.py](file://src/local_deepl/api/services/ocr_settings.py)
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [translation_config.py](file://src/local_deepl/core/translation_config.py)
-- [schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
-- [server.py](file://src/local_deepl/server.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
+- [ocr_settings.py](file://src/omniscribe/api/services/ocr_settings.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
+- [translation_config.py](file://src/omniscribe/core/translation_config.py)
+- [schemas/requests.py](file://src/omniscribe/api/schemas/requests.py)
+- [schemas/responses.py](file://src/omniscribe/api/schemas/responses.py)
+- [server.py](file://src/omniscribe/server.py)
 </cite>
+
+## Update Summary
+**Changes Made**
+- Added comprehensive transcription configuration section with dedicated endpoints
+- Extended environment variable documentation to include all OMNISCRIBE_TRANSCRIPTION_* variables
+- Updated configuration categories to include transcription as a fourth major category
+- Added detailed transcription-specific settings including API base URLs, keys, models, languages, prompts, and temperature
+- Enhanced response schemas to include TranscriptionConfigResponse model
+- Updated architecture diagrams to reflect the new transcription namespace
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -23,15 +34,17 @@
 10. [Appendices](#appendices)
 
 ## Introduction
-This document provides detailed API documentation for LocalDeepL’s configuration management endpoints. It covers reading, updating, and validating system configuration across categories such as OCR settings, translation providers, security policies, and application parameters. The guide includes URL patterns, request/response schemas, authentication requirements, status codes, examples, environment variable overrides, hot-reloading capabilities, and validation rules.
+This document provides detailed API documentation for OmniScribe's configuration management endpoints. It covers reading, updating, and validating system configuration across categories such as OCR settings, translation providers, security policies, application parameters, and **newly added transcription-specific settings**. The guide includes URL patterns, request/response schemas, authentication requirements, status codes, examples, environment variable overrides, hot-reloading capabilities, and validation rules.
 
 ## Project Structure
 The configuration API is implemented as a FastAPI router with service-backed logic and Pydantic-based schemas. Key files:
-- Router: src/local_deepl/api/routers/config.py
-- Services: src/local_deepl/api/services/ocr_settings.py, src/local_deepl/api/services/security_config.py
-- Core config models: src/local_deepl/core/translation_config.py
-- Request schemas: src/local_deepl/api/schemas/requests.py
-- Server wiring: src/local_deepl/server.py
+- Router: src/omniscribe/api/routers/config.py
+- Transcription Router: src/omniscribe/api/routers/transcription.py
+- Services: src/omniscribe/api/services/ocr_settings.py, src/omniscribe/api/services/security_config.py
+- Core config models: src/omniscribe/core/translation_config.py
+- Request schemas: src/omniscribe/api/schemas/requests.py
+- Response schemas: src/omniscribe/api/schemas/responses.py
+- Server wiring: src/omniscribe/server.py
 
 ```mermaid
 graph TB
@@ -39,27 +52,32 @@ Client["Client"] --> Router["Config Router<br/>/api/v1/config/*"]
 Router --> OcrSvc["OCR Settings Service"]
 Router --> SecCfgSvc["Security Config Service"]
 Router --> TransCfg["Translation Config Models"]
-Router --> Schemas["Request Schemas"]
+Router --> TranscriptionSvc["Transcription Config Service"]
+Router --> Schemas["Request & Response Schemas"]
 Router --> Server["FastAPI Server"]
 ```
 
 **Diagram sources**
-- [config.py](file://src/local_deepl/api/routers/config.py)
-- [ocr_settings.py](file://src/local_deepl/api/services/ocr_settings.py)
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [translation_config.py](file://src/local_deepl/core/translation_config.py)
-- [schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
-- [server.py](file://src/local_deepl/server.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
+- [ocr_settings.py](file://src/omniscribe/api/services/ocr_settings.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
+- [translation_config.py](file://src/omniscribe/core/translation_config.py)
+- [schemas/requests.py](file://src/omniscribe/api/schemas/requests.py)
+- [schemas/responses.py](file://src/omniscribe/api/schemas/responses.py)
+- [server.py](file://src/omniscribe/server.py)
 
 **Section sources**
-- [config.py](file://src/local_deepl/api/routers/config.py)
-- [server.py](file://src/local_deepl/server.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
+- [server.py](file://src/omniscribe/server.py)
 
 ## Core Components
 - Configuration Router: Exposes REST endpoints under /api/v1/config/. Handles GET (read), PUT/PATCH (update), and POST (validate).
 - OCR Settings Service: Manages OCR engine selection, model paths, thresholds, and pipeline options.
 - Security Config Service: Manages CORS, auth modes, token policies, and related security parameters.
 - Translation Config Models: Defines provider-specific configuration structures and defaults.
+- **Transcription Config Service**: Manages voice transcription settings including API endpoints, models, languages, prompts, and temperature controls.
 - Request Schemas: Pydantic models used to validate incoming requests and responses.
 
 Typical response envelope:
@@ -69,7 +87,7 @@ Typical response envelope:
 - errors: array of objects (validation or runtime errors)
 
 Authentication:
-- If enabled by server configuration, endpoints may require an API key or bearer token. Check the server’s middleware and router dependencies for exact requirements.
+- If enabled by server configuration, endpoints may require an API key or bearer token. Check the server's middleware and router dependencies for exact requirements.
 
 Status Codes:
 - 200 OK: Successful read/update/validation
@@ -87,11 +105,13 @@ Environment Overrides:
 - Many configuration values can be overridden via environment variables. See Appendix A for supported variables and precedence rules.
 
 **Section sources**
-- [config.py](file://src/local_deepl/api/routers/config.py)
-- [ocr_settings.py](file://src/local_deepl/api/services/ocr_settings.py)
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [translation_config.py](file://src/local_deepl/core/translation_config.py)
-- [schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
+- [ocr_settings.py](file://src/omniscribe/api/services/ocr_settings.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
+- [translation_config.py](file://src/omniscribe/core/translation_config.py)
+- [schemas/requests.py](file://src/omniscribe/api/schemas/requests.py)
+- [schemas/responses.py](file://src/omniscribe/api/schemas/responses.py)
 
 ## Architecture Overview
 The configuration API follows a layered design:
@@ -115,11 +135,13 @@ R-->>C : "JSON response"
 ```
 
 **Diagram sources**
-- [config.py](file://src/local_deepl/api/routers/config.py)
-- [ocr_settings.py](file://src/local_deepl/api/services/ocr_settings.py)
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [translation_config.py](file://src/local_deepl/core/translation_config.py)
-- [schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
+- [ocr_settings.py](file://src/omniscribe/api/services/ocr_settings.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
+- [translation_config.py](file://src/omniscribe/core/translation_config.py)
+- [schemas/requests.py](file://src/omniscribe/api/schemas/requests.py)
+- [schemas/responses.py](file://src/omniscribe/api/schemas/responses.py)
 
 ## Detailed Component Analysis
 
@@ -129,6 +151,7 @@ Base path: /api/v1/config/
 Categories:
 - ocr: OCR engine and pipeline settings
 - translation: Translation provider configurations
+- **transcription: Voice transcription settings and parameters**
 - security: Security policy settings
 - app: Application-level parameters
 
@@ -155,13 +178,15 @@ Response envelope:
 
 Example:
 - GET /api/v1/config/ocr
-- Expected response fields depend on the OCR configuration model.
+- GET /api/v1/config/transcription
+- Expected response fields depend on the category configuration model.
 
 **Section sources**
-- [config.py](file://src/local_deepl/api/routers/config.py)
-- [ocr_settings.py](file://src/local_deepl/api/services/ocr_settings.py)
-- [translation_config.py](file://src/local_deepl/core/translation_config.py)
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
+- [ocr_settings.py](file://src/omniscribe/api/services/ocr_settings.py)
+- [translation_config.py](file://src/omniscribe/core/translation_config.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
 
 #### Update Configuration
 - Method: PUT
@@ -171,15 +196,17 @@ Example:
 
 Example:
 - PUT /api/v1/config/ocr with updated OCR engine settings
+- PUT /api/v1/config/transcription with new transcription API settings
 
 Notes:
 - For partial updates, prefer PATCH when available.
 - On success, response includes updated configuration snapshot.
 
 **Section sources**
-- [config.py](file://src/local_deepl/api/routers/config.py)
-- [ocr_settings.py](file://src/local_deepl/api/services/ocr_settings.py)
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
+- [ocr_settings.py](file://src/omniscribe/api/services/ocr_settings.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
 
 #### Partial Update
 - Method: PATCH
@@ -189,10 +216,12 @@ Notes:
 
 Example:
 - PATCH /api/v1/config/security with new CORS allowlist
+- PATCH /api/v1/config/transcription with updated temperature setting
 
 **Section sources**
-- [config.py](file://src/local_deepl/api/routers/config.py)
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
 
 #### Validate Configuration
 - Method: POST
@@ -202,10 +231,12 @@ Example:
 
 Example:
 - POST /api/v1/config/translation/validate with new provider settings
+- POST /api/v1/config/transcription/validate with new transcription settings
 
 **Section sources**
-- [config.py](file://src/local_deepl/api/routers/config.py)
-- [translation_config.py](file://src/local_deepl/core/translation_config.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
+- [translation_config.py](file://src/omniscribe/core/translation_config.py)
 
 ### Category: OCR Settings
 Purpose: Configure OCR engines, models, preprocessing, and pipeline behavior.
@@ -232,8 +263,8 @@ Examples:
 - Validate proposed OCR config: POST /api/v1/config/ocr/validate
 
 **Section sources**
-- [ocr_settings.py](file://src/local_deepl/api/services/ocr_settings.py)
-- [config.py](file://src/local_deepl/api/routers/config.py)
+- [ocr_settings.py](file://src/omniscribe/api/services/ocr_settings.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
 
 ### Category: Translation Providers
 Purpose: Manage translation provider configurations and routing preferences.
@@ -264,8 +295,49 @@ Examples:
 - Validate proposed translation config: POST /api/v1/config/translation/validate
 
 **Section sources**
-- [translation_config.py](file://src/local_deepl/core/translation_config.py)
-- [config.py](file://src/local_deepl/api/routers/config.py)
+- [translation_config.py](file://src/omniscribe/core/translation_config.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
+
+### Category: Transcription Settings
+**New** Purpose: Configure voice transcription engines, models, language processing, and audio parameters.
+
+Key fields (representative):
+- transcription_api_base: Base URL for transcription API (default: https://api.openai.com/v1)
+- transcription_api_key: API key for transcription service authentication
+- transcription_model: Model identifier (default: whisper-1)
+- transcription_engine: Engine type (api, whisper_api, local, whisper_local, auto)
+- transcription_auth_token: Authentication token for transcription services
+- language: Target language code for transcription
+- prompt: Custom prompt for transcription guidance
+- temperature: Generation temperature (0.0 to 2.0)
+
+Supported engines:
+- `api`: Standard API-based transcription
+- `whisper_api`: OpenAI Whisper API specifically
+- `local`: Local transcription engine
+- `whisper_local`: Local Whisper implementation
+- `auto`: Automatic engine selection
+
+Hot-reload:
+- All transcription settings support runtime updates without service restart.
+
+Validation rules:
+- temperature must be between 0.0 and 2.0
+- engine must be one of the supported values
+- transcription_api_base must be a valid URL
+- language should be a valid ISO language code
+
+Examples:
+- Read current transcription config: GET /api/v1/config/transcription
+- Update transcription API settings: POST /api/v1/config/transcription with new api_base and api_key
+- Configure local Whisper engine: POST /api/v1/config/transcription with engine=whisper_local
+- Set transcription language and prompt: POST /api/v1/config/transcription with language and prompt fields
+
+**Section sources**
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
+- [schemas/requests.py](file://src/omniscribe/api/schemas/requests.py)
+- [schemas/responses.py](file://src/omniscribe/api/schemas/responses.py)
 
 ### Category: Security Policies
 Purpose: Control CORS, authentication, authorization, and other security-related settings.
@@ -291,8 +363,8 @@ Examples:
 - Validate proposed security config: POST /api/v1/config/security/validate
 
 **Section sources**
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [config.py](file://src/local_deepl/api/routers/config.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
 
 ### Category: Application Parameters
 Purpose: Global application settings such as logging level, feature flags, and resource limits.
@@ -316,20 +388,22 @@ Examples:
 - Validate proposed app config: POST /api/v1/config/app/validate
 
 **Section sources**
-- [config.py](file://src/local_deepl/api/routers/config.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
 
 ### Request and Response Schemas
 All endpoints use Pydantic models defined in the request schemas module. Responses follow a consistent envelope with success, message, data, and errors fields.
 
 - Request schemas: see schemas/requests.py
+- Response schemas: see schemas/responses.py
 - Response envelope: standardized across endpoints
 
 Validation:
 - Requests are validated before reaching service logic. Errors return 422 with details.
 
 **Section sources**
-- [schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
-- [config.py](file://src/local_deepl/api/routers/config.py)
+- [schemas/requests.py](file://src/omniscribe/api/schemas/requests.py)
+- [schemas/responses.py](file://src/omniscribe/api/schemas/responses.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
 
 ## Dependency Analysis
 The configuration router depends on services and core models. The following diagram shows relationships between components involved in configuration handling.
@@ -341,6 +415,11 @@ class ConfigRouter {
 +update_category(category, body)
 +patch_category(category, body)
 +validate_category(category, body)
+}
+class TranscriptionRouter {
++get_transcription_config()
++update_transcription_config(body)
++get_transcription_models()
 }
 class OcrSettingsService {
 +read()
@@ -361,35 +440,47 @@ class RequestSchemas {
 +OcrUpdateRequest
 +SecurityUpdateRequest
 +TranslationUpdateRequest
++TranscriptionConfigUpdate
 +AppUpdateRequest
+}
+class ResponseSchemas {
++TranscriptionConfigResponse
++OCRConfigResponse
++TranslationConfigResponse
++ConfigResponse
 }
 ConfigRouter --> OcrSettingsService : "uses"
 ConfigRouter --> SecurityConfigService : "uses"
 ConfigRouter --> TranslationConfigModels : "validates"
 ConfigRouter --> RequestSchemas : "parses"
+TranscriptionRouter --> RequestSchemas : "parses"
+TranscriptionRouter --> ResponseSchemas : "returns"
 ```
 
 **Diagram sources**
-- [config.py](file://src/local_deepl/api/routers/config.py)
-- [ocr_settings.py](file://src/local_deepl/api/services/ocr_settings.py)
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [translation_config.py](file://src/local_deepl/core/translation_config.py)
-- [schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
+- [ocr_settings.py](file://src/omniscribe/api/services/ocr_settings.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
+- [translation_config.py](file://src/omniscribe/core/translation_config.py)
+- [schemas/requests.py](file://src/omniscribe/api/schemas/requests.py)
+- [schemas/responses.py](file://src/omniscribe/api/schemas/responses.py)
 
 **Section sources**
-- [config.py](file://src/local_deepl/api/routers/config.py)
-- [ocr_settings.py](file://src/local_deepl/api/services/ocr_settings.py)
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [translation_config.py](file://src/local_deepl/core/translation_config.py)
-- [schemas/requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
+- [ocr_settings.py](file://src/omniscribe/api/services/ocr_settings.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
+- [translation_config.py](file://src/omniscribe/core/translation_config.py)
+- [schemas/requests.py](file://src/omniscribe/api/schemas/requests.py)
+- [schemas/responses.py](file://src/omniscribe/api/schemas/responses.py)
 
 ## Performance Considerations
 - Prefer PATCH for small updates to reduce payload size and avoid full reloads.
 - Use validate endpoints to catch misconfigurations before applying them.
 - Avoid frequent polling of configuration endpoints; cache client-side where appropriate.
 - Be mindful of hot-reload costs; some changes may incur transient overhead.
-
-[No sources needed since this section provides general guidance]
+- Transcription configuration updates are lightweight and can be applied at runtime without performance impact.
 
 ## Troubleshooting Guide
 Common issues and resolutions:
@@ -398,17 +489,17 @@ Common issues and resolutions:
 - 404 Not Found: Verify category name and endpoint spelling.
 - Validation failures: Use POST /{category}/validate to get detailed error messages before applying changes.
 - Hot-reload not taking effect: Confirm that the specific setting supports runtime updates; consult service implementation.
+- Transcription API connection issues: Verify transcription_api_base URL is accessible and transcription_api_key is valid.
 
 **Section sources**
-- [config.py](file://src/local_deepl/api/routers/config.py)
-- [ocr_settings.py](file://src/local_deepl/api/services/ocr_settings.py)
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [translation_config.py](file://src/local_deepl/core/translation_config.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
+- [ocr_settings.py](file://src/omniscribe/api/services/ocr_settings.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
+- [translation_config.py](file://src/omniscribe/core/translation_config.py)
 
 ## Conclusion
-LocalDeepL’s configuration API provides a unified interface to manage OCR, translation, security, and application settings. Use GET to inspect current state, PUT/PATCH to modify, and POST /validate to ensure correctness. Leverage environment variable overrides and hot-reload features for dynamic operation while maintaining robust validation and clear error reporting.
-
-[No sources needed since this section summarizes without analyzing specific files]
+OmniScribe's configuration API provides a unified interface to manage OCR, translation, transcription, security, and application settings. Use GET to inspect current state, PUT/PATCH to modify, and POST /validate to ensure correctness. Leverage environment variable overrides and hot-reload features for dynamic operation while maintaining robust validation and clear error reporting. The new transcription configuration system provides comprehensive control over voice transcription settings through both API endpoints and environment variables.
 
 ## Appendices
 
@@ -417,6 +508,8 @@ Configuration values can be overridden via environment variables. Typical preced
 - Runtime API updates (highest)
 - Environment variables
 - Defaults in code
+
+**Updated** Added comprehensive transcription environment variables:
 
 Supported variables (examples):
 - OCR_ENGINE: selects OCR engine
@@ -429,20 +522,34 @@ Supported variables (examples):
 - APP_LOG_LEVEL: logging verbosity
 - APP_FEATURE_FLAG_<NAME>: boolean flags
 
+**New Transcription Environment Variables:**
+- OMNISCRIBE_TRANSCRIPTION_API_BASE: Base URL for transcription API (default: https://api.openai.com/v1)
+- OMNISCRIBE_TRANSCRIPTION_API_KEY: API key for transcription service
+- OMNISCRIBE_TRANSCRIPTION_MODEL: Default transcription model (default: whisper-1)
+- OMNISCRIBE_TRANSCRIPTION_ENGINE: Transcription engine type (default: api)
+- OMNISCRIBE_TRANSCRIPTION_LANGUAGE: Default language code for transcription
+- OMNISCRIBE_TRANSCRIPTION_PROMPT: Custom prompt for transcription guidance
+- OMNISCRIBE_TRANSCRIPTION_TEMPERATURE: Generation temperature (default: 0.0)
+- OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN: Authentication token for transcription routes
+
 Notes:
 - Secrets should be provided via environment variables rather than persisted configuration.
 - Changes via environment variables typically require restart unless explicitly supported by the service.
+- Transcription environment variables support both OMNISCRIBE_TRANSCRIPTION_* and legacy LLM_* fallbacks.
 
 **Section sources**
-- [ocr_settings.py](file://src/local_deepl/api/services/ocr_settings.py)
-- [translation_config.py](file://src/local_deepl/core/translation_config.py)
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
+- [ocr_settings.py](file://src/omniscribe/api/services/ocr_settings.py)
+- [translation_config.py](file://src/omniscribe/core/translation_config.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
 
 ### Appendix B: Example Workflows
 
 - Query current configuration:
   - GET /api/v1/config/ocr
   - GET /api/v1/config/translation
+  - GET /api/v1/config/transcription
   - GET /api/v1/config/security
   - GET /api/v1/config/app
 
@@ -454,6 +561,24 @@ Notes:
   - PUT /api/v1/config/translation with new providers map and default_provider
   - Validate first: POST /api/v1/config/translation/validate
 
+**New Transcription Configuration Workflows:**
+- Configure transcription API settings:
+  - GET /api/v1/config/transcription to view current settings
+  - POST /api/v1/config/transcription with new api_base and api_key
+  - Set transcription model: POST /api/v1/config/transcription with model=whisper-large-v3
+  - Configure local Whisper: POST /api/v1/config/transcription with engine=whisper_local
+
+- Set transcription language and prompts:
+  - POST /api/v1/config/transcription with language=en&prompt=Transcribe this audio clearly
+  - Adjust temperature for creativity: POST /api/v1/config/transcription with temperature=0.7
+
+- Manage transcription authentication:
+  - Set transcription auth token via environment: OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN
+  - Update runtime via security configuration
+
+- Validate transcription configuration:
+  - POST /api/v1/config/transcription/validate with proposed settings
+
 - Manage security policies:
   - PUT /api/v1/config/security to set auth_mode, CORS, and token policies
   - Validate first: POST /api/v1/config/security/validate
@@ -462,7 +587,8 @@ Notes:
   - POST /api/v1/config/{category}/validate with proposed payload
 
 **Section sources**
-- [config.py](file://src/local_deepl/api/routers/config.py)
-- [ocr_settings.py](file://src/local_deepl/api/services/ocr_settings.py)
-- [translation_config.py](file://src/local_deepl/core/translation_config.py)
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
+- [config.py](file://src/omniscribe/api/routers/config.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
+- [ocr_settings.py](file://src/omniscribe/api/services/ocr_settings.py)
+- [translation_config.py](file://src/omniscribe/core/translation_config.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)

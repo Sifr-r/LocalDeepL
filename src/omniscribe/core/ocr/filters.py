@@ -24,6 +24,8 @@ from __future__ import annotations
 import logging
 import re
 
+logger = logging.getLogger(__name__)
+
 # Phrases the model emits as a fallback when it can't read the crop —
 # usually because the crop is blank, decorative, or otherwise non-text.
 # We strip them so they don't pollute the searchable text layer.
@@ -98,7 +100,7 @@ def _strip_runaway_repetition(lines: list[str], max_repeat: int = 20) -> list[st
             truncated += 1
     if truncated > 0:
         worst = max(counts.items(), key=lambda kv: kv[1])
-        logging.warning(
+        logger.warning(
             "LLM OCR output had %d runaway-repetition lines clipped "
             "(worst offender: %r occurred %d times). The model likely "
             "got stuck on this page; output may be incomplete. "

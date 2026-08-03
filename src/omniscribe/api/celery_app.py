@@ -20,6 +20,7 @@ class _MissingCeleryTask:
         *,
         name: str | None = None,
         bind: bool = False,
+        base: type | None = None,
     ) -> None:
         self._func = func
         resolved_name = name or getattr(func, "__name__", "celery_task")
@@ -27,6 +28,7 @@ class _MissingCeleryTask:
         self._bind = bind
         self.__name__ = func.__name__
         self.__doc__ = func.__doc__
+        self._base = base
 
     @property
     def name(self) -> str:
@@ -37,9 +39,34 @@ class _MissingCeleryTask:
         """Calling the task directly mirrors ``.run()`` (parity with celery)."""
         return self.run(*args, **kwargs)
 
+    def _bound_self(self) -> Any:
+        """Return the ``self`` argument that will be passed to ``func``.
+
+        When a Celery task declares ``base=`` (used here to mix shared
+        helpers like ``_CeleryTaskBase`` into task instances), Celery
+        builds the ``self`` from the base class at runtime. We mirror
+        that behavior by returning a dynamic subclass instance so
+        callers see the same API surface whether or not the real Celery
+        package is installed.
+        """
+        if self._base is None:
+            return self
+        cls = type(
+            f"_TaskBoundSelf[{self._base.__name__}]",
+            (self._base,),
+            {},
+        )
+        # Bind this task instance's ``update_state`` (and other task-level
+        # methods) onto the freshly built self so the same proxy
+        # attributes that tests patch on the task itself are visible to
+        # helpers like ``_CeleryTaskBase.emit_progress``.
+        instance = cls()
+        instance.update_state = self.update_state  # type: ignore[attr-defined]
+        return instance
+
     def run(self, *args: Any, **kwargs: Any) -> Any:
         if self._bind:
-            return self._func(self, *args, **kwargs)
+            return self._func(self._bound_self(), *args, **kwargs)
         return self._func(*args, **kwargs)
 
     def delay(self, *args: Any, **kwargs: Any) -> Any:
@@ -66,9 +93,10 @@ class _MissingCeleryApp:
     def task(self, *_args: Any, **kwargs: Any) -> Callable[[Callable[..., Any]], Any]:
         bind = bool(kwargs.get("bind", False))
         name = kwargs.get("name")
+        base = kwargs.get("base")
 
         def decorator(func: Callable[..., Any]) -> _MissingCeleryTask:
-            return _MissingCeleryTask(func, name=name, bind=bind)
+            return _MissingCeleryTask(func, name=name, bind=bind, base=base)
 
         return decorator
 

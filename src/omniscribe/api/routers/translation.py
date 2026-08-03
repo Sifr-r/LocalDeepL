@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from http import HTTPStatus
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -53,7 +54,7 @@ async def _load_pages_from_artifact(artifact_id: str, token: str) -> dict:
         }
         return pages_data
     except Exception as exc:
-        raise HTTPException(status_code=404, detail="text artifact not found") from exc
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="text artifact not found") from exc
 
 
 @router.post("/api/translate")
@@ -85,7 +86,7 @@ async def translate_text_async(body: TreeTranslationRequest):
             body.glossary or [],
         )
     except AsyncTranslationUnavailable as exc:
-        return JSONResponse(status_code=503, content={"error": str(exc)})
+        return JSONResponse(status_code=HTTPStatus.SERVICE_UNAVAILABLE, content={"error": str(exc)})
 
     return {"job_id": task.id, "status": "Processing"}
 
@@ -98,7 +99,7 @@ async def get_translation_status(job_id: str):
     try:
         task = celery_app.AsyncResult(job_id)
     except AsyncTranslationUnavailable as exc:
-        return JSONResponse(status_code=503, content={"error": str(exc)})
+        return JSONResponse(status_code=HTTPStatus.SERVICE_UNAVAILABLE, content={"error": str(exc)})
 
     try:
         response: dict[str, Any] = {
@@ -133,7 +134,10 @@ async def upload_glossary(req: GlossaryRequest) -> dict[str, Any]:
     elif req.text:
         glossary = Glossary.from_paired_lines(req.text)
     else:
-        raise HTTPException(status_code=422, detail="Provide 'entries' or 'text'.")
+        raise HTTPException(
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            detail="Provide 'entries' or 'text'.",
+        )
     return glossary.to_dict()
 
 
@@ -247,14 +251,17 @@ async def translate_nllb(req: dict[str, Any]) -> dict[str, Any]:
         else "English"
     )
     if not text:
-        raise HTTPException(status_code=422, detail="'text' is required")
+        raise HTTPException(
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            detail="'text' is required",
+        )
 
     from omniscribe.core.nllb_engine import NLLBEngine
 
     engine = NLLBEngine()
     if not engine.is_available():
         raise HTTPException(
-            status_code=503,
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
             detail="NLLBEngine is not available. Install the 'nllb' extra: uv sync --extra nllb",
         )
     result = await engine.translate(text, target)

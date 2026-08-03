@@ -170,28 +170,32 @@ def translate_node(state: TranslationState) -> dict[str, str | int]:
 
     settings = _state_settings(state)
 
-    prompt = f"Translate the following text into {state['target_language']}.\n\n"
+    prompt_parts = [f"Translate the following text into {state['target_language']}.\n\n"]
+    
     if state.get("glossary_prompt_block"):
-        prompt += state["glossary_prompt_block"] + "\n\n"
+        prompt_parts.append(state["glossary_prompt_block"] + "\n\n")
+    
     if state.get("entity_memory_prompt_block"):
-        prompt += state["entity_memory_prompt_block"] + "\n\n"
+        prompt_parts.append(state["entity_memory_prompt_block"] + "\n\n")
+    
     if state.get("rag_context"):
-        prompt += (
+        prompt_parts.append(
             "Use the following lexicon definitions to ensure correct terminology:\n"
         )
-        prompt += "\n".join(state["rag_context"]) + "\n\n"
-
+        prompt_parts.append("\n".join(state["rag_context"]) + "\n\n")
+    
     if state.get("sliding_window"):
-        prompt += (
+        prompt_parts.append(
             "PREVIOUS CONTEXT (do not translate again, just stay consistent):\n"
             + state["sliding_window"]
             + "\n\n"
         )
-
+    
     if state.get("feedback"):
-        prompt += f"Previous translation had issues. Feedback: {state['feedback']}\nPlease fix these issues.\n\n"
-
-    prompt += f"SOURCE TEXT:\n{state['source_chunk']}"
+        prompt_parts.append(f"Previous translation had issues. Feedback: {state['feedback']}\nPlease fix these issues.\n\n")
+    
+    prompt_parts.append(f"SOURCE TEXT:\n{state['source_chunk']}")
+    prompt = "".join(prompt_parts)
 
     try:
         client = OpenAI(base_url=settings.api_base, api_key=settings.api_key)
@@ -444,6 +448,42 @@ class _LazyTranslationApp:
 translation_app = _LazyTranslationApp()
 
 
+class _Chunker:
+    """Encapsulates paragraph → line → word hierarchical chunking state."""
+
+    def __init__(self, max_chunk_size: int):
+        self.max_chunk_size = max_chunk_size
+        self.chunks: list[str] = []
+        self.current_chunk: list[str] = []
+        self.current_len = 0
+        self.current_delim = ""
+
+    def add(self, text: str, delim: str = "") -> None:
+        """Add text to current chunk; flush if exceeds max_chunk_size."""
+        if not text:
+            return
+
+        est_len = self.current_len + len(text) + len(delim)
+        if est_len > self.max_chunk_size and self.current_chunk:
+            self._flush()
+
+        self.current_chunk.append(text)
+        self.current_len += len(text) + len(delim)
+        self.current_delim = delim
+
+    def _flush(self) -> None:
+        """Flush current chunk to output."""
+        if self.current_chunk:
+            self.chunks.append(self.current_delim.join(self.current_chunk))
+            self.current_chunk = []
+            self.current_len = 0
+
+    def finalize(self) -> list[str]:
+        """Return all chunks and clear state."""
+        self._flush()
+        return [c for c in self.chunks if c.strip()]
+
+
 def chunk_text(text: str, max_chunk_size: int = 4000) -> list[str]:
     """Splits text into chunks of maximum size, trying to preserve paragraph and sentence boundaries."""
     if not isinstance(text, str):
@@ -455,52 +495,23 @@ def chunk_text(text: str, max_chunk_size: int = 4000) -> list[str]:
     if len(text) <= max_chunk_size:
         return [text]
 
-    chunks = []
-    current_chunk: list[str] = []
-    current_len = 0
+    chunker = _Chunker(max_chunk_size)
 
     # Split by paragraphs first
-    paragraphs = text.split("\n\n")
-    for para in paragraphs:
-        if len(para) + 2 > max_chunk_size:
-            # Paragraph itself is too large, split by lines
-            lines = para.split("\n")
-            for line in lines:
-                if len(line) + 1 > max_chunk_size:
-                    # Split by words
-                    words = line.split(" ")
-                    for word in words:
-                        if current_len + len(word) + 1 > max_chunk_size:
-                            if current_chunk:
-                                chunks.append(" ".join(current_chunk))
-                            current_chunk = [word]
-                            current_len = len(word)
-                        else:
-                            current_chunk.append(word)
-                            current_len += len(word) + 1
-                else:
-                    if current_len + len(line) + 1 > max_chunk_size:
-                        if current_chunk:
-                            chunks.append("\n".join(current_chunk))
-                        current_chunk = [line]
-                        current_len = len(line)
-                    else:
-                        current_chunk.append(line)
-                        current_len += len(line) + 1
+    for paragraph in text.split("\n\n"):
+        if len(paragraph) <= max_chunk_size - 4:  # -4 for delimiter overhead
+            chunker.add(paragraph, "\n\n")
         else:
-            if current_len + len(para) + 2 > max_chunk_size:
-                if current_chunk:
-                    chunks.append("\n\n".join(current_chunk))
-                current_chunk = [para]
-                current_len = len(para)
-            else:
-                current_chunk.append(para)
-                current_len += len(para) + 2
+            # Paragraph is too large, split by lines
+            for line in paragraph.split("\n"):
+                if len(line) <= max_chunk_size - 2:  # -2 for line delimiter
+                    chunker.add(line, "\n")
+                else:
+                    # Line is too large, split by words
+                    for word in line.split(" "):
+                        chunker.add(word, " ")
 
-    if current_chunk:
-        chunks.append(("\n\n" if "\n\n" in text else "\n").join(current_chunk))
-
-    return [c for c in chunks if c.strip()]
+    return chunker.finalize()
 
 
 def run_translation(

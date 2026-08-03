@@ -15,6 +15,12 @@ from omniscribe.core.transcription import (
     validate_audio_input,
 )
 
+# Test fixture constants (not real credentials)
+TEST_FAKE_API_KEY = "test-key"
+TEST_DUMMY_MODEL = "whisper-large-v3"
+TEST_PLACEHOLDER_TOKEN = "super-secret-transcription-token-1234567890"
+TEST_FAKE_SK_KEY = "sk-test-transcription-key-123456789"
+
 
 def test_validate_audio_input_success():
     ext = validate_audio_input("speech.mp3", content_type="audio/mpeg", file_size=1024)
@@ -66,17 +72,17 @@ def test_factory_get_transcription_engine():
         engine_type="api",
         model="custom-model",
         api_base="http://localhost:8000/v1",
-        api_key="secret",
+        api_key=TEST_FAKE_API_KEY,
     )
     assert isinstance(api_engine, GenericAudioAPIEngine)
     assert api_engine.model == "custom-model"
-    assert api_engine.api_key == "secret"
+    assert api_engine.api_key == TEST_FAKE_API_KEY
 
 
 @pytest.mark.asyncio
 async def test_generic_audio_api_engine_transcribe_mock():
     engine = GenericAudioAPIEngine(
-        model="whisper-large-v3", api_base="http://fake-api/v1", api_key="test-key"
+        model=TEST_DUMMY_MODEL, api_base="http://fake-api/v1", api_key=TEST_FAKE_API_KEY
     )
 
     mock_json = {
@@ -158,7 +164,7 @@ def test_transcription_config_endpoints():
         "/api/config/transcription",
         json={
             "model": "gpt-4o-audio-preview",
-            "transcription_api_key": "sk-test-transcription-key-123456789",
+            "transcription_api_key": TEST_FAKE_SK_KEY,
             "engine": "api",
         },
     )
@@ -168,12 +174,31 @@ def test_transcription_config_endpoints():
     assert "..." in updated["transcription_api_key"]
 
 
+def test_config_response_redacts_api_key():
+    """Ensure POST /api/config/transcription masks the API key in response."""
+    app = _create_test_app()
+    client = TestClient(app)
+    response = client.post(
+        "/api/config/transcription",
+        json={
+            "model": "gpt-4o-audio",
+            "transcription_api_key": "my-real-secret-key-xyz123",
+            "engine": "api",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    # Verify the key is redacted in the response
+    assert "my-real-secret-key" not in data.get("transcription_api_key", "")
+    assert "..." in data.get("transcription_api_key", "")
+
+
 def test_transcription_auth_middleware_enforcement():
     app = FastAPI()
     app.add_middleware(
         BearerAuthMiddleware,
         expected_token=None,
-        transcription_token="super-secret-transcription-token-1234567890",
+        transcription_token=TEST_PLACEHOLDER_TOKEN,
     )
     app.include_router(transcription.router)
     client = TestClient(app)
@@ -185,6 +210,6 @@ def test_transcription_auth_middleware_enforcement():
     # Correct token -> 200
     resp_auth = client.get(
         "/api/config/transcription",
-        headers={"Authorization": "Bearer super-secret-transcription-token-1234567890"},
+        headers={"Authorization": f"Bearer {TEST_PLACEHOLDER_TOKEN}"},
     )
     assert resp_auth.status_code == 200

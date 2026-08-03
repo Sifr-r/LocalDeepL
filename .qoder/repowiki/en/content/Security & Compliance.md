@@ -2,26 +2,21 @@
 
 <cite>
 **Referenced Files in This Document**
-- [server.py](file://src/local_deepl/server.py)
-- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [security.py](file://src/local_deepl/api/services/security.py)
-- [security.py](file://src/local_deepl/utils/security.py)
-- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-- [extraction.py](file://src/local_deepl/api/routers/extraction.py)
-- [translation.py](file://src/local_deepl/api/routers/translation.py)
-- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
-- [state.py](file://src/local_deepl/api/routers/state.py)
-- [config.py](file://src/local_deepl/api/routers/config.py)
-- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [requests.py](file://src/local_deepl/api/schemas/requests.py)
-- [celery_app.py](file://src/local_deepl/api/celery_app.py)
-- [tasks.py](file://src/local_deepl/api/tasks.py)
-- [test_security_qa.py](file://tests/test_security_qa.py)
-- [test_api_safety.py](file://tests/test_api_safety.py)
-- [Dockerfile](file://Dockerfile)
-- [compose.yaml](file://compose.yaml)
+- [server.py](file://src/omniscribe/server.py)
+- [security_middleware.py](file://src/omniscribe/api/services/security_middleware.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
+- [test_transcription.py](file://tests/test_transcription.py)
+- [test_separate_auth.py](file://tests/test_separate_auth.py)
 </cite>
+
+## Update Summary
+**Changes Made**
+- Updated Authentication and Authorization section to document the new transcription-specific authentication token
+- Enhanced Security Middleware section with transcription route support
+- Added configuration examples for OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN
+- Updated architecture diagrams to reflect the four-token authentication system
+- Added production hardening guidance for transcription route security
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -36,7 +31,7 @@
 10. [Appendices](#appendices)
 
 ## Introduction
-This document describes LocalDeepL’s security and compliance features with a focus on enterprise-grade protection and audit capabilities. It explains authentication and authorization mechanisms, input validation, secure file handling, middleware implementation, CORS configuration, API rate limiting, audit logging, encryption at rest and in transit, and privacy compliance considerations. It also provides production hardening guidance, access control policies, monitoring setup, vulnerability assessment and penetration testing guidelines, and incident response procedures.
+This document describes OmniScribe's security and compliance features with a focus on enterprise-grade protection and audit capabilities. It explains authentication and authorization mechanisms, input validation, secure file handling, middleware implementation, CORS configuration, API rate limiting, audit logging, encryption at rest and in transit, and privacy compliance considerations. It also provides production hardening guidance, access control policies, monitoring setup, vulnerability assessment and penetration testing guidelines, and incident response procedures.
 
 ## Project Structure
 Security-related functionality is implemented across the API services layer, utilities, routers, and runtime configuration:
@@ -50,7 +45,7 @@ Security-related functionality is implemented across the API services layer, uti
 ```mermaid
 graph TB
 subgraph "API Layer"
-A["Routers<br/>artifacts.py, extraction.py, translation.py, jobs.py, state.py, config.py, websocket.py"]
+A["Routers<br/>artifacts.py, extraction.py, translation.py, jobs.py, state.py, config.py, websocket.py, transcription.py"]
 B["Services<br/>security_middleware.py, security_config.py, security.py (services)"]
 C["Schemas<br/>requests.py"]
 end
@@ -62,7 +57,7 @@ E["server.py"]
 F["celery_app.py / tasks.py"]
 end
 subgraph "Tests"
-G["test_security_qa.py, test_api_safety.py"]
+G["test_security_qa.py, test_api_safety.py, test_transcription.py, test_separate_auth.py"]
 end
 subgraph "Deployment"
 H["Dockerfile, compose.yaml"]
@@ -77,46 +72,12 @@ H --> E
 ```
 
 **Diagram sources**
-- [server.py](file://src/local_deepl/server.py)
-- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [security.py](file://src/local_deepl/api/services/security.py)
-- [security.py](file://src/local_deepl/utils/security.py)
-- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-- [extraction.py](file://src/local_deepl/api/routers/extraction.py)
-- [translation.py](file://src/local_deepl/api/routers/translation.py)
-- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
-- [state.py](file://src/local_deepl/api/routers/state.py)
-- [config.py](file://src/local_deepl/api/routers/config.py)
-- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [requests.py](file://src/local_deepl/api/schemas/requests.py)
-- [celery_app.py](file://src/local_deepl/api/celery_app.py)
-- [tasks.py](file://src/local_deepl/api/tasks.py)
-- [test_security_qa.py](file://tests/test_security_qa.py)
-- [test_api_safety.py](file://tests/test_api_safety.py)
-- [Dockerfile](file://Dockerfile)
-- [compose.yaml](file://compose.yaml)
-
-**Section sources**
-- [server.py](file://src/local_deepl/server.py)
-- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [security.py](file://src/local_deepl/api/services/security.py)
-- [security.py](file://src/local_deepl/utils/security.py)
-- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-- [extraction.py](file://src/local_deepl/api/routers/extraction.py)
-- [translation.py](file://src/local_deepl/api/routers/translation.py)
-- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
-- [state.py](file://src/local_deepl/api/routers/state.py)
-- [config.py](file://src/local_deepl/api/routers/config.py)
-- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [requests.py](file://src/local_deepl/api/schemas/requests.py)
-- [celery_app.py](file://src/local_deepl/api/celery_app.py)
-- [tasks.py](file://src/local_deepl/api/tasks.py)
-- [test_security_qa.py](file://tests/test_security_qa.py)
-- [test_api_safety.py](file://tests/test_api_safety.py)
-- [Dockerfile](file://Dockerfile)
-- [compose.yaml](file://compose.yaml)
+- [server.py](file://src/omniscribe/server.py)
+- [security_middleware.py](file://src/omniscribe/api/services/security_middleware.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
+- [test_transcription.py](file://tests/test_transcription.py)
+- [test_separate_auth.py](file://tests/test_separate_auth.py)
 
 ## Core Components
 - Security middleware: Centralizes request/response processing for headers, CORS, rate limiting, and security controls.
@@ -126,7 +87,7 @@ H --> E
 - Background job security: Celery app and tasks enforce isolation and safe execution boundaries for long-running workloads.
 
 Key responsibilities:
-- Authentication and authorization hooks
+- Authentication and authorization hooks with per-route token support
 - Input validation and sanitization
 - Secure file upload/download flows
 - Audit event emission and correlation IDs
@@ -134,13 +95,9 @@ Key responsibilities:
 - CORS policy enforcement
 
 **Section sources**
-- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [security.py](file://src/local_deepl/api/services/security.py)
-- [security.py](file://src/local_deepl/utils/security.py)
-- [requests.py](file://src/local_deepl/api/schemas/requests.py)
-- [celery_app.py](file://src/local_deepl/api/celery_app.py)
-- [tasks.py](file://src/local_deepl/api/tasks.py)
+- [security_middleware.py](file://src/omniscribe/api/services/security_middleware.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
 
 ## Architecture Overview
 The application follows a layered architecture where HTTP/WebSocket endpoints are handled by routers, which delegate to services. Security middleware sits close to the ASGI/HTTP boundary to enforce cross-cutting concerns. Configuration is centralized and consumed by both middleware and services.
@@ -157,6 +114,7 @@ participant Jobs as "celery_app.py / tasks.py"
 Client->>Server : "HTTP Request"
 Server->>MW : "Apply middleware pipeline"
 MW->>MW : "CORS, headers, rate limit"
+MW->>MW : "Route-specific auth token validation"
 MW-->>Router : "Request with context"
 Router->>Service : "Validate schema + authorize"
 Service->>Utils : "Token/secrets helpers"
@@ -170,12 +128,9 @@ MW-->>Client : "Secured Response"
 ```
 
 **Diagram sources**
-- [server.py](file://src/local_deepl/server.py)
-- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [security.py](file://src/local_deepl/api/services/security.py)
-- [security.py](file://src/local_deepl/utils/security.py)
-- [celery_app.py](file://src/local_deepl/api/celery_app.py)
-- [tasks.py](file://src/local_deepl/api/tasks.py)
+- [server.py](file://src/omniscribe/server.py)
+- [security_middleware.py](file://src/omniscribe/api/services/security_middleware.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
 
 ## Detailed Component Analysis
 
@@ -185,32 +140,37 @@ Responsibilities:
 - Apply rate limiting per client or endpoint.
 - Inject security headers and correlation identifiers for tracing.
 - Normalize and validate incoming requests prior to routing.
+- **Updated**: Support for four independent authentication tokens with per-route precedence.
 
 Configuration:
 - Controlled via security configuration module; enables toggles for CORS, allowed hosts, and rate-limit thresholds.
+- **Updated**: Four-token authentication system supporting global, OCR, translation, and transcription-specific tokens.
 
 Operational notes:
 - Middleware should be registered early in the server startup to protect all routes.
 - Ensure consistent correlation ID propagation to downstream services and background tasks.
+- **Updated**: Route classification supports `/api/transcribe`, `/api/models/transcription`, and `/api/config/transcription` paths.
 
 **Section sources**
-- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [server.py](file://src/local_deepl/server.py)
+- [security_middleware.py](file://src/omniscribe/api/services/security_middleware.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
+- [server.py](file://src/omniscribe/server.py)
 
 ### Security Configuration
 Responsibilities:
 - Provide strongly-typed settings for security features (CORS, rate limiting, secrets).
 - Centralize environment-driven overrides for production deployments.
 - Expose defaults suitable for development while allowing strict production values.
+- **Updated**: Support for OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN environment variable.
 
 Production guidance:
 - Pin explicit allowed origins and methods.
 - Configure rate limits appropriate for your workload and SLAs.
 - Avoid defaulting to permissive modes in production.
+- **Updated**: Use separate tokens for each service route group for enhanced security isolation.
 
 **Section sources**
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
 
 ### Security Services and Utilities
 Responsibilities:
@@ -224,8 +184,7 @@ Integration points:
 - Background tasks consume these utilities to ensure consistent security posture.
 
 **Section sources**
-- [security.py](file://src/local_deepl/api/services/security.py)
-- [security.py](file://src/local_deepl/utils/security.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
 
 ### Router-Level Security and Input Validation
 Responsibilities:
@@ -238,16 +197,11 @@ Examples of protected endpoints:
 - Extraction and Translation: validated inputs and controlled resource access.
 - Jobs and State: authenticated access to job lifecycle and status.
 - WebSocket: secure connection establishment and message validation.
+- **Updated**: Transcription routes: `/api/transcribe`, `/api/models/transcription`, `/api/config/transcription` with dedicated authentication.
 
 **Section sources**
-- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-- [extraction.py](file://src/local_deepl/api/routers/extraction.py)
-- [translation.py](file://src/local_deepl/api/routers/translation.py)
-- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
-- [state.py](file://src/local_deepl/api/routers/state.py)
-- [config.py](file://src/local_deepl/api/routers/config.py)
-- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
-- [requests.py](file://src/local_deepl/api/schemas/requests.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
+- [test_transcription.py](file://tests/test_transcription.py)
 
 ### Background Job Security
 Responsibilities:
@@ -260,8 +214,7 @@ Operational notes:
 - Rotate credentials and tokens accessible to workers regularly.
 
 **Section sources**
-- [celery_app.py](file://src/local_deepl/api/celery_app.py)
-- [tasks.py](file://src/local_deepl/api/tasks.py)
+- [server.py](file://src/omniscribe/server.py)
 
 ### File Upload and Download Security
 Practices:
@@ -287,13 +240,15 @@ Reject --> End
 [No diagram sources needed since this diagram shows conceptual workflow]
 
 **Section sources**
-- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-- [security.py](file://src/local_deepl/api/services/security.py)
-- [security.py](file://src/local_deepl/utils/security.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
 
 ### Authentication and Authorization
 Mechanisms:
-- Token-based authentication verified by security services.
+- **Updated**: Four-token authentication system with per-route precedence:
+  - Global token (`OMNISCRIBE_AUTH_TOKEN`) for fallback authentication
+  - OCR token (`OMNISCRIBE_OCR_AUTH_TOKEN`) for OCR routes
+  - Translation token (`OMNISCRIBE_TRANSLATION_AUTH_TOKEN`) for translation routes  
+  - **New**: Transcription token (`OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN`) for transcription routes
 - Role- or scope-based authorization enforced at router/service boundaries.
 - Session and credential handling through secure utilities.
 
@@ -301,13 +256,13 @@ Best practices:
 - Require strong tokens and rotate frequently.
 - Scope permissions narrowly per user or service account.
 - Log authorization decisions for auditability.
+- **Updated**: Use separate tokens for different service groups to minimize blast radius.
 
 **Section sources**
-- [security.py](file://src/local_deepl/api/services/security.py)
-- [security.py](file://src/local_deepl/utils/security.py)
-- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
-- [state.py](file://src/local_deepl/api/routers/state.py)
+- [security_middleware.py](file://src/omniscribe/api/services/security_middleware.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
+- [test_transcription.py](file://tests/test_transcription.py)
 
 ### CORS Configuration
 Controls:
@@ -320,8 +275,8 @@ Production guidance:
 - Avoid wildcard patterns in production.
 
 **Section sources**
-- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
+- [security_middleware.py](file://src/omniscribe/api/services/security_middleware.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
 
 ### API Rate Limiting
 Capabilities:
@@ -334,8 +289,8 @@ Implementation tips:
 - Integrate with distributed rate limiting for multi-instance deployments.
 
 **Section sources**
-- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
+- [security_middleware.py](file://src/omniscribe/api/services/security_middleware.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
 
 ### Audit Logging and Observability
 Features:
@@ -348,8 +303,7 @@ Recommendations:
 - Retain logs according to compliance requirements.
 
 **Section sources**
-- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [tasks.py](file://src/local_deepl/api/tasks.py)
+- [security_middleware.py](file://src/omniscribe/api/services/security_middleware.py)
 
 ### Data Encryption
 At Rest:
@@ -361,8 +315,7 @@ In Transit:
 - Validate certificates and prefer modern cipher suites.
 
 **Section sources**
-- [Dockerfile](file://Dockerfile)
-- [compose.yaml](file://compose.yaml)
+- [server.py](file://src/omniscribe/server.py)
 
 ### Privacy and Compliance
 Considerations:
@@ -386,32 +339,9 @@ Tasks --> Routers
 ```
 
 **Diagram sources**
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [security.py](file://src/local_deepl/api/services/security.py)
-- [security.py](file://src/local_deepl/utils/security.py)
-- [tasks.py](file://src/local_deepl/api/tasks.py)
-- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-- [extraction.py](file://src/local_deepl/api/routers/extraction.py)
-- [translation.py](file://src/local_deepl/api/routers/translation.py)
-- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
-- [state.py](file://src/local_deepl/api/routers/state.py)
-- [config.py](file://src/local_deepl/api/routers/config.py)
-- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
-
-**Section sources**
-- [security_config.py](file://src/local_deepl/api/services/security_config.py)
-- [security_middleware.py](file://src/local_deepl/api/services/security_middleware.py)
-- [security.py](file://src/local_deepl/api/services/security.py)
-- [security.py](file://src/local_deepl/utils/security.py)
-- [tasks.py](file://src/local_deepl/api/tasks.py)
-- [artifacts.py](file://src/local_deepl/api/routers/artifacts.py)
-- [extraction.py](file://src/local_deepl/api/routers/extraction.py)
-- [translation.py](file://src/local_deepl/api/routers/translation.py)
-- [jobs.py](file://src/local_deepl/api/routers/jobs.py)
-- [state.py](file://src/local_deepl/api/routers/state.py)
-- [config.py](file://src/local_deepl/api/routers/config.py)
-- [websocket.py](file://src/local_deepl/api/routers/websocket.py)
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
+- [security_middleware.py](file://src/omniscribe/api/services/security_middleware.py)
+- [server.py](file://src/omniscribe/server.py)
 
 ## Performance Considerations
 - Keep middleware lightweight; avoid heavy I/O in request path.
@@ -426,18 +356,20 @@ Common issues and diagnostics:
 - CORS failures: Verify origin/method/header allowlists and browser preflight behavior.
 - Rate limiting spikes: Inspect client identity resolution and window configuration.
 - Auth errors: Check token format, expiration, and issuer validation.
+- **Updated**: Transcription auth failures: Verify OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN is set correctly for transcription routes.
 - File upload rejections: Confirm content-type checks and size limits.
 - Task failures: Review correlation IDs and worker logs for context.
 
 Validation tests:
 - Security QA and API safety tests exercise core protections and can guide remediation.
+- **Updated**: Transcription authentication tests verify route-specific token enforcement.
 
 **Section sources**
-- [test_security_qa.py](file://tests/test_security_qa.py)
-- [test_api_safety.py](file://tests/test_api_safety.py)
+- [test_transcription.py](file://tests/test_transcription.py)
+- [test_separate_auth.py](file://tests/test_separate_auth.py)
 
 ## Conclusion
-LocalDeepL implements a layered security model with middleware-enforced controls, robust input validation, secure file handling, and integration points for audit and observability. By configuring CORS, rate limits, and encryption appropriately, and following the operational guidance herein, organizations can deploy an enterprise-grade, compliant service.
+OmniScribe implements a layered security model with middleware-enforced controls, robust input validation, secure file handling, and integration points for audit and observability. The enhanced four-token authentication system provides granular access control across different service routes. By configuring CORS, rate limits, encryption appropriately, and following the operational guidance herein, organizations can deploy an enterprise-grade, compliant service.
 
 [No sources needed since this section summarizes without analyzing specific files]
 
@@ -447,21 +379,23 @@ LocalDeepL implements a layered security model with middleware-enforced controls
 - Enable HTTPS/TLS termination and pin certificates.
 - Set strict CORS allowlists and disable unnecessary methods.
 - Configure rate limits per client and endpoint.
+- **Updated**: Set separate authentication tokens for each service route group:
+  - `OMNISCRIBE_AUTH_TOKEN` for global fallback
+  - `OMNISCRIBE_OCR_AUTH_TOKEN` for OCR routes
+  - `OMNISCRIBE_TRANSLATION_AUTH_TOKEN` for translation routes
+  - `OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN` for transcription routes
 - Use least-privilege service accounts and rotate secrets regularly.
 - Run workers in isolated environments with minimal filesystem access.
 - Enable structured audit logging and forward to SIEM.
 - Back up encrypted data and test restoration procedures.
 
-[No sources needed since this section provides general guidance]
-
 ### Vulnerability Assessment and Penetration Testing Guidelines
 - Perform static and dynamic analysis regularly; address findings promptly.
 - Test authentication bypass, authorization flaws, and input validation gaps.
+- **Updated**: Verify transcription route authentication with OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN.
 - Validate file upload defenses against polymorphic and oversized payloads.
 - Assess background job integrity and parameter injection risks.
 - Review container images and base layers for known CVEs.
-
-[No sources needed since this section provides general guidance]
 
 ### Incident Response Procedures
 - Detect: Monitor auth failures, rate limit triggers, and anomalous file operations.
@@ -470,4 +404,47 @@ LocalDeepL implements a layered security model with middleware-enforced controls
 - Recover: Restore from verified backups and validate integrity.
 - Lessons Learned: Update policies, add detections, and refine configurations.
 
-[No sources needed since this section provides general guidance]
+### Environment Variables Reference
+**Updated**: Complete list of security-related environment variables:
+
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `OMNISCRIBE_AUTH_TOKEN` | Global authentication token | None | `your-global-secret-here` |
+| `OMNISCRIBE_OCR_AUTH_TOKEN` | OCR-specific authentication token | None | `your-ocr-secret-here` |
+| `OMNISCRIBE_TRANSLATION_AUTH_TOKEN` | Translation-specific authentication token | None | `your-translation-secret-here` |
+| `OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN` | **New**: Transcription-specific authentication token | None | `your-transcription-secret-here` |
+| `OMNISCRIBE_CORS_ORIGINS` | Comma-separated allowed origins | Empty | `https://example.com,https://app.example.com` |
+| `OMNISCRIBE_MAX_UPLOAD_MB` | Maximum upload size in MB | 10240 | `100` |
+| `OMNISCRIBE_RATE_LIMIT_PER_MIN` | Requests per minute per IP | None | `60` |
+
+**Section sources**
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
+- [test_separate_auth.py](file://tests/test_separate_auth.py)
+
+### Transcription Route Authentication Examples
+**New**: Configuration examples for transcription route security:
+
+```bash
+# Set transcription-specific authentication token
+export OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN="your-transcription-secret-here"
+
+# Or use separate tokens for all services
+export OMNISCRIBE_AUTH_TOKEN="global-secret"
+export OMNISCRIBE_OCR_AUTH_TOKEN="ocr-secret"
+export OMNISCRIBE_TRANSLATION_AUTH_TOKEN="translation-secret"
+export OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN="transcription-secret"
+```
+
+```python
+# Programmatic configuration
+from omniscribe.api.services.security_config import SecuritySettings
+
+settings = SecuritySettings.from_env()
+print(f"Transcription auth enabled: {settings.transcription_auth_enabled}")
+print(f"Any auth enabled: {settings.any_auth_enabled}")
+```
+
+**Section sources**
+- [security_config.py](file://src/omniscribe/api/services/security_config.py)
+- [transcription.py](file://src/omniscribe/api/routers/transcription.py)
+- [test_transcription.py](file://tests/test_transcription.py)

@@ -10,11 +10,43 @@ Frames (all JSON, one per message):
 Inbound: ``{"type": "cancel"}`` is honored as soon as the next progress tick
 arrives. The worker checks :data:`ConnectionManager.cancel_flags` between
 OCR blocks / translation chunks.
+
+Process-lifetime boundary
+-------------------------
+
+This module owns two pieces of process-bound state:
+
+- ``manager`` (the module-level :class:`ConnectionManager` singleton)
+  with three internal dicts: ``manager.active`` (channel_id → live
+  :class:`fastapi.WebSocket`), ``manager._tokens`` (channel_id →
+  session_token, used for ``is_authorized`` checks), and
+  ``manager._cancel_flags`` (channel_id → :class:`asyncio.Event`,
+  flipped by :meth:`ConnectionManager.request_cancel` and read by the
+  OCR/translate worker via :meth:`ConnectionManager.is_cancelled`).
+- ``_progress_service`` (the :class:`ProgressService` resolved from
+  ``state.progress_service``), used to validate token shape and compare
+  bindings.
+
+Both live in the Python process that runs the uvicorn worker. A
+restart — or simply reloading this router module — empties ``active``,
+``_tokens``, and ``_cancel_flags`` in one shot: every channel that was
+open is gone, every in-flight cancel flag is lost, and clients that
+reconnect with the old ``channel_id`` will fail authentication
+(:meth:`ConnectionManager.is_authorized` returns ``False`` because the
+expected token is no longer in ``_tokens``). The worker checks
+``is_cancelled`` between blocks, so a process kill mid-run silently
+aborts any unsent cancellation; there is no on-disk durability here.
+
+See the *Known Tech Debt* section of ``AGENTS.md`` for the project-level
+acknowledgement: "Job/artifact state is in-memory only
+(``api/routers/state.py`` singletons) — restarts lose history; no
+horizontal scaling."
 """
 
 from __future__ import annotations
 
 import asyncio
+from http import HTTPStatus
 from typing import Any, Protocol, runtime_checkable
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -267,7 +299,7 @@ async def create_progress_session(body: dict | None = None):
         channel = _progress_service.create_channel(display_client_id=display_client_id)
     except (TypeError, ValueError):
         return JSONResponse(
-            status_code=422,
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
             content={"error": "Invalid progress session parameters."},
         )
     return {

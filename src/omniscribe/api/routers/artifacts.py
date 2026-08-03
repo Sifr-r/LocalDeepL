@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from http import HTTPStatus
 from typing import Any, cast
 
 from fastapi import APIRouter, Depends
@@ -35,14 +36,20 @@ async def get_text(
     access_token: str | None = Depends(get_access_token),
 ):
     if not access_token:
-        return JSONResponse(status_code=403, content={"error": "Text access denied"})
+        return JSONResponse(
+            status_code=HTTPStatus.FORBIDDEN, content={"error": "Text access denied"}
+        )
 
     try:
         text_path = await state.text_artifacts.get(artifact_id, access_token)
     except (InvalidArtifactReferenceError, ArtifactNotFoundError):
-        return JSONResponse(status_code=404, content={"error": "Text not found"})
+        return JSONResponse(
+            status_code=HTTPStatus.NOT_FOUND, content={"error": "Text not found"}
+        )
     except ArtifactAccessDeniedError:
-        return JSONResponse(status_code=403, content={"error": "Text access denied"})
+        return JSONResponse(
+            status_code=HTTPStatus.FORBIDDEN, content={"error": "Text access denied"}
+        )
 
     exists = await asyncio.to_thread(_path_exists, text_path)
     if exists:
@@ -50,7 +57,9 @@ async def get_text(
             text_path,
             media_type="application/json",
         )
-    return JSONResponse(status_code=404, content={"error": "Text not found"})
+    return JSONResponse(
+        status_code=HTTPStatus.NOT_FOUND, content={"error": "Text not found"}
+    )
 
 
 @router.get("/metadata/{artifact_id}")
@@ -60,18 +69,21 @@ async def get_document_metadata(
 ):
     if not access_token:
         return JSONResponse(
-            status_code=403, content={"error": "Document metadata access denied"}
+            status_code=HTTPStatus.FORBIDDEN,
+            content={"error": "Document metadata access denied"},
         )
 
     try:
         metadata_path = await state.metadata_artifacts.get(artifact_id, access_token)
     except (InvalidArtifactReferenceError, ArtifactNotFoundError):
         return JSONResponse(
-            status_code=404, content={"error": "Document metadata not found"}
+            status_code=HTTPStatus.NOT_FOUND,
+            content={"error": "Document metadata not found"},
         )
     except ArtifactAccessDeniedError:
         return JSONResponse(
-            status_code=403, content={"error": "Document metadata access denied"}
+            status_code=HTTPStatus.FORBIDDEN,
+            content={"error": "Document metadata access denied"},
         )
 
     exists = await asyncio.to_thread(_path_exists, metadata_path)
@@ -81,7 +93,8 @@ async def get_document_metadata(
             media_type="application/json",
         )
     return JSONResponse(
-        status_code=404, content={"error": "Document metadata not found"}
+        status_code=HTTPStatus.NOT_FOUND,
+        content={"error": "Document metadata not found"},
     )
 
 
@@ -123,10 +136,14 @@ async def create_document_export(body: DocumentExportRequest):
             "format": export_format_value,
         }
     except ArtifactAccessDeniedError:
-        return JSONResponse(status_code=403, content={"error": "Export access denied"})
+        return JSONResponse(
+            status_code=HTTPStatus.FORBIDDEN,
+            content={"error": "Export access denied"},
+        )
     except (InvalidArtifactReferenceError, ArtifactNotFoundError):
         return JSONResponse(
-            status_code=404, content={"error": "Export input not found"}
+            status_code=HTTPStatus.NOT_FOUND,
+            content={"error": "Export input not found"},
         )
 
 
@@ -136,14 +153,23 @@ async def get_document_export(
     access_token: str | None = Depends(get_access_token),
 ):
     if not access_token:
-        return JSONResponse(status_code=403, content={"error": "Export access denied"})
+        return JSONResponse(
+            status_code=HTTPStatus.FORBIDDEN,
+            content={"error": "Export access denied"},
+        )
 
     try:
         export_path = await state.export_artifacts.get(artifact_id, access_token)
     except (InvalidArtifactReferenceError, ArtifactNotFoundError):
-        return JSONResponse(status_code=404, content={"error": "Export not found"})
+        return JSONResponse(
+            status_code=HTTPStatus.NOT_FOUND,
+            content={"error": "Export not found"},
+        )
     except ArtifactAccessDeniedError:
-        return JSONResponse(status_code=403, content={"error": "Export access denied"})
+        return JSONResponse(
+            status_code=HTTPStatus.FORBIDDEN,
+            content={"error": "Export access denied"},
+        )
 
     suffix = os.path.splitext(export_path)[1].lstrip(".")
     media_type = "application/json"
@@ -155,7 +181,10 @@ async def get_document_export(
     exists = await asyncio.to_thread(_path_exists, export_path)
     if exists:
         return FileResponse(export_path, media_type=media_type)
-    return JSONResponse(status_code=404, content={"error": "Export not found"})
+    return JSONResponse(
+        status_code=HTTPStatus.NOT_FOUND,
+        content={"error": "Export not found"},
+    )
 
 
 @router.post("/api/export/docx")

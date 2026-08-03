@@ -20,6 +20,8 @@ from surya.detection import DetectionPredictor  # noqa: E402
 
 from omniscribe.core.document import BBox  # noqa: E402
 
+logger = logging.getLogger(__name__)
+
 
 class HybridAligner:
     """
@@ -170,7 +172,7 @@ class HybridAligner:
                     "variant that doesn't break visual lines"
                 )
             )
-            logging.warning(
+            logger.warning(
                 "Degenerate hybrid alignment: %s (lines=%d, boxes=%d). "
                 "Falling back to a full-page text layer so output stays "
                 "searchable. Try grounded mode or a different model.",
@@ -185,9 +187,12 @@ class HybridAligner:
         for perm_idx, texts in best_mapping.items():
             text_per_input[best_perm[perm_idx]] = " ".join(texts).strip()
 
-        logging.debug(
-            f"DEBUG: DP aligned {len(lines)} lines → {best_match_count}/{len(boxes)} "
-            f"boxes (cost={best_cost:.3f})"
+        logger.debug(
+            "DEBUG: DP aligned %d lines → %d/%d boxes (cost=%.3f)",
+            len(lines),
+            best_match_count,
+            len(boxes),
+            best_cost,
         )
         return [(box, text) for box, text in zip(boxes, text_per_input, strict=False)]
 

@@ -1,3 +1,27 @@
+"""In-memory OCR job history with capped FIFO retention.
+
+Process-lifetime boundary
+-------------------------
+
+:class:`JobHistory` owns a single piece of mutable state, the deque
+``self._records`` (a ``collections.deque`` capped at ``max_jobs`` entries,
+default 50). It is held as the ``job_history`` attribute of the
+:class:`LocalStateBackend` singleton constructed by
+:mod:`omniscribe.api.routers.state`, so the records live in the Python
+process that runs the uvicorn worker. There is no persistence between
+restarts and no cross-process replication: terminating the worker
+discards every record the deque still holds. The cap (``max_jobs``) is
+not a recovery boundary; it only bounds the FIFO depth while the
+process is alive — once the process restarts, even a deque with the
+maximum 50 entries is empty. ``JobHistory.list()`` therefore reflects
+process-lifetime state, not a durable log.
+
+See the *Known Tech Debt* section of ``AGENTS.md`` for the project-level
+acknowledgement: "Job/artifact state is in-memory only
+(``api/routers/state.py`` singletons) — restarts lose history; no
+horizontal scaling."
+"""
+
 from __future__ import annotations
 
 from collections import deque

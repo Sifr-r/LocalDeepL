@@ -15,6 +15,35 @@ To swap in a new backend:
 The module-level aliases ``state.text_artifacts`` etc. are kept so that
 existing call sites continue to work; new code should prefer
 ``state.backend.text_artifacts``.
+
+Process-lifetime boundary
+-------------------------
+
+A :class:`LocalStateBackend` instance owns the canonical references for
+its seven attributes:
+
+- ``text_artifacts`` (:class:`TextArtifactStore`)
+- ``metadata_artifacts`` (:class:`TextArtifactStore`)
+- ``export_artifacts`` (:class:`TextArtifactStore`)
+- ``job_history`` (:class:`JobHistory`)
+- ``progress_service`` (:class:`ProgressService`)
+- ``glossary_library`` (:class:`GlossaryLibrary`)
+- ``ocr_job_queue`` (:class:`OCRJobQueue`)
+
+All seven live in the Python process that runs :func:`LocalStateBackend.from_env`
+(via :mod:`omniscribe.api.routers.state`). ``from_env`` constructs every
+attribute fresh on import: no disk snapshot is read, no external service
+is contacted. Terminating the uvicorn worker (or the parent
+``start_app.vbs`` wrapper) discards the instance and therefore every
+in-memory job history record, in-flight progress channel, queued OCR
+job, and glossary index not yet flushed to its artifact directory. The
+"recovery boundary" lives one level up from this module: the only state
+that survives a restart is whatever its child components explicitly
+wrote to disk (artifact files, glossary on-disk index).
+
+See the *Known Tech Debt* section of ``AGENTS.md`` for the project-level
+acknowledgement: "Job/artifact state is in-memory only (``api/routers/state.py``
+singletons) — restarts lose history; no horizontal scaling."
 """
 
 from __future__ import annotations

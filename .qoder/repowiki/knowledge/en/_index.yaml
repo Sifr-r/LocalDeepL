@@ -3,31 +3,8 @@ schema_version: 1
 locale: en-US
 branch: main
 nodes_managed: true
-exported_at: "2026-08-02T20:06:19Z"
+exported_at: "2026-08-02T21:43:45Z"
 modules:
-    "":
-        dir_name: OmniScribe — Surya OCR + Grounded_Hybrid LLM PDF Pipeline
-        title: OmniScribe — Surya OCR + Grounded/Hybrid LLM PDF Pipeline
-        scope:
-            - README.md
-            - ARCHITECTURE.md
-            - AGENTS.md
-            - .gitignore
-            - .pre-commit-config.yaml
-            - pyproject.toml
-            - Dockerfile
-            - compose.yaml
-            - install.ps1
-            - phase2_reqs.txt
-            - phase3_text.txt
-            - test_ui.py
-            - .fallowrc.json
-        source_files: []
-        children:
-            - scripts_and_examples
-            - tests
-        depends_on: []
-        related_to: []
     scripts_and_examples:
         dir_name: Development Scripts & Example Utilities
         title: Development Scripts & Example Utilities

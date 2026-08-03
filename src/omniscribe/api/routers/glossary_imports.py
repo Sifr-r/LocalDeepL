@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import binascii
 import logging
+from http import HTTPStatus
 from typing import Any
 from urllib.parse import urlparse
 
@@ -72,14 +74,13 @@ def _coerce_format(value: str) -> GlossaryFormat:
 
 def _decode_bytes_payload(value: str) -> bytes:
     if not value:
-        raise HTTPException(status_code=422, detail="inline_bytes_b64 is required.")
-    import binascii
+        raise HTTPException(status_code=HTTPStatus.UNPROCESSABLE_ENTITY, detail="inline_bytes_b64 is required.")
 
     try:
         return base64.b64decode(value, validate=True)
     except (ValueError, binascii.Error) as exc:
         raise HTTPException(
-            status_code=422, detail="inline_bytes_b64 is not valid base64."
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY, detail="inline_bytes_b64 is not valid base64."
         ) from exc
 
 
@@ -100,12 +101,12 @@ def _sync_ssrf(url: str) -> bool:
 
 def _validate_ssrf(url: str) -> None:
     if not url:
-        raise HTTPException(status_code=400, detail="URL is required.")
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="URL is required.")
     blocked = (
         _sync_ssrf(url) if not _has_running_loop() else asyncio.run(is_ssrf_target(url))
     )
     if blocked:
-        raise HTTPException(status_code=400, detail="URL targets a blocked address.")
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="URL targets a blocked address.")
 
 
 def _is_safe_sql_dsn(dsn: str) -> bool:
@@ -127,6 +128,79 @@ def _is_safe_sql_dsn(dsn: str) -> bool:
     return not any(ch in dsn for ch in (";", "\n", "\r", "\x00"))
 
 
+def _build_csv_kwargs(source: GlossaryImportSource) -> dict[str, Any]:
+    """Build parser kwargs for CSV/TSV/XLIFF/TBX/TMX/JSON_PAIRS formats."""
+    if source.text is not None:
+        return {"text": source.text, "encoding": source.encoding or "utf-8"}
+    elif source.inline_bytes_b64 is not None:
+        return {
+            "data": _decode_bytes_payload(source.inline_bytes_b64),
+            "encoding": source.encoding or "utf-8",
+        }
+    else:
+        raise HTTPException(
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            detail="Provide 'text' or 'inline_bytes_b64' for inline formats.",
+        )
+
+
+def _build_git_glossary_kwargs(source: GlossaryImportSource) -> dict[str, Any]:
+    """Build parser kwargs for Git Glossary format."""
+    if not source.git_url:
+        raise HTTPException(
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY, detail="git_url is required for git_glossary imports."
+        )
+    _validate_ssrf(source.git_url)
+    return {
+        "url": source.git_url,
+        "ref": source.git_ref or "HEAD",
+        "path": source.git_path or "GLOSSARY.md",
+        "credentials": source.git_credentials,
+    }
+
+
+def _build_sql_table_kwargs(source: GlossaryImportSource) -> dict[str, Any]:
+    """Build parser kwargs for SQL Table format."""
+    if not (
+        source.sql_dsn
+        and source.sql_source_table
+        and source.sql_source_col
+        and source.sql_target_col
+    ):
+        raise HTTPException(
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            detail=(
+                "sql_dsn, sql_source_table, sql_source_col and sql_target_col "
+                "are required for sql_table imports."
+            ),
+        )
+    if not _is_safe_sql_dsn(source.sql_dsn):
+        raise HTTPException(
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY, detail="sql_dsn contains unsafe characters."
+        )
+    return {
+        "dsn": source.sql_dsn,
+        "source_table": source.sql_source_table,
+        "source_col": source.sql_source_col,
+        "target_table": source.sql_target_table,
+        "target_col": source.sql_target_col,
+        "where_clause": source.sql_where,
+        "encoding": source.encoding or "utf-8",
+    }
+
+
+_FORMAT_BUILDERS: dict[str, callable] = {
+    "csv": _build_csv_kwargs,
+    "tsv": _build_csv_kwargs,
+    "xliff": _build_csv_kwargs,
+    "tbx": _build_csv_kwargs,
+    "tmx": _build_csv_kwargs,
+    "json_pairs": _build_csv_kwargs,
+    "git_glossary": _build_git_glossary_kwargs,
+    "sql_table": _build_sql_table_kwargs,
+}
+
+
 def _build_parser_kwargs(source: GlossaryImportSource) -> tuple[dict[str, Any], str]:
     """Translate the request source spec into parser kwargs.
 
@@ -136,66 +210,13 @@ def _build_parser_kwargs(source: GlossaryImportSource) -> tuple[dict[str, Any], 
     popped off inside :func:`parse`.
     """
     format_name = GlossaryFormat(source.format).value
-    kwargs: dict[str, Any] = {"max_entries": source.max_entries}
-
-    if format_name in {"csv", "tsv", "xliff", "tbx", "tmx", "json_pairs"}:
-        if source.text is not None:
-            kwargs["text"] = source.text
-        elif source.inline_bytes_b64 is not None:
-            kwargs["data"] = _decode_bytes_payload(source.inline_bytes_b64)
-        else:
-            raise HTTPException(
-                status_code=422,
-                detail="Provide 'text' or 'inline_bytes_b64' for inline formats.",
-            )
-        kwargs["encoding"] = source.encoding
-    elif format_name == "git_glossary":
-        if not source.git_url:
-            raise HTTPException(
-                status_code=422, detail="git_url is required for git_glossary imports."
-            )
-        _validate_ssrf(source.git_url)
-        kwargs.update(
-            {
-                "url": source.git_url,
-                "ref": source.git_ref or "HEAD",
-                "path": source.git_path or "GLOSSARY.md",
-                "credentials": source.git_credentials,
-            }
-        )
-    elif format_name == "sql_table":
-        if not (
-            source.sql_dsn
-            and source.sql_source_table
-            and source.sql_source_col
-            and source.sql_target_col
-        ):
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "sql_dsn, sql_source_table, sql_source_col and sql_target_col "
-                    "are required for sql_table imports."
-                ),
-            )
-        if not _is_safe_sql_dsn(source.sql_dsn):
-            raise HTTPException(
-                status_code=422, detail="sql_dsn contains unsafe characters."
-            )
-        kwargs.update(
-            {
-                "dsn": source.sql_dsn,
-                "source_table": source.sql_source_table,
-                "source_col": source.sql_source_col,
-                "target_table": source.sql_target_table,
-                "target_col": source.sql_target_col,
-                "where_clause": source.sql_where,
-                "encoding": source.encoding,
-            }
-        )
-    else:  # pragma: no cover - exhausted by GlossaryFormat
+    builder = _FORMAT_BUILDERS.get(format_name)
+    if builder is None:
         raise HTTPException(
-            status_code=422, detail=f"Unsupported format: {format_name}."
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY, detail=f"Unsupported format: {format_name}."
         )
+    kwargs = builder(source)
+    kwargs["max_entries"] = source.max_entries
     return kwargs, format_name
 
 
@@ -288,7 +309,7 @@ def _process_async(req: GlossaryImportRequest) -> GlossaryImportJobResponse:
             req.session_token,
         )
     except AsyncTranslationUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
     return GlossaryImportJobResponse(
         job_id=str(result.id),
@@ -310,14 +331,14 @@ def import_glossary(req: GlossaryImportRequest) -> GlossaryImportJobResponse:
             return _process_sync(req)
         return _process_async(req)
     except FormatNotAvailableError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except GlossaryImportLimitError as exc:
         raise HTTPException(
-            status_code=413,
+            status_code=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
             detail={"error": "Too many entries", "max": exc.limit},
         ) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=HTTPStatus.UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
 @router.post("/api/glossary/import/url")
@@ -343,7 +364,7 @@ def import_glossary_from_url(
     fmt = format_param or extension_to_format.get(suffix)
     if fmt is None:
         raise HTTPException(
-            status_code=422,
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
             detail=(
                 "Could not infer format from URL. Pass ?format=csv|tsv|xliff|tbx|tmx|json_pairs."
             ),
@@ -356,7 +377,7 @@ def import_glossary_from_url(
 
     if fetch_url_bytes is None:
         raise HTTPException(
-            status_code=503,
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
             detail="URL fetching is not configured. Use inline 'text' or 'inline_bytes_b64'.",
         )
 
@@ -364,7 +385,8 @@ def import_glossary_from_url(
         payload = asyncio.run(fetch_url_bytes(url))
     except Exception as exc:
         raise HTTPException(
-            status_code=502, detail=f"Failed to fetch URL: {exc}"
+            status_code=HTTPStatus.BAD_GATEWAY,
+            detail=f"Failed to fetch URL: {exc}",
         ) from exc
 
     source = GlossaryImportSource(
@@ -390,7 +412,9 @@ def toggle_library_entry(
     try:
         stored = _library().toggle(glossary_id, enabled=req.enabled)
     except GlossaryNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Glossary not found.") from exc
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND, detail="Glossary not found."
+        ) from exc
     return _serialize_item(stored)
 
 
@@ -399,9 +423,13 @@ def reorder_library(req: GlossaryReorderRequest) -> dict[str, Any]:
     try:
         _library().reorder(req.ordered_ids)
     except GlossaryNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Glossary not found.") from exc
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND, detail="Glossary not found."
+        ) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
     return {"ok": True}
 
 
@@ -409,7 +437,9 @@ def reorder_library(req: GlossaryReorderRequest) -> dict[str, Any]:
 def delete_library_entry(glossary_id: str) -> dict[str, Any]:
     deleted = _library().delete(glossary_id)
     if not deleted:
-        raise HTTPException(status_code=404, detail="Glossary not found.")
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND, detail="Glossary not found."
+        )
     return {"ok": True, "id": glossary_id}
 
 
@@ -433,7 +463,9 @@ def library_preview() -> GlossaryPreviewResponse:
 def library_entries(glossary_id: str) -> dict[str, Any]:
     stored = _library().get(glossary_id)
     if stored is None:
-        raise HTTPException(status_code=404, detail="Glossary not found.")
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND, detail="Glossary not found."
+        )
     return {
         "id": stored.id,
         "name": stored.name,

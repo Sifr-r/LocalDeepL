@@ -27,6 +27,7 @@ import tempfile
 import time
 import uuid
 from collections.abc import Sequence
+from http import HTTPStatus
 from typing import cast
 
 from fastapi import APIRouter, File, Form, UploadFile
@@ -51,7 +52,10 @@ from omniscribe.api.services.ocr_response import (
     _validation_error_response,
     build_ocr_file_response,
 )
-from omniscribe.api.services.ocr_settings import resolve_process_settings
+from omniscribe.api.services.ocr_settings import (
+    collect_form_kwargs,
+    resolve_process_settings,
+)
 from omniscribe.api.services.security import (
     SAFE_API_BASE_ERROR,
     UploadValidationError,
@@ -294,37 +298,41 @@ async def process_pdf(
         settings = resolve_process_settings(
             settings_store=_config,
             pages=pages,
-            api_base=api_base,
-            api_key=api_key,
-            model=model,
-            pipeline_mode=pipeline_mode,
-            dpi=dpi,
-            concurrency=concurrency,
-            dense_mode=dense_mode,
-            dense_threshold=dense_threshold,
-            refine=refine,
-            max_image_dim=max_image_dim,
-            self_correction=self_correction,
-            binarize=binarize,
-            dual_engine=dual_engine,
-            spellcheck=spellcheck,
-            cross_page=cross_page,
-            preprocess_pages=preprocess_pages,
-            orientation_detection=orientation_detection,
-            deskew=deskew,
-            denoise=denoise,
-            normalize_contrast=normalize_contrast,
-            crop_cleanup=crop_cleanup,
-            quality_routing=quality_routing,
-            document_processors=document_processors,
-            handwriting_hint=handwriting_hint,
-            chunk_pages=chunk_pages,
+            **collect_form_kwargs(
+                api_base=api_base,
+                api_key=api_key,
+                model=model,
+                pipeline_mode=pipeline_mode,
+                dpi=dpi,
+                concurrency=concurrency,
+                dense_mode=dense_mode,
+                dense_threshold=dense_threshold,
+                refine=refine,
+                max_image_dim=max_image_dim,
+                self_correction=self_correction,
+                binarize=binarize,
+                dual_engine=dual_engine,
+                spellcheck=spellcheck,
+                cross_page=cross_page,
+                preprocess_pages=preprocess_pages,
+                orientation_detection=orientation_detection,
+                deskew=deskew,
+                denoise=denoise,
+                normalize_contrast=normalize_contrast,
+                crop_cleanup=crop_cleanup,
+                quality_routing=quality_routing,
+                document_processors=document_processors,
+                handwriting_hint=handwriting_hint,
+            ),
         )
     except ValidationError as exc:
         return _validation_error_response(exc)
 
     if await is_ssrf_target(settings.api_base):
-        return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
+        return JSONResponse(
+            status_code=HTTPStatus.FORBIDDEN,
+            content={"error": SAFE_API_BASE_ERROR},
+        )
 
     try:
         upload = await save_validated_upload(file)
@@ -412,7 +420,10 @@ async def process_pdf(
         logger.warning("OCR processing rejected invalid input: %s", ve)
         await manager.send_progress(progress_target, "Invalid input.", 0, stage="error")
         await asyncio.to_thread(_cleanup, input_path, output_path, text_path)
-        return JSONResponse(status_code=400, content={"error": "Invalid input."})
+        return JSONResponse(
+            status_code=HTTPStatus.BAD_REQUEST,
+            content={"error": "Invalid input."},
+        )
 
     except asyncio.CancelledError:
         logger.info("OCR request cancelled by client: job_id=%s", job_id)
@@ -475,37 +486,41 @@ async def process_pdf_async(
         settings = resolve_process_settings(
             settings_store=_config,
             pages=pages,
-            api_base=api_base,
-            api_key=api_key,
-            model=model,
-            pipeline_mode=pipeline_mode,
-            dpi=dpi,
-            concurrency=concurrency,
-            dense_mode=dense_mode,
-            dense_threshold=dense_threshold,
-            refine=refine,
-            max_image_dim=max_image_dim,
-            self_correction=self_correction,
-            binarize=binarize,
-            dual_engine=dual_engine,
-            spellcheck=spellcheck,
-            cross_page=cross_page,
-            preprocess_pages=preprocess_pages,
-            orientation_detection=orientation_detection,
-            deskew=deskew,
-            denoise=denoise,
-            normalize_contrast=normalize_contrast,
-            crop_cleanup=crop_cleanup,
-            quality_routing=quality_routing,
-            document_processors=document_processors,
-            handwriting_hint=handwriting_hint,
-            chunk_pages=chunk_pages,
+            **collect_form_kwargs(
+                api_base=api_base,
+                api_key=api_key,
+                model=model,
+                pipeline_mode=pipeline_mode,
+                dpi=dpi,
+                concurrency=concurrency,
+                dense_mode=dense_mode,
+                dense_threshold=dense_threshold,
+                refine=refine,
+                max_image_dim=max_image_dim,
+                self_correction=self_correction,
+                binarize=binarize,
+                dual_engine=dual_engine,
+                spellcheck=spellcheck,
+                cross_page=cross_page,
+                preprocess_pages=preprocess_pages,
+                orientation_detection=orientation_detection,
+                deskew=deskew,
+                denoise=denoise,
+                normalize_contrast=normalize_contrast,
+                crop_cleanup=crop_cleanup,
+                quality_routing=quality_routing,
+                document_processors=document_processors,
+                handwriting_hint=handwriting_hint,
+            ),
         )
     except ValidationError as exc:
         return _validation_error_response(exc)
 
     if await is_ssrf_target(settings.api_base):
-        return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
+        return JSONResponse(
+            status_code=HTTPStatus.FORBIDDEN,
+            content={"error": SAFE_API_BASE_ERROR},
+        )
 
     try:
         upload = await save_validated_upload(file)
@@ -586,7 +601,9 @@ async def process_status(job_id: str):
     """Return the current state of a queued background OCR job."""
     record = await state.ocr_job_queue.get(job_id)
     if record is None:
-        return JSONResponse(status_code=404, content={"error": "Job not found"})
+        return JSONResponse(
+            status_code=HTTPStatus.NOT_FOUND, content={"error": "Job not found"}
+        )
     return record.to_dict()
 
 
