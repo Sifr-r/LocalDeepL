@@ -212,10 +212,6 @@ ignore = [
 "src/omniscribe/api/routers/extraction.py" = ["SIM105"]
 "src/omniscribe/api/routers/ocr.py" = ["RUF003"]
 "src/omniscribe/api/services/security.py" = ["SIM115"]
-# SIM113 in core/grounded/zai.py: the manual counter in the Z.AI
-# poll loop is intentional — we need the elapsed-time accounting
-# alongside `poll_count` for the progress message.
-"src/omniscribe/core/grounded/zai.py" = ["SIM113"]
 # RUF022 in core/{ocr,grounded}/__init__.py: the public/private grouping in
 # __all__ is intentional and more scannable than strict alphabetical.
 "src/omniscribe/core/grounded/__init__.py" = ["RUF022"]
@@ -227,7 +223,6 @@ ignore = [
 # RUF001 in core/ocr/filters.py: the curly quotes in `_trim` are intentional —
 # OCR can emit curly quotes that need stripping, not ASCII apostrophes.
 "src/omniscribe/core/ocr/filters.py" = ["RUF001"]
-"src/omniscribe/core/processors.py" = ["RUF002", "RUF005"]
 "src/omniscribe/evaluation.py" = ["RUF002"]
 "tests/**/*.py" = [
     "RUF002", # × in docstring comments
