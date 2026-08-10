@@ -77,14 +77,12 @@ class TestAnySubmoduleEnabled:
 
     def test_watermark_only_returns_true(self):
         assert (
-            OCrQualitySettings(watermark_enabled=True).any_submodule_enabled()
-            is True
+            OCrQualitySettings(watermark_enabled=True).any_submodule_enabled() is True
         )
 
     def test_calibration_only_returns_true(self):
         assert (
-            OCrQualitySettings(calibration_enabled=True).any_submodule_enabled()
-            is True
+            OCrQualitySettings(calibration_enabled=True).any_submodule_enabled() is True
         )
 
     def test_cross_check_alone_returns_false(self):

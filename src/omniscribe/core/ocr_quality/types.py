@@ -8,10 +8,10 @@ trust layer can be memoised on stable block signatures.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 
-class TrustFlag(str, Enum):
+class TrustFlag(StrEnum):
     """Why a block's trust score was reduced.
 
     Stored on ``DocumentBlock.trust_flags`` and ``BlockTrust.flags``.
@@ -26,7 +26,7 @@ class TrustFlag(str, Enum):
     LENGTH_PLAUSIBILITY = "length_plausibility"
 
 
-class HallucinationRisk(str, Enum):
+class HallucinationRisk(StrEnum):
     """How likely a block's text was fabricated by the VLM.
 
     The trust formula multiplies confidence by ``(1 - 0.5 * risk_value)``

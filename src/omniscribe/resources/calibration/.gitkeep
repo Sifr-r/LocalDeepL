@@ -1,0 +1,8 @@
+# Calibration JSON files for the OCR quality trust layer.
+#
+# One file per model id, named `{model_id}.json`. Each file holds a
+# Platt-scaling pair `{"a": float, "b": float}` that maps raw VLM
+# confidence to a calibrated value via `sigmoid(a * raw + b)`.
+#
+# Phase 1 ships this directory empty - Phase 3 trains and ships
+# per-model files derived from OCR-Quality / KIE-HVQA datasets.

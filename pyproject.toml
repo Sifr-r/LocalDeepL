@@ -143,6 +143,7 @@ dev = [
     "ruff>=0.3.0",
     "mypy>=1.9.0",
     "pyyaml>=6.0",
+    "hypothesis>=6.100.0",
 ]
 
 [tool.uv]
@@ -162,10 +163,26 @@ addopts = "-ra --strict-markers"
 markers = [
     "slow: loads Surya models (~5s first run) — skip with '-m \"not slow\"'",
     "live_llm: hits a real LLM endpoint — skip unless LM Studio is running",
+    # OCR quality trust layer dataset-driven regression tests.
+    "slow_dataset: opt-in dataset regression tests — run via nightly workflow",
 ]
 filterwarnings = [
     "ignore::pydantic.PydanticDeprecatedSince20:surya.*",
 ]
+
+# OCR quality trust layer workspace defaults. Mirrors the field defaults
+# on :class:`omniscribe.core.ocr_quality.config.OCrQualitySettings`; per-run
+# overrides flow through the API `quality_options` body field.
+[tool.omniscribe.ocr_quality]
+watermark_enabled = false
+watermark_aggressiveness = 0.5
+script_detect_enabled = false
+hallucination_enabled = false
+hallucination_cross_check = false
+calibration_enabled = false
+trust_flag_threshold = 0.5
+phase2_default = false
+phase3_default = false
 
 [tool.ruff]
 line-length = 88

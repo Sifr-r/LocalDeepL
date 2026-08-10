@@ -58,6 +58,11 @@ class DocumentBlock:
     reading_order: int | None = None
     spans: list[DocumentSpan] = field(default_factory=list)
     metadata: dict[str, object] = field(default_factory=dict)
+    # OCR quality trust-layer outputs. ``None`` when the trust layer is
+    # disabled (Phase 1 default). When populated, ``trust_score`` is in
+    # ``[0, 1]`` and ``trust_flags`` is a sorted tuple of string flags.
+    trust_score: float | None = None
+    trust_flags: tuple[str, ...] | None = None
 
 
 @dataclass(slots=True)

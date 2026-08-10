@@ -8,6 +8,21 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **OCR quality trust layer (Phase 1, foundation)** — new
+  `omniscribe.core.ocr_quality` package ships six sub-modules
+  (`watermark`, `script_detector`, `hallucination`, `calibration`,
+  `trust_scorer`, `orchestrator`) plus an `events` log channel. Every
+  sub-module defaults to **off** and fails open — no behavioural change
+  for existing callers. `DocumentBlock` gains optional
+  `trust_score: float | None` and `trust_flags: tuple[str, ...] | None`
+  fields (always `None` until the layer is enabled).
+  - New `OCrQualitySettings` Pydantic config (`extra="forbid"`).
+  - `pyproject.toml` gains `[tool.omniscribe.ocr_quality]` workspace
+    defaults, a `slow_dataset` pytest marker, and a `hypothesis` dev
+    dependency for property tests on the pure trust formula.
+  - New user-facing docs at `docs/ocr_quality.md`. Phase 2 (defaults on,
+    Web UI Trust panel) and Phase 3 (calibration training, dataset
+    regression) are planned but not yet shipped.
 - **SECURITY.md** — vulnerability disclosure policy, threat model,
   hardening checklist. (D1)
 - **DEPLOYMENT.md** — three deployment profiles (local, LAN, public)

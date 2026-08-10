@@ -27,9 +27,7 @@ class OCrQualitySettings(BaseModel):
     hallucination_cross_check: bool = False  # second VLM call, off by default
     hallucination_cross_check_threshold: float = Field(default=0.4, ge=0.0, le=1.0)
     hallucination_repetition_window: int = Field(default=6, ge=2, le=64)
-    hallucination_length_plausibility_min: float = Field(
-        default=0.0001, ge=0.0, le=1.0
-    )
+    hallucination_length_plausibility_min: float = Field(default=0.0001, ge=0.0, le=1.0)
 
     calibration_enabled: bool = False
 

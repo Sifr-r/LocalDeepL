@@ -63,6 +63,16 @@ The Advanced Configuration panel includes:
 - **Table Extraction** for deterministic table reconstruction from OCR boxes.
 - **Quality Routing** for recording local routing recommendations from quality findings.
 
+The **OCR Quality Trust Layer** (`omniscribe.core.ocr_quality`) ships in
+Phase 1 as an additive foundation package: every sub-module
+(watermark, script detection, hallucination guard, confidence
+calibration) is **off** by default and fails open, so existing callers
+see no behavioural change. Each `DocumentBlock` carries optional
+`trust_score` and `trust_flags` fields (always `None` until the layer
+is enabled). Phase 2 will flip the defaults on and surface a read-only
+Trust panel in the Web UI. See [docs/ocr_quality.md](docs/ocr_quality.md)
+for the flag reference, fallback semantics, and dataset attribution.
+
 OCR responses include token-bound text artifact headers. When processor metadata exists, responses also include `X-Document-Metadata-Artifact-Id` and `X-Document-Metadata-Artifact-Token`; fetch `GET /metadata/{artifact_id}` with the token to retrieve compact page/block metadata. Use `POST /api/export/document` to create token-bound JSON, Markdown, plain text, Docling-compatible, or MinerU-compatible export artifacts. `POST /api/export/docx` produces a `.docx` from Markdown page text. `POST /api/extract` runs structured data extraction against OCR text using a built-in template (`invoice`, `resume`, `academic`) or a custom prompt.
 
 ### Confidence scripts
