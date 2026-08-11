@@ -13,10 +13,34 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
+
+#: Default retention for terminal-state (COMPLETE / ERROR) OCR job records.
+#: Set to 0 (or any value <= 0) to disable TTL-based eviction entirely.
+DEFAULT_OCR_JOB_RETENTION_S = 24 * 60 * 60  # 24h
+_RETENTION_ENV_VAR = "OMNISCRIBE_OCR_JOB_RETENTION_S"
+
+
+def _resolve_retention_s() -> float:
+    """Read ``OMNISCRIBE_OCR_JOB_RETENTION_S``; fall back to default on bad input.
+
+    Mirrors the :func:`server._artifact_cleanup_interval_s` pattern: empty,
+    non-numeric, and out-of-range values fall back to the default rather
+    than crashing at import. This is the same env-var surface that the
+    artifact TTL sweeper uses, so all retention knobs can be tuned in one
+    place.
+    """
+    raw = os.getenv(_RETENTION_ENV_VAR)
+    if raw is None or not raw.strip():
+        return float(DEFAULT_OCR_JOB_RETENTION_S)
+    try:
+        return max(0.0, float(raw.strip()))
+    except (TypeError, ValueError):
+        return float(DEFAULT_OCR_JOB_RETENTION_S)
 
 
 class OCRJobStatus(StrEnum):
@@ -98,12 +122,24 @@ class OCRJobQueue:
     StateBackend — out of scope for this iteration.
     """
 
-    def __init__(self, *, max_pending: int = 16) -> None:
+    def __init__(
+        self,
+        *,
+        max_pending: int = 16,
+        retention_s: float | None = None,
+    ) -> None:
         self._records: dict[str, OCRJobRecord] = {}
         self._runners: dict[str, OCRJobRunner] = {}
         self._queue: asyncio.Queue[str] = asyncio.Queue(maxsize=max_pending)
         self._lock = asyncio.Lock()
         self._worker: asyncio.Task[None] | None = None
+        # ``retention_s`` controls how long terminal-state (COMPLETE / ERROR)
+        # records survive in :meth:`cleanup_expired`. ``None`` resolves from
+        # the env var at construction time so a runtime env override (via
+        # the sweeper restart hook) is honoured.
+        self._retention_s = (
+            float(retention_s) if retention_s is not None else _resolve_retention_s()
+        )
 
     async def start(self) -> None:
         """Spawn the background worker (idempotent)."""
@@ -136,6 +172,48 @@ class OCRJobQueue:
     async def list(self) -> list[OCRJobRecord]:
         async with self._lock:
             return list(self._records.values())
+
+    def cleanup_expired(self) -> int:
+        """Evict terminal-state (COMPLETE / ERROR) records older than ``retention_s``.
+
+        Synchronous to match the contract other stores expose to the artifact
+        sweeper (:func:`server._artifact_cleanup_loop`, which calls
+        ``cleanup_expired()`` without ``await``). Returns the number of records
+        evicted; a ``retention_s`` of ``0`` (or any non-positive value)
+        disables TTL-based eviction entirely and always returns ``0``.
+
+        Concurrency: snapshots the dict membership under a plain iteration,
+        then pops outside the loop. The asyncio lock is intentionally not
+        acquired — the only races are benign:
+
+        * A concurrent :meth:`submit` only adds entries (different ``job_id``);
+          never conflicts with an eviction decision.
+        * A concurrent :meth:`cancel` on a PENDING record removes the entry
+          before our pop runs; :meth:`dict.pop` with a default is a no-op.
+        * A concurrent :meth:`_worker_loop` mutates the *status* of an existing
+          record, not the dict membership; the snapshot already decided
+          whether that ``job_id`` was eligible.
+        """
+        if self._retention_s <= 0:
+            return 0
+        cutoff = time.monotonic() - self._retention_s
+        terminal = (OCRJobStatus.COMPLETE, OCRJobStatus.ERROR)
+        # Phase 1: materialise eligible ``job_id`` values. Python dicts raise
+        # ``RuntimeError: dictionary changed size during iteration`` if we
+        # mutate during the loop, so collect first and drop later.
+        stale_ids: list[str] = []
+        for job_id, record in self._records.items():
+            if record.status not in terminal:
+                continue
+            completed_at = record.completed_at
+            if completed_at is None or completed_at >= cutoff:
+                continue
+            stale_ids.append(job_id)
+        # Phase 2: evict. ``pop`` with a default tolerates a concurrent
+        # ``cancel`` having already removed the entry.
+        for job_id in stale_ids:
+            self._records.pop(job_id, None)
+        return len(stale_ids)
 
     async def cancel(self, job_id: str) -> OCRJobRecord | None:
         """Mark a job as cancelled.
@@ -207,6 +285,7 @@ class OCRJobQueue:
 
 
 __all__ = [
+    "DEFAULT_OCR_JOB_RETENTION_S",
     "OCRJobQueue",
     "OCRJobRecord",
     "OCRJobResult",

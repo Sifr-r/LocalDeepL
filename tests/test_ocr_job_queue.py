@@ -8,6 +8,7 @@ import pytest
 
 from omniscribe.api.services.ocr_jobs import (
     OCRJobQueue,
+    OCRJobRecord,
     OCRJobResult,
     OCRJobStatus,
 )
@@ -267,3 +268,103 @@ async def test_cancelled_runner_failure_preserves_cancellation_message():
         assert after_runner.error == "cancelled by client"
     finally:
         await queue.stop()
+
+
+# ---------------------------------------------------------------------------
+# §3.3 (audit correction) — TTL eviction for OCRJobQueue._records.
+# ---------------------------------------------------------------------------
+
+
+def _seed_terminal_record(
+    queue: OCRJobQueue,
+    job_id: str,
+    status: OCRJobStatus,
+    *,
+    completed_at: float,
+) -> None:
+    """Insert a record directly so the test does not need the async worker."""
+    rec = OCRJobRecord(
+        job_id=job_id,
+        filename="doc.pdf",
+        status=status,
+        completed_at=completed_at,
+    )
+    queue._records[job_id] = rec
+
+
+def test_cleanup_expired_evicts_old_terminal_records():
+    """§3.3 regression: COMPLETE/ERROR records older than retention_s are dropped."""
+    import time
+
+    now = time.monotonic()
+    queue = OCRJobQueue(retention_s=10.0)
+    _seed_terminal_record(
+        queue,
+        "old-complete",
+        OCRJobStatus.COMPLETE,
+        completed_at=now - 30.0,  # way past retention
+    )
+    _seed_terminal_record(
+        queue,
+        "fresh-complete",
+        OCRJobStatus.COMPLETE,
+        completed_at=now - 1.0,  # within retention
+    )
+    _seed_terminal_record(
+        queue,
+        "old-error",
+        OCRJobStatus.ERROR,
+        completed_at=now - 30.0,
+    )
+
+    evicted = queue.cleanup_expired()
+
+    assert evicted == 2
+    assert "old-complete" not in queue._records
+    assert "fresh-complete" in queue._records
+    assert "old-error" not in queue._records
+
+
+def test_cleanup_expired_preserves_pending_and_processing():
+    """§3.3 regression: active records are never evicted, even if completed_at is past."""
+    import time
+
+    now = time.monotonic()
+    queue = OCRJobQueue(retention_s=1.0)
+    _seed_terminal_record(
+        queue,
+        "pending-stale",
+        OCRJobStatus.PENDING,
+        completed_at=now - 100.0,  # past retention but not terminal
+    )
+    _seed_terminal_record(
+        queue,
+        "processing-stale",
+        OCRJobStatus.PROCESSING,
+        completed_at=now - 100.0,
+    )
+
+    evicted = queue.cleanup_expired()
+
+    assert evicted == 0
+    assert "pending-stale" in queue._records
+    assert "processing-stale" in queue._records
+
+
+def test_cleanup_expired_disabled_with_non_positive_retention():
+    """§3.3 regression: retention_s <= 0 is the documented 'off' sentinel."""
+    import time
+
+    now = time.monotonic()
+    queue = OCRJobQueue(retention_s=0)
+    _seed_terminal_record(
+        queue,
+        "ancient",
+        OCRJobStatus.COMPLETE,
+        completed_at=now - 100_000.0,
+    )
+
+    evicted = queue.cleanup_expired()
+
+    assert evicted == 0
+    assert "ancient" in queue._records

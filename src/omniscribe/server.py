@@ -266,13 +266,23 @@ def _artifact_cleanup_interval_s() -> float:
 
 
 def _artifact_cleanup_stores() -> Sequence[Any]:
-    """Return the three ``state`` stores that the sweeper should sweep."""
+    """Return the ``state`` stores that the sweeper should sweep.
+
+    Wires up every store that owns a bounded-time-in-memory record: the
+    three text/metadata/export ``TextArtifactStore`` instances, the
+    FIFO-capped ``JobHistory``, and the ``OCRJobQueue`` whose
+    terminal-state records are now evicted by an explicit ``cleanup_expired``
+    sweep (``OMNISCRIBE_OCR_JOB_RETENTION_S`` controls the retention
+    window; default 24h, ``0`` disables).
+    """
     from omniscribe.api.routers import state as router_state
 
     return (
         router_state.text_artifacts,
         router_state.metadata_artifacts,
         router_state.export_artifacts,
+        router_state.job_history,
+        router_state.ocr_job_queue,
     )
 
 
