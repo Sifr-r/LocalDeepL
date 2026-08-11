@@ -18,7 +18,7 @@ Three public surfaces:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol
 
 from omniscribe import (
     HybridAligner,
@@ -49,12 +49,44 @@ _CLOUD_MODEL_PREFIXES = (
 )
 
 
+class SendBlockCallback(Protocol):
+    """Structural type for the WebSocket per-block sender.
+
+    Matches the ``send_block`` method on the WebSocket manager; defined as a
+    Protocol so the pipeline factory accepts either a bound method or any
+    compatible async callable without resorting to ``Any``. Refactor §5.3.
+    """
+
+    async def __call__(
+        self,
+        channel_id: str | None,
+        *,
+        page_idx: int,
+        block_idx: int,
+        bbox: list[float],
+        text: str,
+        kind: str = "text",
+        confidence: float | None = None,
+    ) -> None: ...
+
+
+class SendPageCompleteCallback(Protocol):
+    """Structural type for the WebSocket per-page-complete sender. Refactor §5.3."""
+
+    async def __call__(
+        self,
+        channel_id: str | None,
+        *,
+        page_idx: int,
+    ) -> None: ...
+
+
 def build_pipeline(
     settings: ProcessSettings,
     progress_target: str | None = None,
     *,
-    manager_send_block: Any,
-    manager_send_page_complete: Any,
+    manager_send_block: SendBlockCallback,
+    manager_send_page_complete: SendPageCompleteCallback,
 ) -> tuple[OCRPipeline, Any]:
     """Build the OCR pipeline for a request.
 
@@ -175,8 +207,8 @@ def _build_page_preprocessor(
 def build_block_callbacks(
     *,
     progress_target: str | None,
-    manager_send_block: Any,
-    manager_send_page_complete: Any,
+    manager_send_block: SendBlockCallback,
+    manager_send_page_complete: SendPageCompleteCallback,
 ) -> BlockCallbackSet:
     """Construct the engine-side callbacks bridged to the WebSocket manager.
 
