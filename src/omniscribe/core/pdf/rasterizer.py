@@ -56,12 +56,29 @@ IMAGE_EXTENSIONS = frozenset(
     }
 )
 
-VLM_JPEG_QUALITY_PDF_PATH: int = 50
-VLM_JPEG_QUALITY_GROUNDED: int = 80
-EMBED_JPEG_QUALITY_PDF: int = 80
-EMBED_JPEG_QUALITY_IMAGE: int = 85
+VLM_JPEG_QUALITY_PDF_PATH: int
+VLM_JPEG_QUALITY_GROUNDED: int
+EMBED_JPEG_QUALITY_PDF: int
+EMBED_JPEG_QUALITY_IMAGE: int
 
-MAX_SAFE_PIXELS: int = 25_000_000
+MAX_SAFE_PIXELS: int
+
+# Resolve the tunables from env once at import time. The previous
+# hardcoded values are kept as the defaults in
+# ``RasterizationSettings`` so behaviour is unchanged when no env vars
+# are set; operators can override via ``OMNISCRIBE_RASTERIZER_*``.
+# See deep_refactor_report.md §4.7.
+from omniscribe.core.pdf.rasterization_settings import (  # noqa: E402
+    RasterizationSettings as _RasterizationSettings,
+)
+
+_rasterization_settings = _RasterizationSettings.from_env()
+VLM_JPEG_QUALITY_PDF_PATH = _rasterization_settings.vlm_jpeg_quality_pdf_path
+VLM_JPEG_QUALITY_GROUNDED = _rasterization_settings.vlm_jpeg_quality_grounded
+EMBED_JPEG_QUALITY_PDF = _rasterization_settings.embed_jpeg_quality_pdf
+EMBED_JPEG_QUALITY_IMAGE = _rasterization_settings.embed_jpeg_quality_image
+
+MAX_SAFE_PIXELS = _rasterization_settings.max_safe_pixels
 
 
 def _is_image_path(path: str | Path) -> bool:
