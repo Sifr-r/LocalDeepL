@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import dataclasses
 import logging
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from PIL import Image
 
 from omniscribe.core.aligner import HybridAligner
-from omniscribe.core.document import DenseMode, DocumentResult, SpellcheckMode
+from omniscribe.core.document import DenseMode, SpellcheckMode
 from omniscribe.core.ocr import OCRProcessor
 from omniscribe.core.ocr.resilience import CircuitOpenError
 from omniscribe.core.ocr_quality import TrustOrchestrator
@@ -43,6 +42,17 @@ from omniscribe.core.workflows.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _decode_chunk_bytes(
+    images_dict: Mapping[int, str], chunk_pages: Sequence[int]
+) -> list[bytes]:
+    """Decode a batch of base64 page images to bytes (synchronous helper).
+
+    Runs inside ``asyncio.to_thread`` so the CPU-bound decode does not block the
+    event loop. See refactor §1.3 in ``docs/superpowers/specs/deep_refactor_report.md``.
+    """
+    return [base64.b64decode(images_dict[p]) for p in chunk_pages]
 
 
 class HybridEngine(EngineBase):
@@ -288,7 +298,12 @@ class HybridEngine(EngineBase):
         batch_boxes: list[list[list[float]]] = []
         for i in range(0, len(page_nums), DETECT_CHUNK_SIZE):
             chunk_pages = page_nums[i : i + DETECT_CHUNK_SIZE]
-            chunk_bytes = [base64.b64decode(images_dict[p]) for p in chunk_pages]
+            # Decode base64 inside the worker thread alongside Surya inference
+            # so neither the list comp nor the (possibly large) image bytes
+            # block the asyncio event loop. (Refactor §1.3.)
+            chunk_bytes = await asyncio.to_thread(
+                _decode_chunk_bytes, images_dict, chunk_pages
+            )
             chunk_boxes = await asyncio.to_thread(
                 self.aligner.get_detected_boxes_batch, chunk_bytes
             )
@@ -405,20 +420,11 @@ class HybridEngine(EngineBase):
                 # ordering across pages, which the live bbox overlay
                 # assumes. If you reorder this loop, the live UI will
                 # start flashing blocks out of order.
-                cb = self.block_callbacks
-                if cb.on_block is not None:
-                    for b_idx, (b_bbox, b_text) in enumerate(aligned):
-                        if b_text and b_text.strip():
-                            await cb.on_block(
-                                p_num,
-                                b_idx,
-                                list(b_bbox),
-                                b_text,
-                                "text",
-                                _estimate_confidence(b_text),
-                            )
-                if cb.on_page_complete is not None:
-                    await cb.on_page_complete(p_num)
+                await self._emit_page_callbacks(
+                    p_num,
+                    aligned,
+                    _estimate_confidence,
+                )
 
                 await notify(
                     progress,
@@ -515,79 +521,34 @@ class HybridEngine(EngineBase):
             progress=progress,
         )
 
-    async def _apply_trust(
+    def _decode_trust_image(
         self,
-        document_result: DocumentResult,
-        *,
-        model_id: str,
-        trust_images_dict: dict[int, str] | None = None,
-    ) -> DocumentResult:
-        """HybridEngine override: invoke the orchestrator once per page.
+        page_index: int,
+        trust_images_dict: dict[int, str] | None,
+        cache: dict,
+    ) -> tuple[Image.Image | None, tuple[int, int] | None]:
+        """HybridEngine override: lazily decode page image for the orchestrator.
 
         ``trust_images_dict`` is the same ``{page_index: b64_str}`` the
         engine already holds from :meth:`_convert_pages`; we re-decode
         each entry lazily so the disabled-path cost stays at a single
-        ``is None`` check on the orchestrator. The orchestrator is
-        called with the decoded :class:`PIL.Image` so
-        :func:`omniscribe.core.ocr_quality.run` can run watermark /
-        length-plausibility signals that need pixel access.
-
-        Any orchestrator raise is caught per-page — the page keeps its
-        original blocks (and ``trust_score=None``) so the pipeline
-        never sinks because of a broken sub-module (design §7 fail-open
-        contract).
+        ``is None`` check on the orchestrator.
         """
-        if self.trust_orchestrator is None:
-            return document_result
-        if not document_result.pages:
-            return document_result
-
-        # Lazy image-decode helper — copy-on-fail so a single broken
-        # b64 entry doesn't take down the whole pipeline.
-        decoded_images: dict[int, Image.Image] = {}
-
-        def _decode(page_index: int) -> Image.Image | None:
-            if trust_images_dict is None:
-                return None
-            if page_index in decoded_images:
-                return decoded_images[page_index]
-            b64 = trust_images_dict.get(page_index)
-            if b64 is None:
-                return None
-            try:
-                decoded_images[page_index] = _decode_page_image(b64)
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.debug(
-                    "trust image decode failed for page %d: %s", page_index, exc
-                )
-                return None
-            return decoded_images[page_index]
-
-        scored_pages: list = []
-        for page in document_result.pages:
-            page_image = _decode(page.page_index)
-            page_size = page_image.size if page_image is not None else None
-            try:
-                new_blocks = self.trust_orchestrator(
-                    list(page.blocks),
-                    page_image,
-                    model_id=model_id,
-                    page_size=page_size,
-                )
-            except Exception as exc:
-                logger.debug(
-                    "trust orchestrator failed on page %d; falling back: %s",
-                    page.page_index,
-                    exc,
-                )
-                new_blocks = list(page.blocks)
-            scored_pages.append(dataclasses.replace(page, blocks=list(new_blocks)))
-
-        return DocumentResult(
-            pages=scored_pages,
-            source_path=document_result.source_path,
-            tree=document_result.tree,
-        )
+        if trust_images_dict is None:
+            return None, None
+        if page_index in cache:
+            return cache[page_index]
+        b64 = trust_images_dict.get(page_index)
+        if b64 is None:
+            return None, None
+        try:
+            img = _decode_page_image(b64)
+            res = (img, img.size)
+            cache[page_index] = res
+            return res
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("trust image decode failed for page %d: %s", page_index, exc)
+            return None, None
 
     async def _ocr_per_box(
         self,
