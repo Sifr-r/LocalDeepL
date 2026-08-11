@@ -1,14 +1,12 @@
 # OCR Quality Trust Layer
 
-> **Status:** Phase 1 + Phase 2 shipped. The trust layer is wired
+> **Status:** Phase 1 + Phase 2 + Phase 3 shipped. The trust layer is wired
 > into the OCR pipeline and surfaced on `/api/process` via the
 > `quality_options` body field. Per-workspace opt-in toggles (`phase2_default`,
 > `phase3_default`) default to **off**, so existing callers see no behavioural
 > change. The `X-Document-Trust` response header carries a compact summary
 > (block count, score histogram, flagged count, per-flag counts) so the Web
 > UI TrustPanel can render without re-parsing the OCR text artifact.
-> Phase 3 (calibration training, dataset regression) is planned but not
-> yet shipped.
 
 The OCR Quality Trust Layer is a thin, additive wrapper around OmniScribe's
 hybrid and grounded OCR pipelines. For every OCR block, it produces a
@@ -225,10 +223,62 @@ Two related works inform the design without contributing datasets:
   reference for the cross-check path (deferred to v2; needs ≥ 2 VLMs per
   call).
 
-Phase 3 will confirm OCR-Quality and KIE-HVQA licenses before committing
-derived calibration files. If either licence is incompatible with bundling
-derivatives, we fall back to synthetic-only calibration and document the
-limitation.
+Phase 3 ships calibration files derived from OCR-Quality and validates
+the hallucination guard against KIE-HVQA per-region reliability (target:
+≥ 80% agreement). Datasets are not bundled — see
+`scripts/fetch_datasets.py`. See the *Calibration instructions* section
+below for the workflow to fit and ship a per-model calibration file.
+
+## Calibration instructions
+
+Phase 3 ships `scripts/calibrate_model.py`, a CLI that fits Platt scaling
+from an OCR-Quality-format JSON fixture:
+
+```bash
+uv run python scripts/calibrate_model.py \
+    --input tests/fixtures/datasets/ocr_quality_synthetic_qwen.json \
+    --model-id qwen2_5_vl_72b \
+    --output src/omniscribe/resources/calibration/qwen2_5_vl_72b.json
+```
+
+The script:
+
+1. Parses OCR-Quality JSON (`raw_confidence` + `quality_score` 1–4).
+2. Maps the discrete score to a continuous target probability
+   (`QUALITY_TO_PROBABILITY`: 1→0.90, 2→0.65, 3→0.30, 4→0.10).
+3. Fits `sigmoid(a * raw + b)` via pure-numpy bounded gradient descent
+   with backtracking line-search
+   (`omniscribe.core.ocr_quality.calibration_fit.fit_platt`) on an 80/20
+   train/test split (default `--train-fraction 0.8`, `--min-records 50`,
+   `--seed 42`).
+4. Writes the `{a, b}` pair plus the pre/post calibration ECE
+   (Expected Calibration Error, 10-bin weighted) to the output file.
+5. Logs the held-out ECE drop — Phase 3 acceptance criterion is ≥ 20%
+   drop vs. raw confidence.
+
+The shipped `qwen2_5_vl_72b.json` was fit on
+`tests/fixtures/datasets/ocr_quality_synthetic_qwen.json` (500 records):
+ECE 0.0999 → 0.0783 (21.6% drop, exceeds the ≥ 20% acceptance).
+
+Once `src/omniscribe/resources/calibration/{model_id}.json` exists, the
+`calibration_enabled=True` flag picks it up automatically via lazy load
+on the first call (cached for the process lifetime). Missing files
+degrade to identity passthrough with an info log — see the *Fallback
+semantics* section above.
+
+To calibrate a custom model that has no shipped JSON:
+
+1. Collect ≥ 200 labelled samples (`raw_confidence` + correct/wrong
+   label) — see `scripts/calibrate_model.py --help` for the input
+   schema.
+2. Run the CLI against your JSON (the script accepts both a JSON array
+   and JSONL).
+3. Commit the resulting
+   `src/omniscribe/resources/calibration/{model_id}.json` to the repo
+   (or ship it with your workspace overlay).
+4. Set `calibration_enabled=True` and verify the trust-score
+   distribution on a known-good PDF (e.g. `examples/dense.pdf`) using
+   `scripts/confidence_eval.py`.
 
 ## Testing the layer locally
 

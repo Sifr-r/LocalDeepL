@@ -63,3 +63,73 @@ jobs:
           path: |
             .pytest_cache/v/cache/lastfailed
           if-no-original-found: ignore
+
+  calibration:
+    name: pytest (py${{ matrix.python }}, calibration regression)
+    # Phase 3 of the OCR quality trust layer — runs the dataset-driven
+    # Platt scaling regression + KIE-HVQA hallucination guard
+    # agreement check on the fetched fixtures. The `slow_dataset`
+    # mini-fixture smoke tests run with the fast suite; this job picks
+    # up the full-fixture paths gated behind ``slow_dataset``.
+    # Catches:
+    #   * ECE drop regression on the held-out OCR-Quality split
+    #     (acceptance: ≥ 20% drop vs. raw confidence).
+    #   * KIE-HVQA per-region reliability agreement drop (acceptance:
+    #     ≥ 80% agreement).
+    # Datasets are fetched with `scripts/fetch_datasets.py` and cached
+    # under ``tests/fixtures/datasets/`` across runs so the regression
+    # doesn't re-download every night.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python }}
+
+      - name: Sync deps (web + async-translation extras)
+        run: uv sync --extra web --extra async-translation
+
+      - name: Cache HF Hub snapshot
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/huggingface
+          key: hf-surya-${{ matrix.python }}
+          restore-keys: |
+            hf-surya-
+
+      - name: Cache regression datasets
+        uses: actions/cache@v4
+        with:
+          path: |
+            tests/fixtures/datasets/ocr_quality_full.json
+            tests/fixtures/datasets/kie_hvqa_full.json
+          key: regression-datasets-${{ matrix.python }}
+          restore-keys: |
+            regression-datasets-
+
+      - name: Fetch regression datasets
+        # Idempotent: skips when already cached. No-op if the licence
+        # gates a download — the tests then skip cleanly and the job
+        # stays green.
+        run: |
+          uv run python scripts/fetch_datasets.py --dataset ocr-quality || true
+          uv run python scripts/fetch_datasets.py --dataset kie-hvqa || true
+
+      - name: Run slow_dataset regression tests
+        run: uv run pytest -m slow_dataset --no-header -v
+
+      - name: Upload results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-slow-dataset-results
+          path: |
+            .pytest_cache/v/cache/lastfailed
+          if-no-original-found: ignore

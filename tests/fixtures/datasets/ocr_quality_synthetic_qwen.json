@@ -1,0 +1,2002 @@
+[
+  {
+    "raw_confidence": 0.06722028094413306,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.5893560896635451,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.600971217750535,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.6151859103849795,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.3483725276242679,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6515991335147061,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.789137912996392,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.5072135440618396,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.9432051615866637,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.2098216136411854,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.17243018477283154,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.5661314252185619,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.1682808172319552,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.660929547032884,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.4027271195917119,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.20955276968749564,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.19523070396983688,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.3505435683312997,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.4476406378954948,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7907781823474211,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.12618098864909644,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.4992959731823008,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.09526219098179543,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.5825610122125405,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.4793591099637768,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.08870873617325933,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.2648242564808289,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.16408506438967246,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.3941781016227957,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.387845707720675,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.3469807614400399,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.29896377836872656,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.9221881553402037,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.7352768024426977,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.5246147419113333,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.25539504692675413,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.9379300220133784,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.46006387175988167,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8829752428299321,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.7183976836829107,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.9344254717650672,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.18956473513195493,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.24905070293073078,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.2178921823289356,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8029805107504099,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.2696820719526885,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.9246719929673957,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.7107521780224879,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.6130134859855001,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5836201025917245,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8170612692180977,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.5646622146429122,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7089683246986005,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8074290136375162,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.41219818513258105,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7177494406049367,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8153636104194835,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.3977822442057086,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.41599869592457395,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7517372150292143,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.40941699019476063,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6135875242193538,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5327817501037511,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.3687040049909247,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.05704267672973892,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.49399953959875925,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.27232568921293737,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7619822408619455,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.7035176012373197,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8764701317642022,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.9057113434035527,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.32683276424161867,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.9471101718563497,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.5058299814440452,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.2113969778043267,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.4316826815813342,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6375366397882455,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.48155482757271906,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.5410311948416711,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.06694108915240533,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.9155964630033753,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.07949887891592625,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.9188305002439789,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.49235251136248387,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.3109214540002512,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.9489105116753956,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.13833794034233926,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.550105964242872,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.18444126850668413,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.3836981195460155,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7590503793275621,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5670491680109448,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7405155644982568,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.48899590242738183,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6515578458135683,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.7540361455607799,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.9252587571918242,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.3918877487262845,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7663929867862566,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6082867750027067,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.831900452215472,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.4024860977835118,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.2570156871303298,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8869140996993096,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.7187066084801159,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8230787572247374,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.9043411110915325,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.10344425133380386,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8897667745052643,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.11135452017880149,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.579541775063988,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.14719142382693706,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5540986633842804,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8179898631433898,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.3852738621250417,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.21784591271656356,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.27722390752895654,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5618680543815915,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5574280209255826,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6087576492082473,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8264048115219196,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8376482525381138,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.4306176594002036,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.16524799680796676,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.8806988672069578,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.3277232682928232,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.7238289237807847,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.2969319428071658,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.08548558363069322,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.8984922645897888,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.7533972907609571,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.5522237017487822,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.2863283531437323,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8701994745965298,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8925832715022497,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.5359164897574418,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7464188212198372,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.5173816062307417,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.7027017211997298,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8867192197843081,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.7794592980037055,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.4632596330212373,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6899738495397894,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8188917181592693,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.23553022162758308,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.20310385950487686,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.39379398491278417,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8869255857833788,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.49349081997962674,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5462074618719057,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.3057193376473936,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.40813463495747415,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7788095862881653,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5934635397779354,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8068658905680435,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.4970488004998618,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.4279772043107917,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6539729222264643,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.17476975279664847,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5985227887703921,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.41506554152520925,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.09284712536430806,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.569494700989946,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7237777525049801,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.27277403800381866,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8153671536592983,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.2727021489472639,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.5370832311761428,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.4933451528199827,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.6819109601478199,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.06661612187657977,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.8387800986212174,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.4455437546965699,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.40276939735590866,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.843838115814779,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.700514194131459,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7573749124952133,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.5168053819634444,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.10398439420371611,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.07488227181532318,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.452908554961679,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.17466240408443423,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7202088030040711,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.14433528229382203,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.3524070106505407,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.25273881560249856,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.29023210164435187,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.6556621708138809,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.4252214583155456,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.9213134716602024,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.15528591850847645,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.7082421450891521,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.7179223053267076,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.6005331965628578,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6395405138527945,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.11689414218067432,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6777577965042597,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.4847414223533711,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.2683895490405192,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.2531525971248687,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.10270504354516163,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.7100192828503629,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.09630000394876398,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7157096396616356,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.5769713775749371,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5565309847138742,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.1966092854386946,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.5477264665817249,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.606593240624988,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.5464274145499709,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8978754485512569,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.43440181914545484,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.9209752284896371,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.788377740338314,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.21333405495864444,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.21736457259267705,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.2584118952384139,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8363249692538789,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.7726743669234858,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.7652182126629364,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8356296957037095,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.7846588458185089,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.9368141004197837,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.18176679578926797,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.589599477420584,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.4193788925568703,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.2104088182829415,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.11345018191766204,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.3981110506387348,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.31564128690817833,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.8861864977864274,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.08698181277885877,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.2022242298754237,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.3008359866891863,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.12882890741751596,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.20795538753732246,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5744322197485947,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.2069633639755452,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.26271704491203113,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.6282035729490326,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.5405276182613081,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.053872610935882574,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.4017437457648415,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.4729375466271989,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.0664582245369875,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.651773770576964,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.9099396376861877,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.9310734356689037,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.0857542548242789,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.40182381829000113,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6359761689414702,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.08975345944424248,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.1618359369826421,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5686824450817778,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.06822950027482678,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.6104516652289953,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.10368155014097263,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.9349281920427952,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.07445923330508511,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.24056561630004364,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5882558075639561,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8529112561669985,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.32994510590050935,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.05657049251531591,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.47949171966485077,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.20123993591593142,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6459997120836655,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.15643909357804386,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.21770853831087744,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.2600131278425118,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.31489608172811934,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.185460235844845,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.16807711885297633,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.42444759822032807,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.07317585438501788,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.31391065106655597,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.32548842584722076,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.9111939765584643,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.10232098384206575,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.33639559954077203,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.5801669962351442,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.24396148172068383,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.5203803452385599,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.4526578822892719,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6273846720977173,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.48569276004427797,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.21372279503986447,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7996195534527953,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.679000523517923,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.5831568833127956,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.25801385998597476,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8545789714158888,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.2540195486474313,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.1820735851589651,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6575824095490551,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.9076850867298882,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.370224391597374,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.6094897365079082,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8242068645458891,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.13961073238886057,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.7594726291488205,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.2305891602163329,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.714031023661588,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.595959447893031,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.19008056331111978,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8388095161387934,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.6147044499165855,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.3310199617809542,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.876392412571803,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.18849269794444357,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.27988506725153095,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6326802507243806,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.41610289462991285,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5890139582516467,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.15850416569118986,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.45190452430561495,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.9483428495951,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8065681126217038,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.28129683616542667,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.18054869744491314,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.26599340993863724,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.39870935172095423,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8228073463248922,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.06717979389373278,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.3141974509016442,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7357041297147917,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.4132905464417571,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8566630661041473,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.3271115757081054,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.0705668482072103,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.46090781948201925,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.147012663090442,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.8491897888727661,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.17794802825055228,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.853684128512801,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8182857717250549,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.6054679256922365,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.6590025444196054,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.33057003735156254,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.6452187447138904,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.06314675770790261,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.3623610925418853,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.4679046407778311,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8542276198782276,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8062866366092967,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.6099050847664922,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8601682343412097,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.09778992598120173,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.8205014316887661,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8628081921971097,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.06368851147083324,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.3162227498354146,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.2198418861268575,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.32014061119544507,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.600689869394089,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5388219207644438,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.18596023369288095,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.6390113301654012,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.263803394576075,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.06136952171270378,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.18016850473614693,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.47521320597736977,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6893934213910353,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8001849367020855,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.9315574736754522,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.13184718985821708,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.6785300172484977,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.23519444893609792,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.9335037617542737,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.923612360796158,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.10789066355333013,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5270896298825495,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.3303636358968797,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.05960790471567397,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.20016354179580315,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.25675580579165946,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.8853133116539904,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.23459543144686873,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.3056699644397066,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.34721614346857455,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8438558339839528,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.08091925501524944,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.13276468273647418,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.3683117145888027,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5511182871278241,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.7057926940779267,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8657375467399433,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.5757178182659619,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.48693401589072893,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.10162887148058669,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.25453848166705495,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.4998456928944128,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.22251814021069605,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7008981494609919,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6087881879305198,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.15908950829555338,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6535410432488369,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5413430478519644,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7769343286257397,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.07886697338084549,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.2600585469215468,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.32416655272790945,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.36693744490251917,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.9133707425314492,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.5598592282094303,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8202510555603408,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8612247265037745,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.3737045862174689,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6139887837108742,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8786713001279557,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.7863488294467943,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.26769131046575917,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.9178932124464299,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.09129073048858054,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.44563873398020726,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.15223761662989854,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7389611563923075,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.6424782348971986,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.15893908860200157,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8714365316838012,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.22447607798749392,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.5865046429332733,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.4277617534861606,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6946732720371676,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.5753132317175722,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.2503185704061878,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.8673809194201908,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.5793320261203111,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8476086922319648,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.33904703318467316,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.2789790463034017,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5580542477532536,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6301813040978815,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8843651258223258,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.6966497343070935,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.611260552169111,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8197176138055052,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.15214119857885922,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.20439056511691822,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.7324962030276719,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.9423370221386108,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.21987770806767637,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5221175637544323,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.06995435079226596,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.21358517729365767,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.393514359766829,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8326749203264524,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.14372734313550373,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.603555928800658,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.39430256789492524,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.28729999522357846,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5812725280015724,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.37656050317068607,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.9188819480109025,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.3552648055909751,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.346415798561351,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.519964780953056,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.15202537659123372,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.31030866850732713,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.7776501046046151,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.7206788097866383,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6068698460347484,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.1728298704187334,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.533702767867518,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.32464842200231386,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.08105659411398942,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.6972167393939506,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8276701503927624,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.3352345289355506,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.6988067809302511,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.6955568401761788,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.3473675816791925,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.773851655566628,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.6704296837477712,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.16448254847194985,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.4461988989048669,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.17933052989433534,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.432731468656054,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.9194523514961281,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.40601812030560075,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8114516130434963,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8730705107213255,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.4270965470715629,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.1539078631095096,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5950986017013458,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.508079366889988,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.2182332390582512,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.363100358949125,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.5219182561847501,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.43106848581648094,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.23517786142474784,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.776967366216478,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.5066938666797434,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.5092034971042398,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.34249444916448096,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.9030637924633633,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.8441943969978781,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.7247812877851714,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.8790724909845211,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.7158139772185913,
+    "quality_score": 1
+  }
+]

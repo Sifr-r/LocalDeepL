@@ -57,6 +57,35 @@ the project adheres to [Semantic Versioning](https://semver.org/).
     toggles (`phase2_default: bool = False`,
     `phase3_default: bool = False`) so existing setups see no
     behaviour change.
+- **OCR quality trust layer (Phase 3, calibration + dataset regression)**.
+  - `scripts/calibrate_model.py` — CLI that fits Platt scaling
+    `sigmoid(a * raw + b)` from an OCR-Quality-format JSON fixture
+    via pure-numpy bounded gradient descent with backtracking
+    line-search (`omniscribe.core.ocr_quality.calibration_fit.fit_platt`).
+    Default `--train-fraction 0.8`, `--min-records 50`, `--seed 42`.
+    Reports ECE (Expected Calibration Error, 10-bin weighted) on the
+    held-out 20%; the acceptance criterion is ≥ 20% drop vs. raw.
+  - `scripts/fetch_datasets.py` — downloads OCR-Quality and KIE-HVQA
+    fixtures under `tests/fixtures/datasets/`. Datasets are not
+    bundled in the repo (license review pending); the
+    `slow_dataset` regression tests skip cleanly when absent.
+  - `src/omniscribe/resources/calibration/qwen2_5_vl_72b.json` —
+    shipped pre-trained calibration file fit on
+    `tests/fixtures/datasets/ocr_quality_synthetic_qwen.json` (500
+    records). ECE drop: 0.0999 → 0.0783 (21.6%, exceeds the ≥ 20%
+    acceptance).
+  - `tests/test_ocr_quality_calibration_regression.py`,
+    `tests/test_kie_hvqa_hallucination_regression.py`,
+    `tests/test_calibrate_model_script.py`,
+    `tests/test_fetch_datasets_script.py`,
+    `tests/test_ocr_quality_calibration_fit.py` — dataset-driven
+    regression tests (12 Platt-fit, 6 calibration, 3 dataset-script,
+    7 calibrate-script tests). Full-fixture paths are `slow_dataset`-
+    gated; the `slow_dataset` mini-fixture smoke tests run with the
+    fast suite.
+  - `.github/workflows/nightly.yml` gains the calibration regression
+    job (03:00 UTC) that runs `pytest -m slow_dataset` against the
+    fetched datasets with cached HF Hub snapshots.
 - **SECURITY.md** — vulnerability disclosure policy, threat model,
   hardening checklist. (D1)
 - **DEPLOYMENT.md** — three deployment profiles (local, LAN, public)

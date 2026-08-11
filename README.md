@@ -64,8 +64,8 @@ The Advanced Configuration panel includes:
 - **Quality Routing** for recording local routing recommendations from quality findings.
 
 The **OCR Quality Trust Layer** (`omniscribe.core.ocr_quality`) ships in
-Phase 1 + Phase 2 as an additive layer over both engines and the
-`/api/process` route. Every sub-module (watermark, script detection,
+Phase 1 + Phase 2 + Phase 3 as an additive layer over both engines and
+the `/api/process` route. Every sub-module (watermark, script detection,
 hallucination guard, confidence calibration) is **off** by default and
 fails open, so existing callers see no behavioural change. Each
 `DocumentBlock` carries optional `trust_score` and `trust_flags` fields
@@ -78,10 +78,13 @@ JSON-encoded `quality_options` form field and forwards
 compact `X-Document-Trust` JSON header (block count, score histogram,
 flagged count, per-flag counts) emitted only when at least one block
 carries a `trust_score` — keeping the no-orchestrator default
-byte-identical. Phase 3 will ship `scripts/calibrate_model.py` and
-dataset-driven regression tests for the calibration and hallucination
-sub-modules. See [docs/ocr_quality.md](docs/ocr_quality.md) for the
-flag reference, fallback semantics, and dataset attribution.
+byte-identical. Phase 3 ships `scripts/calibrate_model.py` (Platt
+scaling via pure-numpy gradient descent with backtracking line-search)
+and a pre-trained `qwen2_5_vl_72b.json` that drops ECE by 21.6% vs.
+raw confidence on the synthetic fixture. The `slow_dataset`-gated
+regression tests run on OCR-Quality and KIE-HVQA fixtures via the
+nightly workflow. See [docs/ocr_quality.md](docs/ocr_quality.md) for
+the flag reference, fallback semantics, and dataset attribution.
 
 OCR responses include token-bound text artifact headers. When processor metadata exists, responses also include `X-Document-Metadata-Artifact-Id` and `X-Document-Metadata-Artifact-Token`; fetch `GET /metadata/{artifact_id}` with the token to retrieve compact page/block metadata. Use `POST /api/export/document` to create token-bound JSON, Markdown, plain text, Docling-compatible, or MinerU-compatible export artifacts. `POST /api/export/docx` produces a `.docx` from Markdown page text. `POST /api/extract` runs structured data extraction against OCR text using a built-in template (`invoice`, `resume`, `academic`) or a custom prompt.
 

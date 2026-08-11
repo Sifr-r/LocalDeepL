@@ -1,0 +1,42 @@
+[
+  {
+    "raw_confidence": 0.92,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.85,
+    "quality_score": 1
+  },
+  {
+    "raw_confidence": 0.78,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.62,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.55,
+    "quality_score": 2
+  },
+  {
+    "raw_confidence": 0.41,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.32,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.22,
+    "quality_score": 3
+  },
+  {
+    "raw_confidence": 0.15,
+    "quality_score": 4
+  },
+  {
+    "raw_confidence": 0.08,
+    "quality_score": 4
+  }
+]
