@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from omniscribe.utils.prompt_safety import sanitize_prompt_input
+
 # Canonical OlmOCR-2 prompt (the model was RL-trained on this exact string).
 # Source: github.com/allenai/olmocr olmocr/prompts/prompts.py
 # :func:`build_no_anchoring_v4_yaml_prompt`.
@@ -108,19 +110,27 @@ def select_crop_prompt(handwriting_mode: bool = False) -> str:
 
 def fill_dual_engine_page(draft_text: str) -> str:
     """Substitute the Tesseract draft into the dual-engine page prompt."""
-    return DUAL_ENGINE_PAGE_PROMPT.replace("{draft_text}", draft_text)
+    return DUAL_ENGINE_PAGE_PROMPT.replace(
+        "{draft_text}", sanitize_prompt_input(draft_text)
+    )
 
 
 def fill_dual_engine_crop(draft_text: str) -> str:
     """Substitute the Tesseract draft into the dual-engine crop prompt."""
-    return DUAL_ENGINE_CROP_PROMPT.replace("{draft_text}", draft_text)
+    return DUAL_ENGINE_CROP_PROMPT.replace(
+        "{draft_text}", sanitize_prompt_input(draft_text)
+    )
 
 
 def fill_correction_page(draft_text: str) -> str:
     """Substitute the draft text into the correction page prompt."""
-    return CORRECTION_PAGE_PROMPT.replace("{draft_text}", draft_text)
+    return CORRECTION_PAGE_PROMPT.replace(
+        "{draft_text}", sanitize_prompt_input(draft_text)
+    )
 
 
 def fill_correction_crop(draft_text: str) -> str:
     """Substitute the draft text into the correction crop prompt."""
-    return CORRECTION_CROP_PROMPT.replace("{draft_text}", draft_text)
+    return CORRECTION_CROP_PROMPT.replace(
+        "{draft_text}", sanitize_prompt_input(draft_text)
+    )

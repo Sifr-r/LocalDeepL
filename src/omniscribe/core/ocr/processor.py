@@ -48,14 +48,14 @@ from omniscribe.core.ocr.filters import (
     _strip_yaml_front_matter,
 )
 from omniscribe.core.ocr.prompts import (
-    CORRECTION_CROP_PROMPT,
-    CORRECTION_PAGE_PROMPT,
     CROP_PROMPT,
-    DUAL_ENGINE_CROP_PROMPT,
-    DUAL_ENGINE_PAGE_PROMPT,
     HANDWRITING_CROP_PROMPT,
     HANDWRITING_PAGE_PROMPT,
     OLMOCR_PAGE_PROMPT,
+    fill_correction_crop,
+    fill_correction_page,
+    fill_dual_engine_crop,
+    fill_dual_engine_page,
 )
 from omniscribe.core.ocr.resilience import (
     CircuitBreakerRegistry,
@@ -181,7 +181,7 @@ class OCRProcessor:
         if dual_engine:
             draft = await asyncio.to_thread(self._get_tesseract_draft, image_base64)
             if draft:
-                prompt = DUAL_ENGINE_PAGE_PROMPT.replace("{draft_text}", draft)
+                prompt = fill_dual_engine_page(draft)
 
         text = await self._chat(
             prompt,
@@ -193,7 +193,7 @@ class OCRProcessor:
             return []
 
         if self_correction:
-            correction_prompt = CORRECTION_PAGE_PROMPT.replace("{draft_text}", text)
+            correction_prompt = fill_correction_page(text)
             text = await self._chat(
                 correction_prompt,
                 image_base64,
@@ -235,9 +235,7 @@ class OCRProcessor:
             image_bytes = base64.b64decode(image_base64)
             trocr_res = await self.trocr_engine.recognize(image_bytes)
             if trocr_res.confidence > vlm_confidence:
-                correction_prompt = DUAL_ENGINE_CROP_PROMPT.replace(
-                    "{draft_text}", trocr_res.text
-                )
+                correction_prompt = fill_dual_engine_crop(trocr_res.text)
                 vlm_corrected = await self._chat(
                     correction_prompt,
                     image_base64,
@@ -290,7 +288,7 @@ class OCRProcessor:
         if dual_engine:
             draft = await asyncio.to_thread(self._get_tesseract_draft, image_base64)
             if draft:
-                prompt = DUAL_ENGINE_CROP_PROMPT.replace("{draft_text}", draft)
+                prompt = fill_dual_engine_crop(draft)
 
         text = await self._chat(
             prompt,
@@ -302,7 +300,7 @@ class OCRProcessor:
             return ""
 
         if self_correction:
-            correction_prompt = CORRECTION_CROP_PROMPT.replace("{draft_text}", text)
+            correction_prompt = fill_correction_crop(text)
             text = await self._chat(
                 correction_prompt,
                 image_base64,
