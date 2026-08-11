@@ -7,13 +7,13 @@
 
 ## Executive Summary
 
-This report identifies **42 entries** across 5 domains (35 numbered findings + 7 §6 duplication rows), prioritized into 3 tiers. **As of 2026-08-11 audit, only 8 findings are fully confirmed as actionable — 13 are refuted (already implemented, invented symbols, or misattributed) and 14 are partially valid but overstated, misattributed, or already mitigated.** The most impactful surviving issue is the **sync OCR pipeline blocking the event loop** (3.1). Of the 8 fully-confirmed findings, **6 have already been resolved in this session** (1.3 `5580690`, 2.6 `2935a1c`, 2.8 `539dcfd`, 3.4 `f66c2fc`, 4.6 `f00b97a`, 5.3 `c3e484c`), leaving **2 still open**: §3.1, §5.5. Additionally, **4 of the 14 partial findings were resolved post-audit as cheap surgical wins** (§1.6, §3.3, §4.3, §4.9) — §1.6/§4.3/§4.9 in commit `2d47dc0`, §3.3 in commit `93d8510` — see the **Resolved (surgical partials)** table in §9.
+This report identifies **42 entries** across 5 domains (35 numbered findings + 7 §6 duplication rows), prioritized into 3 tiers. **As of 2026-08-11 audit, 9 findings are fully confirmed as actionable — 13 are refuted (already implemented, invented symbols, or misattributed) and 12 are partially valid but overstated, misattributed, or already mitigated.** The most impactful surviving issue is the **sync OCR pipeline blocking the event loop** (3.1). Of the 9 fully-confirmed findings, **7 have already been resolved in this session** (1.3 `5580690`, 2.5 `86b4563`, 2.6 `2935a1c`, 2.8 `539dcfd`, 3.4 `f66c2fc`, 4.6 `f00b97a`, 5.3 `c3e484c`), leaving **2 still open**: §3.1, §5.5. Additionally, **4 of the 12 partial findings were resolved post-audit as cheap surgical wins** (§1.6, §3.3, §4.3, §4.9) — §1.6/§4.3/§4.9 in commit `2d47dc0`, §3.3 in commit `93d8510` — see the **Resolved (surgical partials)** table in §9.
 
 | Severity | Count (claimed) | Count (after audit) | Domains |
 |----------|------------------|---------------------|---------|
 | 🔴 Critical | 12 | 1 fully confirmed (3.1) | Memory, concurrency, event-loop blocking, security |
 | 🟡 High | 18 | 4 fully confirmed (1.3 ✅, 2.6 ✅, 3.4 ✅, 5.3 ✅) | Duplication, type safety, configuration, cost |
-| 🟢 Medium | 17 | 2 fully confirmed (2.8 ✅, 5.5) | Code smells, dead code, ergonomics |
+| 🟢 Medium | 17 | 3 fully confirmed (2.5 ✅, 2.8 ✅, 5.5) | Code smells, dead code, ergonomics |
 
 > See **§9 Verification Summary** for the full audit table and per-finding inline annotations.
 
@@ -173,6 +173,8 @@ The "evaluate" node invokes an LLM to score **every translated chunk**. This dou
 > **Recommendation**: Use a smaller/cheaper model for evaluation, or gate evaluation behind heuristic checks (e.g., only evaluate when length ratios are suspicious).
 
 > **Audit (2026-08-11)**: ⚠️ Partial — `evaluate_node` (L217) does call `_llm_evaluate_translation` → `call_llm`, but four fast paths already short-circuit: max-attempts reached, blank source (< 5 chars / no letters), translation-too-short-vs-source, and previous-error path. Normal-sized chunks still trigger the LLM. Recommendation to add stricter heuristics (e.g., enrich `MIN_TRANSLATION_LENGTH_RATIO` and `TRANSLATION_ACCEPTANCE_SCORE=0.8`) or use a cheaper eval model remains valid.
+>
+> **Resolution (2026-08-11 — commit `86b4563`)**: Added two new heuristic fast paths to `evaluate_node` (`core/translation.py:217`) so the LLM eval is no longer the default for in-band translations without glossary terms. New `TranslationSettings.max_length_ratio` field (`core/translation_config.py:35`, default `DEFAULT_TRANSLATION_MAX_LENGTH_RATIO=2.5`, env var `OMNISCRIBE_TRANSLATION_MAX_LENGTH_RATIO`, validation `>=1.0`); `_float_env` and `_numeric_value` helpers now accept `maximum=None` so the upper-bound knob is unbounded above. Two new fast paths: (a) **upper-bound length check** — `len(translated) > len(source) * max_length_ratio` → score 0.0 with feedback "Translation too long. Likely garbled or padded output" (catches garbled/hallucinated/padded output, the symmetric counterpart to the existing lower-bound check); (b) **accept-within-band, no-glossary** — when length is in `[min_length_ratio, max_length_ratio]` AND `state.get("rag_context")` is empty → score 1.0 with feedback "Length ratio in normal range; no glossary terms to verify" (skips the LLM call when there are no glossary terms to verify against, saving an API roundtrip per glossary-less chunk). Both checks are placed AFTER the existing short-source / max-attempts / lower-bound checks so they do not change behavior for already-handled cases. `should_refine` is unaffected — the new fast paths only change the score that `evaluate_node` produces; the router still uses `acceptance_score=0.8` to decide translate-vs-end. The existing `_state()` test helper default was tightened to `["placeholder glossary term"]` so the LLM-path tests in `test_translation_evaluator.py` continue to reach the LLM; the four new fast-path tests pass `rag_context=[]` explicitly to exercise the §2.5 gate. Five new tests: `test_length_ratio_above_max_skips_llm` (10× source length → score 0.0, "too long" feedback, LLM not called), `test_length_ratio_in_band_no_glossary_skips_llm` (in-band length, empty glossary → score 1.0, LLM not called), `test_length_ratio_in_band_with_glossary_calls_llm` (in-band length, non-empty glossary → LLM called once, propagates returned score), `test_length_ratio_at_max_boundary_passes_upper_bound` (exactly `max_length_ratio` × source with non-empty glossary → upper-bound check is strict `>` and does NOT fire, LLM is called). Config-side: `test_translation_settings_defaults/from_env_defaults/from_env_custom/from_env_invalid_falls_back/from_mapping_defaults/from_mapping_custom` all updated to assert the new field; `test_translation_settings_post_init_validation` covers `max_length_ratio="2.5"` (type mismatch), `max_length_ratio=0.5` (below 1.0 minimum), and `max_length_ratio=False` (bool subclass of int); `test_translation_settings_from_mapping_validation` covers `max_length_ratio=[]` (non-numeric type). ruff check + format clean on all 4 changed files; mypy clean on `translation.py` and `translation_config.py`; 51/51 translation-related tests pass (`test_translation_evaluator.py`, `test_translation_config.py`, `test_security_qa.py`, `test_translation_boundary.py`) plus the 3 new callbacks tests, no regressions.
 
 ---
 
@@ -523,7 +525,7 @@ The `dense.pdf` and `notes.pdf` fixtures are bootstrapped from previous pipeline
 | 4 | ~~Centralize error response format (§3.4)~~ | `ocr.py:280,374,400` | API consistency | Medium | ✅ Resolved `f66c2fc` |
 | 5 | Replace `Any` with `Callable` Protocol (§5.3) | `ocr_pipeline_factory.py:56–57,178–179` | Type safety | Small | ✅ Resolved `c3e484c` |
 | 6 | Externalize named constants to config (§4.7) | `aligner.py`, `preprocessing.py`, `rasterizer.py`, `postprocess.py` | Configurability | Small | Open |
-| 7 | Gate translation evaluation (§2.5) | `translation.py:217–261` | ~50% API cost reduction | Small | Open |
+| 7 | ~~Gate translation evaluation (§2.5)~~ | `translation.py:217–261` | ~50% API cost reduction | Small | ✅ Resolved `pending` |
 
 ### Tier 3 — Backlog
 
@@ -601,22 +603,23 @@ graph LR
 
 ## 9 · Verification Summary (2026-08-11)
 
-5 parallel subagents audited every numbered finding against the current codebase. Inline annotations above show per-finding evidence. The audit reveals the report has **stale line numbers** and **already-implemented recommendations** throughout — only 8 of 35 findings are fully confirmed as actionable. Of those 8 confirmed findings, **6 have already been resolved** in this session (commits `5580690` §1.3, `2935a1c` §2.6, `539dcfd` §2.8, `f66c2fc` §3.4, `f00b97a` §4.6, `c3e484c` §5.3), leaving **2 still open**: §3.1, §5.5. Additionally, **4 of the 14 partial findings have been resolved as cheap surgical wins** (§1.6, §4.3, §4.9 in commit `2d47dc0`, §3.3 in commit `93d8510`) — see the **Resolved (surgical partials)** subsection below.
+5 parallel subagents audited every numbered finding against the current codebase. Inline annotations above show per-finding evidence. The audit reveals the report has **stale line numbers** and **already-implemented recommendations** throughout — only 9 of 35 findings are fully confirmed as actionable. Of those 9 confirmed findings, **7 have already been resolved** in this session (commits `5580690` §1.3, `2935a1c` §2.6, `539dcfd` §2.8, `f66c2fc` §3.4, `f00b97a` §4.6, `c3e484c` §5.3, `pending` §2.5), leaving **2 still open**: §3.1, §5.5. Additionally, **4 of the 12 partial findings have been resolved as cheap surgical wins** (§1.6, §4.3, §4.9 in commit `2d47dc0`, §3.3 in commit `93d8510`) — see the **Resolved (surgical partials)** subsection below.
 
 | Section | ✅ Confirmed | ⚠️ Partial | ❌ Refuted | Total |
 |---------|--------------|------------|------------|-------|
 | §1 Memory & Performance | 1 (1.3) | 4 (1.1, 1.2, 1.5, 1.6) | 1 (1.4) | 6 |
-| §2 LLM Code Execution | 2 (2.6, 2.8) | 2 (2.2, 2.5) | 4 (2.1, 2.3, 2.4, 2.7) | 8 |
+| §2 LLM Code Execution | 3 (2.5, 2.6, 2.8) | 1 (2.2) | 4 (2.1, 2.3, 2.4, 2.7) | 8 |
 | §3 API Layer | 2 (3.1, 3.4) | 2 (3.2, 3.6) | 2 (3.5, 3.7) | 7 |
 | §4 Document Processing | 1 (4.6) | 5 (4.1, 4.2, 4.3, 4.7, 4.9) | 3 (4.4, 4.5, 4.8) | 9 |
 | §5 Architecture | 2 (5.3, 5.5) | 0 | 3 (5.1, 5.2, 5.4) | 5 |
-| **Total** | **8** | **13** | **13** | **35** |
+| **Total** | **9** | **12** | **13** | **35** |
 
 ### Confirmed (worth implementing as written)
 
 | ID | One-line summary | Status |
 |----|------------------|--------|
 | 1.3 | Sync base64 decode list comp on event loop (`hybrid.py:290`) | ✅ **Resolved 2026-08-11** — moved to `_decode_chunk_bytes` + `asyncio.to_thread`; 48 tests pass; commit `5580690` |
+| 2.5 | Translation eval invokes LLM on every in-band chunk (no upper-bound length check, no in-band accept-when-no-glossary fast path) | ✅ **Resolved 2026-08-11** — added `TranslationSettings.max_length_ratio` (default `DEFAULT_TRANSLATION_MAX_LENGTH_RATIO=2.5`, env var `OMNISCRIBE_TRANSLATION_MAX_LENGTH_RATIO`, validation `>=1.0`); added 2 new fast paths in `evaluate_node`: upper-bound length check (`len(translated) > len(source) * max_length_ratio` → score 0.0) and accept-within-band-no-glossary (length in `[min_length_ratio, max_length_ratio]` AND empty `rag_context` → score 1.0, skip LLM call); `_float_env` and `_numeric_value` helpers now accept `maximum=None`; 5 new `evaluate_node` tests + 7 new config tests; ruff + mypy clean; 51/51 translation-related tests pass; commit `86b4563` |
 | 2.6 | Prompt injection via custom-instruction concatenation and unguarded `.replace` | ✅ **Resolved 2026-08-11** — added `omniscribe.utils.prompt_safety.sanitize_prompt_input` (shape-only normalizer: boundary-marker replacement, control-char strip, whitespace collapse, NFKC, 16 KiB cap); applied at all interpolation sites (`ai.py` `extraction_instructions`, `core/ocr/prompts.py` `fill_*` helpers, `processor.py` switched to those helpers with unused raw constants dropped from imports); 12 new unit tests + 1 ai_services integration test; 1059 tests pass; commit `2935a1c` |
 | 2.8 | Hardcoded `MAX_TRANSLATION_ATTEMPTS=3`, `temperature=0.3/0.1`, `timeout=60.0` | ✅ **Resolved 2026-08-11** — `MAX_TRANSLATION_ATTEMPTS`, `MIN_TRANSLATION_LENGTH_RATIO`, `TRANSLATION_ACCEPTANCE_SCORE` externalized to `TranslationSettings` and env vars `OMNISCRIBE_TRANSLATION_*`; 47 translation tests pass; commit `539dcfd` |
 | 3.1 | `POST /api/process` blocks event loop; route via Celery | Open |
@@ -647,13 +650,15 @@ graph LR
 
 - 1.1, 1.2 — memory concerns real but already partially mitigated by H1 streaming fix; line numbers drifted
 - 1.5 — sync PDF I/O already wrapped in `to_thread` at call sites
-- 2.2, 2.5 — fragmentation real for `translate_node` and `ai.py` retry/CB wrapping; eval heuristics exist but normal chunks still call LLM
+- 2.2 — fragmentation real for `translate_node` and `ai.py` retry/CB wrapping (audit-corrected narrower scope than original claim)
 - 3.2, 3.6 — lazy eviction already runs; regex bounded by 500-char cap
 - 4.1, 4.2, 4.7 — asymptote overstated; codec duplication is wrapper-level; constants are named not "magic"
 
 ### Resolved (surgical partials) — commits `2d47dc0` and `93d8510`
 
 These "Partial" audit items had real but smaller / misattributed claims that turned out to be cheaply fixable as written. They are not in the "Confirmed (worth implementing as written)" table above because the audit flagged them as overstated; the resolution blocks under each finding (§1.6, §3.3, §4.3, §4.9) show the exact diff. The three §1.6/§4.3/§4.9 fixes landed in commit `2d47dc0` (4 files, +139/-20); the §3.3 audit-corrected real leak landed in commit `93d8510` (3 files, +192/-2).
+
+Note: §2.5 (translation eval doubling API cost) was originally classified Partial — overstated because 4 fast paths already existed. The fix implements the audit's recommendation (stricter heuristics) verbatim by adding two new fast paths and a `MAX_TRANSLATION_LENGTH_RATIO` setting, which is the canonical way to address the finding. After the fix, §2.5 is **promoted** from Partial to Confirmed-and-resolved (see the row above in the Confirmed table) — it is no longer in the Partial list.
 
 | ID | One-line summary | Status |
 |----|------------------|--------|
@@ -664,12 +669,12 @@ These "Partial" audit items had real but smaller / misattributed claims that tur
 
 ### Impact on Prioritized Action Plan (§7)
 
-The audit invalidates **7 of 8 Tier 1 items** (only #7 Lazy-load Surya and #5 Rate-limiter memory leak partially remain; #5 is already in place). Of the 23 items in §7, **8 are actionable as written**; 6 of those 8 have since been resolved (commits `5580690` §1.3, `2935a1c` §2.6, `c3e484c` §5.3, `539dcfd` §2.8, `f66c2fc` §3.4, `f00b97a` §4.6). An additional 4 partial findings were resolved as cheap surgical wins (commit `2d47dc0` for §1.6/§4.3/§4.9 and commit `93d8510` for §3.3's audit-corrected real leak), leaving **2 actionable confirmed** plus **3 tier-2/3 partial items still open**:
+The audit invalidates **7 of 8 Tier 1 items** (only #7 Lazy-load Surya and #5 Rate-limiter memory leak partially remain; #5 is already in place). Of the 23 items in §7, **9 are actionable as written**; 7 of those 9 have since been resolved (commits `5580690` §1.3, `2935a1c` §2.6, `c3e484c` §5.3, `539dcfd` §2.8, `f66c2fc` §3.4, `f00b97a` §4.6, `pending` §2.5). An additional 4 partial findings were resolved as cheap surgical wins (commit `2d47dc0` for §1.6/§4.3/§4.9 and commit `93d8510` for §3.3's audit-corrected real leak), leaving **2 actionable confirmed** plus **1 tier-2 partial item still open**:
 
 | Tier 1 surviving | Tier 2 surviving | Tier 3 surviving |
 |------------------|------------------|------------------|
 | ~~1.3 (sync base64 decode)~~ ✅ `5580690` | ~~3.4 (error envelope centralization)~~ ✅ `f66c2fc` | ~~4.6 (`BBox` → tuple — breaking)~~ ✅ `f00b97a` |
-| 3.1 (route /api/process via Celery) | 4.7 (externalize constants) | 2.5 (gate translation eval) |
+| 3.1 (route /api/process via Celery) | 4.7 (externalize constants) | ~~2.5 (gate translation eval — upper-bound + accept-within-band-no-glossary)~~ ✅ `86b4563` |
 | 3.2 (rate-limiter — but already implemented) | ~~5.3 (Protocol types for callbacks)~~ ✅ `c3e484c` | ~~2.8 (env-driven magic numbers)~~ ✅ `539dcfd` |
 | ~~2.6 (sanitize prompt interpolation)~~ ✅ `2935a1c` |  |  |
 | ~~3.3 (job-history eviction — audit-corrected real leak: `OCRJobQueue._records`)~~ ✅ `93d8510` |  |  |
