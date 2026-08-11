@@ -31,6 +31,7 @@ from omniscribe import (
 from omniscribe.api.schemas import ProcessSettings
 from omniscribe.core.callbacks import BlockCallbackSet
 from omniscribe.core.ocr.resilience import get_default_circuit_breaker_registry
+from omniscribe.core.ocr_quality import build_trust_orchestrator
 from omniscribe.core.preprocessing import (
     PagePreprocessingOptions,
     PagePreprocessor,
@@ -63,6 +64,12 @@ def build_pipeline(
     wired to the WebSocket manager, so per-block events emitted by the
     engine reach the live UI without the engine ever importing
     ``omniscribe.api``.
+
+    Phase 2 — the trust orchestrator is built from
+    ``settings.quality_options`` (which itself accepts a JSON payload
+    on the form, see :class:`ProcessSettings`). When ``quality_options``
+    is ``None`` or every sub-module is off, the orchestrator is
+    ``None`` and the engine keeps the pre-Phase-2 byte layout.
     """
     processors = build_document_processors(
         processor.value for processor in settings.document_processors
@@ -72,6 +79,7 @@ def build_pipeline(
         manager_send_block=manager_send_block,
         manager_send_page_complete=manager_send_page_complete,
     )
+    trust_orchestrator = _build_trust_orchestrator(settings.quality_options)
 
     if settings.pipeline_mode == "grounded":
         backend = PromptedGroundedOCR(
@@ -86,6 +94,7 @@ def build_pipeline(
             grounded_backend=backend,
             document_processors=processors,
             block_callbacks=block_callbacks,
+            trust_orchestrator=trust_orchestrator,
         )
     else:
         from omniscribe.core.trocr_engine import TrOCREngine
@@ -117,8 +126,21 @@ def build_pipeline(
             document_processors=processors,
             page_preprocessor=page_preprocessor,
             block_callbacks=block_callbacks,
+            trust_orchestrator=trust_orchestrator,
         )
     return pipeline, backend
+
+
+def _build_trust_orchestrator(quality_options: Any) -> Any:
+    """Factory wrapper exposed as a module-private hook for tests.
+
+    The real construction logic lives in
+    :func:`omniscribe.core.ocr_quality.build_trust_orchestrator`;
+    we re-export it here so tests can monkeypatch the factory's
+    namespace (``test_api_quality_options.py``) without dipping into
+    the trust-layer package itself.
+    """
+    return build_trust_orchestrator(quality_options)
 
 
 def _build_page_preprocessor(

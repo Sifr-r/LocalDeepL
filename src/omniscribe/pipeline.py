@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, cast
 
 from omniscribe.core.document import DenseMode, SpellcheckMode
 from omniscribe.core.grounded import GroundedOCRBackend
+from omniscribe.core.ocr_quality import TrustOrchestrator
 from omniscribe.core.preprocessing import PagePreprocessingOptions, PagePreprocessor
 from omniscribe.core.processors import DocumentProcessor
 from omniscribe.core.routing import QualityRoutingOptions
@@ -46,6 +47,7 @@ class OCRPipeline:
         document_processors: Sequence[DocumentProcessor] | None = None,
         page_preprocessor: PagePreprocessor | None = None,
         block_callbacks: BlockCallbackSet | None = None,
+        trust_orchestrator: TrustOrchestrator | None = None,
     ):
         self.grounded_backend = grounded_backend
         if pdf_handler is None:
@@ -65,6 +67,10 @@ class OCRPipeline:
         # the inner `_ocr_pages` method. Default `None` keeps every
         # existing call site (tests, in-process programmatic use)
         # working unchanged.
+        # Phase 2 — the `trust_orchestrator` is forwarded to whichever
+        # engine gets constructed (HybridEngine or GroundedEngine). When
+        # ``None`` (the default), the engine treats the trust layer as
+        # fully off — output is byte-identical to the pre-Phase-2 path.
         self._engine: EngineBase
         if self.grounded_backend is not None:
             self._engine = GroundedEngine(
@@ -72,6 +78,7 @@ class OCRPipeline:
                 output_writer=output_writer,
                 document_processors=document_processors,
                 block_callbacks=block_callbacks,
+                trust_orchestrator=trust_orchestrator,
             )
         else:
             if aligner is None or ocr_processor is None:
@@ -87,6 +94,7 @@ class OCRPipeline:
                 document_processors=document_processors,
                 page_preprocessor=page_preprocessor,
                 block_callbacks=block_callbacks,
+                trust_orchestrator=trust_orchestrator,
             )
 
     @property
@@ -118,7 +126,16 @@ class OCRPipeline:
         quality_routing_options: QualityRoutingOptions | None = None,
         progress: ProgressCallback | None = None,
         on_warning: WarningCallback | None = None,
+        trust_model_id: str | None = None,
     ) -> dict[int, list[str]]:
+        # Phase 2 — `trust_model_id` is the model identifier the trust
+        # layer calibrates against (e.g. ``"qwen2_5_vl_72b"``). When
+        # ``None`` (default), no per-model calibration lookup happens
+        # at the model_id level; the engine uses a synthetic sentinel
+        # ``"unknown"`` so the orchestrator is still called if one was
+        # injected. Tests and the API pass ``settings.model`` through
+        # here so the per-model calibration JSON is picked up.
+        resolved_trust_model_id = trust_model_id or "unknown"
         if self.grounded_backend is not None:
             grounded_engine = cast(GroundedEngine, self._engine)
             return await grounded_engine.execute(
@@ -129,6 +146,7 @@ class OCRPipeline:
                 cross_page=cross_page,
                 progress=progress,
                 on_warning=on_warning,
+                trust_model_id=resolved_trust_model_id,
             )
         else:
             try:
@@ -157,4 +175,5 @@ class OCRPipeline:
                 quality_routing_options=quality_routing_options,
                 progress=progress,
                 on_warning=on_warning,
+                trust_model_id=resolved_trust_model_id,
             )

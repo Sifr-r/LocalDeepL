@@ -61,6 +61,9 @@ def _form_param_keys() -> dict[str, str]:
         "quality_routing": "quality_routing",
         "document_processors": "document_processors",
         "handwriting_hint": "handwriting_hint",
+        # Phase 2 — trust layer knob; arrives on the form as a JSON-encoded
+        # string and is parsed by ``ProcessSettings.validate_quality_options``.
+        "quality_options": "quality_options",
     }
 
 

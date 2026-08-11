@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from omniscribe.core.callbacks import BlockCallbackSet
     from omniscribe.core.document import DocumentResult, SpellcheckMode
+    from omniscribe.core.ocr_quality import TrustOrchestrator
     from omniscribe.core.processors import DocumentProcessor
+
+logger = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[str, int, int, str], Awaitable[None]]
 WarningCallback = Callable[[int, BaseException], Awaitable[None]]
@@ -73,6 +77,7 @@ class EngineBase:
         output_writer: AnyOutputWriter,
         document_processors: Sequence[DocumentProcessor] | None = None,
         block_callbacks: BlockCallbackSet | None = None,
+        trust_orchestrator: TrustOrchestrator | None = None,
     ) -> None:
         self.output_writer = output_writer
         self.document_processors: tuple[DocumentProcessor, ...] = tuple(
@@ -90,6 +95,13 @@ class EngineBase:
         self.block_callbacks: BlockCallbackSet = (
             block_callbacks if block_callbacks is not None else BlockCallbackSet()
         )
+        # Phase 2 — the OCR quality trust layer (design §11.2). ``None``
+        # means the layer is off; engines treat that as a true no-op
+        # (identity passthrough, identical bytes to the pre-Phase-2
+        # path). See :func:`omniscribe.core.ocr_quality.build_trust_orchestrator`
+        # for the factory. Subclasses drive ``_apply_trust`` (the
+        # default is a no-op identity; the engines below override).
+        self.trust_orchestrator: TrustOrchestrator | None = trust_orchestrator
 
         # State populated after a run. Reset by ``_reset_run_state`` at the top
         # of each ``execute``; lifting into the base keeps ``OCRPipeline`` honest
@@ -101,6 +113,31 @@ class EngineBase:
         """Clear run-scoped state. Call at the top of every ``execute``."""
         self.last_document_result = None
         self.last_failed_pages = []
+
+    async def _apply_trust(
+        self,
+        document_result: DocumentResult,
+        *,
+        model_id: str,
+        trust_images_dict: dict[int, str] | None = None,
+    ) -> DocumentResult:
+        """Apply the trust layer to ``document_result``.
+
+        ``trust_images_dict`` is a ``{page_index: b64_str}`` map the
+        engine already holds from page rendering. The default is an
+        identity passthrough (no orchestrator → identical bytes to the
+        pre-Phase-2 path). Engines that have per-page images
+        (HybridEngine) override this to invoke the orchestrator once per
+        page with the decoded :class:`PIL.Image`; the GroundedEngine
+        override passes ``page_image=None`` because the grounded backend
+        never renders page images.
+
+        Per design §11.2 (Phase 2): the layer is **fail-open**. An
+        orchestrator that raises on a single block keeps the original
+        block's trust fields untouched rather than aborting the
+        pipeline.
+        """
+        return document_result  # no orchestrator → identical bytes to pre-Phase-2
 
     def _cross_page_merge(
         self,

@@ -17,7 +17,7 @@ import dataclasses
 import logging
 import time
 from collections.abc import Callable
-from typing import TypeVar
+from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
 
 from PIL import Image
 
@@ -27,9 +27,93 @@ from .config import OCrQualitySettings
 from .events import emit
 from .types import HallucinationRisk
 
+if TYPE_CHECKING:
+    from PIL.Image import Image as PILImage
+
 _LOG = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
+
+
+@runtime_checkable
+class TrustOrchestrator(Protocol):
+    """Callable that scores a page's OCR blocks with the trust layer.
+
+    The runtime_checkable flag means any object exposing a ``__call__``
+    matching this signature satisfies the contract — tests in
+    ``tests/test_pipeline_trust_integration.py`` use a local stub
+    record-only orchestrator (no ``settings`` attribute) and the API
+    can plug in an alternate implementation (e.g. an in-memory mock for
+    property tests) without subclassing anything. The default
+    implementation :class:`_DefaultTrustOrchestrator` carries a
+    ``settings`` attribute for observability, but ``settings`` is *not*
+    part of the structural contract — leaving it out of the Protocol
+    body is intentional.
+
+    If you want a static-type-checker hint for ``settings``, declare
+    the attribute on your own concrete subclass (Pydantic-style
+    protocols: ``class MyOrchestrator: settings: OCrQualitySettings;
+    def __call__(...)``) — type checkers will see both.
+    """
+
+    def __call__(
+        self,
+        blocks: list[DocumentBlock],
+        page_image: PILImage | None,
+        *,
+        model_id: str,
+        page_size: tuple[int, int] | None = None,
+    ) -> list[DocumentBlock]: ...
+
+
+class _DefaultTrustOrchestrator:
+    """Reference implementation of :class:`TrustOrchestrator`.
+
+    Wraps :func:`run` so engine code can invoke a single ``orchestrator``
+    object per page without knowing the internals of the trust layer.
+    The bound ``settings`` lets observability code (and the API's
+    response header build) reconstruct which sub-modules were on for
+    the current job without rerunning :func:`run`.
+    """
+
+    __slots__ = ("settings",)
+
+    def __init__(self, settings: OCrQualitySettings) -> None:
+        self.settings = settings
+
+    def __call__(
+        self,
+        blocks: list[DocumentBlock],
+        page_image: Image.Image | None,
+        *,
+        model_id: str,
+        page_size: tuple[int, int] | None = None,
+    ) -> list[DocumentBlock]:
+        return run(
+            blocks,
+            page_image,
+            self.settings,
+            model_id=model_id,
+            page_size=page_size,
+        )
+
+
+def build_trust_orchestrator(
+    settings: OCrQualitySettings | None,
+) -> TrustOrchestrator | None:
+    """Construct a :class:`TrustOrchestrator` bound to ``settings``.
+
+    Returns ``None`` when ``settings`` is ``None`` or when every
+    sub-module is disabled — the engine interprets a ``None``
+    orchestrator as "trust layer off, passthrough". Otherwise returns a
+    :class:`_DefaultTrustOrchestrator` (public callers can swap in any
+    callable matching the :class:`TrustOrchestrator` protocol).
+    """
+    if settings is None:
+        return None
+    if not settings.any_submodule_enabled():
+        return None
+    return _DefaultTrustOrchestrator(settings)
 
 
 def _safe(
@@ -221,4 +305,9 @@ def run(
     return new_blocks
 
 
-__all__ = ["run"]
+__all__ = [
+    "TrustOrchestrator",
+    "_DefaultTrustOrchestrator",
+    "build_trust_orchestrator",
+    "run",
+]

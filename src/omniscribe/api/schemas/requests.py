@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from enum import StrEnum
 from typing import Any
@@ -7,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from omniscribe.core.document import DenseMode, PipelineMode, SpellcheckMode
+from omniscribe.core.ocr_quality import OCrQualitySettings
 
 
 class DocumentProcessorName(StrEnum):
@@ -188,6 +190,11 @@ class ProcessSettings(BaseModel):
     confidence_threshold: float = 0.75
     document_processors: list[DocumentProcessorName] = Field(default_factory=list)
     chunk_pages: int | None = Field(default=None, ge=1, le=500)
+    # Phase 2 — optional trust-layer settings. The form field arrives
+    # either as a JSON-encoded string (multipart upload) or a dict
+    # (programmatic caller). ``None`` (the default) means the trust
+    # layer is off, byte-identical to the pre-Phase-2 path.
+    quality_options: OCrQualitySettings | None = None
 
     @field_validator("api_base", "api_key", "model", mode="before")
     @classmethod
@@ -214,6 +221,35 @@ class ProcessSettings(BaseModel):
     @classmethod
     def validate_document_processors(cls, value: Any) -> Any:
         return _parse_document_processors(value)
+
+    @field_validator("quality_options", mode="before")
+    @classmethod
+    def validate_quality_options(cls, value: Any) -> Any:
+        """Accept ``None``, a JSON string, a dict-like payload, or an
+        existing :class:`OCrQualitySettings` instance.
+
+        Returns ``None`` for empty/missing values (the default —
+        trust layer off). For a JSON string we parse it; ``dict``/
+        ``None`` payloads are passed through and the Pydantic
+        ``OCrQualitySettings`` constructor handles the rest. Existing
+        ``OCrQualitySettings`` instances (programmatic callers that
+        constructed one outside the schema) pass through unchanged.
+        """
+        if value is None or value == "":
+            return None
+        if isinstance(value, OCrQualitySettings):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError as exc:
+                raise ValueError("quality_options: must be a JSON object") from exc
+            if not isinstance(parsed, dict):
+                raise ValueError("quality_options: JSON payload must be an object")
+            return parsed
+        if isinstance(value, dict):
+            return value
+        raise ValueError("quality_options: must be a JSON object, dict, or null")
 
 
 class TranslationRequest(BaseModel):

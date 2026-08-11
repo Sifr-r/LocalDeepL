@@ -33,6 +33,95 @@ from omniscribe.api.services.workflow import build_workflow_summary
 
 _METADATA_HEADER_FIELDS = ("quality", "structure", "sections")
 
+_TRUST_HISTOGRAM_BINS = ("0.0-0.2", "0.2-0.4", "0.4-0.6", "0.6-0.8", "0.8-1")
+_TRUST_BIN_EDGES = (0.2, 0.4, 0.6, 0.8, 1.0)
+
+
+def _trust_bin(score: float) -> str:
+    """Return the histogram bin label for a trust score in ``[0, 1]``.
+
+    The upper bin (``0.8-1``) is inclusive of both ends so a perfect
+    ``1.0`` lands in the rightmost bucket; the other bins use the
+    standard half-open ``[a, b)`` semantics. Out-of-range scores are
+    clamped — the trust layer guarantees ``[0, 1]`` but defensively
+    prevents ``KeyError`` if a calibration edge case slips through.
+    """
+    clamped = max(0.0, min(1.0, score))
+    for edge, label in zip(_TRUST_BIN_EDGES, _TRUST_HISTOGRAM_BINS, strict=False):
+        if clamped < edge:
+            return label
+    return _TRUST_HISTOGRAM_BINS[-1]
+
+
+def _document_trust_summary(pipeline: OCRPipeline) -> dict[str, object] | None:
+    """Return a compact ``X-Document-Trust`` summary for ``pipeline``.
+
+    The header is *only* emitted when at least one block carries a
+    ``trust_score`` — when the trust layer is off (the Phase 1 default)
+    every block has ``trust_score=None`` and the summary short-circuits
+    to ``None`` so the front-end TrustPanel can stay hidden without any
+    additional gating logic.
+
+    Schema (matches the front-end TrustPanel):
+
+    - ``block_count`` — total blocks across all pages
+    - ``scored_count`` — blocks with a non-None ``trust_score``
+    - ``flagged_count`` — blocks with at least one ``trust_flag``
+    - ``average`` — mean trust_score across scored blocks (None if none scored)
+    - ``histogram`` — count per bin in :data:`_TRUST_HISTOGRAM_BINS`
+    - ``flag_counts`` — per-flag occurrence count (HALLUCINATION_RISK, etc.)
+    """
+    document = getattr(pipeline, "last_document_result", None)
+    if document is None:
+        return None
+
+    block_count = 0
+    scored_count = 0
+    flagged_count = 0
+    score_sum = 0.0
+    histogram = dict.fromkeys(_TRUST_HISTOGRAM_BINS, 0)
+    flag_counts: dict[str, int] = {}
+
+    for page in document.pages:
+        for block in page.blocks:
+            block_count += 1
+            score = getattr(block, "trust_score", None)
+            if score is None:
+                continue
+            scored_count += 1
+            score_sum += score
+            histogram[_trust_bin(score)] += 1
+            flags = getattr(block, "trust_flags", None) or ()
+            if flags:
+                flagged_count += 1
+                for flag in flags:
+                    flag_counts[flag] = flag_counts.get(flag, 0) + 1
+
+    if scored_count == 0:
+        return None
+
+    average = round(score_sum / scored_count, 6)
+    return {
+        "block_count": block_count,
+        "scored_count": scored_count,
+        "flagged_count": flagged_count,
+        "average": average,
+        "histogram": histogram,
+        "flag_counts": flag_counts,
+    }
+
+
+def _trust_header_from_pipeline(pipeline: OCRPipeline) -> str | None:
+    """Render the trust summary as compact JSON for the response header.
+
+    Returns ``None`` when the summary would be empty (no block was
+    scored) so the ``X-Document-Trust`` header line is just omitted.
+    """
+    summary = _document_trust_summary(pipeline)
+    if summary is None:
+        return None
+    return json.dumps(summary, separators=(",", ":"), sort_keys=True)
+
 
 def _document_metadata_header(pipeline: OCRPipeline, field_name: str) -> str | None:
     """Render the per-page metadata header for ``field_name``.
@@ -123,10 +212,19 @@ def build_ocr_file_response(
         response.headers["X-Document-Metadata-Artifact-Token"] = metadata_handle.token
     for header_name, header_value in _metadata_headers_from_pipeline(pipeline).items():
         response.headers[header_name] = header_value
+    # Phase 2 — surface the trust-layer summary (block count, flagged count,
+    # score histogram) on the response so the front-end TrustPanel can render
+    # without re-parsing the OCR text artifact. The header is omitted when no
+    # block carries a ``trust_score`` — matching the no-orchestrator default.
+    trust_header = _trust_header_from_pipeline(pipeline)
+    if trust_header is not None:
+        response.headers["X-Document-Trust"] = trust_header
     return response
 
 
 __all__ = [
+    "_document_trust_summary",
+    "_trust_header_from_pipeline",
     "_validation_error_response",
     "build_ocr_file_response",
 ]

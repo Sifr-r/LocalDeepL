@@ -23,6 +23,40 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   - New user-facing docs at `docs/ocr_quality.md`. Phase 2 (defaults on,
     Web UI Trust panel) and Phase 3 (calibration training, dataset
     regression) are planned but not yet shipped.
+- **OCR quality trust layer (Phase 2, defaults on)** — wires the trust
+  orchestrator into both engines and the `/api/process` route.
+  - `OCRPipeline.__init__` accepts `trust_orchestrator=`; the
+    `TrustOrchestrator` runtime-checkable Protocol in
+    `omniscribe.core.ocr_quality.orchestrator` documents the
+    `(blocks, page_image, *, model_id, page_size=None)` contract.
+  - `EngineBase` gains `trust_orchestrator` and a no-op default
+    `_apply_trust`; `HybridEngine` and `GroundedEngine` override it
+    per page (Hybrid decodes the page image from base64; Grounded
+    passes `None` because it has no page image in scope). Failures
+    in the orchestrator log at DEBUG and fall back to the input
+    blocks (design §7 fail-open contract).
+  - `ProcessSettings.quality_options: OCrQualitySettings | None` with
+    a `field_validator(mode="before")` that accepts `None`, a dict, a
+    JSON-encoded string (multipart form), or an existing
+    `OCrQualitySettings` instance.
+  - `_form_param_keys()` and `process_pdf` / `process_pdf_async` carry
+    the new `quality_options` form field through `resolve_process_settings`.
+  - `ocr_pipeline_factory.build_pipeline` instantiates the
+    orchestrator via `build_trust_orchestrator(settings.quality_options)`
+    (returns `None` when every sub-module is off). Both pipeline
+    branches pass it to `OCRPipeline(trust_orchestrator=...)`.
+  - `/api/process` forwards `trust_model_id=settings.model` to
+    `pipeline.run(...)` so calibration picks the right per-model JSON.
+  - New `X-Document-Trust` response header carries a compact JSON
+    summary (`block_count`, `scored_count`, `flagged_count`,
+    `average`, 5-bin `histogram`, `flag_counts`) — emitted only when
+    at least one block has a `trust_score`. The header is omitted
+    entirely when the layer is off, keeping the no-orchestrator
+    default byte-identical.
+  - Phase 2 / Phase 3 keep the new defaults behind per-workspace
+    toggles (`phase2_default: bool = False`,
+    `phase3_default: bool = False`) so existing setups see no
+    behaviour change.
 - **SECURITY.md** — vulnerability disclosure policy, threat model,
   hardening checklist. (D1)
 - **DEPLOYMENT.md** — three deployment profiles (local, LAN, public)

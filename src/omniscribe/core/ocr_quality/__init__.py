@@ -5,6 +5,11 @@ Re-exports the small surface most callers need:
 - :class:`OCrQualitySettings` — configuration model
 - :func:`run` — orchestrator entry point (alias for ``run_trust_scored_blocks``)
 - :func:`run_trust_scored_blocks` — explicit name retained for spec compatibility
+- :class:`TrustOrchestrator` — runtime-checkable Protocol for the per-page
+  scorer (``OCR Pipeline`` wires one in once any sub-module is enabled)
+- :func:`build_trust_orchestrator` — factory that returns the default
+  orchestrator bound to :class:`OCrQualitySettings`, or ``None`` when every
+  sub-module is off
 - Types — :class:`BlockTrust`, :class:`TrustFlag`, :class:`HallucinationRisk`,
   :class:`WatermarkHit`, :class:`ScriptHint`
 
@@ -16,7 +21,14 @@ no-op until the caller enables at least one flag.
 from __future__ import annotations
 
 from .config import OCrQualitySettings
-from .orchestrator import run as _run
+from .orchestrator import (
+    TrustOrchestrator,
+    _DefaultTrustOrchestrator,
+    build_trust_orchestrator,
+)
+from .orchestrator import (
+    run as _run,
+)
 from .types import (
     BlockTrust,
     HallucinationRisk,
@@ -40,7 +52,10 @@ __all__ = [
     "OCrQualitySettings",
     "ScriptHint",
     "TrustFlag",
+    "TrustOrchestrator",
     "WatermarkHit",
+    "_DefaultTrustOrchestrator",
+    "build_trust_orchestrator",
     "hallucination_risk_value",
     "run",
     "run_trust_scored_blocks",

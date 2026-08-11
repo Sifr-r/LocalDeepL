@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import dataclasses
 import logging
 from collections import defaultdict
 from collections.abc import Sequence
@@ -10,9 +11,10 @@ from typing import TYPE_CHECKING
 from PIL import Image
 
 from omniscribe.core.aligner import HybridAligner
-from omniscribe.core.document import DenseMode, SpellcheckMode
+from omniscribe.core.document import DenseMode, DocumentResult, SpellcheckMode
 from omniscribe.core.ocr import OCRProcessor
 from omniscribe.core.ocr.resilience import CircuitOpenError
+from omniscribe.core.ocr_quality import TrustOrchestrator
 from omniscribe.core.pdf import PDFHandler
 from omniscribe.core.preprocessing import PagePreprocessingOptions, PagePreprocessor
 from omniscribe.core.processors import DocumentProcessor
@@ -53,6 +55,7 @@ class HybridEngine(EngineBase):
         document_processors: Sequence[DocumentProcessor] | None = None,
         page_preprocessor: PagePreprocessor | None = None,
         block_callbacks: BlockCallbackSet | None = None,
+        trust_orchestrator: TrustOrchestrator | None = None,
     ) -> None:
         # Phase B (review M2) — forward `block_callbacks` to the base
         # so the per-block / per-page event hook reaches `_ocr_pages`.
@@ -63,6 +66,7 @@ class HybridEngine(EngineBase):
             output_writer=output_writer,
             document_processors=document_processors,
             block_callbacks=block_callbacks,
+            trust_orchestrator=trust_orchestrator,
         )
         self.aligner = aligner
         self.ocr_processor = ocr_processor
@@ -90,6 +94,8 @@ class HybridEngine(EngineBase):
         quality_routing_options: QualityRoutingOptions | None = None,
         progress: ProgressCallback | None = None,
         on_warning: WarningCallback | None = None,
+        trust_model_id: str = "unknown",
+        trust_images_dict: dict[int, str] | None = None,
     ) -> dict[int, list[str]]:
         if not isinstance(dense_mode, DenseMode):
             raise ValueError(
@@ -164,6 +170,8 @@ class HybridEngine(EngineBase):
             quality_routing_options=quality_routing_options,
             dpi=dpi,
             progress=progress,
+            trust_model_id=trust_model_id,
+            trust_images_dict=images_dict,
         )
 
     async def _convert_pages(
@@ -467,6 +475,8 @@ class HybridEngine(EngineBase):
         quality_routing_options: QualityRoutingOptions | None,
         dpi: int,
         progress: ProgressCallback | None,
+        trust_model_id: str = "unknown",
+        trust_images_dict: dict[int, str] | None = None,
     ) -> dict[int, list[str]]:
         """Post-process, run document processors, apply hybrid-only quality routing, emit."""
         document_result = await self._build_document_result(
@@ -477,6 +487,17 @@ class HybridEngine(EngineBase):
             spellcheck=spellcheck,
             cross_page=cross_page,
             page_metadata_overlays=preprocessing_metadata,
+        )
+
+        # Phase 2 — apply the OCR quality trust layer. Runs *after*
+        # document processors and *before* quality routing so the trust
+        # signals see the fully-cleaned text. ``_apply_trust`` is a
+        # no-op when no orchestrator was injected (default), which
+        # keeps the pre-Phase-2 byte layout intact.
+        document_result = await self._apply_trust(
+            document_result,
+            model_id=trust_model_id,
+            trust_images_dict=trust_images_dict,
         )
 
         # Quality routing is a hybrid-only post-processor; runs after document
@@ -492,6 +513,80 @@ class HybridEngine(EngineBase):
             document_result=document_result,
             dpi=dpi,
             progress=progress,
+        )
+
+    async def _apply_trust(
+        self,
+        document_result: DocumentResult,
+        *,
+        model_id: str,
+        trust_images_dict: dict[int, str] | None = None,
+    ) -> DocumentResult:
+        """HybridEngine override: invoke the orchestrator once per page.
+
+        ``trust_images_dict`` is the same ``{page_index: b64_str}`` the
+        engine already holds from :meth:`_convert_pages`; we re-decode
+        each entry lazily so the disabled-path cost stays at a single
+        ``is None`` check on the orchestrator. The orchestrator is
+        called with the decoded :class:`PIL.Image` so
+        :func:`omniscribe.core.ocr_quality.run` can run watermark /
+        length-plausibility signals that need pixel access.
+
+        Any orchestrator raise is caught per-page — the page keeps its
+        original blocks (and ``trust_score=None``) so the pipeline
+        never sinks because of a broken sub-module (design §7 fail-open
+        contract).
+        """
+        if self.trust_orchestrator is None:
+            return document_result
+        if not document_result.pages:
+            return document_result
+
+        # Lazy image-decode helper — copy-on-fail so a single broken
+        # b64 entry doesn't take down the whole pipeline.
+        decoded_images: dict[int, Image.Image] = {}
+
+        def _decode(page_index: int) -> Image.Image | None:
+            if trust_images_dict is None:
+                return None
+            if page_index in decoded_images:
+                return decoded_images[page_index]
+            b64 = trust_images_dict.get(page_index)
+            if b64 is None:
+                return None
+            try:
+                decoded_images[page_index] = _decode_page_image(b64)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug(
+                    "trust image decode failed for page %d: %s", page_index, exc
+                )
+                return None
+            return decoded_images[page_index]
+
+        scored_pages: list = []
+        for page in document_result.pages:
+            page_image = _decode(page.page_index)
+            page_size = page_image.size if page_image is not None else None
+            try:
+                new_blocks = self.trust_orchestrator(
+                    list(page.blocks),
+                    page_image,
+                    model_id=model_id,
+                    page_size=page_size,
+                )
+            except Exception as exc:
+                logger.debug(
+                    "trust orchestrator failed on page %d; falling back: %s",
+                    page.page_index,
+                    exc,
+                )
+                new_blocks = list(page.blocks)
+            scored_pages.append(dataclasses.replace(page, blocks=list(new_blocks)))
+
+        return DocumentResult(
+            pages=scored_pages,
+            source_path=document_result.source_path,
+            tree=document_result.tree,
         )
 
     async def _ocr_per_box(

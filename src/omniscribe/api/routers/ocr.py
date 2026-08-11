@@ -207,6 +207,10 @@ async def _run_ocr_pipeline(
         quality_routing_options=QualityRoutingOptions(enabled=settings.quality_routing),
         progress=on_progress,
         on_warning=on_warning,
+        # Phase 2 — forward the configured model id to the trust layer
+        # so :func:`omniscribe.core.ocr_quality.calibration.calibrate`
+        # can pick the right per-model calibration JSON.
+        trust_model_id=settings.model,
     )
 
     failed_pages = list(pipeline.last_failed_pages)
@@ -288,6 +292,10 @@ async def process_pdf(
     document_processors: str | None = Form(None),
     handwriting_hint: str | None = Form(None),
     chunk_pages: str | None = Form(None),
+    # Phase 2 — optional trust-layer configuration (JSON-encoded). When the
+    # frontend's TrustPanel is open, the front-end posts a JSON object string
+    # here; when closed, the field is omitted and the trust layer stays off.
+    quality_options: str | None = Form(None),
 ):
     """Process a PDF or image file through the OCR pipeline.
 
@@ -323,6 +331,10 @@ async def process_pdf(
                 quality_routing=quality_routing,
                 document_processors=document_processors,
                 handwriting_hint=handwriting_hint,
+                # Phase 2 — trust-layer knob; the resolver passes this
+                # through to ``ProcessSettings.quality_options``, where the
+                # field validator parses it into ``OCrQualitySettings``.
+                quality_options=quality_options,
             ),
         )
     except ValidationError as exc:
@@ -480,6 +492,10 @@ async def process_pdf_async(
     document_processors: str | None = Form(None),
     handwriting_hint: str | None = Form(None),
     chunk_pages: str | None = Form(None),
+    # Phase 2 — optional trust-layer configuration (JSON-encoded). When the
+    # frontend's TrustPanel is open, the front-end posts a JSON object string
+    # here; when closed, the field is omitted and the trust layer stays off.
+    quality_options: str | None = Form(None),
 ):
     """Validate an upload and enqueue it on the single-worker OCR queue."""
     try:
@@ -511,6 +527,10 @@ async def process_pdf_async(
                 quality_routing=quality_routing,
                 document_processors=document_processors,
                 handwriting_hint=handwriting_hint,
+                # Phase 2 — trust-layer knob; the resolver passes this
+                # through to ``ProcessSettings.quality_options``, where the
+                # field validator parses it into ``OCrQualitySettings``.
+                quality_options=quality_options,
             ),
         )
     except ValidationError as exc:

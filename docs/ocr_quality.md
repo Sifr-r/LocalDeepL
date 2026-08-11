@@ -1,9 +1,14 @@
 # OCR Quality Trust Layer
 
-> **Status:** Phase 1 shipped — foundation package, all sub-modules **off** by
-> default, no behavioural change for existing callers. Phase 2 (defaults on,
-> Web UI panel) and Phase 3 (calibration training, dataset regression) are
-> planned but not yet implemented.
+> **Status:** Phase 1 + Phase 2 shipped. The trust layer is wired
+> into the OCR pipeline and surfaced on `/api/process` via the
+> `quality_options` body field. Per-workspace opt-in toggles (`phase2_default`,
+> `phase3_default`) default to **off**, so existing callers see no behavioural
+> change. The `X-Document-Trust` response header carries a compact summary
+> (block count, score histogram, flagged count, per-flag counts) so the Web
+> UI TrustPanel can render without re-parsing the OCR text artifact.
+> Phase 3 (calibration training, dataset regression) is planned but not
+> yet shipped.
 
 The OCR Quality Trust Layer is a thin, additive wrapper around OmniScribe's
 hybrid and grounded OCR pipelines. For every OCR block, it produces a
@@ -66,27 +71,45 @@ single boolean check.
 ### Per-run override
 
 Phase 2 wires `OCrQualitySettings` into `POST /api/process` under the
-`quality_options` body field; until that ships, the orchestrator is callable
-directly from Python:
+`quality_options` body field — accepts either a JSON-encoded string
+(multipart upload) or a dict (programmatic caller). When at least one
+sub-module is enabled, the pipeline factory builds a
+`TrustOrchestrator` and the engines apply it per page (HybridEngine
+passes the page image; GroundedEngine passes `None` because it has no
+page image in scope). Per-run `trust_model_id=settings.model` is
+forwarded to the orchestrator so calibration can pick the right
+per-model JSON.
+
+```bash
+curl -X POST http://localhost:8000/api/process \
+    -F "file=@examples/dense.pdf" \
+    -F "api_base=http://localhost:1234/v1" \
+    -F "api_key=lm-studio" \
+    -F "model=qwen2_5_vl_72b" \
+    -F 'quality_options={"watermark_enabled": true, "hallucination_enabled": true, "calibration_enabled": true}'
+```
+
+Programmatic callers (no HTTP) can construct the pipeline directly:
 
 ```python
+from omniscribe import OCRPipeline
 from omniscribe.core.ocr_quality import (
     OCrQualitySettings,
-    run_trust_scored_blocks,
+    build_trust_orchestrator,
 )
-from omniscribe.core.document import DocumentBlock, BBox
 
 settings = OCrQualitySettings(
     watermark_enabled=True,
     hallucination_enabled=True,
     calibration_enabled=True,
 )
-blocks = [
-    DocumentBlock(bbox=BBox(0.1, 0.1, 0.9, 0.2), text="...", confidence=0.8),
-]
-scored = run_trust_scored_blocks(blocks, page_image, settings, model_id="qwen2_5_vl_72b")
-for b in scored:
-    print(b.trust_score, b.trust_flags)
+trust_orchestrator = build_trust_orchestrator(settings)  # None when every flag is off
+pages = await OCRPipeline(
+    aligner=HybridAligner(),
+    ocr_processor=OCRProcessor(...),
+    pdf_handler=PDFHandler(),
+    trust_orchestrator=trust_orchestrator,
+).run(input_path, output_path, ..., trust_model_id="qwen2_5_vl_72b")
 ```
 
 The orchestrator never mutates input blocks — it returns new `DocumentBlock`
@@ -206,46 +229,6 @@ Phase 3 will confirm OCR-Quality and KIE-HVQA licenses before committing
 derived calibration files. If either licence is incompatible with bundling
 derivatives, we fall back to synthetic-only calibration and document the
 limitation.
-
-## Calibration instructions (Phase 3 preview)
-
-Phase 3 ships `scripts/calibrate_model.py`, a CLI that fits Platt scaling
-from an OCR-Quality-format JSON fixture:
-
-```bash
-uv run python scripts/calibrate_model.py \
-    --input tests/fixtures/datasets/ocr_quality_sample.json \
-    --model-id qwen2_5_vl_72b \
-    --output resources/calibration/qwen2_5_vl_72b.json
-```
-
-The script:
-
-1. Parses OCR-Quality JSON (image + VLM output + quality score 1–4).
-2. Binarises the quality score (1–2 → wrong, 3–4 → correct).
-3. Fits `sigmoid(a * raw + b)` via `scipy.optimize.minimize` (closed-form
-   Newton when available) on an 80/20 train/test split.
-4. Writes the `{a, b}` pair plus the pre/post calibration ECE
-   (Expected Calibration Error) to the output file.
-5. Logs the held-out ECE drop — Phase 3 acceptance criterion is ≥ 20%
-   drop vs. raw confidence.
-
-Once `resources/calibration/{model_id}.json` exists, the
-`calibration_enabled=True` flag picks it up automatically via lazy load
-on the first call (cached for the process lifetime). Missing files
-degrade to identity passthrough with an info log — see the Fallback
-semantics section above.
-
-To calibrate a custom model that has no shipped JSON:
-
-1. Collect ≥ 200 labelled samples (raw VLM confidence + correct/wrong
-   label) — see `scripts/calibrate_model.py --help` for the input schema.
-2. Run the CLI against your JSON.
-3. Commit the resulting `resources/calibration/{model_id}.json` to the
-   repo (or ship it with your workspace overlay).
-4. Set `calibration_enabled=True` and verify the trust-score distribution
-   on a known-good PDF (e.g. `examples/dense.pdf`) using
-   `scripts/confidence_eval.py`.
 
 ## Testing the layer locally
 

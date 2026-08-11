@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import dataclasses
+import logging
 from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING
 
-from omniscribe.core.document import SpellcheckMode
+from omniscribe.core.document import DocumentResult, SpellcheckMode
 from omniscribe.core.grounded import (
     GroundedBlock,
     GroundedOCRBackend,
     GroundedResponse,
 )
+from omniscribe.core.ocr_quality import TrustOrchestrator
 from omniscribe.core.processors import DocumentProcessor
 from omniscribe.core.workflows.base import (
     AnyOutputWriter,
@@ -22,6 +25,9 @@ if TYPE_CHECKING:
     from omniscribe.core.callbacks import BlockCallbackSet
 
 
+logger = logging.getLogger(__name__)
+
+
 class GroundedEngine(EngineBase):
     def __init__(
         self,
@@ -29,6 +35,7 @@ class GroundedEngine(EngineBase):
         output_writer: AnyOutputWriter,
         document_processors: Sequence[DocumentProcessor] | None = None,
         block_callbacks: BlockCallbackSet | None = None,
+        trust_orchestrator: TrustOrchestrator | None = None,
     ) -> None:
         # Phase B (review M2) — the grounded path also accepts the
         # callback set for symmetry with HybridEngine. The current
@@ -37,10 +44,16 @@ class GroundedEngine(EngineBase):
         # follow-up. Wiring the parameter through now means
         # `OCRPipeline(grounded_backend=..., block_callbacks=...)`
         # doesn't have to grow a special case.
+        # Phase 2 — same ``trust_orchestrator`` passthrough. The
+        # grounded backend doesn't surface page images, so the
+        # orchestrator receives ``page_image=None`` per call — the
+        # sub-modules that *need* pixel access (watermark, length
+        # plausibility) degrade to their non-pixel fallback.
         super().__init__(
             output_writer=output_writer,
             document_processors=document_processors,
             block_callbacks=block_callbacks,
+            trust_orchestrator=trust_orchestrator,
         )
         self.grounded_backend = grounded_backend
 
@@ -85,6 +98,7 @@ class GroundedEngine(EngineBase):
         cross_page: bool = False,
         progress: ProgressCallback | None = None,
         on_warning: WarningCallback | None = None,
+        trust_model_id: str = "unknown",
     ) -> dict[int, list[str]]:
         """
         Grounded path: the backend returns (bbox, text) pairs directly.
@@ -134,12 +148,69 @@ class GroundedEngine(EngineBase):
             block_metadata_overlays=block_metadata_overlays,
         )
 
+        # Phase 2 — apply the OCR quality trust layer. The grounded
+        # path doesn't have ``trust_images_dict`` (the backend never
+        # renders page images), so the orchestrator receives
+        # ``page_image=None``; watermark / length-plausibility
+        # sub-modules fall back to their non-pixel defaults.
+        document_result = await self._apply_trust(
+            document_result, model_id=trust_model_id
+        )
+
         return await self._emit(
             input_path=input_path,
             output_path=output_path,
             document_result=document_result,
             dpi=dpi,
             progress=progress,
+        )
+
+    async def _apply_trust(
+        self,
+        document_result: DocumentResult,
+        *,
+        model_id: str,
+        trust_images_dict: dict[int, str] | None = None,
+    ) -> DocumentResult:
+        """GroundedEngine override: invoke the orchestrator once per page.
+
+        Unlike :meth:`HybridEngine._apply_trust` there are no page
+        images to pass — the grounded backend never returns them — so
+        ``page_image`` is always ``None`` on this path. ``trust_images_dict``
+        is accepted (and ignored) for signature parity with the base class
+        and HybridEngine; the grounded path never decodes it. The
+        orchestrator is still called once per page so the per-block
+        call counts in observability stay accurate, and the
+        ``fail-open`` contract (design §7) is preserved: any single
+        raise is caught and the page keeps its original blocks.
+        """
+        if self.trust_orchestrator is None:
+            return document_result
+        if not document_result.pages:
+            return document_result
+
+        scored_pages: list = []
+        for page in document_result.pages:
+            try:
+                new_blocks = self.trust_orchestrator(
+                    list(page.blocks),
+                    None,
+                    model_id=model_id,
+                    page_size=None,
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug(
+                    "trust orchestrator failed on grounded page %d; falling back: %s",
+                    page.page_index,
+                    exc,
+                )
+                new_blocks = list(page.blocks)
+            scored_pages.append(dataclasses.replace(page, blocks=list(new_blocks)))
+
+        return DocumentResult(
+            pages=scored_pages,
+            source_path=document_result.source_path,
+            tree=document_result.tree,
         )
 
     @staticmethod
