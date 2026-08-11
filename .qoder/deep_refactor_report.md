@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-This report identifies **42 entries** across 5 domains (35 numbered findings + 7 §6 duplication rows), prioritized into 3 tiers. **As of 2026-08-11 audit, 9 findings are fully confirmed as actionable — 13 are refuted (already implemented, invented symbols, or misattributed) and 12 are partially valid but overstated, misattributed, or already mitigated.** The most impactful surviving issue is the **sync OCR pipeline blocking the event loop** (3.1). Of the 9 fully-confirmed findings, **7 have already been resolved in this session** (1.3 `5580690`, 2.5 `86b4563`, 2.6 `2935a1c`, 2.8 `539dcfd`, 3.4 `f66c2fc`, 4.6 `f00b97a`, 4.7 `6ec9563`, 5.3 `c3e484c`), leaving **1 still open**: §3.1. Additionally, **5 of the 12 partial findings were resolved post-audit as cheap surgical wins** (§1.6, §3.3, §4.3, §4.7, §4.9) — §1.6/§4.3/§4.9 in commit `2d47dc0`, §3.3 in commit `93d8510`, §4.7 in commit `6ec9563` — see the **Resolved (surgical partials)** table in §9.
+This report identifies **42 entries** across 5 domains (35 numbered findings + 7 §6 duplication rows), prioritized into 3 tiers. **As of 2026-08-11 audit, 10 findings are fully confirmed as actionable — 13 are refuted (already implemented, invented symbols, or misattributed) and 11 are partially valid but overstated, misattributed, or already mitigated.** The most impactful surviving issue is the **sync OCR pipeline blocking the event loop** (3.1). Of the 10 fully-confirmed findings, **8 have already been resolved in this session** (1.3 `5580690`, 2.5 `86b4563`, 2.6 `2935a1c`, 2.8 `539dcfd`, 3.4 `f66c2fc`, 4.6 `f00b97a`, 4.7 `6ec9563`, 5.3 `c3e484c`), leaving **2 still open**: §3.1, §5.5. Additionally, **5 of the 11 partial findings were resolved post-audit as cheap surgical wins** (§1.6, §3.3, §4.3, §4.7, §4.9) — §1.6/§4.3/§4.9 in commit `2d47dc0`, §3.3 in commit `93d8510`, §4.7 in commit `6ec9563` — see the **Resolved (surgical partials)** table in §9.
 
 | Severity | Count (claimed) | Count (after audit) | Domains |
 |----------|------------------|---------------------|---------|
@@ -603,7 +603,7 @@ graph LR
 
 ## 9 · Verification Summary (2026-08-11)
 
-5 parallel subagents audited every numbered finding against the current codebase. Inline annotations above show per-finding evidence. The audit reveals the report has **stale line numbers** and **already-implemented recommendations** throughout — only 9 of 35 findings are fully confirmed as actionable. Of those 9 confirmed findings, **8 have already been resolved** in this session (commits `5580690` §1.3, `2935a1c` §2.6, `539dcfd` §2.8, `f66c2fc` §3.4, `f00b97a` §4.6, `86b4563` §2.5, `6ec9563` §4.7, `c3e484c` §5.3), leaving **1 still open**: §3.1. Additionally, **5 of the 12 partial findings have been resolved as cheap surgical wins** (§1.6, §4.3, §4.9 in commit `2d47dc0`, §3.3 in commit `93d8510`, §4.7 in commit `6ec9563`) — see the **Resolved (surgical partials)** subsection below.
+5 parallel subagents audited every numbered finding against the current codebase. Inline annotations above show per-finding evidence. The audit reveals the report has **stale line numbers** and **already-implemented recommendations** throughout — 10 of 35 findings are fully confirmed as actionable (after §4.7 was promoted from Partial during this session). Of those 10 confirmed findings, **8 have already been resolved** in this session (commits `5580690` §1.3, `2935a1c` §2.6, `539dcfd` §2.8, `f66c2fc` §3.4, `f00b97a` §4.6, `86b4563` §2.5, `6ec9563` §4.7, `c3e484c` §5.3), leaving **2 still open**: §3.1, §5.5. Additionally, **5 of the 11 partial findings have been resolved as cheap surgical wins** (§1.6, §4.3, §4.9 in commit `2d47dc0`, §3.3 in commit `93d8510`, §4.7 in commit `6ec9563`) — see the **Resolved (surgical partials)** subsection below.
 
 | Section | ✅ Confirmed | ⚠️ Partial | ❌ Refuted | Total |
 |---------|--------------|------------|------------|-------|
@@ -612,7 +612,7 @@ graph LR
 | §3 API Layer | 2 (3.1, 3.4) | 2 (3.2, 3.6) | 2 (3.5, 3.7) | 7 |
 | §4 Document Processing | 2 (4.6, 4.7) | 4 (4.1, 4.2, 4.3, 4.9) | 3 (4.4, 4.5, 4.8) | 9 |
 | §5 Architecture | 2 (5.3, 5.5) | 0 | 3 (5.1, 5.2, 5.4) | 5 |
-| **Total** | **9** | **12** | **13** | **35** |
+| **Total** | **10** | **11** | **13** | **35** |
 
 ### Confirmed (worth implementing as written)
 
@@ -673,7 +673,7 @@ Note: §2.5 (translation eval doubling API cost) was originally classified Parti
 
 ### Impact on Prioritized Action Plan (§7)
 
-The audit invalidates **7 of 8 Tier 1 items** (only #7 Lazy-load Surya and #5 Rate-limiter memory leak partially remain; #5 is already in place). Of the 23 items in §7, **9 are actionable as written**; 8 of those 9 have since been resolved (commits `5580690` §1.3, `2935a1c` §2.6, `c3e484c` §5.3, `539dcfd` §2.8, `f66c2fc` §3.4, `f00b97a` §4.6, `86b4563` §2.5, `6ec9563` §4.7). An additional 5 partial findings were resolved as cheap surgical wins (commit `2d47dc0` for §1.6/§4.3/§4.9, commit `93d8510` for §3.3's audit-corrected real leak, commit `6ec9563` for §4.7's resource-knob externalization), leaving **1 actionable confirmed** plus **0 tier-2 partial items still open**:
+The audit invalidates **7 of 8 Tier 1 items** (only #7 Lazy-load Surya and #5 Rate-limiter memory leak partially remain; #5 is already in place). Of the 23 items in §7, **10 are actionable as written**; 8 of those 10 have since been resolved (commits `5580690` §1.3, `2935a1c` §2.6, `c3e484c` §5.3, `539dcfd` §2.8, `f66c2fc` §3.4, `f00b97a` §4.6, `86b4563` §2.5, `6ec9563` §4.7). An additional 5 partial findings were resolved as cheap surgical wins (commit `2d47dc0` for §1.6/§4.3/§4.9, commit `93d8510` for §3.3's audit-corrected real leak, commit `6ec9563` for §4.7's resource-knob externalization), leaving **2 actionable confirmed** plus **0 tier-2 partial items still open**:
 
 | Tier 1 surviving | Tier 2 surviving | Tier 3 surviving |
 |------------------|------------------|------------------|
