@@ -86,13 +86,13 @@ def test_optional_extras_split_chromadb_into_memory():
         )
 
 
-def test_translate_node_uses_injected_settings(monkeypatch):
+async def test_translate_node_uses_injected_settings(monkeypatch):
     import omniscribe.core.translation as translation
 
     captured = {}
 
     class _FakeCompletions:
-        def create(self, **kwargs):
+        async def create(self, **kwargs):
             captured.update(kwargs)
             return SimpleNamespace(
                 choices=[SimpleNamespace(message=SimpleNamespace(content="Bonjour"))]
@@ -104,7 +104,7 @@ def test_translate_node_uses_injected_settings(monkeypatch):
     class _FakeClient:
         chat = _FakeChat()
 
-    monkeypatch.setattr("openai.OpenAI", lambda **kw: _FakeClient())
+    monkeypatch.setattr("openai.AsyncOpenAI", lambda **kw: _FakeClient())
 
     state = {
         "source_chunk": "Hello",
@@ -121,7 +121,7 @@ def test_translate_node_uses_injected_settings(monkeypatch):
         ),
     }
 
-    result = translation.translate_node(state)  # type: ignore[arg-type]
+    result = await translation.translate_node(state)  # type: ignore[arg-type]
 
     assert result["translated_chunk"] == "Bonjour"
     assert captured["model"] == "openai/test-model"

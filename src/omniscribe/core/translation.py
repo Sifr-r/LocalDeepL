@@ -23,12 +23,10 @@ CHROMA_COLLECTION_NAME = "lanes_lexicon"
 EMBEDDING_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
 
 # --- Quality thresholds ----------------------------------------------------
-# Tunables for the translate/evaluate loop. Names so the loop reads
-# literally rather than as a string of magic numbers.
+# Defaults for the translate/evaluate loop. The runtime values come from
+# :class:`omniscribe.core.translation_config.TranslationSettings` (env-driven
+# via ``OMNISCRIBE_TRANSLATION_*``); see refactor §2.8.
 LEXICON_RESULT_COUNT = 3
-MAX_TRANSLATION_ATTEMPTS = 3
-MIN_TRANSLATION_LENGTH_RATIO = 0.1
-TRANSLATION_ACCEPTANCE_SCORE = 0.8
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +152,7 @@ def _state_settings(state: TranslationState) -> TranslationSettings:
     return settings
 
 
-def translate_node(state: TranslationState) -> dict[str, str | int]:
+async def translate_node(state: TranslationState) -> dict[str, str | int]:
     """Calls the LLM to translate the chunk, using RAG context.
 
     Optional state fields (Phase 4 additions):
@@ -166,40 +164,44 @@ def translate_node(state: TranslationState) -> dict[str, str | int]:
     - ``sliding_window``: a tail of the previous translation, used as
       auxiliary consistency context.
     """
-    from openai import OpenAI
+    from openai import AsyncOpenAI
 
     settings = _state_settings(state)
 
-    prompt_parts = [f"Translate the following text into {state['target_language']}.\n\n"]
-    
+    prompt_parts = [
+        f"Translate the following text into {state['target_language']}.\n\n"
+    ]
+
     if state.get("glossary_prompt_block"):
         prompt_parts.append(state["glossary_prompt_block"] + "\n\n")
-    
+
     if state.get("entity_memory_prompt_block"):
         prompt_parts.append(state["entity_memory_prompt_block"] + "\n\n")
-    
+
     if state.get("rag_context"):
         prompt_parts.append(
             "Use the following lexicon definitions to ensure correct terminology:\n"
         )
         prompt_parts.append("\n".join(state["rag_context"]) + "\n\n")
-    
+
     if state.get("sliding_window"):
         prompt_parts.append(
             "PREVIOUS CONTEXT (do not translate again, just stay consistent):\n"
             + state["sliding_window"]
             + "\n\n"
         )
-    
+
     if state.get("feedback"):
-        prompt_parts.append(f"Previous translation had issues. Feedback: {state['feedback']}\nPlease fix these issues.\n\n")
-    
+        prompt_parts.append(
+            f"Previous translation had issues. Feedback: {state['feedback']}\nPlease fix these issues.\n\n"
+        )
+
     prompt_parts.append(f"SOURCE TEXT:\n{state['source_chunk']}")
     prompt = "".join(prompt_parts)
 
     try:
-        client = OpenAI(base_url=settings.api_base, api_key=settings.api_key)
-        response = client.chat.completions.create(
+        client = AsyncOpenAI(base_url=settings.api_base, api_key=settings.api_key)
+        response = await client.chat.completions.create(
             model=settings.model,
             temperature=0.3,
             messages=[{"role": "user", "content": prompt}],
@@ -218,21 +220,24 @@ async def evaluate_node(state: TranslationState) -> dict[str, float | str]:
     - Translation API failure → score 0.0 with retry feedback (or 1.0 if max attempts reached).
     - Max attempts reached → force accept 1.0 to break the loop.
     - Source has no letters or is < 5 chars → score 1.0 (deterministic, no point asking).
-    - Length ratio below ``MIN_TRANSLATION_LENGTH_RATIO`` → score 0.0 (deterministic sanity check).
+    - Length ratio below ``settings.min_length_ratio`` → score 0.0 (deterministic sanity check).
 
     Real path: ask the configured LLM to score the translation 0.0-1.0 and return
     JSON ``{score, feedback, issues}``. If the LLM call fails or the response is
     unrecoverable, fall back to ``(1.0, "")`` so the graph doesn't loop forever.
     """
+    settings = _state_settings(state)
+    max_attempts = settings.max_attempts
+    min_length_ratio = settings.min_length_ratio
     attempts = state.get("attempts", 0)
 
     translated = state.get("translated_chunk", "")
     if translated.startswith("[Translation Error"):
-        if attempts >= MAX_TRANSLATION_ATTEMPTS:
+        if attempts >= max_attempts:
             return {"evaluation_score": 1.0, "feedback": "Failed after max attempts."}
         return {"evaluation_score": 0.0, "feedback": "Translation API call failed."}
 
-    if attempts >= MAX_TRANSLATION_ATTEMPTS:
+    if attempts >= max_attempts:
         # Force accept after N tries to prevent infinite loops
         return {"evaluation_score": 1.0, "feedback": ""}
 
@@ -241,7 +246,7 @@ async def evaluate_node(state: TranslationState) -> dict[str, float | str]:
     if not has_letters or len(source.strip()) < 5:
         return {"evaluation_score": 1.0, "feedback": "Looks good"}
 
-    if len(translated) < len(source) * MIN_TRANSLATION_LENGTH_RATIO:
+    if len(translated) < len(source) * min_length_ratio:
         return {
             "evaluation_score": 0.0,
             "feedback": "Translation too short. Ensure you translate the entire chunk.",
@@ -404,7 +409,8 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
 
 def should_refine(state: TranslationState) -> str:
     """Router logic for conditional edge."""
-    if state.get("evaluation_score", 1.0) < TRANSLATION_ACCEPTANCE_SCORE:
+    settings = _state_settings(state)
+    if state.get("evaluation_score", 1.0) < settings.acceptance_score:
         return "translate"
     return "end"
 

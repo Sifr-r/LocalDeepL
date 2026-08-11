@@ -16,24 +16,31 @@ and ``test_translation_boundary.py``; this file is the LLM-path drill-down.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from omniscribe.core import translation
 from omniscribe.core.translation import (
-    MAX_TRANSLATION_ATTEMPTS,
     TranslationState,
     build_evaluation_prompt,
     evaluate_node,
     parse_evaluation_response,
 )
+from omniscribe.core.translation_config import (
+    DEFAULT_TRANSLATION_ACCEPTANCE_SCORE,
+    DEFAULT_TRANSLATION_MAX_ATTEMPTS,
+    DEFAULT_TRANSLATION_MIN_LENGTH_RATIO,
+    TranslationSettings,
+)
 
 
-def _settings():
-    return SimpleNamespace(
+def _settings() -> TranslationSettings:
+    return TranslationSettings(
         api_base="https://example.test/v1",
         api_key="test-key",
         model="openai/test-model",
+        max_attempts=DEFAULT_TRANSLATION_MAX_ATTEMPTS,
+        min_length_ratio=DEFAULT_TRANSLATION_MIN_LENGTH_RATIO,
+        acceptance_score=DEFAULT_TRANSLATION_ACCEPTANCE_SCORE,
     )
 
 
@@ -78,7 +85,7 @@ class TestEvaluateFastPaths:
     async def test_translation_error_after_max_attempts_forces_accept(self) -> None:
         state = _state(
             translation_="[Translation Error: timeout]",
-            attempts=MAX_TRANSLATION_ATTEMPTS,
+            attempts=DEFAULT_TRANSLATION_MAX_ATTEMPTS,
         )
         with patch.object(
             translation, "_llm_evaluate_translation", new=AsyncMock()
@@ -88,9 +95,11 @@ class TestEvaluateFastPaths:
         assert result["evaluation_score"] == 1.0
 
     async def test_max_attempts_without_error_forces_accept(self) -> None:
-        # Even with a real-looking translation, attempts >= MAX_TRANSLATION_ATTEMPTS
+        # Even with a real-looking translation, attempts >= settings.max_attempts
         # must short-circuit to 1.0 to prevent infinite loops.
-        state = _state(translation_="Bonjour", attempts=MAX_TRANSLATION_ATTEMPTS)
+        state = _state(
+            translation_="Bonjour", attempts=DEFAULT_TRANSLATION_MAX_ATTEMPTS
+        )
         with patch.object(
             translation, "_llm_evaluate_translation", new=AsyncMock()
         ) as llm:
@@ -121,7 +130,7 @@ class TestEvaluateFastPaths:
             "This is a substantial source text that the translator must convert "
             "in full, with at least some faithful correspondence."
         )
-        # Translation is 5% of source length — well below MIN_TRANSLATION_LENGTH_RATIO.
+        # Translation is 5% of source length — well below settings.min_length_ratio.
         state = _state(source=long_source, translation_="short")
         with patch.object(
             translation, "_llm_evaluate_translation", new=AsyncMock()
