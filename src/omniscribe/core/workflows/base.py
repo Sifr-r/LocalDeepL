@@ -49,7 +49,7 @@ async def notify(
         await cb(stage, current, total, message)
 
 
-PageBoxes = list[tuple[list[float], str]]
+PageBoxes = list[tuple[tuple[float, float, float, float], str]]
 PagesData = dict[int, PageBoxes]
 
 

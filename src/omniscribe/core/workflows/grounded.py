@@ -5,7 +5,7 @@ import logging
 from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING
 
-from omniscribe.core.document import DocumentResult, SpellcheckMode
+from omniscribe.core.document import BBox, DocumentResult, SpellcheckMode
 from omniscribe.core.grounded import (
     GroundedBlock,
     GroundedOCRBackend,
@@ -220,5 +220,10 @@ class GroundedEngine(EngineBase):
         """Group backend blocks by page index, preserving backend ordering."""
         pages_data: PagesData = {}
         for block in blocks:
-            pages_data.setdefault(block.page_index, []).append((block.bbox, block.text))
+            # GroundedBlock.bbox is list[float]; PagesData expects the canonical
+            # BBox tuple. Unpack + repack here so the rest of the pipeline sees
+            # the immutable shape (matches the public DocumentBlock contract).
+            x0, y0, x1, y1 = block.bbox
+            bbox: BBox = (float(x0), float(y0), float(x1), float(y1))
+            pages_data.setdefault(block.page_index, []).append((bbox, block.text))
         return pages_data

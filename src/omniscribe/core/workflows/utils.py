@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from PIL import Image
@@ -102,7 +103,7 @@ def _drop_refined_duplicates(
                 break
 
 
-def _is_refinable(bbox: list[float]) -> bool:
+def _is_refinable(bbox: Sequence[float]) -> bool:
     width = bbox[2] - bbox[0]
     height = bbox[3] - bbox[1]
     return width > REFINABLE_MIN_WIDTH and height > REFINABLE_MIN_HEIGHT

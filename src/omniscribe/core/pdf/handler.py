@@ -31,7 +31,7 @@ from omniscribe.core.pdf.rasterizer import (
 )
 
 if TYPE_CHECKING:
-    from omniscribe.core.document import DocumentResult
+    from omniscribe.core.document import BBox, DocumentResult
 
 
 class PDFHandler:
@@ -152,7 +152,7 @@ class PDFHandler:
         self,
         input_pdf_path: str | Path | Any,
         output_pdf_path: str | Path | Any,
-        pages_data: dict[int, list[tuple[list[float], str]]],
+        pages_data: dict[int, list[tuple[BBox, str]]],
         dpi: int = 200,
     ) -> None:
         """

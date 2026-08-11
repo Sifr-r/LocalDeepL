@@ -37,7 +37,7 @@ class SpellcheckMode(StrEnum):
     FR = "fr"
 
 
-BBox = list[float]
+BBox = tuple[float, float, float, float]
 
 
 @dataclass(slots=True)
@@ -143,8 +143,7 @@ class DocumentResult:
 def _normalize_bbox(bbox: Sequence[float]) -> BBox:
     if len(bbox) != 4:
         raise ValueError(f"Expected bbox with 4 values, got {len(bbox)}")
-    normalized = [float(value) for value in bbox]
-    x0, y0, x1, y1 = normalized
+    x0, y0, x1, y1 = (float(value) for value in bbox)
     if not (0.0 <= x0 < x1 <= 1.0 and 0.0 <= y0 < y1 <= 1.0):
-        raise ValueError(f"Expected normalized bbox in 0..1, got {normalized!r}")
-    return normalized
+        raise ValueError(f"Expected normalized bbox in 0..1, got {(x0, y0, x1, y1)!r}")
+    return (x0, y0, x1, y1)

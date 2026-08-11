@@ -9,12 +9,14 @@ and searchable PDF output generation.
 from __future__ import annotations
 
 import io
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 import fitz  # PyMuPDF
 from PIL import Image, ImageSequence
 
+from omniscribe.core.document import BBox
 from omniscribe.core.pdf.rasterizer import (
     EMBED_JPEG_QUALITY_IMAGE,
     EMBED_JPEG_QUALITY_PDF,
@@ -26,7 +28,7 @@ from omniscribe.core.pdf.rasterizer import (
 
 def _handle_fullpage_fallback(
     page: fitz.Page,
-    rect_coords: list[float],
+    rect_coords: Sequence[float],
     text: str,
     page_width: float,
     page_height: float,
@@ -52,7 +54,7 @@ def _handle_fullpage_fallback(
 
 def _split_and_draw_lines(
     page: fitz.Page,
-    rect_coords: list[float],
+    rect_coords: Sequence[float],
     text: str,
     page_width: float,
     page_height: float,
@@ -65,7 +67,7 @@ def _split_and_draw_lines(
             for i, line in enumerate(lines):
                 _draw_invisible_text(
                     page,
-                    [nx0, ny0 + i * slice_h, nx1, ny0 + (i + 1) * slice_h],
+                    (nx0, ny0 + i * slice_h, nx1, ny0 + (i + 1) * slice_h),
                     line,
                     page_width,
                     page_height,
@@ -99,7 +101,7 @@ def _split_and_draw_lines(
                 continue
             _draw_invisible_text(
                 page,
-                [nx0, ny0 + i * slice_h, nx1, ny0 + (i + 1) * slice_h],
+                (nx0, ny0 + i * slice_h, nx1, ny0 + (i + 1) * slice_h),
                 line_text,
                 page_width,
                 page_height,
@@ -110,7 +112,7 @@ def _split_and_draw_lines(
 
 def _draw_single_line_text(
     page: fitz.Page,
-    rect_coords: list[float],
+    rect_coords: Sequence[float],
     text: str,
     page_width: float,
     page_height: float,
@@ -152,7 +154,7 @@ def _draw_single_line_text(
 
 def _draw_invisible_text(
     page: fitz.Page,
-    rect_coords: list[float],
+    rect_coords: Sequence[float],
     text: str,
     page_width: float,
     page_height: float,
@@ -181,7 +183,7 @@ def _draw_invisible_text(
 def _embed_from_image_input(
     image_path: str | Path,
     output_pdf_path: str | Path,
-    pages_data: dict[int, list[tuple[list[float], str]]] | dict[Any, Any],
+    pages_data: dict[int, list[tuple[BBox, str]]] | dict[Any, Any],
 ) -> None:
     """Build a sandwich PDF directly from an image (single- or multi-frame)."""
     new_doc = fitz.open()
@@ -208,7 +210,7 @@ def _embed_from_image_input(
 def embed_structured_text(
     input_pdf_path: str | Path,
     output_pdf_path: str | Path,
-    pages_data: dict[int, list[tuple[list[float], str]]],
+    pages_data: dict[int, list[tuple[BBox, str]]],
     dpi: int = 200,
 ) -> None:
     """

@@ -199,7 +199,7 @@ class TestDPAlign:
 class TestAlignTextPublicAPI:
     def test_full_page_fallback_when_no_boxes(self):
         out = _aligner().align_text([], ["first line", "second line"])
-        assert out == [([0.0, 0.0, 1.0, 1.0], "first line\nsecond line")]
+        assert out == [((0.0, 0.0, 1.0, 1.0), "first line\nsecond line")]
 
     def test_all_empty_when_no_lines(self):
         structured = [([0.0, 0.0, 0.5, 0.5], ""), ([0.5, 0.5, 1.0, 1.0], "")]
@@ -241,7 +241,7 @@ class TestAlignTextPublicAPI:
         out = _aligner().align_text(structured, [single_line])
         assert len(out) == 1, f"expected full-page fallback, got {len(out)} boxes"
         bbox, text = out[0]
-        assert bbox == [0.0, 0.0, 1.0, 1.0]
+        assert bbox == (0.0, 0.0, 1.0, 1.0)
         assert text == single_line
 
     def test_single_line_single_box_does_not_trigger_fallback(self):

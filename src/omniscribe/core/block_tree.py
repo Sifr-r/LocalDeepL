@@ -39,7 +39,21 @@ class BlockType(StrEnum):
     KEY_VALUE = "key_value"
 
 
-_BBox = list[float]
+_BBox = tuple[float, float, float, float]
+
+
+def _as_bbox(values: Sequence[float]) -> _BBox:
+    """Convert a 4-element sequence to a fixed-length ``_BBox`` tuple.
+
+    ``tuple(generator_expr)`` infers as ``tuple[float, ...]`` (variable-length),
+    which mypy treats as incompatible with the fixed-length ``_BBox`` alias.
+    This helper does an explicit unpack + float coercion so the call site gets
+    the right tuple type and we fail fast on malformed input.
+    """
+    if len(values) != 4:
+        raise ValueError(f"Expected bbox with 4 values, got {len(values)}")
+    b = list(values)
+    return (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
 
 
 def _new_block_id() -> str:
@@ -122,7 +136,7 @@ class BlockNode:
     def from_dict(cls, data: dict[str, Any]) -> BlockNode:
         return cls(
             block_type=BlockType(data["block_type"]),
-            bbox=[float(v) for v in data["bbox"]],
+            bbox=_as_bbox(data["bbox"]),
             text=data["text"],
             page_idx=int(data["page_idx"]),
             block_id=data.get("block_id") or _new_block_id(),
@@ -237,7 +251,7 @@ class TableNode:
             rows=int(data["rows"]),
             cols=int(data["cols"]),
             page_idx=int(data["page_idx"]),
-            bbox=[float(v) for v in data["bbox"]],
+            bbox=_as_bbox(data["bbox"]),
             cells=[
                 [BlockNode.from_dict(c) for c in row] for row in data.get("cells", [])
             ],
@@ -292,7 +306,7 @@ class FigureNode:
             image_bytes = bytes(data["image_bytes"])
         return cls(
             page_idx=int(data["page_idx"]),
-            bbox=[float(v) for v in data["bbox"]],
+            bbox=_as_bbox(data["bbox"]),
             image_bytes=image_bytes,
             caption=str(data.get("caption", "")),
             block_id=data.get("block_id") or _new_block_id(),
@@ -320,7 +334,7 @@ class EquationNode:
     def from_dict(cls, data: dict[str, Any]) -> EquationNode:
         return cls(
             page_idx=int(data["page_idx"]),
-            bbox=[float(v) for v in data["bbox"]],
+            bbox=_as_bbox(data["bbox"]),
             latex=str(data.get("latex", "")),
             block_id=data.get("block_id") or _new_block_id(),
         )
@@ -408,7 +422,7 @@ def from_pages_data(
             page.children.append(
                 BlockNode(
                     block_type=kind,
-                    bbox=[float(v) for v in bbox],
+                    bbox=_as_bbox(bbox),
                     text=text,
                     page_idx=page_idx,
                     level=1 if kind == BlockType.SECTION_HEADER else 0,
@@ -451,7 +465,7 @@ def from_document_result(document: DocumentResult) -> DocumentTree:
                 # as None.
                 fig_node = FigureNode(
                     page_idx=page.page_index,
-                    bbox=list(block.bbox),
+                    bbox=block.bbox,
                     image_bytes=cast("bytes | None", block.metadata.get("image_bytes")),
                     caption=block.text,
                 )
@@ -459,7 +473,7 @@ def from_document_result(document: DocumentResult) -> DocumentTree:
                 # Keep a BlockNode in the page children too, just mark it as figure
                 node = BlockNode(
                     block_type=BlockType.FIGURE,
-                    bbox=list(block.bbox),
+                    bbox=block.bbox,
                     text=block.text,
                     page_idx=page.page_index,
                     confidence=block.confidence,
@@ -481,7 +495,7 @@ def from_document_result(document: DocumentResult) -> DocumentTree:
 
             node = BlockNode(
                 block_type=block_type,
-                bbox=list(block.bbox),
+                bbox=block.bbox,
                 text=block.text,
                 page_idx=page.page_index,
                 confidence=block.confidence,

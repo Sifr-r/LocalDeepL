@@ -152,7 +152,7 @@ def _detect_bbox_axis_order(raw_boxes: list[BBox]) -> str:
 
 def _swap_axes(b: BBox) -> BBox:
     """[y0, x0, y1, x1] -> [x0, y0, x1, y1]."""
-    return [b[1], b[0], b[3], b[2]]
+    return (b[1], b[0], b[3], b[2])
 
 
 # --- fixture loader --------------------------------------------------------
@@ -194,12 +194,12 @@ def load_ground_truth(
         # coord frame the bboxes were written against.
         blocks.append(
             GTBlock(
-                bbox=[
+                bbox=(
                     max(0.0, min(1.0, x0 / fw)),
                     max(0.0, min(1.0, y0 / fh)),
                     max(0.0, min(1.0, x1 / fw)),
                     max(0.0, min(1.0, y1 / fh)),
-                ],
+                ),
                 text=(item.get("block_content") or "").strip(),
                 page_index=item.get("page_index", 0),
                 label=item.get("block_label", "text"),

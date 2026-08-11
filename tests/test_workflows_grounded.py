@@ -79,10 +79,10 @@ class TestGroundedAccumulatePages:
         pages = GroundedEngine._accumulate_pages(blocks)
         assert pages == {
             0: [
-                ([0.1, 0.1, 0.9, 0.2], "p0 first"),
-                ([0.1, 0.5, 0.9, 0.6], "p0 second"),
+                ((0.1, 0.1, 0.9, 0.2), "p0 first"),
+                ((0.1, 0.5, 0.9, 0.6), "p0 second"),
             ],
-            1: [([0.1, 0.3, 0.9, 0.4], "p1 first")],
+            1: [((0.1, 0.3, 0.9, 0.4), "p1 first")],
         }
 
     def test_preserves_backend_ordering(self) -> None:
@@ -155,8 +155,8 @@ class TestGroundedExecute:
         assert captured["dpi"] == 150
         # Writer received the accumulated blocks.
         assert captured["pages"][0] == [
-            ([0.1, 0.1, 0.9, 0.2], "hello"),
-            ([0.1, 0.3, 0.9, 0.4], "world"),
+            ((0.1, 0.1, 0.9, 0.2), "hello"),
+            ((0.1, 0.3, 0.9, 0.4), "world"),
         ]
         # Returned view filters out blank-text boxes (none here).
         assert result == {0: ["hello", "world"]}

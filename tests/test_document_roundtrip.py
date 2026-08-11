@@ -32,9 +32,10 @@ from omniscribe.pipeline import OCRPipeline
 
 
 def test_from_pages_data_to_pages_data_preserves_text_and_geometry():
+    """``from_pages_data`` -> ``to_pages_data`` round-trips text + geometry."""
     pages = {
-        0: [([0.1, 0.2, 0.3, 0.4], "alpha"), ([0.5, 0.6, 0.7, 0.8], "beta")],
-        1: [([0.0, 0.0, 0.9, 0.1], "gamma")],
+        0: [((0.1, 0.2, 0.3, 0.4), "alpha"), ((0.5, 0.6, 0.7, 0.8), "beta")],
+        1: [((0.0, 0.0, 0.9, 0.1), "gamma")],
     }
     result = DocumentResult.from_pages_data(pages)
     round_tripped = result.to_pages_data()
@@ -115,7 +116,7 @@ async def test_rich_writer_receives_full_document_result():
     assert writer.received is not None
     block = writer.received.pages[0].blocks[0]
     assert block.text == "hello"
-    assert block.bbox == [0.1, 0.2, 0.3, 0.4]
+    assert block.bbox == (0.1, 0.2, 0.3, 0.4)
     assert block.source_processor == "hybrid"
     assert block.reading_order == 0
 

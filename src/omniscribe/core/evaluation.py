@@ -52,8 +52,6 @@ def evaluate_document(
     )
 
 
-def _valid_bbox(bbox: list[float]) -> bool:
-    if len(bbox) != 4:
-        return False
+def _valid_bbox(bbox: tuple[float, float, float, float]) -> bool:
     x0, y0, x1, y1 = bbox
     return 0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1

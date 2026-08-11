@@ -2,6 +2,7 @@
 
 import base64
 import io
+from collections.abc import Sequence
 
 from PIL import Image, ImageStat
 
@@ -77,7 +78,7 @@ def crop_for_ocr(
 
 def crop_for_ocr_from_image(
     img: Image.Image,
-    bbox: list[float],
+    bbox: Sequence[float],
     *,
     padding: float = 0.005,
     min_dim: int = 256,

@@ -50,7 +50,7 @@ class TranscriptionResult:
         if self.segments:
             for idx, seg in enumerate(self.segments):
                 block = DocumentBlock(
-                    bbox=[0.0, 0.0, 1.0, 1.0],
+                    bbox=(0.0, 0.0, 1.0, 1.0),
                     text=seg.text.strip(),
                     kind="speech",
                     confidence=seg.confidence,
@@ -67,7 +67,7 @@ class TranscriptionResult:
         elif self.text.strip():
             blocks.append(
                 DocumentBlock(
-                    bbox=[0.0, 0.0, 1.0, 1.0],
+                    bbox=(0.0, 0.0, 1.0, 1.0),
                     text=self.text.strip(),
                     kind="speech",
                     source_processor="voice_transcription",

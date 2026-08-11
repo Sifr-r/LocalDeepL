@@ -71,7 +71,7 @@ class TestAxisDetection:
 
 class TestSwapAxes:
     def test_swaps_correctly(self):
-        assert _swap_axes([10, 20, 30, 40]) == [20, 10, 40, 30]
+        assert _swap_axes((10, 20, 30, 40)) == (20, 10, 40, 30)
 
 
 class TestTextSimilarity:

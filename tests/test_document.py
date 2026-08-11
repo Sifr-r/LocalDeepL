@@ -4,7 +4,9 @@ import base64
 
 import pytest
 
-from omniscribe.core.document import DocumentResult
+from omniscribe.core import document as document_module
+from omniscribe.core.block_tree import BlockNode, _as_bbox
+from omniscribe.core.document import BBox, DocumentResult
 from omniscribe.core.processors import (
     DocumentProcessorRegistry,
     QualityAnalysisProcessor,
@@ -35,6 +37,49 @@ def test_document_result_rejects_non_normalized_bbox():
         DocumentResult.from_pages_data({0: [([0.0, 0.0, 2.0, 1.0], "bad")]})
 
 
+def test_bbox_alias_is_fixed_length_tuple():
+    """Regression for §4.6: ``BBox`` must be ``tuple[float, float, float, float]``.
+
+    Mutable ``list[float]`` allowed accidental mutation and accepted
+    wrong-length values; the fixed tuple type enforces both invariants at
+    type-check time and at runtime via :func:`_normalize_bbox`.
+    """
+    # ``BBox = tuple[float, float, float, float]`` is a plain generic-alias
+    # assignment (PEP 585). Compare on origin + args rather than identity.
+    assert BBox.__origin__ is tuple
+    assert BBox.__args__ == (float, float, float, float)
+    assert document_module._normalize_bbox([0.1, 0.2, 0.3, 0.4]) == (0.1, 0.2, 0.3, 0.4)
+    assert isinstance(document_module._normalize_bbox((0.0, 0.0, 1.0, 1.0)), tuple)
+    with pytest.raises(ValueError, match="4 values"):
+        document_module._normalize_bbox([0.0, 0.0, 1.0])
+    with pytest.raises(ValueError, match="normalized bbox"):
+        document_module._normalize_bbox([0.0, 0.0, 2.0, 1.0])
+    # BlockNode's bbox is the same fixed-length tuple shape.
+    from omniscribe.core.block_tree import BlockType
+
+    node = BlockNode(
+        block_type=BlockType.PARAGRAPH,
+        bbox=(0.1, 0.2, 0.3, 0.4),
+        text="hello",
+        page_idx=0,
+    )
+    assert isinstance(node.bbox, tuple)
+    assert node.bbox == (0.1, 0.2, 0.3, 0.4)
+    # Mutating in place must fail — that's the whole point of the refactor.
+    with pytest.raises(TypeError):
+        node.bbox[0] = 0.99  # type: ignore[index]
+
+
+def test_block_tree_as_bbox_enforces_length_and_coerces_floats():
+    """The new :func:`_as_bbox` helper produces fixed-length tuples from sequences."""
+    assert _as_bbox([0.1, 0.2, 0.3, 0.4]) == (0.1, 0.2, 0.3, 0.4)
+    assert _as_bbox((0, 0, 1, 1)) == (0.0, 0.0, 1.0, 1.0)
+    with pytest.raises(ValueError, match="4 values"):
+        _as_bbox([0.0, 0.0, 1.0])
+    with pytest.raises(ValueError, match="4 values"):
+        _as_bbox([0.0] * 5)
+
+
 async def test_pipeline_records_document_result_without_changing_return_value():
     pipe = OCRPipeline(_Aligner(), _OCR(), _PDF())
 
@@ -44,7 +89,7 @@ async def test_pipeline_records_document_result_without_changing_return_value():
     assert pipe.last_document_result is not None
     block = pipe.last_document_result.pages[0].blocks[0]
     assert block.text == "hello"
-    assert block.bbox == [0.1, 0.2, 0.3, 0.4]
+    assert block.bbox == (0.1, 0.2, 0.3, 0.4)
 
 
 async def test_registry_runs_processors_in_order():

@@ -95,14 +95,14 @@ class TableExtractionProcessor:
                         while len(grid[r]) < max_col + 1:
                             empty_node = BlockNode(
                                 block_type=BlockType.TABLE,
-                                bbox=[min_x, min_y, max_x, max_y],  # fallback bbox
+                                bbox=(min_x, min_y, max_x, max_y),  # fallback bbox
                                 text="",
                                 page_idx=page.page_index,
                             )
                             grid[r].append(empty_node)
 
                     table_node = TableNode(
-                        bbox=[min_x, min_y, max_x, max_y],
+                        bbox=(min_x, min_y, max_x, max_y),
                         page_idx=page.page_index,
                         rows=row_count,
                         cols=max_col + 1,

@@ -60,12 +60,12 @@ class HybridAligner:
                 for bbox in pred.bboxes or []:
                     x0, y0, x1, y1 = bbox.bbox
                     boxes.append(
-                        [
+                        (
                             _clamp(x0 / img_w),
                             _clamp(y0 / img_h),
                             _clamp(x1 / img_w),
                             _clamp(y1 / img_h),
-                        ]
+                        )
                     )
                 # Stable row-major default. The actual reading-order choice for
                 # the DP happens inside align_text, which tries both row-major
@@ -115,7 +115,7 @@ class HybridAligner:
         if not boxes:
             # Degenerate: LLM produced text but Surya found nothing.
             # Embed all text in a full-page box so search still works.
-            return [([0.0, 0.0, 1.0, 1.0], "\n".join(lines))]
+            return [((0.0, 0.0, 1.0, 1.0), "\n".join(lines))]
         if not lines:
             return [(box, "") for box in boxes]
 
@@ -180,7 +180,7 @@ class HybridAligner:
                 len(lines),
                 len(boxes),
             )
-            return [([0.0, 0.0, 1.0, 1.0], "\n".join(lines))]
+            return [((0.0, 0.0, 1.0, 1.0), "\n".join(lines))]
 
         # Translate the per-perm-index mapping back to per-input-index text.
         text_per_input: list[str] = ["" for _ in boxes]

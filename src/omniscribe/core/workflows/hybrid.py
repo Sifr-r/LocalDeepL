@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from PIL import Image
 
 from omniscribe.core.aligner import HybridAligner
-from omniscribe.core.document import DenseMode, SpellcheckMode
+from omniscribe.core.document import BBox, DenseMode, SpellcheckMode
 from omniscribe.core.ocr import OCRProcessor
 from omniscribe.core.ocr.resilience import CircuitOpenError
 from omniscribe.core.ocr_quality import TrustOrchestrator
@@ -295,7 +295,7 @@ class HybridEngine(EngineBase):
             progress, "detect", 0, 1, f"Detecting layout for {len(page_nums)} pages..."
         )
 
-        batch_boxes: list[list[list[float]]] = []
+        batch_boxes: list[list[BBox]] = []
         for i in range(0, len(page_nums), DETECT_CHUNK_SIZE):
             chunk_pages = page_nums[i : i + DETECT_CHUNK_SIZE]
             # Decode base64 inside the worker thread alongside Surya inference
@@ -563,7 +563,7 @@ class HybridEngine(EngineBase):
         if page_image is None:
             page_image = await asyncio.to_thread(_decode_page_image, image_b64)
 
-        async def ocr_one(idx: int, bbox: list[float]) -> tuple[int, str]:
+        async def ocr_one(idx: int, bbox: BBox) -> tuple[int, str]:
             try:
                 async with semaphore:
                     if not _is_refinable(bbox):
@@ -609,7 +609,7 @@ class HybridEngine(EngineBase):
         binarize: bool = False,
         dual_engine: bool = False,
     ) -> None:
-        targets: list[tuple[int, int, list[float]]] = []
+        targets: list[tuple[int, int, BBox]] = []
         for p_num, aligned in sparse_structured.items():
             for idx, (bbox, text) in enumerate(aligned):
                 if not text.strip() and _is_refinable(bbox):
@@ -630,9 +630,7 @@ class HybridEngine(EngineBase):
                 _decode_page_image, images_dict[p_num]
             )
 
-        async def refine_one(
-            p_num: int, idx: int, bbox: list[float]
-        ) -> tuple[int, int, str]:
+        async def refine_one(p_num: int, idx: int, bbox: BBox) -> tuple[int, int, str]:
             try:
                 async with semaphore:
                     crop_b64 = await asyncio.to_thread(
