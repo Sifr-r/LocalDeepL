@@ -9,6 +9,7 @@ from omniscribe.core.translation_config import (
     DEFAULT_TRANSLATION_API_BASE,
     DEFAULT_TRANSLATION_API_KEY,
     DEFAULT_TRANSLATION_MAX_ATTEMPTS,
+    DEFAULT_TRANSLATION_MAX_LENGTH_RATIO,
     DEFAULT_TRANSLATION_MIN_LENGTH_RATIO,
     DEFAULT_TRANSLATION_MODEL,
     TranslationSettings,
@@ -22,6 +23,7 @@ def test_translation_settings_defaults() -> None:
     assert settings.model == DEFAULT_TRANSLATION_MODEL
     assert settings.max_attempts == DEFAULT_TRANSLATION_MAX_ATTEMPTS
     assert settings.min_length_ratio == DEFAULT_TRANSLATION_MIN_LENGTH_RATIO
+    assert settings.max_length_ratio == DEFAULT_TRANSLATION_MAX_LENGTH_RATIO
     assert settings.acceptance_score == DEFAULT_TRANSLATION_ACCEPTANCE_SCORE
 
 
@@ -33,6 +35,7 @@ def test_translation_settings_from_env_defaults(
     monkeypatch.delenv("LLM_MODEL", raising=False)
     monkeypatch.delenv("OMNISCRIBE_TRANSLATION_MAX_ATTEMPTS", raising=False)
     monkeypatch.delenv("OMNISCRIBE_TRANSLATION_MIN_LENGTH_RATIO", raising=False)
+    monkeypatch.delenv("OMNISCRIBE_TRANSLATION_MAX_LENGTH_RATIO", raising=False)
     monkeypatch.delenv("OMNISCRIBE_TRANSLATION_ACCEPTANCE_SCORE", raising=False)
 
     settings = TranslationSettings.from_env()
@@ -41,6 +44,7 @@ def test_translation_settings_from_env_defaults(
     assert settings.model == DEFAULT_TRANSLATION_MODEL
     assert settings.max_attempts == DEFAULT_TRANSLATION_MAX_ATTEMPTS
     assert settings.min_length_ratio == DEFAULT_TRANSLATION_MIN_LENGTH_RATIO
+    assert settings.max_length_ratio == DEFAULT_TRANSLATION_MAX_LENGTH_RATIO
     assert settings.acceptance_score == DEFAULT_TRANSLATION_ACCEPTANCE_SCORE
 
 
@@ -50,6 +54,7 @@ def test_translation_settings_from_env_custom(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("LLM_MODEL", "custom-model")
     monkeypatch.setenv("OMNISCRIBE_TRANSLATION_MAX_ATTEMPTS", "5")
     monkeypatch.setenv("OMNISCRIBE_TRANSLATION_MIN_LENGTH_RATIO", "0.25")
+    monkeypatch.setenv("OMNISCRIBE_TRANSLATION_MAX_LENGTH_RATIO", "3.0")
     monkeypatch.setenv("OMNISCRIBE_TRANSLATION_ACCEPTANCE_SCORE", "0.9")
 
     settings = TranslationSettings.from_env()
@@ -58,6 +63,7 @@ def test_translation_settings_from_env_custom(monkeypatch: pytest.MonkeyPatch) -
     assert settings.model == "custom-model"
     assert settings.max_attempts == 5
     assert settings.min_length_ratio == 0.25
+    assert settings.max_length_ratio == 3.0
     assert settings.acceptance_score == 0.9
 
 
@@ -67,12 +73,14 @@ def test_translation_settings_from_env_invalid_falls_back(
     # Invalid env values must not crash at import time; we fall back to defaults.
     monkeypatch.setenv("OMNISCRIBE_TRANSLATION_MAX_ATTEMPTS", "not-a-number")
     monkeypatch.setenv("OMNISCRIBE_TRANSLATION_MIN_LENGTH_RATIO", "abc")
+    monkeypatch.setenv("OMNISCRIBE_TRANSLATION_MAX_LENGTH_RATIO", "0.9")  # below 1.0
     monkeypatch.setenv("OMNISCRIBE_TRANSLATION_ACCEPTANCE_SCORE", "2.5")  # out of range
     monkeypatch.setenv("OMNISCRIBE_TRANSLATION_MAX_ATTEMPTS", "0")  # below minimum
 
     settings = TranslationSettings.from_env()
     assert settings.max_attempts == DEFAULT_TRANSLATION_MAX_ATTEMPTS
     assert settings.min_length_ratio == DEFAULT_TRANSLATION_MIN_LENGTH_RATIO
+    assert settings.max_length_ratio == DEFAULT_TRANSLATION_MAX_LENGTH_RATIO
     assert settings.acceptance_score == DEFAULT_TRANSLATION_ACCEPTANCE_SCORE
 
 
@@ -83,6 +91,7 @@ def test_translation_settings_from_mapping_defaults() -> None:
     assert settings.model == DEFAULT_TRANSLATION_MODEL
     assert settings.max_attempts == DEFAULT_TRANSLATION_MAX_ATTEMPTS
     assert settings.min_length_ratio == DEFAULT_TRANSLATION_MIN_LENGTH_RATIO
+    assert settings.max_length_ratio == DEFAULT_TRANSLATION_MAX_LENGTH_RATIO
     assert settings.acceptance_score == DEFAULT_TRANSLATION_ACCEPTANCE_SCORE
 
 
@@ -94,6 +103,7 @@ def test_translation_settings_from_mapping_custom() -> None:
             "model": "mapping-model",
             "max_attempts": 4,
             "min_length_ratio": 0.2,
+            "max_length_ratio": 2.0,
             "acceptance_score": 0.85,
         }
     )
@@ -102,6 +112,7 @@ def test_translation_settings_from_mapping_custom() -> None:
     assert settings.model == "mapping-model"
     assert settings.max_attempts == 4
     assert settings.min_length_ratio == 0.2
+    assert settings.max_length_ratio == 2.0
     assert settings.acceptance_score == 0.85
 
 
@@ -135,6 +146,15 @@ def test_translation_settings_post_init_validation() -> None:
     ):
         TranslationSettings(min_length_ratio=1.5)
 
+    with pytest.raises(ValueError, match=r"max_length_ratio must be a number"):
+        TranslationSettings(max_length_ratio="2.5")  # type: ignore
+
+    with pytest.raises(ValueError, match=r"max_length_ratio must be >= 1\.0"):
+        TranslationSettings(max_length_ratio=0.5)
+
+    with pytest.raises(ValueError, match="max_length_ratio must be a number"):
+        TranslationSettings(max_length_ratio=False)  # type: ignore
+
     with pytest.raises(ValueError, match=r"acceptance_score must be a number"):
         TranslationSettings(acceptance_score=None)  # type: ignore
 
@@ -166,6 +186,9 @@ def test_translation_settings_from_mapping_validation() -> None:
 
     with pytest.raises(ValueError, match="min_length_ratio must be a number"):
         TranslationSettings.from_mapping({"min_length_ratio": "0.5"})
+
+    with pytest.raises(ValueError, match="max_length_ratio must be a number"):
+        TranslationSettings.from_mapping({"max_length_ratio": []})
 
     with pytest.raises(ValueError, match="acceptance_score must be a number"):
         TranslationSettings.from_mapping({"acceptance_score": []})

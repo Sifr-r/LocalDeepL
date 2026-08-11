@@ -221,6 +221,9 @@ async def evaluate_node(state: TranslationState) -> dict[str, float | str]:
     - Max attempts reached → force accept 1.0 to break the loop.
     - Source has no letters or is < 5 chars → score 1.0 (deterministic, no point asking).
     - Length ratio below ``settings.min_length_ratio`` → score 0.0 (deterministic sanity check).
+    - Length ratio above ``settings.max_length_ratio`` → score 0.0 (catches garbled / hallucinated output).
+    - Length ratio in band AND no glossary (``rag_context`` empty) → score 1.0
+      (skip the LLM eval when there are no glossary terms to verify against; see refactor §2.5).
 
     Real path: ask the configured LLM to score the translation 0.0-1.0 and return
     JSON ``{score, feedback, issues}``. If the LLM call fails or the response is
@@ -229,6 +232,7 @@ async def evaluate_node(state: TranslationState) -> dict[str, float | str]:
     settings = _state_settings(state)
     max_attempts = settings.max_attempts
     min_length_ratio = settings.min_length_ratio
+    max_length_ratio = settings.max_length_ratio
     attempts = state.get("attempts", 0)
 
     translated = state.get("translated_chunk", "")
@@ -250,6 +254,24 @@ async def evaluate_node(state: TranslationState) -> dict[str, float | str]:
         return {
             "evaluation_score": 0.0,
             "feedback": "Translation too short. Ensure you translate the entire chunk.",
+        }
+
+    # Upper bound: a translation > max_length_ratio x source length is almost
+    # certainly garbled output (hallucination, repeated text, or untranslated
+    # padding). Refactor §2.5 fast path — score 0.0 without an LLM call.
+    if len(translated) > len(source) * max_length_ratio:
+        return {
+            "evaluation_score": 0.0,
+            "feedback": "Translation too long. Likely garbled or padded output.",
+        }
+
+    # Accept-within-band fast path: when length is in the sane range AND there
+    # is no glossary to verify against, the only thing the LLM eval can
+    # meaningfully check is word-choice nuance. Skip the LLM call. Refactor §2.5.
+    if not state.get("rag_context"):
+        return {
+            "evaluation_score": 1.0,
+            "feedback": "Length ratio in normal range; no glossary terms to verify.",
         }
 
     # Real LLM-based evaluation. Fall back to "looks good" if the call fails

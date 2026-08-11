@@ -9,6 +9,7 @@ DEFAULT_TRANSLATION_API_KEY = "lm-studio"
 DEFAULT_TRANSLATION_MODEL = "allenai/olmocr-2-7b"
 DEFAULT_TRANSLATION_MAX_ATTEMPTS = 3
 DEFAULT_TRANSLATION_MIN_LENGTH_RATIO = 0.1
+DEFAULT_TRANSLATION_MAX_LENGTH_RATIO = 2.5
 DEFAULT_TRANSLATION_ACCEPTANCE_SCORE = 0.8
 
 
@@ -31,6 +32,7 @@ class TranslationSettings:
     model: str = DEFAULT_TRANSLATION_MODEL
     max_attempts: int = DEFAULT_TRANSLATION_MAX_ATTEMPTS
     min_length_ratio: float = DEFAULT_TRANSLATION_MIN_LENGTH_RATIO
+    max_length_ratio: float = DEFAULT_TRANSLATION_MAX_LENGTH_RATIO
     acceptance_score: float = DEFAULT_TRANSLATION_ACCEPTANCE_SCORE
 
     def __post_init__(self) -> None:
@@ -55,6 +57,13 @@ class TranslationSettings:
             raise ValueError("min_length_ratio must be a number")
         if not 0.0 <= float(self.min_length_ratio) <= 1.0:
             raise ValueError("min_length_ratio must be between 0.0 and 1.0")
+
+        if isinstance(self.max_length_ratio, bool) or not isinstance(
+            self.max_length_ratio, (int, float)
+        ):
+            raise ValueError("max_length_ratio must be a number")
+        if float(self.max_length_ratio) < 1.0:
+            raise ValueError("max_length_ratio must be >= 1.0")
 
         if isinstance(self.acceptance_score, bool) or not isinstance(
             self.acceptance_score, (int, float)
@@ -88,6 +97,12 @@ class TranslationSettings:
                 minimum=0.0,
                 maximum=1.0,
             ),
+            max_length_ratio=_float_env(
+                "OMNISCRIBE_TRANSLATION_MAX_LENGTH_RATIO",
+                DEFAULT_TRANSLATION_MAX_LENGTH_RATIO,
+                minimum=1.0,
+                maximum=None,
+            ),
             acceptance_score=_float_env(
                 "OMNISCRIBE_TRANSLATION_ACCEPTANCE_SCORE",
                 DEFAULT_TRANSLATION_ACCEPTANCE_SCORE,
@@ -112,6 +127,13 @@ class TranslationSettings:
                 DEFAULT_TRANSLATION_MIN_LENGTH_RATIO,
                 minimum=0.0,
                 maximum=1.0,
+            ),
+            max_length_ratio=_numeric_value(
+                values,
+                "max_length_ratio",
+                DEFAULT_TRANSLATION_MAX_LENGTH_RATIO,
+                minimum=1.0,
+                maximum=None,
             ),
             acceptance_score=_numeric_value(
                 values,
@@ -141,7 +163,9 @@ def _int_env(name: str, default: int, *, minimum: int) -> int:
     return parsed if parsed >= minimum else default
 
 
-def _float_env(name: str, default: float, *, minimum: float, maximum: float) -> float:
+def _float_env(
+    name: str, default: float, *, minimum: float, maximum: float | None
+) -> float:
     raw = os.getenv(name)
     if raw is None or not raw.strip():
         return default
@@ -149,7 +173,11 @@ def _float_env(name: str, default: float, *, minimum: float, maximum: float) -> 
         parsed = float(raw)
     except ValueError:
         return default
-    return parsed if minimum <= parsed <= maximum else default
+    if parsed < minimum:
+        return default
+    if maximum is not None and parsed > maximum:
+        return default
+    return parsed
 
 
 def _int_value(
@@ -167,9 +195,14 @@ def _numeric_value(
     default: float,
     *,
     minimum: float,
-    maximum: float,
+    maximum: float | None,
 ) -> float:
     value = values.get(key, default)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{key} must be a number")
-    return float(value) if minimum <= float(value) <= maximum else default
+    fvalue = float(value)
+    if fvalue < minimum:
+        return default
+    if maximum is not None and fvalue > maximum:
+        return default
+    return fvalue

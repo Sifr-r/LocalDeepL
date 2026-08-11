@@ -52,10 +52,15 @@ def _state(
     rag_context: list[str] | None = None,
     attempts: int = 1,
 ) -> TranslationState:
+    # Default to a non-empty glossary so LLM-path tests reach the LLM call.
+    # Tests that exercise the §2.5 "no glossary" fast path pass an explicit
+    # ``rag_context=[]`` to bypass the accept-within-band gate.
+    if rag_context is None:
+        rag_context = ["placeholder glossary term"]
     return {
         "source_chunk": source,
         "target_language": target_language,
-        "rag_context": rag_context or [],
+        "rag_context": rag_context,
         "translated_chunk": translation_,
         "evaluation_score": 1.0,
         "feedback": "",
@@ -139,6 +144,73 @@ class TestEvaluateFastPaths:
         llm.assert_not_called()
         assert result["evaluation_score"] == 0.0
         assert "too short" in result["feedback"]
+
+    async def test_length_ratio_above_max_skips_llm(self) -> None:
+        """§2.5 regression: translation > max_length_ratio × source is garbled."""
+        source = "Short source."
+        # Translation is 10× source length — well above the 2.5× default.
+        state = _state(
+            source=source,
+            translation_="A" * (len(source) * 10),
+        )
+        with patch.object(
+            translation, "_llm_evaluate_translation", new=AsyncMock()
+        ) as llm:
+            result = await evaluate_node(state)
+        llm.assert_not_called()
+        assert result["evaluation_score"] == 0.0
+        assert "too long" in result["feedback"]
+
+    async def test_length_ratio_in_band_no_glossary_skips_llm(self) -> None:
+        """§2.5 regression: in-band length + no glossary → accept without LLM."""
+        source = "This is a normal-length source sentence to translate."
+        translation_ = "C'est une phrase source de longueur normale à traduire."
+        # rag_context=[] triggers the §2.5 accept-within-band fast path.
+        state = _state(source=source, translation_=translation_, rag_context=[])
+        with patch.object(
+            translation, "_llm_evaluate_translation", new=AsyncMock()
+        ) as llm:
+            result = await evaluate_node(state)
+        llm.assert_not_called()
+        assert result["evaluation_score"] == 1.0
+        assert "no glossary" in result["feedback"]
+
+    async def test_length_ratio_in_band_with_glossary_calls_llm(self) -> None:
+        """§2.5 regression: in-band length + non-empty glossary → still hits LLM."""
+        source = "This is a normal-length source sentence to translate."
+        translation_ = "C'est une phrase source de longueur normale à traduire."
+        # Default rag_context is non-empty; LLM must be called.
+        state = _state(source=source, translation_=translation_)
+        with patch.object(
+            translation,
+            "_llm_evaluate_translation",
+            new=AsyncMock(return_value=(0.9, "looks good")),
+        ) as llm:
+            result = await evaluate_node(state)
+        llm.assert_called_once()
+        assert result == {"evaluation_score": 0.9, "feedback": "looks good"}
+
+    async def test_length_ratio_at_max_boundary_passes_upper_bound(self) -> None:
+        """§2.5 regression: length ratio exactly at max_ratio is still in band.
+
+        The check is strict ``>`` not ``>=``, so an exactly-at-max translation
+        does NOT trigger the upper-bound fast path. With a non-empty glossary
+        the translation continues to the LLM (proving the upper-bound check
+        did not short-circuit).
+        """
+        source = "Short."  # 6 chars
+        # 2.5 × 6 = 15. Build a translation of exactly 15 chars.
+        translation_ = "X" * int(len(source) * 2.5)
+        state = _state(source=source, translation_=translation_)  # non-empty rag
+        with patch.object(
+            translation,
+            "_llm_evaluate_translation",
+            new=AsyncMock(return_value=(0.95, "fine")),
+        ) as llm:
+            result = await evaluate_node(state)
+        # Upper-bound check (strict >) did NOT fire → LLM is called.
+        llm.assert_called_once()
+        assert result == {"evaluation_score": 0.95, "feedback": "fine"}
 
 
 # ---------------------------------------------------------------------------
