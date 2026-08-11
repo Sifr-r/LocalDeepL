@@ -369,6 +369,46 @@ def test_is_handwritten_page_dense_text_returns_something():
     assert isinstance(result, bool)
 
 
+def test_sauvola_binarize_matches_pre_hoist_formulation():
+    """§1.6 regression: hoisting the ``astype(np.float32)`` cast is semantics-preserving.
+
+    The optimization rebinds ``gray_f32 = gray.astype(np.float32)`` once and
+    reuses it across the mean / sqmean / threshold-comparison sites, eliminating
+    two redundant float-buffer allocations per page. Assert byte-for-byte
+    equivalence with the pre-hoist formulation on a deterministic input so a
+    future change to the cast site cannot silently alter the threshold.
+    """
+    import cv2
+
+    from omniscribe.core.handwriting_preprocessor import sauvola_binarize
+
+    rng = np.random.default_rng(2026)
+    gray = rng.integers(0, 256, size=(64, 64), dtype=np.uint8)
+    window = 15
+    k = 0.2
+    r = 128.0
+
+    # Pre-hoist formulation (three separate astype calls).
+    mean_old = cv2.boxFilter(gray.astype(np.float32), ddepth=-1, ksize=(window, window))
+    sqmean_old = cv2.boxFilter(
+        (gray.astype(np.float32)) ** 2, ddepth=-1, ksize=(window, window)
+    )
+    var_old = np.maximum(sqmean_old - mean_old * mean_old, 0.0)
+    std_old = np.sqrt(var_old)
+    threshold_old = mean_old * (1.0 + k * (std_old / r - 1.0))
+    expected = np.where(gray.astype(np.float32) < threshold_old, 0.0, 255.0).astype(
+        np.uint8
+    )
+
+    # Hoisted formulation (one astype call, reused).
+    actual = sauvola_binarize(gray, window=window, k=k, r=r)
+
+    assert actual.shape == expected.shape
+    assert actual.dtype == np.uint8
+    # The two formulations must be byte-identical on this deterministic input.
+    assert np.array_equal(actual, expected)
+
+
 def test_handwriting_options_is_noop():
     # An instance with every transformation flag disabled is a no-op.
     assert HandwritingOptions(
@@ -537,7 +577,7 @@ def test_translate_tree_dual_translate_chooses_secondary_when_closer():
     assert tree.pages[0].children[0].text == "hi-traduit"
 
 
-def test_translate_node_includes_glossary_and_memory(monkeypatch):
+async def test_translate_node_includes_glossary_and_memory(monkeypatch):
     """When the new optional state fields are populated, they must end up in the prompt."""
     from omniscribe.core import translation as translation_mod
 
@@ -561,9 +601,9 @@ def test_translate_node_includes_glossary_and_memory(monkeypatch):
             captured["prompt"] = msgs[0]["content"]
         return _FakeResponse("translated")
 
-    # Patch the OpenAI client used inside translate_node.
+    # Patch the AsyncOpenAI client used inside translate_node.
     class _FakeCompletions:
-        def create(self, **kwargs):
+        async def create(self, **kwargs):
             return fake_completion(**kwargs)
 
     class _FakeChat:
@@ -572,7 +612,7 @@ def test_translate_node_includes_glossary_and_memory(monkeypatch):
     class _FakeClient:
         chat = _FakeChat()
 
-    monkeypatch.setattr("openai.OpenAI", lambda **kw: _FakeClient())
+    monkeypatch.setattr("openai.AsyncOpenAI", lambda **kw: _FakeClient())
 
     state = {
         "source_chunk": "Bonjour le monde",
@@ -581,7 +621,7 @@ def test_translate_node_includes_glossary_and_memory(monkeypatch):
         "entity_memory_prompt_block": "NAMES: Paris",
         "sliding_window": "previously translated text",
     }
-    out = translation_mod.translate_node(state)
+    out = await translation_mod.translate_node(state)
     assert out["translated_chunk"] == "translated", out
     prompt = captured.get("prompt", "")
     assert "GLOSSARY: Bonjour = Hello" in prompt

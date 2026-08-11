@@ -15,7 +15,6 @@ handwritten or printed (drives the TrOCR fallback in the hybrid OCR pattern).
 from __future__ import annotations
 
 import base64
-import io
 import logging
 from dataclasses import dataclass
 
@@ -27,7 +26,6 @@ except ImportError as _exc:
         "handwriting_preprocessor requires opencv-python-headless and numpy. "
         "Install with: uv sync --extra preprocessing"
     ) from _exc
-from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +56,9 @@ def _decode(b64: str) -> np.ndarray:
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
         # PIL fallback
-        pil = Image.open(io.BytesIO(raw)).convert("RGB")
+        from omniscribe.core.image_utils import decode_base64_image
+
+        pil = decode_base64_image(b64)
         img = cv2.cvtColor(np.asarray(pil), cv2.COLOR_RGB2BGR)
     return img
 
@@ -77,14 +77,16 @@ def sauvola_binarize(
     """Sauvola adaptive threshold. Pure OpenCV/numpy — no scikit-image."""
     if window % 2 == 0:
         window += 1
-    mean = cv2.boxFilter(gray.astype(np.float32), ddepth=-1, ksize=(window, window))
-    sqmean = cv2.boxFilter(
-        (gray.astype(np.float32)) ** 2, ddepth=-1, ksize=(window, window)
-    )
+    # Hoist the float32 cast: ``astype`` allocates a fresh buffer, so calling it
+    # three times (mean / sqmean / threshold comparison) wastes two allocations
+    # per page on handwriting-heavy batches.
+    gray_f32 = gray.astype(np.float32)
+    mean = cv2.boxFilter(gray_f32, ddepth=-1, ksize=(window, window))
+    sqmean = cv2.boxFilter(gray_f32 * gray_f32, ddepth=-1, ksize=(window, window))
     var = np.maximum(sqmean - mean * mean, 0.0)
     std = np.sqrt(var)
     threshold = mean * (1.0 + k * (std / r - 1.0))
-    out = np.where(gray.astype(np.float32) < threshold, 0.0, 255.0).astype(np.uint8)
+    out = np.where(gray_f32 < threshold, 0.0, 255.0).astype(np.uint8)
     return out
 
 

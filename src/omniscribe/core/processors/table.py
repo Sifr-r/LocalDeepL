@@ -9,6 +9,7 @@ from omniscribe.core.document import BBox, DocumentBlock, DocumentPage, Document
 from omniscribe.core.processors.base import (
     _TABLE_SPLIT_RE,
     ProcessorContract,
+    _bbox_area,
     _normalize_space,
 )
 
@@ -53,7 +54,11 @@ class TableExtractionProcessor:
             tables_data = self._extract_page_tables(page, candidate_indices)
             page.metadata["tables"] = tables_data
 
-            if tree and tree.pages[page_idx]:
+            # Bounds-check before indexing: ``document.pages`` and ``tree.pages``
+            # are populated by the same pipeline today, but a future caller could
+            # construct them independently. Without the guard, ``tree.pages[page_idx]``
+            # raises ``IndexError`` instead of degrading gracefully.
+            if tree and page_idx < len(tree.pages) and tree.pages[page_idx]:
                 tree_page = tree.pages[page_idx]
                 table_cell_indices = set()
 
@@ -129,11 +134,9 @@ class TableExtractionProcessor:
             return True
         if len(text) > 24:
             return False
-        x0, y0, x1, y1 = block.bbox
-        width = max(0.0, x1 - x0)
-        height = max(0.0, y1 - y0)
-        area = width * height
-        return width < 0.35 and area < 0.08
+        x0, _, x1, _ = block.bbox
+        area = _bbox_area(block.bbox)
+        return max(0.0, x1 - x0) < 0.35 and area < 0.08
 
     def _extract_page_tables(
         self, page: DocumentPage, candidate_indices: list[int]
