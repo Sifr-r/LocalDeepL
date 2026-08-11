@@ -3,7 +3,11 @@ import os
 from fastapi import Header, Query
 from fastapi.responses import JSONResponse
 
-from omniscribe.api.services.security import SERVER_ERROR_MESSAGE, cleanup_files
+from omniscribe.api.services.security import (
+    SERVER_ERROR_MESSAGE,
+    api_error_response,
+    cleanup_files,
+)
 
 
 def _cleanup(*paths):
@@ -11,9 +15,7 @@ def _cleanup(*paths):
 
 
 def _stable_server_error(status_code: int = 500) -> JSONResponse:
-    return JSONResponse(
-        status_code=status_code, content={"error": SERVER_ERROR_MESSAGE}
-    )
+    return api_error_response(status_code, SERVER_ERROR_MESSAGE)
 
 
 def _extract_bearer_token(authorization: str | None) -> str | None:

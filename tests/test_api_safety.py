@@ -28,6 +28,7 @@ from omniscribe.api.routers import (
 from omniscribe.api.services.artifacts import TextArtifactStore
 from omniscribe.api.services.security import (
     UploadValidationError,
+    api_error_response,
     save_validated_upload,
 )
 from omniscribe.core.document import DocumentResult
@@ -805,7 +806,24 @@ def test_namespaced_ocr_and_artifact_aliases_are_registered():
     assert client.get("/process/status/missing").status_code == 404
     assert client.get("/api/process/status/missing").status_code == 404
 
-    route_paths = {route.path for route in client.app.routes}
+    def _extract_paths(routes):
+        paths = set()
+        for route in routes:
+            if hasattr(route, "path") and route.path:
+                paths.add(route.path)
+            if hasattr(route, "routes"):
+                paths.update(_extract_paths(route.routes))
+            elif hasattr(route, "original_router") and hasattr(
+                route.original_router, "routes"
+            ):
+                paths.update(_extract_paths(route.original_router.routes))
+            elif hasattr(route, "router") and hasattr(route.router, "routes"):
+                paths.update(_extract_paths(route.router.routes))
+            elif hasattr(route, "app") and hasattr(route.app, "routes"):
+                paths.update(_extract_paths(route.app.routes))
+        return paths
+
+    route_paths = _extract_paths(client.app.routes)
     assert {
         "/api/text/{artifact_id}",
         "/api/artifacts/text/{artifact_id}",
@@ -838,3 +856,20 @@ def test_cancel_unknown_background_ocr_job_returns_404():
     response = _api_client().post("/api/jobs/missing/cancel")
     assert response.status_code == 404
     assert response.json() == {"error": "Job not found"}
+
+
+def test_api_error_response_envelope_shape():
+    # Without detail: opaque 500-style — no extra keys.
+    response = api_error_response(500, "Server exploded.")
+    assert response.status_code == 500
+    assert response.body == b'{"error":"Server exploded."}'
+
+    # With detail: structured extra context follows ``error``.
+    response = api_error_response(422, "Bad shape.", detail={"field": "missing"})
+    assert response.status_code == 422
+    assert response.body == b'{"error":"Bad shape.","detail":{"field":"missing"}}'
+
+    # Status code is preserved through the helper.
+    response = api_error_response(403, "Forbidden.")
+    assert response.status_code == 403
+    assert response.body == b'{"error":"Forbidden."}'

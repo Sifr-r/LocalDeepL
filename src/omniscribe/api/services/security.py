@@ -6,8 +6,10 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from fastapi import UploadFile
+from fastapi.responses import JSONResponse
 
 from omniscribe.api.services.security_config import (
     DEFAULT_MAX_UPLOAD_MB as _DEFAULT_MAX_UPLOAD_MB,
@@ -28,6 +30,23 @@ SAFE_API_BASE_ERROR = (
 )
 
 SERVER_ERROR_MESSAGE = "The request could not be completed. Please try again later."
+
+
+def api_error_response(
+    status_code: int,
+    error: str,
+    detail: Any | None = None,
+) -> JSONResponse:
+    """Build the standard API error envelope ``{"error": ..., "detail": ...}``.
+
+    ``detail`` is omitted when ``None`` so opaque 500s don't leak internals
+    while validation errors and value errors can attach structured detail.
+    See refactor §3.4 in ``deep_refactor_report.md``.
+    """
+    content: dict[str, Any] = {"error": error}
+    if detail is not None:
+        content["detail"] = detail
+    return JSONResponse(status_code=status_code, content=content)
 
 
 @dataclass(frozen=True)

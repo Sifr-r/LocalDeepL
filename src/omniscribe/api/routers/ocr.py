@@ -31,7 +31,6 @@ from http import HTTPStatus
 from typing import cast
 
 from fastapi import APIRouter, File, Form, UploadFile
-from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from omniscribe import OCRPipeline
@@ -59,6 +58,7 @@ from omniscribe.api.services.ocr_settings import (
 from omniscribe.api.services.security import (
     SAFE_API_BASE_ERROR,
     UploadValidationError,
+    api_error_response,
     save_validated_upload,
 )
 from omniscribe.core.preprocessing import PagePreprocessingOptions
@@ -341,15 +341,12 @@ async def process_pdf(
         return _validation_error_response(exc)
 
     if await is_ssrf_target(settings.api_base):
-        return JSONResponse(
-            status_code=HTTPStatus.FORBIDDEN,
-            content={"error": SAFE_API_BASE_ERROR},
-        )
+        return api_error_response(HTTPStatus.FORBIDDEN, SAFE_API_BASE_ERROR)
 
     try:
         upload = await save_validated_upload(file)
     except UploadValidationError as exc:
-        return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+        return api_error_response(exc.status_code, str(exc))
 
     input_path = upload.path
     progress_target = (
@@ -432,9 +429,8 @@ async def process_pdf(
         logger.warning("OCR processing rejected invalid input: %s", ve)
         await manager.send_progress(progress_target, "Invalid input.", 0, stage="error")
         await asyncio.to_thread(_cleanup, input_path, output_path, text_path)
-        return JSONResponse(
-            status_code=HTTPStatus.BAD_REQUEST,
-            content={"error": "Invalid input."},
+        return api_error_response(
+            HTTPStatus.BAD_REQUEST, "Invalid input.", detail=str(ve)
         )
 
     except asyncio.CancelledError:
@@ -537,15 +533,12 @@ async def process_pdf_async(
         return _validation_error_response(exc)
 
     if await is_ssrf_target(settings.api_base):
-        return JSONResponse(
-            status_code=HTTPStatus.FORBIDDEN,
-            content={"error": SAFE_API_BASE_ERROR},
-        )
+        return api_error_response(HTTPStatus.FORBIDDEN, SAFE_API_BASE_ERROR)
 
     try:
         upload = await save_validated_upload(file)
     except UploadValidationError as exc:
-        return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+        return api_error_response(exc.status_code, str(exc))
 
     input_path = upload.path
     filename = file.filename or "unknown"
@@ -621,9 +614,7 @@ async def process_status(job_id: str):
     """Return the current state of a queued background OCR job."""
     record = await state.ocr_job_queue.get(job_id)
     if record is None:
-        return JSONResponse(
-            status_code=HTTPStatus.NOT_FOUND, content={"error": "Job not found"}
-        )
+        return api_error_response(HTTPStatus.NOT_FOUND, "Job not found")
     return record.to_dict()
 
 

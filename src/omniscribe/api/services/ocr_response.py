@@ -29,6 +29,7 @@ from starlette.responses import JSONResponse
 from omniscribe import OCRPipeline
 from omniscribe.api.schemas import ProcessSettings
 from omniscribe.api.services.artifacts import TextArtifactHandle
+from omniscribe.api.services.security import api_error_response
 from omniscribe.api.services.workflow import build_workflow_summary
 
 _METADATA_HEADER_FIELDS = ("quality", "structure", "sections")
@@ -152,13 +153,15 @@ def _document_metadata_header(pipeline: OCRPipeline, field_name: str) -> str | N
 
 
 def _validation_error_response(exc: ValidationError) -> JSONResponse:
-    """Render a Pydantic validation failure as a stable 422 response."""
-    return JSONResponse(
-        status_code=422,
-        content={
-            "error": "Invalid request parameters.",
-            "detail": exc.errors(include_context=False),
-        },
+    """Render a Pydantic validation failure as a stable 422 response.
+
+    Uses the standard ``api_error_response`` envelope so clients get a
+    uniform shape across validation, value, and server errors.
+    """
+    return api_error_response(
+        422,
+        "Invalid request parameters.",
+        detail=exc.errors(include_context=False),
     )
 
 
