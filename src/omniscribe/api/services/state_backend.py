@@ -50,7 +50,6 @@ from __future__ import annotations
 
 import os
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -78,16 +77,18 @@ class StateBackend(Protocol):
     ocr_job_queue: OCRJobQueue
 
 
-@dataclass(slots=True)
 class LocalStateBackend:
     """In-memory StateBackend. All state is lost on restart.
 
-    ``slots=True`` keeps the instances lightweight but we deliberately
-    avoid ``frozen=True`` — the :class:`StateBackend` Protocol declares
-    its seven attributes as plain (settable) instance variables, and mypy
-    rejects assigning a frozen dataclass where a Protocol variable is
-    expected. The instance is still effectively immutable from the
-    router layer because callers go through ``state.backend.X``.
+    The class is intentionally not a ``@dataclass`` — the seven
+    attributes are typed non-Optional so the :class:`StateBackend`
+    Protocol surface is preserved for callers. The ``artifact_dir``
+    parameter is the *primitive* constructor input: pass any directory
+    and the seven internal stores are auto-wired against it. To inject a
+    pre-built store (e.g. a Redis-backed :class:`TextArtifactStore` for
+    tests), pass that store positionally to the corresponding field and
+    ``artifact_dir`` is ignored for that slot. ``from_env`` is the
+    canonical entry point for runtime startup.
     """
 
     text_artifacts: TextArtifactStore
@@ -98,24 +99,90 @@ class LocalStateBackend:
     glossary_library: GlossaryLibrary
     ocr_job_queue: OCRJobQueue
 
+    def __init__(
+        self,
+        artifact_dir: Path | str | os.PathLike[str] | None = None,
+        *,
+        text_artifacts: TextArtifactStore | None = None,
+        metadata_artifacts: TextArtifactStore | None = None,
+        export_artifacts: TextArtifactStore | None = None,
+        job_history: JobHistory | None = None,
+        progress_service: ProgressService | None = None,
+        glossary_library: GlossaryLibrary | None = None,
+        ocr_job_queue: OCRJobQueue | None = None,
+    ) -> None:
+        if artifact_dir is not None:
+            resolved = Path(artifact_dir).expanduser().resolve()
+        else:
+            resolved = Path(
+                os.getenv("OMNISCRIBE_ARTIFACT_DIR", tempfile.gettempdir())
+            ).resolve()
+        self.text_artifacts = text_artifacts or TextArtifactStore(artifact_dir=resolved)
+        self.metadata_artifacts = metadata_artifacts or TextArtifactStore(
+            artifact_dir=resolved
+        )
+        self.export_artifacts = export_artifacts or TextArtifactStore(
+            artifact_dir=resolved
+        )
+        self.job_history = job_history or JobHistory()
+        self.progress_service = progress_service or ProgressService()
+        self.glossary_library = glossary_library or GlossaryLibrary(
+            artifact_dir=resolved
+        )
+        self.ocr_job_queue = ocr_job_queue or OCRJobQueue()
+
     @classmethod
     def from_env(cls) -> LocalStateBackend:
         artifact_dir = (
             Path(os.getenv("OMNISCRIBE_ARTIFACT_DIR", tempfile.gettempdir()))
             / "omniscribe"
         )
-        # REVIEW: `artifact_dir` is applied to the glossary only; the three
-        # artifact stores fall back to the system temp directory. Keep all
-        # persisted artifact surfaces on one configured retention boundary.
-        return cls(
-            text_artifacts=TextArtifactStore(),
-            metadata_artifacts=TextArtifactStore(),
-            export_artifacts=TextArtifactStore(),
-            job_history=JobHistory(),
-            progress_service=ProgressService(),
-            glossary_library=GlossaryLibrary(artifact_dir=artifact_dir),
-            ocr_job_queue=OCRJobQueue(),
-        )
+        # The ``from_env`` factory applies the ``omniscribe`` subdirectory
+        # suffix so callers can reuse the same ``OMNISCRIBE_ARTIFACT_DIR``
+        # across multiple deployments without colliding on disk.
+        return cls(artifact_dir=artifact_dir)
 
 
-__all__ = ["LocalStateBackend", "StateBackend"]
+def build_state_backend(settings: object) -> StateBackend:
+    """Construct a :class:`StateBackend` from a settings-like object.
+
+    The ``settings`` argument only needs three attributes:
+
+    - ``state_backend`` — ``"memory"`` or ``"redis"``
+    - ``redis_url`` — used when ``state_backend == "redis"``
+    - ``artifact_directory`` — :class:`Path` threaded to every store
+
+    The factory is the single boundary where backend selection fails loud:
+    an unknown value raises :class:`RuntimeError` (not :class:`ValueError`)
+    so the failure mode is unmistakable at startup.
+    """
+    backend_name = getattr(settings, "state_backend", None)
+    if backend_name == "memory":
+        artifact_dir = getattr(settings, "artifact_directory", None)
+        return LocalStateBackend(artifact_dir=artifact_dir)
+    if backend_name == "redis":
+        redis_url = getattr(settings, "redis_url", None)
+        try:
+            import redis  # noqa: F401  -- probe for the optional dependency
+        except ImportError as exc:
+            raise RuntimeError(
+                "OMNISCRIBE_STATE_BACKEND=redis requires the optional "
+                "`redis` package. Install it with `uv add redis` "
+                "(or `pip install redis`)."
+            ) from exc
+        from omniscribe.api.services.state_backend_redis import RedisStateBackend
+
+        artifact_dir = getattr(settings, "artifact_directory", None)
+        kwargs: dict[str, object] = {}
+        if redis_url is not None:
+            kwargs["redis_url"] = redis_url
+        if artifact_dir is not None:
+            kwargs["artifact_dir"] = artifact_dir
+        return RedisStateBackend(**kwargs)  # type: ignore[arg-type,return-value]
+    raise RuntimeError(
+        f"Unknown OMNISCRIBE_STATE_BACKEND={backend_name!r}. "
+        "Expected 'memory' or 'redis'."
+    )
+
+
+__all__ = ["LocalStateBackend", "StateBackend", "build_state_backend"]

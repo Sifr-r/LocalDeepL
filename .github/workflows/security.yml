@@ -1,0 +1,68 @@
+name: Security scan
+
+# Static security analysis on every PR + push to main.
+#
+# Runs Semgrep with the same registry configs used for the local scan
+# (`p/default`, `p/security-audit`, `p/secrets`, `p/owasp-top-ten`).
+# The config set is intentionally narrow — `p/security-audit` covers
+# the OWASP-relevant sinks, `p/secrets` catches hardcoded credentials,
+# and `p/owasp-top-ten` aligns with the project's stated coverage in
+# `docs/superpowers/specs/`. Findings surface in the GitHub Security
+# tab via the SARIF upload so the team can triage them alongside
+# Dependabot and Trivy alerts (see `test.yml`'s `container-scan`).
+#
+# Excludes bundled frontend artifacts via `.semgrepignore` (the
+# Vite-generated `index-*.js` produces recurring false positives and
+# fixpoint timeouts that drown the real signal).
+#
+# Does not run on `nightly.yml` cadence because Semgrep registry
+# rule updates ship weekly; weekly drift is acceptable for static
+# pattern matching. Pair with `pip-audit` (test.yml) for SCA drift.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly Sunday 02:00 UTC — picks up new registry rules between
+    # weeks without burning PR cycle latency.
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  semgrep:
+    name: semgrep (OSS engine)
+    runs-on: ubuntu-latest
+    # Container image is published by Semgrep and pre-pins the OSS
+    # engine + rule packs; avoids a slow `pip install semgrep` step on
+    # every CI run.
+    container:
+      image: returntocorp/semgrep:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        # `--error` makes the exit code non-zero on any finding so
+        # the workflow fails the PR. `--sarif` emits the SARIF that
+        # the next step uploads to GitHub Security.
+        run: |
+          semgrep scan \
+            --config "p/default" \
+            --config "p/security-audit" \
+            --config "p/secrets" \
+            --config "p/owasp-top-ten" \
+            --error \
+            --metrics=off \
+            --sarif --output=semgrep.sarif \
+            src/omniscribe scripts tests
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep

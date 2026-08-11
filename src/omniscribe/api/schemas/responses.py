@@ -220,12 +220,41 @@ class TranscriptionJobResponse(BaseModel):
     segments: list[dict[str, Any]] = []
 
 
+class HealthResponse(BaseModel):
+    """Liveness probe payload. Always ``{"status": "ok"}`` when the worker is alive."""
+
+    status: str
+
+
+class ReadinessArtifactCounts(BaseModel):
+    """Per-store entry counts surfaced by the readiness probe."""
+
+    text_entries: int
+    metadata_entries: int
+    export_entries: int
+
+
+class ReadinessResponse(BaseModel):
+    """Readiness probe payload.
+
+    ``status`` is ``"ok"`` when every checked subsystem is healthy and
+    ``"degraded"`` otherwise. ``reasons`` lists the failing subsystems
+    so operators can inspect the JSON without reading logs.
+    """
+
+    status: str
+    artifacts: ReadinessArtifactCounts
+    ocr_job_queue_running: bool
+    reasons: list[str] | None = None
+
+
 __all__ = [
     "AsyncTranslationResponse",
     "ClearJobsResponse",
     "ConfigResponse",
     "ExtractionResponse",
     "GlossaryResponse",
+    "HealthResponse",
     "JobListResponse",
     "JobRecordResponse",
     "ModelsResponse",
@@ -234,6 +263,8 @@ __all__ = [
     "OCRConfigResponse",
     "OCRStatusResponse",
     "ProcessResponse",
+    "ReadinessArtifactCounts",
+    "ReadinessResponse",
     "TranscriptionConfigResponse",
     "TranscriptionJobResponse",
     "TranslationConfigResponse",

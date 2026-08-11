@@ -129,6 +129,22 @@ def _is_transcription_route(path: str) -> bool:
     )
 
 
+_HEALTH_PATHS: Final[frozenset[str]] = frozenset(
+    {"/health", "/healthz", "/ready", "/readyz"}
+)
+
+
+def _is_health_path(path: str) -> bool:
+    """Return True when ``path`` is a health/readiness probe.
+
+    Orchestrators must always be able to probe the server, even when a
+    global bearer token is configured. The exact set is the four
+    Kubernetes-flavoured aliases; we deliberately do NOT match prefix
+    paths so a future ``/health/details`` route stays protected.
+    """
+    return path in _HEALTH_PATHS
+
+
 class BearerAuthMiddleware:
     """Reject any HTTP request whose bearer token does not match.
 
@@ -167,9 +183,13 @@ class BearerAuthMiddleware:
         """Classify an HTTP path into ``"ocr"``, ``"translation"``, ``"transcription"`` or ``"other"``.
 
         Used by tests to pin the per-route token mapping and by callers
-        that want to know which token to attach when both a global and
-        a per-service token are set.
+        that want to know which token to attach when both a global and a
+        per-service token are set. Health/probe paths return ``"health"``
+        so callers can branch on them explicitly (the bearer middleware
+        also short-circuits these before reaching the token lookup).
         """
+        if _is_health_path(path):
+            return "health"
         if _is_ocr_route(path):
             return "ocr"
         if _is_translation_route(path):
@@ -201,6 +221,14 @@ class BearerAuthMiddleware:
             return
 
         path = scope.get("path", "")
+        # Health and readiness probes must always reach the inner app so
+        # the orchestrator can probe even when a global bearer token is
+        # configured. The exempt set is exact (no prefix matching) so a
+        # future ``/health/details`` endpoint stays protected.
+        if _is_health_path(path):
+            await self.app(scope, receive, send)
+            return
+
         token = self._token_for(path)
         if token is None:
             await self.app(scope, receive, send)

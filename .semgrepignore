@@ -1,0 +1,49 @@
+# Semgrep ignore patterns — keeps the scan focused on first-party source.
+#
+# Format mirrors .gitignore; one pattern per line, `#` for comments.
+# See https://semgrep.dev/docs/ignoring-files
+
+# --- Build / toolchain caches ---
+.venv/
+.venv
+node_modules/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+
+# --- Project-internal noise ---
+# Qoder agent scratch directory (reports, harnesses, plan docs).
+.qoder/
+# Local-dev caches used by the screenshot tooling at repo root.
+*.png
+
+# --- Frontend / bundled JS ---
+# Vite-bundled assets are third-party minified JS; upstream should be
+# patched, not the generated bundle. The static assets directory also
+# triggers recurring Semgrep fixpoint timeouts on the vendor bundle.
+frontend/
+src/omniscribe/static/assets/
+
+# --- Example / fixture inputs ---
+# Binary blobs and large PDFs used by `tests/` and the confidence scripts.
+examples/
+tests/fixtures/
+
+# --- Generated / vendored reference data ---
+# ChromaDB persistence from `scripts/ingest_lexicon.py` and friends.
+resources/dictionaries/
+src/omniscribe/resources/dictionaries/
+*.chroma/
+*.sqlite3
+*.db
+
+# --- Lockfiles / generated manifests ---
+uv.lock
+package-lock.json
+
+# --- Documentation build artifacts ---
+docs/_build/
+docs/.cache/

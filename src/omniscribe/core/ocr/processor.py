@@ -84,13 +84,15 @@ class OCRProcessor:
     # Page-level OCR (full image): up to ~4 minutes, ~6k tokens of output.
     # Dense handwritten pages with tables can easily produce 2-3k tokens
     # of markdown, so 6k leaves headroom without enabling endless loops.
-    PAGE_TIMEOUT_S: float = 240.0
+    # Override via ``OMNISCRIBE_VLM_PAGE_TIMEOUT`` (audit A-11).
+    PAGE_TIMEOUT_S: float = float(os.getenv("OMNISCRIBE_VLM_PAGE_TIMEOUT", "240.0"))
     PAGE_MAX_TOKENS: int = 6144
 
     # Crop-level OCR (single box): a sentence at most. Capping much
     # tighter prevents a confused model from emitting a whole-page worth
     # of hallucinated text into one bbox during the refine stage.
-    CROP_TIMEOUT_S: float = 60.0
+    # Override via ``OMNISCRIBE_VLM_CROP_TIMEOUT`` (audit A-11).
+    CROP_TIMEOUT_S: float = float(os.getenv("OMNISCRIBE_VLM_CROP_TIMEOUT", "60.0"))
     CROP_MAX_TOKENS: int = 256
 
     # Retry policy for transient VLM errors (429, 5xx, connection drops).

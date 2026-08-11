@@ -1,0 +1,278 @@
+"""Central runtime configuration for OmniScribe.
+
+All application-owned environment variables are declared in one Pydantic
+settings model. Modules consume :func:`load_settings` rather than reading
+``os.environ`` directly, which gives startup validation a single boundary and
+keeps local/test overrides deterministic.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import tempfile
+from pathlib import Path
+from typing import Any
+
+from pydantic import AliasChoices, Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class RuntimeSettings(BaseSettings):
+    """Environment-backed settings shared by the API and core pipeline."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="",
+        case_sensitive=False,
+        env_ignore_empty=True,
+        populate_by_name=True,
+        extra="ignore",
+    )
+
+    llm_api_base: str = Field(
+        default="http://localhost:1234/v1",
+        validation_alias=AliasChoices("LLM_API_BASE", "OMNISCRIBE_LLM_API_BASE"),
+    )
+    llm_api_key: str = Field(
+        default="lm-studio",
+        validation_alias=AliasChoices("LLM_API_KEY", "OMNISCRIBE_LLM_API_KEY"),
+    )
+    llm_model: str = Field(
+        default="allenai/olmocr-2-7b",
+        validation_alias=AliasChoices("LLM_MODEL", "OMNISCRIBE_LLM_MODEL"),
+    )
+    # ``LLM_MODEL`` is shared across the hybrid and grounded engines when no
+    # engine-specific override is provided. ``OMNISCRIBE_GROUNDED_MODEL``
+    # remains the only dedicated alias for the grounded engine; the shared
+    # default is applied in :meth:`_default_grounded_model`.
+    grounded_model: str = Field(
+        default="qwen/qwen3-vl-8b",
+        validation_alias="OMNISCRIBE_GROUNDED_MODEL",
+    )
+
+    vlm_page_timeout: float = Field(
+        default=240.0, validation_alias="OMNISCRIBE_VLM_PAGE_TIMEOUT", gt=0
+    )
+    vlm_crop_timeout: float = Field(
+        default=60.0, validation_alias="OMNISCRIBE_VLM_CROP_TIMEOUT", gt=0
+    )
+    llm_max_retries: int = Field(
+        default=2, validation_alias="OMNISCRIBE_LLM_MAX_RETRIES", ge=0
+    )
+    llm_retry_base_delay: float = Field(
+        default=1.0, validation_alias="OMNISCRIBE_LLM_RETRY_BASE_DELAY", ge=0
+    )
+    cb_failure_threshold: int = Field(
+        default=5, validation_alias="OMNISCRIBE_CB_FAILURE_THRESHOLD", ge=1
+    )
+    cb_cooldown: float = Field(
+        default=30.0, validation_alias="OMNISCRIBE_CB_COOLDOWN", ge=0
+    )
+
+    artifact_base_dir: Path = Field(
+        default_factory=lambda: Path(tempfile.gettempdir()),
+        validation_alias="OMNISCRIBE_ARTIFACT_DIR",
+    )
+    artifact_cleanup_interval_s: float = Field(
+        default=60.0,
+        validation_alias="OMNISCRIBE_ARTIFACT_CLEANUP_INTERVAL_S",
+        ge=0,
+    )
+    chunk_pages: int = Field(default=25, validation_alias="OMNISCRIBE_CHUNK_PAGES", ge=1)
+    chroma_db: str | None = Field(default=None, validation_alias="OMNISCRIBE_CHROMA_DB")
+    redis_url: str = Field(
+        default="redis://localhost:6379/0", validation_alias="REDIS_URL"
+    )
+
+    # State backend selector (audit A-3). ``memory`` keeps every store in
+    # the local process; ``redis`` offloads artifact metadata and job
+    # history to a Redis instance using :class:`RedisStateBackend`. The
+    # selector is resolved at startup by
+    # :mod:`omniscribe.api.routers.state`; an unknown value fails fast.
+    state_backend: str = Field(
+        default="memory",
+        validation_alias="OMNISCRIBE_STATE_BACKEND",
+    )
+
+    allow_ssrf_local: bool = Field(default=False, validation_alias="ALLOW_SSRF_LOCAL")
+    log_level: str = Field(default="INFO", validation_alias="OMNISCRIBE_LOG_LEVEL")
+    log_format: str = Field(default="json", validation_alias="OMNISCRIBE_LOG_FORMAT")
+
+    auth_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("OMNISCRIBE_AUTH_TOKEN", "LOCAL_DEEPL_AUTH_TOKEN"),
+    )
+    ocr_auth_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "OMNISCRIBE_OCR_AUTH_TOKEN", "LOCAL_DEEPL_OCR_AUTH_TOKEN"
+        ),
+    )
+    translation_auth_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "OMNISCRIBE_TRANSLATION_AUTH_TOKEN",
+            "LOCAL_DEEPL_TRANSLATION_AUTH_TOKEN",
+        ),
+    )
+    transcription_auth_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN",
+            "LOCAL_DEEPL_TRANSCRIPTION_AUTH_TOKEN",
+        ),
+    )
+    cors_origins_raw: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "OMNISCRIBE_CORS_ORIGINS", "LOCAL_DEEPL_CORS_ORIGINS"
+        ),
+    )
+    max_upload_mb: int = Field(
+        default=10_240,
+        validation_alias=AliasChoices(
+            "OMNISCRIBE_MAX_UPLOAD_MB", "LOCAL_DEEPL_MAX_UPLOAD_MB"
+        ),
+    )
+    rate_limit_per_min: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "OMNISCRIBE_RATE_LIMIT_PER_MIN", "LOCAL_DEEPL_RATE_LIMIT_PER_MIN"
+        ),
+    )
+
+    @field_validator("max_upload_mb", mode="before")
+    @classmethod
+    def _normalize_max_upload_mb(cls, value: object) -> int:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return 10_240
+        try:
+            return int(str(value).strip())
+        except (TypeError, ValueError):
+            _LOGGER.warning(
+                "Ignoring invalid integer environment value for %s",
+                "OMNISCRIBE_MAX_UPLOAD_MB",
+            )
+            return 10_240
+
+    @field_validator("rate_limit_per_min", mode="before")
+    @classmethod
+    def _normalize_rate_limit(cls, value: object) -> int | None:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        try:
+            return int(str(value).strip())
+        except (TypeError, ValueError):
+            _LOGGER.warning(
+                "Ignoring invalid integer environment value for %s",
+                "OMNISCRIBE_RATE_LIMIT_PER_MIN",
+            )
+            return None
+
+    @field_validator("artifact_cleanup_interval_s", mode="before")
+    @classmethod
+    def _normalize_cleanup_interval(cls, value: object) -> float:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return 60.0
+        try:
+            return max(0.0, float(str(value).strip()))
+        except (TypeError, ValueError):
+            return 60.0
+
+    @field_validator("state_backend", mode="before")
+    @classmethod
+    def _normalize_state_backend(cls, value: object) -> str:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return "memory"
+        normalized = str(value).strip().lower()
+        if normalized not in {"memory", "redis"}:
+            raise ValueError(
+                "OMNISCRIBE_STATE_BACKEND must be 'memory' or 'redis', "
+                f"got {value!r}"
+            )
+        return normalized
+
+    @field_validator("chunk_pages", mode="before")
+    @classmethod
+    def _normalize_chunk_pages(cls, value: object) -> int:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return 25
+        try:
+            return max(1, int(str(value).strip()))
+        except (TypeError, ValueError):
+            return 25
+
+    @field_validator(
+        "llm_api_base", "llm_api_key", "llm_model", "grounded_model", mode="after"
+    )
+    @classmethod
+    def _require_non_empty(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must be a non-empty string")
+        return value
+
+    @model_validator(mode="after")
+    def _inherit_llm_model_for_grounded(self) -> RuntimeSettings:
+        """Propagate a shared ``LLM_MODEL`` to the grounded engine.
+
+        ``OMNISCRIBE_GROUNDED_MODEL`` (or an explicit ``grounded_model``
+        kwarg) takes precedence; if it is absent but ``LLM_MODEL`` is set in
+        the process environment, the grounded model inherits the shared
+        value. This keeps the historical convenience for users configuring a
+        single VLM without explicitly duplicating it for the grounded engine.
+        """
+        if (
+            os.environ.get("OMNISCRIBE_GROUNDED_MODEL")
+            or "grounded_model" in self.model_fields_set
+        ):
+            return self
+        if self.llm_model and self.llm_model == self.grounded_model:
+            return self
+        # Only inherit when grounded_model is still at its default value,
+        # i.e. the user did not provide an explicit grounded override.
+        if self.grounded_model == "qwen/qwen3-vl-8b" and os.environ.get("LLM_MODEL"):
+            object.__setattr__(self, "grounded_model", self.llm_model)
+        return self
+
+    @field_validator("auth_token", "ocr_auth_token", "translation_auth_token", "transcription_auth_token", mode="after")
+    @classmethod
+    def _trim_token(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+    @field_validator("rate_limit_per_min", mode="after")
+    @classmethod
+    def _disable_negative_rate_limit(cls, value: int | None) -> int | None:
+        return None if value is not None and value <= 0 else value
+
+    @property
+    def artifact_directory(self) -> Path:
+        """Return the directory used by token-bound artifact stores."""
+        return self.artifact_base_dir / "omniscribe"
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """Return the configured CORS allowlist as trimmed entries."""
+        if not self.cors_origins_raw:
+            return []
+        return [item.strip() for item in self.cors_origins_raw.split(",") if item.strip()]
+
+    @property
+    def chroma_db_path(self) -> Path | None:
+        """Return the optional Chroma path, expanded and resolved."""
+        if not self.chroma_db:
+            return None
+        return Path(self.chroma_db).expanduser().resolve()
+
+
+def load_settings(**overrides: Any) -> RuntimeSettings:
+    """Load validated runtime settings, optionally overriding fields in tests."""
+    return RuntimeSettings(**overrides)
+
+
+__all__ = ["RuntimeSettings", "load_settings"]

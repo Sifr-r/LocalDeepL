@@ -14,11 +14,23 @@ import importlib
 from dotenv import load_dotenv
 
 load_dotenv()
+import asyncio
+import logging
+import os
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Protocol, cast
+
+from omniscribe.config import RuntimeSettings, load_settings
+from omniscribe.utils import configure_logging  # noqa: F401  -- re-exported for tests
+from omniscribe.utils.structured_logging import _resolve_log_format
+
+_LOGGER = logging.getLogger(__name__)
+_log = logging.getLogger("omniscribe.server")
+_DEFAULT_ARTIFACT_CLEANUP_INTERVAL_S = 60.0
+_ARTIFACT_CLEANUP_TASK_NAME = "omniscribe-artifact-cleanup"
 
 ASGIReceive = Callable[[], Awaitable[dict[str, Any]]]
 ASGISend = Callable[[dict[str, Any]], Awaitable[None]]
@@ -71,6 +83,7 @@ def create_app() -> ASGIApplication:
         config,
         extraction,
         glossary_imports,
+        health,
         jobs,
         ocr,
         providers,
@@ -145,6 +158,7 @@ def create_app() -> ASGIApplication:
     web_app.include_router(extraction.router)
     web_app.include_router(glossary_imports.router)
     web_app.include_router(providers.router)
+    web_app.include_router(health.router)
     web_app.get("/")(read_index)
 
     return cast(ASGIApplication, web_app)
@@ -184,6 +198,144 @@ async def read_index() -> Any:
 
 
 # ---------------------------------------------------------------------------
+# Startup validation
+# ---------------------------------------------------------------------------
+
+
+def _validate_runtime_settings() -> RuntimeSettings:
+    """Load, validate, and log startup-time settings.
+
+    Validates:
+
+    * ``OMNISCRIBE_LOG_FORMAT`` is a known format (raises ``ValueError``).
+    * ``OMNISCRIBE_ARTIFACT_DIR`` is a directory when it exists (raises
+      ``RuntimeError`` if a file is in the way).
+
+    Logs a single ``info`` record with the non-secret settings so an
+    operator can confirm the process started with the expected backend
+    configuration. Auth tokens are surfaced only as an ``auth_enabled``
+    boolean — the actual token value never lands in the log.
+    """
+    settings = load_settings()
+    # Validate the log format eagerly so a malformed env var fails
+    # startup with a clear message, not a stack trace.
+    _resolve_log_format(settings.log_format)
+
+    artifact_base = settings.artifact_base_dir
+    if artifact_base.exists() and not artifact_base.is_dir():
+        raise RuntimeError(
+            f"OMNISCRIBE_ARTIFACT_DIR={artifact_base} must point to a "
+            "directory, but it is an existing file."
+        )
+
+    log_extras = {
+        "llm_api_base": settings.llm_api_base,
+        "llm_model": settings.llm_model,
+        "grounded_model": settings.grounded_model,
+        "vlm_page_timeout": settings.vlm_page_timeout,
+        "vlm_crop_timeout": settings.vlm_crop_timeout,
+        "artifact_base_dir": str(artifact_base),
+        "allow_ssrf_local": settings.allow_ssrf_local,
+        "state_backend": settings.state_backend,
+        "auth_enabled": bool(settings.auth_token),
+    }
+    _log.info("omniscribe startup settings", extra=log_extras)
+    return settings
+
+
+# ---------------------------------------------------------------------------
+# Artifact TTL background sweeper
+# ---------------------------------------------------------------------------
+
+
+def _artifact_cleanup_interval_s() -> float:
+    """Read the cleanup interval from ``OMNISCRIBE_ARTIFACT_CLEANUP_INTERVAL_S``.
+
+    A non-numeric or empty value falls back to the configured default. A
+    negative value is clamped to ``0.0`` (which disables the sweeper).
+    Returning ``0.0`` is the documented "off" sentinel — the cleanup
+    loop checks for it before scheduling.
+    """
+    raw = os.getenv("OMNISCRIBE_ARTIFACT_CLEANUP_INTERVAL_S")
+    if raw is None or not raw.strip():
+        return _DEFAULT_ARTIFACT_CLEANUP_INTERVAL_S
+    try:
+        return max(0.0, float(raw.strip()))
+    except (TypeError, ValueError):
+        return _DEFAULT_ARTIFACT_CLEANUP_INTERVAL_S
+
+
+def _artifact_cleanup_stores() -> Sequence[Any]:
+    """Return the three ``state`` stores that the sweeper should sweep."""
+    from omniscribe.api.routers import state as router_state
+
+    return (
+        router_state.text_artifacts,
+        router_state.metadata_artifacts,
+        router_state.export_artifacts,
+    )
+
+
+async def _artifact_cleanup_loop(interval_s: float) -> None:
+    """Forever sweep every artifact store, sleeping ``interval_s`` between ticks.
+
+    The loop is cancellation-friendly: callers cancel the task on shutdown
+    and the next ``asyncio.sleep`` raises :class:`asyncio.CancelledError`
+    which we let propagate. One broken store (e.g. a permissions error
+    on a single artifact directory) must not stop the other stores from
+    being swept, so each ``cleanup_expired`` call is wrapped in a
+    ``try``/``except`` that logs and continues.
+    """
+    if interval_s <= 0:
+        return
+    stores = _artifact_cleanup_stores()
+    while True:
+        for store in stores:
+            cleanup = getattr(store, "cleanup_expired", None)
+            if cleanup is None:
+                continue
+            try:
+                cleanup()
+            except Exception:
+                _LOGGER.exception(
+                    "artifact cleanup pass failed; continuing with other stores"
+                )
+        await asyncio.sleep(interval_s)
+
+
+async def _start_artifact_cleanup() -> asyncio.Task[None] | None:
+    """Spawn the artifact cleanup loop if the interval is positive.
+
+    Returns ``None`` when the interval is ``0`` (the "off" sentinel),
+    letting the caller skip cleanup wiring entirely. The spawned task is
+    named for diagnostics in ``asyncio.all_tasks()`` output.
+    """
+    interval = _artifact_cleanup_interval_s()
+    if interval <= 0:
+        return None
+    task = asyncio.create_task(
+        _artifact_cleanup_loop(interval), name=_ARTIFACT_CLEANUP_TASK_NAME
+    )
+    return task
+
+
+async def _stop_artifact_cleanup(task: asyncio.Task[None] | None) -> None:
+    """Cancel the cleanup task cleanly; ``None`` is a no-op.
+
+    Cancellation is cooperative — the running sleep in the loop raises
+    :class:`asyncio.CancelledError` on the next iteration. We
+    ``await`` the task so the event loop reaps it before returning.
+    """
+    if task is None:
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # CLI entry-point
 # ---------------------------------------------------------------------------
 
@@ -206,6 +358,23 @@ def _parse_port(value: str) -> int:
     return port
 
 
+def _parse_workers(value: str) -> int:
+    """Validate the ``--workers`` CLI argument.
+
+    Workers must be an integer in the inclusive range ``[1, 64]``. The
+    upper bound matches uvicorn's documented safe range for fork-based
+    workers; the lower bound rejects zero workers and negative numbers
+    which uvicorn would otherwise reject with a less helpful message.
+    """
+    try:
+        workers = int(value)
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError("workers must be an integer") from exc
+    if not 1 <= workers <= 64:
+        raise argparse.ArgumentTypeError("workers must be between 1 and 64")
+    return workers
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Local LLM PDF OCR web server (FastAPI + WebSocket progress).",
@@ -223,9 +392,24 @@ def main(argv: Sequence[str] | None = None) -> None:
         help="Bind port (default: 8000)",
     )
     parser.add_argument(
+        "--workers",
+        type=_parse_workers,
+        default=1,
+        help="Number of worker processes (1-64). Default: 1.",
+    )
+    parser.add_argument(
         "--reload", action="store_true", help="Enable auto-reload (development)"
     )
     args = parser.parse_args(argv)
+
+    # ``--reload`` is a single-process development aid; combining it with
+    # multiple workers would silently demote uvicorn to one worker. Fail
+    # loudly so the operator notices the misconfiguration.
+    if args.reload and args.workers > 1:
+        parser.error(
+            "--reload cannot be combined with --workers > 1 "
+            f"(got --workers {args.workers})"
+        )
 
     try:
         uvicorn = _load_optional_module("uvicorn")
@@ -238,6 +422,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         host=args.host,
         port=args.port,
         reload=args.reload,
+        workers=args.workers,
     )
 
 

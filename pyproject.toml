@@ -227,6 +227,10 @@ ignore = [
 # code without bundling unrelated fixes into this commit.
 "src/omniscribe/api/routers/config.py" = ["RUF003"]
 "src/omniscribe/api/routers/extraction.py" = ["SIM105"]
+# SIM105 in server.py: ``except asyncio.CancelledError: pass`` reads more
+# naturally than ``contextlib.suppress(...)`` when the only consumer of
+# the suppressed exception is the cleanup task itself.
+"src/omniscribe/server.py" = ["SIM105"]
 "src/omniscribe/api/routers/ocr.py" = ["RUF003"]
 "src/omniscribe/api/services/security.py" = ["SIM115"]
 # RUF022 in core/{ocr,grounded}/__init__.py: the public/private grouping in

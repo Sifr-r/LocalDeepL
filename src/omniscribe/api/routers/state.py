@@ -38,7 +38,10 @@ from pathlib import Path
 from omniscribe.api.services.artifacts import TextArtifactStore  # noqa: F401
 from omniscribe.api.services.jobs import JobHistory  # noqa: F401
 from omniscribe.api.services.progress import ProgressService  # noqa: F401
-from omniscribe.api.services.state_backend import LocalStateBackend
+from omniscribe.api.services.state_backend import (  # noqa: F401
+    LocalStateBackend,
+    build_state_backend,
+)
 from omniscribe.core.glossary_library import GlossaryLibrary
 
 _artifact_dir = (
