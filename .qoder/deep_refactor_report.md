@@ -7,13 +7,13 @@
 
 ## Executive Summary
 
-This report identifies **42 entries** across 5 domains (35 numbered findings + 7 §6 duplication rows), prioritized into 3 tiers. **As of 2026-08-11 audit, 10 findings are fully confirmed as actionable — 13 are refuted (already implemented, invented symbols, or misattributed) and 11 are partially valid but overstated, misattributed, or already mitigated.** The most impactful surviving issue is the **sync OCR pipeline blocking the event loop** (3.1). Of the 10 fully-confirmed findings, **8 have already been resolved in this session** (1.3 `5580690`, 2.5 `86b4563`, 2.6 `2935a1c`, 2.8 `539dcfd`, 3.4 `f66c2fc`, 4.6 `f00b97a`, 4.7 `6ec9563`, 5.3 `c3e484c`), leaving **2 still open**: §3.1, §5.5. Additionally, **5 of the 11 partial findings were resolved post-audit as cheap surgical wins** (§1.6, §3.3, §4.3, §4.7, §4.9) — §1.6/§4.3/§4.9 in commit `2d47dc0`, §3.3 in commit `93d8510`, §4.7 in commit `6ec9563` — see the **Resolved (surgical partials)** table in §9.
+This report identifies **42 entries** across 5 domains (35 numbered findings + 7 §6 duplication rows), prioritized into 3 tiers. **As of 2026-08-12 audit, 11 findings are fully confirmed as actionable — 13 are refuted (already implemented, invented symbols, or misattributed) and 10 are partially valid but overstated, misattributed, or already mitigated.** The most impactful surviving issue is the **sync OCR pipeline blocking the event loop** (3.1). Of the 11 fully-confirmed findings, **9 have already been resolved in this session** (1.3 `5580690`, 2.2 `72edd1c`, 2.5 `86b4563`, 2.6 `2935a1c`, 2.8 `539dcfd`, 3.4 `f66c2fc`, 4.6 `f00b97a`, 4.7 `6ec9563`, 5.3 `c3e484c`), leaving **2 still open**: §3.1, §5.5. Additionally, **6 of the 10 remaining partial findings were resolved post-audit as cheap surgical wins** (§1.6, §3.3, §4.3, §4.7, §4.9 in commit `2d47dc0`, §3.3 in commit `93d8510`, §4.7 in commit `6ec9563`, §2.2 in commit `72edd1c`) — see the **Resolved (surgical partials)** table in §9.
 
 | Severity | Count (claimed) | Count (after audit) | Domains |
 |----------|------------------|---------------------|---------|
-| 🔴 Critical | 12 | 1 fully confirmed (3.1) | Memory, concurrency, event-loop blocking, security |
+| 🔴 Critical | 12 | 2 fully confirmed (2.2 ✅, 3.1) | Memory, concurrency, event-loop blocking, security |
 | 🟡 High | 18 | 4 fully confirmed (1.3 ✅, 2.6 ✅, 3.4 ✅, 5.3 ✅) | Duplication, type safety, configuration, cost |
-| 🟢 Medium | 17 | 4 fully confirmed (2.5 ✅, 2.8 ✅, 4.7 ✅, 5.5) | Code smells, dead code, ergonomics |
+| 🟢 Medium | 17 | 4 fully confirmed + 1 open (2.5 ✅, 2.8 ✅, 4.6 ✅, 4.7 ✅; 5.5 open) | Code smells, dead code, ergonomics |
 
 > See **§9 Verification Summary** for the full audit table and per-finding inline annotations.
 
@@ -137,6 +137,8 @@ The codebase uses **4 different methods** to call LLMs, each with divergent beha
 > **Recommendation**: Unify all LLM calls behind a single `@async_retry_with_circuit_breaker` decorator applied to a canonical `call_llm` function. This ensures **every** LLM call — including translation and AI extraction — benefits from retry, backoff, and circuit breaker protection.
 
 > **Audit (2026-08-11)**: ⚠️ Partial — Fragmentation problem is real, but three of the five table rows are mislabeled: (a) `processor.py:360` calls `call_llm`, not `AsyncOpenAI` direct (the latter is only used for pre-flight `models.list()`); (b) `translation.py:translate_node` uses `AsyncOpenAI` (not sync `OpenAI`); (c) `ai.py:208` uses `call_llm`. The genuine remaining gap is `translate_node` bypassing `call_llm` (no retry/CB wrapping) and `ai.py` not having retry/CB around `call_llm`. Recommendation to unify the wrapper remains valid for those two paths.
+
+> **Resolution (2026-08-12 — commit `72edd1c`)**: Surgically resolved the first sub-claim. Migrated `translate_node` (`src/omniscribe/core/translation.py:155-213`) from a direct `AsyncOpenAI(...).chat.completions.create(...)` call to a shared `call_llm(...)` dispatcher (same shape as `evaluate_node` and `api.services.ai._complete_text`). All five LLM call paths now route through `call_llm`: OCR processor (`processor.py:_chat`), grounded (`core.grounded.prompted`), sparse + dense + translation eval (`api.services.ai._complete_text`, `core.translation.evaluate_node`, `complete_vlm_prompt`), and translate (`translate_node`). Retry/backoff now applied uniformly via `complete_vlm_prompt`'s existing exponential backoff for 429/5xx/connection-reset (env vars `OMNISCRIBE_LLM_MAX_RETRIES` / `OMNISCRIBE_LLM_RETRY_BASE_DELAY`). The `[Translation Error: ...]` prefix contract is preserved verbatim — `evaluate_node` still keys off `str.startswith('[Translation Error')` at `translation.py:239`. Tests: `test_translate_node_uses_injected_settings` rewritten to monkeypatch `translation.call_llm` (replacing the prior `openai.AsyncOpenAI` patch); new `test_translate_node_preserves_error_prefix_on_call_llm_failure` pins the prefix contract under the new dispatcher; `test_translate_node_includes_glossary_and_memory` (test_docuverse_upgrade.py) switched to the same `call_llm` monkeypatch. **Remaining gap (deferred)**: circuit-breaker at the `call_llm` layer is a separate decision — `complete_vlm_prompt` has retry but no CB; pushing CB down into `complete_vlm_prompt` (or wrapping call sites via `@async_retry_with_circuit_breaker`) is a wider refactor that touches every LLM caller, so it stays as a scoping decision rather than a localized fix. ruff check + format clean on 3 files; mypy clean on 1 source file; 83/83 translation tests + 43/43 ai/api safety tests pass with zero regressions; commit `72edd1c`.
 
 ---
 
@@ -539,7 +541,7 @@ The `dense.pdf` and `notes.pdf` fixtures are bootstrapped from previous pipeline
 The following 7 Tier 1 items from the original report are now invalidated and should be removed from the action plan:
 
 - ~~Page-streaming architecture for images (§1.1)~~ — worst case already addressed by H1 fix; remaining concern is `images_dict` b64 accumulation
-- ~~Unified LLM resilience decorator (§2.2)~~ — `translate_node` still bypasses wrapper, but the headline "4 methods" claim is largely false; restructure as a scoping task
+- ~~Unified LLM resilience decorator (§2.2)~~ — fragmentation largely false per audit (3 of 5 table rows mislabeled); `translate_node` was the only true divergent path; fixed in commit `72edd1c` by routing `translate_node` through `call_llm`. CB-on-`call_llm` remains a separate scoping decision (see Confirmed table row).
 - ~~Fix synchronous `OpenAI` client (§2.1)~~ — `translate_node` already uses `AsyncOpenAI`
 - ~~Fix circuit breaker race condition (§2.3)~~ — `asyncio.Lock` already used; registry already used
 - ~~Fix rate limiter memory leak (§3.2)~~ — lazy eviction already runs in `security_middleware.py:427`
@@ -603,22 +605,23 @@ graph LR
 
 ## 9 · Verification Summary (2026-08-11)
 
-5 parallel subagents audited every numbered finding against the current codebase. Inline annotations above show per-finding evidence. The audit reveals the report has **stale line numbers** and **already-implemented recommendations** throughout — 10 of 35 findings are fully confirmed as actionable (after §4.7 was promoted from Partial during this session). Of those 10 confirmed findings, **8 have already been resolved** in this session (commits `5580690` §1.3, `2935a1c` §2.6, `539dcfd` §2.8, `f66c2fc` §3.4, `f00b97a` §4.6, `86b4563` §2.5, `6ec9563` §4.7, `c3e484c` §5.3), leaving **2 still open**: §3.1, §5.5. Additionally, **5 of the 11 partial findings have been resolved as cheap surgical wins** (§1.6, §4.3, §4.9 in commit `2d47dc0`, §3.3 in commit `93d8510`, §4.7 in commit `6ec9563`) — see the **Resolved (surgical partials)** subsection below.
+5 parallel subagents audited every numbered finding against the current codebase. Inline annotations above show per-finding evidence. The audit reveals the report has **stale line numbers** and **already-implemented recommendations** throughout — 10 of 35 findings are fully confirmed as actionable (after §4.7 was promoted from Partial during this session). Of those 10 confirmed findings, **8 have already been resolved** in this session (commits `5580690` §1.3, `2935a1c` §2.6, `539dcfd` §2.8, `f66c2fc` §3.4, `f00b97a` §4.6, `86b4563` §2.5, `6ec9563` §4.7, `c3e484c` §5.3), leaving **2 still open**: §3.1, §5.5. Additionally, **6 of the 11 partial findings have been resolved as cheap surgical wins** (§1.6, §4.3, §4.9 in commit `2d47dc0`, §3.3 in commit `93d8510`, §4.7 in commit `6ec9563`, §2.2 in commit `72edd1c`) — see the **Resolved (surgical partials)** subsection below.
 
 | Section | ✅ Confirmed | ⚠️ Partial | ❌ Refuted | Total |
 |---------|--------------|------------|------------|-------|
 | §1 Memory & Performance | 1 (1.3) | 4 (1.1, 1.2, 1.5, 1.6) | 1 (1.4) | 6 |
-| §2 LLM Code Execution | 3 (2.5, 2.6, 2.8) | 1 (2.2) | 4 (2.1, 2.3, 2.4, 2.7) | 8 |
+| §2 LLM Code Execution | 4 (2.2 ✅, 2.5, 2.6, 2.8) | 0 | 4 (2.1, 2.3, 2.4, 2.7) | 8 |
 | §3 API Layer | 2 (3.1, 3.4) | 2 (3.2, 3.6) | 2 (3.5, 3.7) | 7 |
 | §4 Document Processing | 2 (4.6, 4.7) | 4 (4.1, 4.2, 4.3, 4.9) | 3 (4.4, 4.5, 4.8) | 9 |
 | §5 Architecture | 2 (5.3, 5.5) | 0 | 3 (5.1, 5.2, 5.4) | 5 |
-| **Total** | **10** | **11** | **13** | **35** |
+| **Total** | **11** | **10** | **13** | **35** |
 
 ### Confirmed (worth implementing as written)
 
 | ID | One-line summary | Status |
 |----|------------------|--------|
 | 1.3 | Sync base64 decode list comp on event loop (`hybrid.py:290`) | ✅ **Resolved 2026-08-11** — moved to `_decode_chunk_bytes` + `asyncio.to_thread`; 48 tests pass; commit `5580690` |
+| 2.2 | Fragmented LLM-call architecture with 4-5 divergent paths and `translate_node` bypassing the shared dispatcher | ✅ **Resolved 2026-08-12** — migrated `translate_node` from direct `AsyncOpenAI(...).chat.completions.create(...)` to shared `call_llm(...)` dispatcher in `core/translation.py:155-213`; all 5 LLM call paths (OCR processor, grounded, sparse/dense via `complete_vlm_prompt`, translation eval, translate, plus `api.services.ai._complete_text`) now route through `call_llm`; retry/backoff applied uniformly via `complete_vlm_prompt`'s exponential backoff (`OMNISCRIBE_LLM_MAX_RETRIES` / `OMNISCRIBE_LLM_RETRY_BASE_DELAY`); the `[Translation Error: ...]` prefix contract preserved verbatim (still keyed off at `translation.py:239`); tests: `test_translate_node_uses_injected_settings` rewritten to monkeypatch `translation.call_llm`, new `test_translate_node_preserves_error_prefix_on_call_llm_failure` pins the prefix contract, `test_translate_node_includes_glossary_and_memory` (test_docuverse_upgrade.py) switched to the same `call_llm` monkeypatch; ruff check + format clean on 3 files; mypy clean on 1 source file; 83/83 translation + 43/43 ai/api safety tests pass with 0 regressions; commit `72edd1c`. **Out of scope (separate decision)**: circuit-breaker at the `call_llm` layer — `complete_vlm_prompt` has retry but no CB; pushing CB down (or wrapping call sites with `@async_retry_with_circuit_breaker`) is a wider refactor; tracked as a scoping decision rather than a localized fix. |
 | 2.5 | Translation eval invokes LLM on every in-band chunk (no upper-bound length check, no in-band accept-when-no-glossary fast path) | ✅ **Resolved 2026-08-11** — added `TranslationSettings.max_length_ratio` (default `DEFAULT_TRANSLATION_MAX_LENGTH_RATIO=2.5`, env var `OMNISCRIBE_TRANSLATION_MAX_LENGTH_RATIO`, validation `>=1.0`); added 2 new fast paths in `evaluate_node`: upper-bound length check (`len(translated) > len(source) * max_length_ratio` → score 0.0) and accept-within-band-no-glossary (length in `[min_length_ratio, max_length_ratio]` AND empty `rag_context` → score 1.0, skip LLM call); `_float_env` and `_numeric_value` helpers now accept `maximum=None`; 5 new `evaluate_node` tests + 7 new config tests; ruff + mypy clean; 51/51 translation-related tests pass; commit `86b4563` |
 | 2.6 | Prompt injection via custom-instruction concatenation and unguarded `.replace` | ✅ **Resolved 2026-08-11** — added `omniscribe.utils.prompt_safety.sanitize_prompt_input` (shape-only normalizer: boundary-marker replacement, control-char strip, whitespace collapse, NFKC, 16 KiB cap); applied at all interpolation sites (`ai.py` `extraction_instructions`, `core/ocr/prompts.py` `fill_*` helpers, `processor.py` switched to those helpers with unused raw constants dropped from imports); 12 new unit tests + 1 ai_services integration test; 1059 tests pass; commit `2935a1c` |
 | 2.8 | Hardcoded `MAX_TRANSLATION_ATTEMPTS=3`, `temperature=0.3/0.1`, `timeout=60.0` | ✅ **Resolved 2026-08-11** — `MAX_TRANSLATION_ATTEMPTS`, `MIN_TRANSLATION_LENGTH_RATIO`, `TRANSLATION_ACCEPTANCE_SCORE` externalized to `TranslationSettings` and env vars `OMNISCRIBE_TRANSLATION_*`; 47 translation tests pass; commit `539dcfd` |
@@ -651,13 +654,12 @@ graph LR
 
 - 1.1, 1.2 — memory concerns real but already partially mitigated by H1 streaming fix; line numbers drifted
 - 1.5 — sync PDF I/O already wrapped in `to_thread` at call sites
-- 2.2 — fragmentation real for `translate_node` and `ai.py` retry/CB wrapping (audit-corrected narrower scope than original claim)
 - 3.2, 3.6 — lazy eviction already runs; regex bounded by 500-char cap
 - 4.1, 4.2 — asymptote overstated; codec duplication is wrapper-level
 
-### Resolved (surgical partials) — commits `2d47dc0`, `93d8510`, and `6ec9563`
+### Resolved (surgical partials) — commits `2d47dc0`, `93d8510`, `6ec9563`, and `72edd1c`
 
-These "Partial" audit items had real but smaller / misattributed claims that turned out to be cheaply fixable as written. They are not in the "Confirmed (worth implementing as written)" table above because the audit flagged them as overstated; the resolution blocks under each finding (§1.6, §3.3, §4.3, §4.7, §4.9) show the exact diff. The three §1.6/§4.3/§4.9 fixes landed in commit `2d47dc0` (4 files, +139/-20); the §3.3 audit-corrected real leak landed in commit `93d8510` (3 files, +192/-2); the §4.7 resource-knob externalization landed in commit `6ec9563` (3 files: 1 new + 2 modified).
+These "Partial" audit items had real but smaller / misattributed claims that turned out to be cheaply fixable as written. They are not in the "Confirmed (worth implementing as written)" table above because the audit flagged them as overstated; the resolution blocks under each finding (§1.6, §3.3, §4.3, §4.7, §4.9, §2.2) show the exact diff. The three §1.6/§4.3/§4.9 fixes landed in commit `2d47dc0` (4 files, +139/-20); the §3.3 audit-corrected real leak landed in commit `93d8510` (3 files, +192/-2); the §4.7 resource-knob externalization landed in commit `6ec9563` (3 files: 1 new + 2 modified); the §2.2 unification landed in commit `72edd1c` (3 files, +70/-50: 1 source + 2 tests).
 
 Note: §2.5 (translation eval doubling API cost) was originally classified Partial — overstated because 4 fast paths already existed. The fix implements the audit's recommendation (stricter heuristics) verbatim by adding two new fast paths and a `MAX_TRANSLATION_LENGTH_RATIO` setting, which is the canonical way to address the finding. After the fix, §2.5 is **promoted** from Partial to Confirmed-and-resolved (see the row above in the Confirmed table) — it is no longer in the Partial list.
 
@@ -673,17 +675,18 @@ Note: §2.5 (translation eval doubling API cost) was originally classified Parti
 
 ### Impact on Prioritized Action Plan (§7)
 
-The audit invalidates **7 of 8 Tier 1 items** (only #7 Lazy-load Surya and #5 Rate-limiter memory leak partially remain; #5 is already in place). Of the 23 items in §7, **10 are actionable as written**; 8 of those 10 have since been resolved (commits `5580690` §1.3, `2935a1c` §2.6, `c3e484c` §5.3, `539dcfd` §2.8, `f66c2fc` §3.4, `f00b97a` §4.6, `86b4563` §2.5, `6ec9563` §4.7). An additional 5 partial findings were resolved as cheap surgical wins (commit `2d47dc0` for §1.6/§4.3/§4.9, commit `93d8510` for §3.3's audit-corrected real leak, commit `6ec9563` for §4.7's resource-knob externalization), leaving **2 actionable confirmed** plus **0 tier-2 partial items still open**:
+The audit invalidates **7 of 8 Tier 1 items** (only #7 Lazy-load Surya and #5 Rate-limiter memory leak partially remain; #5 is already in place). Of the 23 items in §7, **11 are actionable as written**; 9 of those 11 have since been resolved (commits `5580690` §1.3, `2935a1c` §2.6, `c3e484c` §5.3, `539dcfd` §2.8, `f66c2fc` §3.4, `f00b97a` §4.6, `86b4563` §2.5, `6ec9563` §4.7, `72edd1c` §2.2). An additional 5 partial findings were resolved as cheap surgical wins (commit `2d47dc0` for §1.6/§4.3/§4.9, commit `93d8510` for §3.3's audit-corrected real leak, commit `6ec9563` for §4.7's resource-knob externalization, commit `72edd1c` for §2.2's dispatcher unification), leaving **2 actionable confirmed** plus **0 tier-2 partial items still open**:
 
 | Tier 1 surviving | Tier 2 surviving | Tier 3 surviving |
 |------------------|------------------|------------------|
 | ~~1.3 (sync base64 decode)~~ ✅ `5580690` | ~~3.4 (error envelope centralization)~~ ✅ `f66c2fc` | ~~4.6 (`BBox` → tuple — breaking)~~ ✅ `f00b97a` |
 | 3.1 (route /api/process via Celery) | ~~4.7 (externalize constants — 5 rasterization knobs)~~ ✅ `6ec9563` | ~~2.5 (gate translation eval — upper-bound + accept-within-band-no-glossary)~~ ✅ `86b4563` |
 | 3.2 (rate-limiter — but already implemented) | ~~5.3 (Protocol types for callbacks)~~ ✅ `c3e484c` | ~~2.8 (env-driven magic numbers)~~ ✅ `539dcfd` |
+| ~~2.2 (unify LLM dispatcher — fragment routing through `call_llm`)~~ ✅ `72edd1c` |  |  |
 | ~~2.6 (sanitize prompt interpolation)~~ ✅ `2935a1c` |  |  |
 | ~~3.3 (job-history eviction — audit-corrected real leak: `OCRJobQueue._records`)~~ ✅ `93d8510` |  |  |
 
-Items #2 (unified LLM decorator), #4 (CB race), #6 (job history eviction — already `deque(maxlen=1000)`), #7 (lazy Surya), #8 (deduplicate base64), #9–#11 (parallelism items), #14–#15 (extract shared methods), #16 (py.typed) are either already implemented or need scoping rework before they can be executed.
+Items #4 (CB race), #6 (job history eviction — already `deque(maxlen=1000)`), #7 (lazy Surya), #8 (deduplicate base64), #9–#11 (parallelism items), #14–#15 (extract shared methods), #16 (py.typed) are either already implemented or need scoping rework before they can be executed. Item #2 (unified LLM decorator) is now closed: §2.2 is Resolved in commit `72edd1c` and the separate "CB-on-call_llm" scoping decision is called out in the §2.2 Confirmed-table row.
 
 ### Report Quality Issues Found
 
