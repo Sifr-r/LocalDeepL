@@ -51,7 +51,10 @@ def crop_for_ocr_from_image(
     crop = img.crop((int(nx0 * w), int(ny0 * h), int(nx1 * w), int(ny1 * h)))
     if crop.size[0] == 0 or crop.size[1] == 0:
         return None
-    if std_threshold > 0.0 and ImageStat.Stat(crop.convert("L")).stddev[0] < std_threshold:
+    if (
+        std_threshold > 0.0
+        and ImageStat.Stat(crop.convert("L")).stddev[0] < std_threshold
+    ):
         return None
 
     cw, ch = crop.size
