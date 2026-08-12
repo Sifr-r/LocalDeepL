@@ -1,5 +1,5 @@
 @echo off
-title Stopping Local LLM PDF OCR
+title Stopping OmniScribe
 echo Stopping Background OCR Services...
 
 powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'src.omniscribe.server:app' -or $_.CommandLine -match 'celery -A src.omniscribe.api.celery_app' } | Invoke-CimMethod -MethodName Terminate | Out-Null"

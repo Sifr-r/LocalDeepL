@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from PIL import Image
+
     from omniscribe.core.callbacks import BlockCallbackSet
-    from omniscribe.core.document import DocumentResult, SpellcheckMode
+    from omniscribe.core.document import (
+        BBox,
+        DocumentPage,
+        DocumentResult,
+        SpellcheckMode,
+    )
     from omniscribe.core.ocr_quality import TrustOrchestrator
     from omniscribe.core.processors import DocumentProcessor
 
@@ -123,21 +131,45 @@ class EngineBase:
     ) -> DocumentResult:
         """Apply the trust layer to ``document_result``.
 
-        ``trust_images_dict`` is a ``{page_index: b64_str}`` map the
-        engine already holds from page rendering. The default is an
-        identity passthrough (no orchestrator → identical bytes to the
-        pre-Phase-2 path). Engines that have per-page images
-        (HybridEngine) override this to invoke the orchestrator once per
-        page with the decoded :class:`PIL.Image`; the GroundedEngine
-        override passes ``page_image=None`` because the grounded backend
-        never renders page images.
-
-        Per design §11.2 (Phase 2): the layer is **fail-open**. An
-        orchestrator that raises on a single block keeps the original
-        block's trust fields untouched rather than aborting the
-        pipeline.
+        If ``trust_images_dict`` is provided, page images are decoded on-demand for
+        pages present in the map. The orchestrator is invoked fail-open per page.
         """
-        return document_result  # no orchestrator → identical bytes to pre-Phase-2
+        if self.trust_orchestrator is None or not document_result.pages:
+            return document_result
+
+        from omniscribe.core.document import DocumentResult
+        from omniscribe.core.image_utils import decode_base64_image
+
+        scored_pages: list[DocumentPage] = []
+        for page in document_result.pages:
+            page_image: Image.Image | None = None
+            if trust_images_dict and page.page_index in trust_images_dict:
+                try:
+                    page_image = decode_base64_image(trust_images_dict[page.page_index])
+                except Exception:
+                    page_image = None
+
+            try:
+                new_blocks = self.trust_orchestrator(
+                    list(page.blocks),
+                    page_image,
+                    model_id=model_id,
+                    page_size=None,
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug(
+                    "trust orchestrator failed on page %d; falling back: %s",
+                    page.page_index,
+                    exc,
+                )
+                new_blocks = list(page.blocks)
+            scored_pages.append(dataclasses.replace(page, blocks=list(new_blocks)))
+
+        return DocumentResult(
+            pages=scored_pages,
+            source_path=document_result.source_path,
+            tree=document_result.tree,
+        )
 
     def _cross_page_merge(
         self,
@@ -169,7 +201,7 @@ class EngineBase:
                     break
 
             if last_idx != -1 and first_idx != -1:
-                last_bbox, last_text = p1_boxes[last_idx]
+                _last_bbox, last_text = p1_boxes[last_idx]
                 first_bbox, first_text = p2_boxes[first_idx]
 
                 last_text_stripped = last_text.strip()
@@ -177,7 +209,36 @@ class EngineBase:
                 if last_text_stripped and last_text_stripped[-1] not in (".", "!", "?"):
                     merged_text = last_text_stripped + " " + first_text.strip()
                     p2_boxes[first_idx] = (first_bbox, merged_text)
-                    p1_boxes[last_idx] = (last_bbox, "")
+                    p1_boxes[last_idx] = (_last_bbox, "")
+
+    async def _emit_page_callbacks(
+        self,
+        page_index: int,
+        page_blocks: Sequence[tuple[BBox, str]],
+        confidence_estimator: Callable[[str], float | None] | None = None,
+    ) -> None:
+        """Drive per-block and per-page observer callbacks for a single page."""
+        cb = self.block_callbacks
+        if cb.on_block is None and cb.on_page_complete is None:
+            return
+
+        for block_idx, (bbox, text) in enumerate(page_blocks):
+            if cb.on_block is not None and text and text.strip():
+                conf = (
+                    confidence_estimator(text)
+                    if confidence_estimator is not None
+                    else None
+                )
+                await cb.on_block(
+                    page_index,
+                    block_idx,
+                    list(bbox),
+                    text,
+                    "text",
+                    conf,
+                )
+        if cb.on_page_complete is not None:
+            await cb.on_page_complete(page_index)
 
     async def _run_spellcheck(
         self,

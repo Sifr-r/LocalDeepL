@@ -77,6 +77,7 @@ __all__ = [
     "_model_in_loaded",
     "_strip_runaway_repetition",
     "_strip_yaml_front_matter",
+    "complete_vlm_prompt",
     "fill_correction_crop",
     "fill_correction_page",
     "fill_dual_engine_crop",

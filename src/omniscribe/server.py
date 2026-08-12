@@ -161,6 +161,11 @@ def create_app() -> ASGIApplication:
     web_app.include_router(health.router)
     web_app.get("/")(read_index)
 
+    @web_app.exception_handler(ValueError)
+    async def value_error_handler(request: Any, exc: ValueError) -> Any:
+        responses = _load_optional_module("fastapi.responses")
+        return responses.JSONResponse(status_code=400, content={"error": str(exc)})
+
     return cast(ASGIApplication, web_app)
 
 

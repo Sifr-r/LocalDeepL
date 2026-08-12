@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import logging
 from collections import defaultdict
 from collections.abc import Mapping, MutableMapping, Sequence
@@ -66,7 +67,8 @@ def _decode_chunk_bytes(
         raw = base64.b64decode(b64)
         result.append(raw)
         if decoded_cache is not None:
-            decoded_cache[p] = _decode_page_image(b64)
+            with contextlib.suppress(Exception):
+                decoded_cache[p] = _decode_page_image(b64)
     return result
 
 
@@ -563,35 +565,6 @@ class HybridEngine(EngineBase):
             dpi=dpi,
             progress=progress,
         )
-
-    def _decode_trust_image(
-        self,
-        page_index: int,
-        trust_images_dict: dict[int, str] | None,
-        cache: dict,
-    ) -> tuple[Image.Image | None, tuple[int, int] | None]:
-        """HybridEngine override: lazily decode page image for the orchestrator.
-
-        ``trust_images_dict`` is the same ``{page_index: b64_str}`` the
-        engine already holds from :meth:`_convert_pages`; we re-decode
-        each entry lazily so the disabled-path cost stays at a single
-        ``is None`` check on the orchestrator.
-        """
-        if trust_images_dict is None:
-            return None, None
-        if page_index in cache:
-            return cache[page_index]
-        b64 = trust_images_dict.get(page_index)
-        if b64 is None:
-            return None, None
-        try:
-            img = _decode_page_image(b64)
-            res = (img, img.size)
-            cache[page_index] = res
-            return res
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.debug("trust image decode failed for page %d: %s", page_index, exc)
-            return None, None
 
     async def _ocr_per_box(
         self,

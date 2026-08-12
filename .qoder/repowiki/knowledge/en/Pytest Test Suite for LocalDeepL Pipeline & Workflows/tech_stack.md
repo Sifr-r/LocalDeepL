@@ -1,1 +1,0 @@
-pytest with `asyncio_mode = "auto"` (no explicit `pytest-asyncio` import needed), PyMuPDF (`fitz`) for PDF assertion, PyYAML and `tomllib` for infra-file parsing; slow tests depend on the Surya vision model loaded once via the `surya_aligner` fixture.

@@ -80,7 +80,7 @@ class JobHistory:
     def __init__(
         self,
         *,
-        max_jobs: int = 50,
+        max_jobs: int = 1000,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         if not isinstance(max_jobs, int) or max_jobs < 1:

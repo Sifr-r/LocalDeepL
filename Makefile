@@ -1,12 +1,16 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help setup run test lint typecheck clean doctor
+.PHONY: help setup run build-frontend test lint typecheck clean doctor
 
 help: ## Show available developer commands
-	@uv run python -c "print('Available targets:\\n  help       Show available developer commands\\n  setup      Install project and web dependencies\\n  run        Start the web server on port 8000\\n  test       Run the fast test suite\\n  lint       Run Ruff lint and format checks\\n  typecheck  Run mypy against production code\\n  clean      Remove generated caches and build artifacts\\n  doctor     Report Python, uv, Redis, and model server health')"
+	@uv run python -c "print('Available targets:\\n  help           Show available developer commands\\n  setup          Install project and web dependencies\\n  build-frontend Build Svelte 5 + Tailwind v4 frontend static assets\\n  run            Start the web server on port 8000\\n  test           Run the fast test suite\\n  lint           Run Ruff lint and format checks\\n  typecheck      Run mypy against production code\\n  clean          Remove generated caches and build artifacts\\n  doctor         Report Python, uv, Redis, and model server health')"
 
 setup: ## Install project and web dependencies
 	uv sync --extra web
+	cd frontend && npm install
+
+build-frontend: ## Build Svelte 5 + Tailwind v4 frontend static assets
+	cd frontend && npm run build
 
 run: ## Start the web server on port 8000
 	uv run omniscribe-server --port 8000

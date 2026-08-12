@@ -80,7 +80,9 @@ class RuntimeSettings(BaseSettings):
         validation_alias="OMNISCRIBE_ARTIFACT_CLEANUP_INTERVAL_S",
         ge=0,
     )
-    chunk_pages: int = Field(default=25, validation_alias="OMNISCRIBE_CHUNK_PAGES", ge=1)
+    chunk_pages: int = Field(
+        default=25, validation_alias="OMNISCRIBE_CHUNK_PAGES", ge=1
+    )
     chroma_db: str | None = Field(default=None, validation_alias="OMNISCRIBE_CHROMA_DB")
     redis_url: str = Field(
         default="redis://localhost:6379/0", validation_alias="REDIS_URL"
@@ -102,7 +104,9 @@ class RuntimeSettings(BaseSettings):
 
     auth_token: str | None = Field(
         default=None,
-        validation_alias=AliasChoices("OMNISCRIBE_AUTH_TOKEN", "LOCAL_DEEPL_AUTH_TOKEN"),
+        validation_alias=AliasChoices(
+            "OMNISCRIBE_AUTH_TOKEN", "LOCAL_DEEPL_AUTH_TOKEN"
+        ),
     )
     ocr_auth_token: str | None = Field(
         default=None,
@@ -189,8 +193,7 @@ class RuntimeSettings(BaseSettings):
         normalized = str(value).strip().lower()
         if normalized not in {"memory", "redis"}:
             raise ValueError(
-                "OMNISCRIBE_STATE_BACKEND must be 'memory' or 'redis', "
-                f"got {value!r}"
+                f"OMNISCRIBE_STATE_BACKEND must be 'memory' or 'redis', got {value!r}"
             )
         return normalized
 
@@ -237,7 +240,13 @@ class RuntimeSettings(BaseSettings):
             object.__setattr__(self, "grounded_model", self.llm_model)
         return self
 
-    @field_validator("auth_token", "ocr_auth_token", "translation_auth_token", "transcription_auth_token", mode="after")
+    @field_validator(
+        "auth_token",
+        "ocr_auth_token",
+        "translation_auth_token",
+        "transcription_auth_token",
+        mode="after",
+    )
     @classmethod
     def _trim_token(cls, value: str | None) -> str | None:
         if value is None:
@@ -260,7 +269,9 @@ class RuntimeSettings(BaseSettings):
         """Return the configured CORS allowlist as trimmed entries."""
         if not self.cors_origins_raw:
             return []
-        return [item.strip() for item in self.cors_origins_raw.split(",") if item.strip()]
+        return [
+            item.strip() for item in self.cors_origins_raw.split(",") if item.strip()
+        ]
 
     @property
     def chroma_db_path(self) -> Path | None:

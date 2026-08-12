@@ -42,6 +42,7 @@ from omniscribe.core.grounded.models import (
 )
 from omniscribe.core.grounded.parsers import (
     _parse_grounded_json,
+    log_grounded_parse_failure,
     parse_glm_layout_details,
 )
 from omniscribe.core.grounded.prompted import (
@@ -62,5 +63,6 @@ __all__ = [
     # lock in the parser contracts directly.
     "_parse_grounded_json",
     "_rasterize_to_jpeg_pages",
+    "log_grounded_parse_failure",
     "parse_glm_layout_details",
 ]

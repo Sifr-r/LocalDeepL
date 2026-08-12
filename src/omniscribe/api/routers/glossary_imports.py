@@ -6,6 +6,7 @@ import asyncio
 import base64
 import binascii
 import logging
+from collections.abc import Callable
 from http import HTTPStatus
 from typing import Any
 from urllib.parse import urlparse
@@ -74,13 +75,17 @@ def _coerce_format(value: str) -> GlossaryFormat:
 
 def _decode_bytes_payload(value: str) -> bytes:
     if not value:
-        raise HTTPException(status_code=HTTPStatus.UNPROCESSABLE_ENTITY, detail="inline_bytes_b64 is required.")
+        raise HTTPException(
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            detail="inline_bytes_b64 is required.",
+        )
 
     try:
         return base64.b64decode(value, validate=True)
     except (ValueError, binascii.Error) as exc:
         raise HTTPException(
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY, detail="inline_bytes_b64 is not valid base64."
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            detail="inline_bytes_b64 is not valid base64.",
         ) from exc
 
 
@@ -101,12 +106,16 @@ def _sync_ssrf(url: str) -> bool:
 
 def _validate_ssrf(url: str) -> None:
     if not url:
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="URL is required.")
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST, detail="URL is required."
+        )
     blocked = (
         _sync_ssrf(url) if not _has_running_loop() else asyncio.run(is_ssrf_target(url))
     )
     if blocked:
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="URL targets a blocked address.")
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST, detail="URL targets a blocked address."
+        )
 
 
 def _is_safe_sql_dsn(dsn: str) -> bool:
@@ -148,7 +157,8 @@ def _build_git_glossary_kwargs(source: GlossaryImportSource) -> dict[str, Any]:
     """Build parser kwargs for Git Glossary format."""
     if not source.git_url:
         raise HTTPException(
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY, detail="git_url is required for git_glossary imports."
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            detail="git_url is required for git_glossary imports.",
         )
     _validate_ssrf(source.git_url)
     return {
@@ -176,7 +186,8 @@ def _build_sql_table_kwargs(source: GlossaryImportSource) -> dict[str, Any]:
         )
     if not _is_safe_sql_dsn(source.sql_dsn):
         raise HTTPException(
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY, detail="sql_dsn contains unsafe characters."
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            detail="sql_dsn contains unsafe characters.",
         )
     return {
         "dsn": source.sql_dsn,
@@ -189,7 +200,7 @@ def _build_sql_table_kwargs(source: GlossaryImportSource) -> dict[str, Any]:
     }
 
 
-_FORMAT_BUILDERS: dict[str, callable] = {
+_FORMAT_BUILDERS: dict[str, Callable] = {
     "csv": _build_csv_kwargs,
     "tsv": _build_csv_kwargs,
     "xliff": _build_csv_kwargs,
@@ -213,7 +224,8 @@ def _build_parser_kwargs(source: GlossaryImportSource) -> tuple[dict[str, Any], 
     builder = _FORMAT_BUILDERS.get(format_name)
     if builder is None:
         raise HTTPException(
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY, detail=f"Unsupported format: {format_name}."
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            detail=f"Unsupported format: {format_name}.",
         )
     kwargs = builder(source)
     kwargs["max_entries"] = source.max_entries
@@ -309,7 +321,9 @@ def _process_async(req: GlossaryImportRequest) -> GlossaryImportJobResponse:
             req.session_token,
         )
     except AsyncTranslationUnavailable as exc:
-        raise HTTPException(status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
 
     return GlossaryImportJobResponse(
         job_id=str(result.id),
@@ -331,14 +345,18 @@ def import_glossary(req: GlossaryImportRequest) -> GlossaryImportJobResponse:
             return _process_sync(req)
         return _process_async(req)
     except FormatNotAvailableError as exc:
-        raise HTTPException(status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
     except GlossaryImportLimitError as exc:
         raise HTTPException(
             status_code=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
             detail={"error": "Too many entries", "max": exc.limit},
         ) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=HTTPStatus.UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
 
 
 @router.post("/api/glossary/import/url")

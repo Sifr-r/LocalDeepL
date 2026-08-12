@@ -54,7 +54,9 @@ async def _load_pages_from_artifact(artifact_id: str, token: str) -> dict:
         }
         return pages_data
     except Exception as exc:
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="text artifact not found") from exc
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND, detail="text artifact not found"
+        ) from exc
 
 
 @router.post("/api/translate")
@@ -86,7 +88,9 @@ async def translate_text_async(body: TreeTranslationRequest):
             body.glossary or [],
         )
     except AsyncTranslationUnavailable as exc:
-        return JSONResponse(status_code=HTTPStatus.SERVICE_UNAVAILABLE, content={"error": str(exc)})
+        return JSONResponse(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE, content={"error": str(exc)}
+        )
 
     return {"job_id": task.id, "status": "Processing"}
 
@@ -99,7 +103,9 @@ async def get_translation_status(job_id: str):
     try:
         task = celery_app.AsyncResult(job_id)
     except AsyncTranslationUnavailable as exc:
-        return JSONResponse(status_code=HTTPStatus.SERVICE_UNAVAILABLE, content={"error": str(exc)})
+        return JSONResponse(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE, content={"error": str(exc)}
+        )
 
     try:
         response: dict[str, Any] = {

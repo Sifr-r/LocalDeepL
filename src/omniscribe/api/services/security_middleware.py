@@ -235,13 +235,13 @@ class BearerAuthMiddleware:
             return
 
         supplied: str | None = None
-        for name, value in scope.get("headers", ()) or ():
-            if name == b"authorization":
-                try:
-                    supplied = value.decode("latin-1").strip()
-                except UnicodeDecodeError:
-                    supplied = None
-                break
+        headers_dict = dict(scope.get("headers", ()) or ())
+        auth_header = headers_dict.get(b"authorization")
+        if auth_header is not None:
+            try:
+                supplied = auth_header.decode("latin-1").strip()
+            except UnicodeDecodeError:
+                supplied = None
 
         if not supplied:
             await _send_json(scope, receive, send, _UNAUTHORIZED, 401)
@@ -423,4 +423,7 @@ class RateLimitMiddleware:
             await _send_json(scope, receive, send, _TOO_MANY_REQUESTS, 429)
             return
         hits.append(now)
+        # Lazily evict stale keys from other IPs to bound memory growth.
+        for stale_key in [k for k, v in self._hits.items() if k != key and not v]:
+            del self._hits[stale_key]
         await self.app(scope, receive, send)

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import dataclasses
 import logging
 from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING
 
-from omniscribe.core.document import BBox, DocumentResult, SpellcheckMode
+from omniscribe.core.document import BBox, SpellcheckMode
 from omniscribe.core.grounded import (
     GroundedBlock,
     GroundedOCRBackend,
@@ -68,25 +67,9 @@ class GroundedEngine(EngineBase):
         (Phase B review M2 wired the parameter through; this method is
         the parity work the docstring originally punted on).
         """
-        cb = self.block_callbacks
-        if cb.on_block is None and cb.on_page_complete is None:
-            return
-
         pages_data = self._accumulate_pages(response.blocks)
         for page_index in sorted(pages_data):
-            page_blocks = pages_data[page_index]
-            for block_idx, (bbox, text) in enumerate(page_blocks):
-                if cb.on_block is not None and text and text.strip():
-                    await cb.on_block(
-                        page_index,
-                        block_idx,
-                        list(bbox),
-                        text,
-                        "text",
-                        None,
-                    )
-            if cb.on_page_complete is not None:
-                await cb.on_page_complete(page_index)
+            await self._emit_page_callbacks(page_index, pages_data[page_index])
 
     async def execute(
         self,
@@ -163,54 +146,6 @@ class GroundedEngine(EngineBase):
             document_result=document_result,
             dpi=dpi,
             progress=progress,
-        )
-
-    async def _apply_trust(
-        self,
-        document_result: DocumentResult,
-        *,
-        model_id: str,
-        trust_images_dict: dict[int, str] | None = None,
-    ) -> DocumentResult:
-        """GroundedEngine override: invoke the orchestrator once per page.
-
-        Unlike :meth:`HybridEngine._apply_trust` there are no page
-        images to pass — the grounded backend never returns them — so
-        ``page_image`` is always ``None`` on this path. ``trust_images_dict``
-        is accepted (and ignored) for signature parity with the base class
-        and HybridEngine; the grounded path never decodes it. The
-        orchestrator is still called once per page so the per-block
-        call counts in observability stay accurate, and the
-        ``fail-open`` contract (design §7) is preserved: any single
-        raise is caught and the page keeps its original blocks.
-        """
-        if self.trust_orchestrator is None:
-            return document_result
-        if not document_result.pages:
-            return document_result
-
-        scored_pages: list = []
-        for page in document_result.pages:
-            try:
-                new_blocks = self.trust_orchestrator(
-                    list(page.blocks),
-                    None,
-                    model_id=model_id,
-                    page_size=None,
-                )
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.debug(
-                    "trust orchestrator failed on grounded page %d; falling back: %s",
-                    page.page_index,
-                    exc,
-                )
-                new_blocks = list(page.blocks)
-            scored_pages.append(dataclasses.replace(page, blocks=list(new_blocks)))
-
-        return DocumentResult(
-            pages=scored_pages,
-            source_path=document_result.source_path,
-            tree=document_result.tree,
         )
 
     @staticmethod

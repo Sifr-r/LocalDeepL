@@ -68,32 +68,21 @@ def _form_param_keys() -> dict[str, str]:
 
 
 def collect_form_kwargs(
+    form: Any = None,
     **form_fields: str | None,
 ) -> dict[str, str | None]:
     """Collect all OCR process form fields into a single kwargs dict.
 
-    The FastAPI route signatures declare 30 individual ``Form`` parameters
-    (the 24 settings fields plus ``pages`` and a few meta fields). Instead of
-    listing each by name at the resolver call site, the routes unpack a
-    captured ``dict`` built by this helper. The dict only contains the keys
-    that ``resolve_process_settings`` understands — extra Form fields
-    (e.g. ``client_id``, ``progress_channel``) are ignored here and
-    consumed by the route handler itself.
-
-    Why a helper vs. a Pydantic model: every field arrives as
-    ``str | None`` from multipart/form-data. Wrapping them in a
-    Pydantic ``BaseModel`` would force stringly-typed validation that the
-    resolver already performs downstream, and FastAPI's Form-binding rules
-    (``Annotated[X, Form()]``) proved brittle for a 30-field model. A plain
-    dict keeps the per-field schema loose (any caller can send any field)
-    while centralizing the field name list in one place — :func:`_form_param_keys`.
-
-    ``pages`` is intentionally NOT a special case in this helper. The
-    resolver treats ``pages`` as a required, named kwarg (see
-    :func:`resolve_process_settings`), so callers must pass it separately
-    and unpack it via ``**collect_form_kwargs(...)`` before adding
-    ``pages=pages`` to the resolver call.
+    Accepts a model with a ``model_dump`` method, a dict, or plain
+    keyword args, and extracts only the settings fields that
+    :func:`resolve_process_settings` understands.
     """
+    if form is not None:
+        if hasattr(form, "model_dump"):
+            form_fields = {**form.model_dump(), **form_fields}
+        elif isinstance(form, dict):
+            form_fields = {**form, **form_fields}
+
     keys = _form_param_keys()
     return {
         form_key: form_fields.get(form_key)
@@ -136,4 +125,4 @@ def resolve_process_settings(
     return ProcessSettings.model_validate(merged)
 
 
-__all__ = ["resolve_process_settings"]
+__all__ = ["collect_form_kwargs", "resolve_process_settings"]

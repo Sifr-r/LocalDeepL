@@ -43,8 +43,9 @@ strictness:
    responses.
 2. **LAN / trusted-network** — the workstation runs on a private LAN
    behind a firewall. The threat is a curious housemate. Guards: bearer
-   auth on every route, per-route token scoping, rate limiting,
-   audit-friendly logs.
+   auth on every route (except `/health`, `/healthz`, `/ready`,
+   `/readyz`), per-route token scoping, rate limiting, audit-friendly
+   logs.
 3. **Public-internet** — the workstation runs behind a reverse proxy on
    a public IP. The threat is the open internet. **All LAN guards plus:**
    `ALLOW_SSRF_LOCAL=false`, strong random `OMNISCRIBE_AUTH_TOKEN`,
@@ -59,10 +60,12 @@ explicitly opt into profile (2) or (3) by setting the relevant env vars.
 | Layer                  | Guard                              | Default             | Override                                |
 | ---------------------- | ---------------------------------- | ------------------- | --------------------------------------- |
 | HTTP auth              | `OMNISCRIBE_AUTH_TOKEN`           | Unset (open)        | Set to a 32+ char random secret         |
-| Per-service auth       | `OMNISCRIBE_{OCR,TRANSLATION}_AUTH_TOKEN` | Unset | Set when OCR and translation should accept different tokens |
+| Per-service auth       | `OMNISCRIBE_OCR_AUTH_TOKEN`, `OMNISCRIBE_TRANSLATION_AUTH_TOKEN`, `OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN` | Unset | Set when OCR, translation, or transcription should accept different tokens |
 | Upload size            | `OMNISCRIBE_MAX_UPLOAD_MB`        | 10 GB               | Lower for public deployments            |
 | Rate limit             | `OMNISCRIBE_RATE_LIMIT_PER_MIN`   | 60 req/min/IP       | Lower for public deployments            |
 | SSRF (URL fetcher)     | `ALLOW_SSRF_LOCAL`                 | `true`              | Set `false` for any non-local exposure  |
+| CORS                   | `OMNISCRIBE_CORS_ORIGINS`          | localhost-only      | Comma-separated allow-list for cross-origin browser clients |
+| VLM resilience         | `OMNISCRIBE_LLM_MAX_RETRIES`, `OMNISCRIBE_LLM_RETRY_BASE_DELAY`, `OMNISCRIBE_CB_FAILURE_THRESHOLD`, `OMNISCRIBE_CB_COOLDOWN` | retries=2, base=1.0s, failures=5, cooldown=30s | Higher to ride out a flaky provider; lower to fail fast |
 | Auth placeholder reject| startup `RuntimeError`             | n/a                 | Always on                               |
 | Token strength         | `min_length=32` Pydantic constraint | Always on          | n/a                                      |
 
@@ -102,9 +105,14 @@ entries appear with the next release tag.
   same way.
 - **Token generation:** `secrets.token_urlsafe` (24–32 bytes of
   entropy) for progress channel IDs and session tokens.
-- **Cancel-payload signature:** HMAC-SHA256 over the channel_id using
-  `OMNISCRIBE_CANCEL_SECRET` (or auto-generated per-process for
-  single-worker deployments).
+- **Cancel mechanism:** `POST /api/progress/cancel/{channel_id}` and
+  inbound `{"type":"cancel"}` WebSocket frames set an in-process
+  `asyncio.Event` per `channel_id`. The OCR / translate worker checks
+  this flag between blocks; a process kill mid-run silently aborts
+  any unsent cancellation (no on-disk durability). No HMAC or shared
+  secret is involved — the auth boundary is the bearer token on the
+  HTTP route and the channel session token on the WebSocket
+  handshake.
 - **TLS:** not terminated by OmniScribe itself. Operators MUST front
   the service with a reverse proxy (Caddy / nginx / Traefik) for
   HTTPS in any non-local deployment.
@@ -141,3 +149,13 @@ Before exposing OmniScribe beyond `localhost`:
 - [ ] Pin the Docker base image to a digest (`M7`)
 - [ ] Review the env in `.env.example` for any value you would prefer
       different from the default
+
+## See Also
+
+- [README.md](README.md) — feature overview, install, web workspace
+- [CHANGELOG.md](CHANGELOG.md) — version history and breaking changes
+- [ARCHITECTURE.md](ARCHITECTURE.md) — component map and API surface
+- [DEPLOYMENT.md](DEPLOYMENT.md) — local / LAN / public-internet deployment profiles
+- [AGENTS.md](AGENTS.md) — contributor guide and full env-var reference
+
+_Last updated: 2026-08-12_

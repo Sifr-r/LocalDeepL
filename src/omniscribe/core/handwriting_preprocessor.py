@@ -29,6 +29,17 @@ except ImportError as _exc:
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "HandwritingOptions",
+    "deskew_slant",
+    "estimate_slant",
+    "estimate_stroke_width",
+    "is_handwritten_page",
+    "normalize_stroke_width",
+    "preprocess_for_ocr",
+    "sauvola_binarize",
+]
+
 
 @dataclass(slots=True)
 class HandwritingOptions:
@@ -184,6 +195,8 @@ def is_handwritten_page(image_b64: str) -> bool:
 
     Returns ``True`` when the page looks handwritten (irregular stroke width,
     high aspect-ratio variance of connected components, low overall ink density).
+    Used as a page-level classifier to identify handwriting-heavy pages for
+    specialized OCR model routing (e.g. TrOCR).
     """
     try:
         img = _decode(image_b64)

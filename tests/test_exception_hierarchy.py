@@ -143,7 +143,14 @@ def test_every_subclass_inherits_from_root(cls: type[OmniScribeError]) -> None:
 
 def test_pipeline_subclasses_share_pipeline_base() -> None:
     """``except PipelineError`` catches every engine-level failure."""
-    for cls in (OCRError, AlignmentError, DetectionError, GroundingError, EmbedError, PostprocessError):
+    for cls in (
+        OCRError,
+        AlignmentError,
+        DetectionError,
+        GroundingError,
+        EmbedError,
+        PostprocessError,
+    ):
         assert issubclass(cls, PipelineError)
 
 
@@ -215,7 +222,9 @@ def test_redact_details_masks_known_secret_keys() -> None:
     assert cleaned.details["api_key"] == "***"
     assert cleaned.details["token"] == "***"
     assert cleaned.details["page"] == 3  # not redacted
-    assert cleaned.details["headers"]["Authorization"] == "Bearer xyz"  # key not in denylist
+    assert (
+        cleaned.details["headers"]["Authorization"] == "Bearer xyz"
+    )  # key not in denylist
     # Original is untouched.
     assert exc.details["password"] == "hunter2"
 

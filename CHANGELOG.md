@@ -8,6 +8,48 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Windows quick-start robustness (install.ps1 + start_app.vbs)** —
+  the Windows one-click launcher no longer silently fails on
+  re-launch. `start_app.vbs` now writes a timestamped log to
+  `start_app.log` next to itself, pre-checks that `uv` is on PATH
+  (pops a clear "log out so PATH updates" dialog if not),
+  reuses the existing `redis-local-ocr` container via
+  `docker start` or creates a new one with `--rm`, skips
+  Redis + Celery gracefully if the Docker daemon is not
+  reachable (async translation is the only thing that
+  breaks), and polls `http://localhost:8000` until uvicorn
+  actually responds (max 60 s) before opening the browser.
+  `install.ps1` now wraps the `uv` installer in a try/catch,
+  fails fast on `uv sync` errors via `$LASTEXITCODE`, runs
+  `uv run python --version` to verify the venv is usable, and
+  prints a clear "log out so PATH updates" callout at the end.
+- **Speech transcription endpoint** — new
+  `POST /api/transcribe` route plus
+  `GET/POST /api/config/transcription` and
+  `GET /api/models/transcription` for the transcription
+  provider; gated by the new `OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN`
+  env var (falls back to the global `OMNISCRIBE_AUTH_TOKEN`).
+  Bypasses bearer auth on `/health`, `/healthz`, `/ready`,
+  `/readyz` regardless of token configuration.
+
+### Fixed
+
+- **Documentation drift**:
+  `/api/health` is not a real route; the liveness probe is
+  `GET /health` (alias `/healthz`), with `GET /ready` (alias
+  `/readyz`) for readiness. `DEPLOYMENT.md` and the
+  `Dockerfile` healthcheck block now point at `/health`.
+  `ARCHITECTURE.md` listed `/api/models/all`; the real
+  combined route is `GET /api/models` (with
+  `/api/models/ocr` and `/api/models/translation` siblings).
+  `SECURITY.md` referenced a non-existent
+  `OMNISCRIBE_CANCEL_SECRET` env var; cancel is an
+  in-process `asyncio.Event` per `channel_id`, no signature.
+  `DEPLOYMENT.md` documented third-party VLMs under
+  `LLM_API_BASE` / `LLM_API_KEY`; the actual env vars are
+  `OMNISCRIBE_LLM_API_BASE` / `OMNISCRIBE_LLM_API_KEY`
+  (with `OMNISCRIBE_LLM_MODEL`).
+
 - **OCR quality trust layer (Phase 1, foundation)** — new
   `omniscribe.core.ocr_quality` package ships six sub-modules
   (`watermark`, `script_detector`, `hallucination`, `calibration`,

@@ -67,6 +67,8 @@ PDF/image -> grounded bbox-native VLM OCR -> optional post-process -> DocumentRe
 
 | `src/omniscribe/api/schemas/__init__.py` | Re-exports the typed request models and StrEnums |
 | `src/omniscribe/api/schemas/requests.py` | `ConfigUpdate`, `ProcessSettings`, `TranslationRequest`, `ExtractionRequest`, `ExtractionTemplate`, `DocumentExportRequest`, `DocumentExportFormat`, `ExportDocxRequest`; enums: `PipelineMode`, `DenseMode`, `SpellcheckMode`, `DocumentProcessorName` |
+| `src/omniscribe/core/ocr/multi_format_client.py` | Multi-format LLM completion dispatcher (`openai_compatible`, `anthropic_compatible`, `ollama_compatible`), vision base64 payloads, exponential backoff resilience retries, and timeout boundaries |
+| `src/omniscribe/api/services/provider_manager.py` | `ProviderManager` service — 11-provider catalog templates, system environment variable auto-discovery (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OLLAMA_HOST`, etc.), disk persistence (`~/.config/omniscribe/providers.yaml`), active provider switching, and model discovery delegation |
 | `src/omniscribe/api/services/ocr_settings.py` | Form-parameter resolution for `POST /api/process` — "form field wins, config falls back" merge that produces a validated `ProcessSettings` |
 | `src/omniscribe/api/services/ocr_pipeline_factory.py` | Pipeline construction for `POST /api/process` — branches on `pipeline_mode` (hybrid vs grounded), wires WebSocket-bound per-block callbacks, decides whether to plug in the TrOCR handwriting specialist, and exposes backend-model verification |
 | `src/omniscribe/api/services/ocr_response.py` | Response assembly for `POST /api/process` — validation-error JSON, FileResponse construction with token-bound headers (`X-Document-Quality`, `X-Document-Structure`, `X-Document-Sections`, artifact-id/token pairs), and stable error envelopes |
@@ -90,8 +92,8 @@ PDF/image -> grounded bbox-native VLM OCR -> optional post-process -> DocumentRe
 | `scripts/` | Repo-root developer utilities: confidence eval, fixture builder, debug/inspection scripts, bbox visualizers |
 | `examples/` | Sample PDFs and images used by `tests/`, `test_ui.py`, and the confidence scripts |
 | `tests/` | Unit, integration, security, and slow-path validation |
-| `install.bat` / `install.ps1` | Windows one-click install: `uv` bootstrap, `uv sync --extra web`, Docker check, Desktop/Start-Menu shortcuts |
-| `start_app.vbs` / `stop_app.bat` | Windows hidden-start and stop-launcher for Redis + Celery + uvicorn |
+| `install.bat` / `install.ps1` | Windows one-click install: `uv` bootstrap, `uv sync --extra web`, Docker check, Desktop/Start-Menu shortcuts, post-install verification |
+| `start_app.vbs` / `stop_app.bat` | Windows hidden-start and stop-launcher for Redis + Celery + uvicorn; `start_app.vbs` writes a timestamped append log to `start_app.log` |
 | `test_ui.py` | Headless Playwright smoke test against the running web UI |
 
 ## Extension Points
@@ -162,10 +164,16 @@ CORS respectively. Artifact IDs use a separate artifact token supplied through
 | Method | Path | Router | Notes |
 | --- | --- | --- | --- |
 | `GET` / `POST` | `/api/config` | `config` | Read or update shared runtime configuration |
-| `GET` / `POST` | `/api/config/ocr` | `config` | OCR-specific runtime configuration and auth updates |
-| `GET` / `POST` | `/api/config/translation` | `config` | Translation-specific runtime configuration and auth updates |
-| `GET` | `/api/models`, `/api/models/ocr`, `/api/models/translation` | `config` | Backend model discovery |
-| `GET` | `/api/providers`, `/api/providers/{provider_id}` | `providers` | Provider catalog and details |
+| `GET` / `POST` | `/api/config/ocr` | `config` | OCR-specific runtime configuration |
+| `POST` | `/api/config/ocr/auth` | `config` | Rotate the OCR bearer token at runtime |
+| `GET` / `POST` | `/api/config/translation` | `config` | Translation-specific runtime configuration |
+| `POST` | `/api/config/translation/auth` | `config` | Rotate the translation bearer token at runtime |
+| `GET` / `POST` | `/api/config/transcription` | `transcription` | Transcription provider configuration |
+| `GET` | `/api/models`, `/api/models/ocr`, `/api/models/translation`, `/api/models/transcription` | `config` / `transcription` | Backend model discovery (combined, per-service) |
+| `GET` | `/api/providers`, `/api/providers/{provider_id}`, `/api/providers/{provider_id}/models`, `/api/providers/active`, `/api/providers/templates` | `providers` | Provider catalog, details, and active-provider switching |
+| `POST` | `/api/providers`, `/api/providers/active` | `providers` | Add a provider; set the active provider |
+| `DELETE` | `/api/providers/{provider_id}` | `providers` | Remove a provider |
+| `GET` | `/health`, `/healthz` (alias), `/ready`, `/readyz` (alias) | `health` | Liveness and readiness probes; bypass bearer auth |
 | `POST` | `/api/process` | `ocr` | Canonical synchronous multipart OCR; `/process` is the legacy alias |
 | `POST` | `/api/process/async` | `ocr` | Queue background OCR and return `202` with a job ID; `/process/async` is the legacy alias |
 | `GET` | `/api/process/status/{job_id}` | `ocr` | Background OCR lifecycle status; `/process/status/{job_id}` is the legacy alias |
@@ -183,6 +191,7 @@ CORS respectively. Artifact IDs use a separate artifact token supplied through
 | `POST` | `/api/translate/async` | `translation` | Celery + Redis translation job (optional extra) |
 | `GET` | `/api/translate/status/{job_id}` | `translation` | Poll a Celery translation job |
 | `POST` | `/api/extract` | `extraction` | Structured extraction with invoice, resume, academic, or custom templates |
+| `POST` | `/api/transcribe` | `transcription` | Speech-to-text via the configured transcription provider |
 | `POST` | `/api/glossary`, `/api/glossary/import`, `/api/glossary/import/url` | `translation` / `glossary_imports` | Glossary management and imports |
 | `GET` / `POST` / `DELETE` | `/api/glossary/library...` | `glossary_imports` | Local glossary library management |
 
@@ -427,3 +436,56 @@ the three services.
 | `src/omniscribe/api/services/security.py` | Add parent directory confinement check in `cleanup_files` to ensure deleted paths reside in temporary storage |
 | `frontend/src/lib/components/workstation/RightControlDock.svelte` | Add `role="button"`, `tabindex="0"`, and `onkeydown` keyboard trigger to target document drop zone for accessibility compliance |
 | `frontend/src/lib/components/workstation/BottomProgressDock.svelte` | Rename outer container ID to `workstation-progress-dock` to eliminate duplicate DOM ID conflicts |
+
+### 2026-08-11: Industry-Standards Audit Implementation (P1 & Quick Wins)
+
+| File | Responsibility |
+| --- | --- |
+| `.github/dependabot.yml` | Dependabot configuration for `pip` and `github-actions` ecosystems with weekly schedule |
+| `.github/workflows/test.yml` | Add `pip-audit` vulnerability scan, `pytest-cov` test coverage reporting, and CycloneDX SBOM artifact generation |
+| `pyproject.toml` | Add `pytest-cov`, `pip-audit`, and `cyclonedx-python-lib` to `dependency-groups.dev` |
+| `.pre-commit-config.yaml` | Sync `ruff-pre-commit` version to `v0.9.0` |
+| `AGENTS.md` | Document `surya-ocr` `requests>=2.31` workaround follow-up and `live_llm` manual test run instructions |
+
+### 2026-08-11: Goose-Style Multi-Provider API Handling Architecture
+
+| File | Responsibility |
+| --- | --- |
+| `src/omniscribe/api/services/provider_manager.py` | `ProviderManager` service with 11-provider catalog templates, system environment variable auto-discovery (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OLLAMA_HOST`, etc.), disk persistence to `~/.config/omniscribe/providers.yaml`, active provider switching, and model listing dispatch |
+| `src/omniscribe/core/ocr/multi_format_client.py` | Multi-format LLM completion dispatcher supporting `openai_compatible`, `anthropic_compatible`, and `ollama_compatible` formats with exponential backoff retries and timeout boundaries |
+| `src/omniscribe/api/routers/providers.py` | Goose-style provider management API routes (`/api/providers`, `/api/providers/templates`, `/api/providers/active`, `/api/providers/{provider_id}/models`) |
+| `src/omniscribe/api/schemas/requests.py` | `ProviderFormatEnum`, `ProviderConfig`, `ProviderTemplate`, `ActiveProviderUpdate`, `ProviderCreateRequest` schemas |
+| `src/omniscribe/core/llm_client.py` | Directs VLM/LLM completion calls through `multi_format_client.py` based on active provider configuration |
+| `src/omniscribe/api/routers/config.py` | Connects `/api/models` discovery endpoints to `ProviderManager` |
+| `tests/test_provider_manager.py` | Unit tests for provider configuration manager, env-var discovery, and persistence |
+| `tests/test_multi_format_client.py` | Unit tests for OpenAI, Anthropic, and Ollama multi-format completion execution |
+| `tests/test_provider_api_routes.py` | Unit tests for provider REST management API routes |
+
+
+## See Also
+
+- [README.md](README.md) — feature overview, install, web workspace
+- [CHANGELOG.md](CHANGELOG.md) — version history and breaking changes
+- [DEPLOYMENT.md](DEPLOYMENT.md) — local / LAN / public-internet deployment profiles
+- [SECURITY.md](SECURITY.md) — threat model, hardening checklist, vulnerability disclosure
+- [AGENTS.md](AGENTS.md) — contributor guide and full env-var reference
+
+### 2026-08-12: Full Svelte 5 + TailwindCSS v4 Frontend Migration & Legacy Cleanup
+
+| File | Responsibility |
+| --- | --- |
+| `frontend/vite.config.ts` | Configured Svelte 5 + Tailwind v4 build pipeline outputting directly to `src/omniscribe/static` and setting `conditions: ['browser']` for Vitest browser mode testing |
+| `frontend/package.json` | Updated project package name to `omniscribe-frontend` |
+| `frontend/src/lib/components/ui/Badge.svelte` | Exported `BadgeVariant` type in module context, added `title` prop binding, and supported `class` / `className` props |
+| `frontend/src/lib/components/ui/Card.svelte` | Supported standard `class` and legacy `className` props seamlessly |
+| `frontend/src/lib/components/ui/Input.svelte` | Fixed HTML `autocomplete` property type casting |
+| `frontend/src/lib/components/workstation/MetadataPanel.svelte` | Fixed `BadgeVariant` type assertion and updated component property bindings |
+| `frontend/src/lib/components/views/GlossaryView.svelte` | Fixed string casting on dictionary term target properties |
+| `frontend/src/lib/components/views/SettingsView.svelte` | Converted component property bindings to standard `class` props |
+| `frontend/src/lib/components/views/ExtractionView.svelte` | Converted component property bindings to standard `class` props |
+| `frontend/src/lib/components/views/JobHistoryView.svelte` | Updated `BadgeVariant` import and converted component property bindings to standard `class` props |
+| `frontend/src/lib/components/views/TranscriptionView.svelte` | Converted component property bindings to standard `class` props |
+| `frontend/src/lib/components/modals/ExportModal.svelte` | Fixed `tagVariant` type annotations and converted property bindings to standard `class` props |
+| `src/omniscribe/static/` | Compiled production Svelte 5 + Tailwind v4 single-page application assets served by FastAPI |
+
+_Last updated: 2026-08-12_

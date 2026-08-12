@@ -1,1 +1,0 @@
-Standalone CLI helpers for building ground-truth fixtures, running confidence regression across grounded and hybrid OCR pipelines, visualizing bounding boxes, and bootstrapping a ChromaDB lexicon from TEI XML.

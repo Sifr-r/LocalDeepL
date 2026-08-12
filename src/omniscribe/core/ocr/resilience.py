@@ -17,6 +17,7 @@ Tunables are env-driven (``OMNISCRIBE_LLM_MAX_RETRIES``,
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import threading
@@ -198,6 +199,7 @@ class CircuitBreaker:
         self._clock = clock
         self._consecutive_failures = 0
         self._opened_at: float | None = None
+        self._lock = asyncio.Lock()
 
     @property
     def is_open(self) -> bool:
@@ -213,17 +215,21 @@ class CircuitBreaker:
 
     async def check(self) -> None:
         """Raise :class:`CircuitOpenError` if the circuit is open."""
-        if self.is_open:
-            assert self._opened_at is not None
-            retry_after = self.cooldown_seconds - (self._clock() - self._opened_at)
-            raise CircuitOpenError(self._consecutive_failures, max(0.0, retry_after))
+        async with self._lock:
+            if self.is_open:
+                assert self._opened_at is not None
+                retry_after = self.cooldown_seconds - (self._clock() - self._opened_at)
+                raise CircuitOpenError(
+                    self._consecutive_failures, max(0.0, retry_after)
+                )
 
     async def record_success(self) -> None:
         """Record a successful call; closes the circuit if it was probing."""
-        if self._opened_at is not None:
-            logger.info("LLM circuit breaker closed after successful probe")
-        self._consecutive_failures = 0
-        self._opened_at = None
+        async with self._lock:
+            if self._opened_at is not None:
+                logger.info("LLM circuit breaker closed after successful probe")
+            self._consecutive_failures = 0
+            self._opened_at = None
 
     async def record_failure(self) -> None:
         """Record a failed call; opens the circuit at the threshold.
@@ -231,24 +237,25 @@ class CircuitBreaker:
         A failure while half-open (cooldown expired, probe in flight)
         immediately re-opens the circuit with a fresh cooldown.
         """
-        self._consecutive_failures += 1
-        if self._opened_at is not None:
-            # Half-open probe failed → re-open with a fresh cooldown.
-            self._opened_at = self._clock()
-            logger.warning(
-                "LLM circuit breaker re-opened after failed probe "
-                "(%d consecutive failures, cooldown %.0fs)",
-                self._consecutive_failures,
-                self.cooldown_seconds,
-            )
-        elif self._consecutive_failures >= self.failure_threshold:
-            self._opened_at = self._clock()
-            logger.warning(
-                "LLM circuit breaker OPEN after %d consecutive failures "
-                "(cooldown %.0fs)",
-                self._consecutive_failures,
-                self.cooldown_seconds,
-            )
+        async with self._lock:
+            self._consecutive_failures += 1
+            if self._opened_at is not None:
+                # Half-open probe failed → re-open with a fresh cooldown.
+                self._opened_at = self._clock()
+                logger.warning(
+                    "LLM circuit breaker re-opened after failed probe "
+                    "(%d consecutive failures, cooldown %.0fs)",
+                    self._consecutive_failures,
+                    self.cooldown_seconds,
+                )
+            elif self._consecutive_failures >= self.failure_threshold:
+                self._opened_at = self._clock()
+                logger.warning(
+                    "LLM circuit breaker OPEN after %d consecutive failures "
+                    "(cooldown %.0fs)",
+                    self._consecutive_failures,
+                    self.cooldown_seconds,
+                )
 
     # Async-friendly shims. Async OCR call sites awaiting the breaker
     # API surface are first-class: pipeline code uniformly awaits

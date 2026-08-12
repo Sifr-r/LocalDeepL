@@ -110,7 +110,9 @@ class ConfigUpdate(BaseModel):
     quality_routing: bool | None = None
     handwriting_hint: bool | None = None
     confidence_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
-    document_processors: list[DocumentProcessorName] | None = None
+    document_processors: list[DocumentProcessorName] | None = Field(
+        default=None, max_length=100
+    )
 
     @field_validator("api_base", "api_key", "model", mode="before")
     @classmethod
@@ -188,7 +190,9 @@ class ProcessSettings(BaseModel):
     quality_routing: bool
     handwriting_hint: bool = False
     confidence_threshold: float = 0.75
-    document_processors: list[DocumentProcessorName] = Field(default_factory=list)
+    document_processors: list[DocumentProcessorName] = Field(
+        default_factory=list, max_length=100
+    )
     chunk_pages: int | None = Field(default=None, ge=1, le=500)
     # Phase 2 — optional trust-layer settings. The form field arrives
     # either as a JSON-encoded string (multipart upload) or a dict
@@ -213,7 +217,13 @@ class ProcessSettings(BaseModel):
     def validate_pages(cls, value: Any) -> Any:
         if value is None or value == "":
             return None
-        if not isinstance(value, str) or not _PAGE_RANGE_RE.match(value):
+        if not isinstance(value, str):
+            raise ValueError("must be a comma-separated page range such as 1-3,5")
+        if len(value) > 500:
+            raise ValueError(
+                "page range string exceeds maximum length of 500 characters"
+            )
+        if not _PAGE_RANGE_RE.match(value):
             raise ValueError("must be a comma-separated page range such as 1-3,5")
         return value.strip()
 
@@ -260,7 +270,7 @@ class TranslationRequest(BaseModel):
     api_base: str | None = None
     api_key: str | None = None
     model: str | None = None
-    glossary: list[dict[str, object]] | None = None
+    glossary: list[dict[str, object]] | None = Field(default=None, max_length=1000)
     glossary_text: str | None = None
     sliding_window_words: int = Field(default=80, ge=0, le=2000)
     dual_translate: bool = False
@@ -279,7 +289,7 @@ class TranslationRequest(BaseModel):
 class GlossaryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    entries: list[dict[str, object]] | None = None
+    entries: list[dict[str, object]] | None = Field(default=None, max_length=1000)
     text: str | None = None
 
     @field_validator("text", mode="before")
@@ -297,7 +307,7 @@ class TreeTranslationRequest(BaseModel):
     api_base: str | None = None
     api_key: str | None = None
     model: str | None = None
-    glossary: list[dict[str, object]] | None = None
+    glossary: list[dict[str, object]] | None = Field(default=None, max_length=1000)
     dual_translate: bool = False
     channel_id: str | None = None
 
@@ -452,8 +462,8 @@ class GlossaryPreviewResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     count: int = Field(ge=0)
-    conflicts: list[dict[str, Any]] = Field(default_factory=list)
-    enabled_glossaries: list[str] = Field(default_factory=list)
+    conflicts: list[dict[str, Any]] = Field(default_factory=list, max_length=1000)
+    enabled_glossaries: list[str] = Field(default_factory=list, max_length=100)
 
 
 class GlossaryImportJobResponse(BaseModel):
@@ -464,7 +474,7 @@ class GlossaryImportJobResponse(BaseModel):
     format: GlossaryFormat
     name: str
     entry_count: int = Field(ge=0)
-    warnings: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list, max_length=100)
     queued: bool = False
 
 
@@ -674,3 +684,66 @@ class TranscriptionRequest(BaseModel):
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     translate_to: str | None = None
     channel_id: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Provider schemas
+# ---------------------------------------------------------------------------
+
+
+class ProviderFormatEnum(StrEnum):
+    OPENAI_COMPATIBLE = "openai_compatible"
+    ANTHROPIC_COMPATIBLE = "anthropic_compatible"
+    OLLAMA_COMPATIBLE = "ollama_compatible"
+
+
+class ProviderConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    display_name: str
+    format: ProviderFormatEnum
+    api_url: str
+    base_path: str = ""
+    api_key: str | None = None
+    models: list[str] = Field(default_factory=list, max_length=100)
+    headers: dict[str, str] = Field(default_factory=dict)
+    supports_streaming: bool = True
+    requires_auth: bool = True
+    configured: bool = False
+    enabled: bool = True
+
+
+class ProviderTemplate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    display_name: str
+    format: ProviderFormatEnum
+    api_url: str
+    env_key: str | None = None
+    env_host: str | None = None
+    models: list[str] = Field(default_factory=list, max_length=100)
+    requires_auth: bool = True
+
+
+class ActiveProviderUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_id: str
+    model: str | None = None
+
+
+class ProviderCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    display_name: str
+    format: ProviderFormatEnum = ProviderFormatEnum.OPENAI_COMPATIBLE
+    api_url: str
+    base_path: str = ""
+    api_key: str | None = None
+    models: list[str] = Field(default_factory=list, max_length=100)
+    headers: dict[str, str] = Field(default_factory=dict)
+    supports_streaming: bool = True
+    requires_auth: bool = True

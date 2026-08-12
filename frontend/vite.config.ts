@@ -20,13 +20,14 @@ export default defineConfig({
   },
   base: '/static/',
   resolve: {
+    conditions: process.env.VITEST ? ['browser'] : undefined,
     alias: {
       '$lib': path.resolve(__dirname, './src/lib')
     }
   },
   build: {
-    // Output directly to local_deepl package static directory
-    outDir: path.resolve(__dirname, '../src/local_deepl/static'),
+    // Output directly to omniscribe package static directory
+    outDir: path.resolve(__dirname, '../src/omniscribe/static'),
     emptyOutDir: true,
     target: 'esnext',
     // 750 kB catches the actual main-bundle regression (~74 kB) while

@@ -132,22 +132,14 @@ def _parse_grounded_json(
     except json.JSONDecodeError:
         m2 = _BARE_ARRAY.search(raw)
         if not m2:
-            logger.warning(
-                "Grounded bbox JSON parsing failed on page %d: no array "
-                "found in response: %r",
-                page_idx,
-                raw[:200],
+            log_grounded_parse_failure(
+                raw, page_idx, ValueError("no array found in response")
             )
             return []
         try:
             data = json.loads(m2.group(1))
         except json.JSONDecodeError as e:
-            logger.warning(
-                "Grounded bbox JSON parsing failed on page %d: %s — raw=%r",
-                page_idx,
-                e,
-                raw[:200],
-            )
+            log_grounded_parse_failure(raw, page_idx, e)
             return []
 
     if isinstance(data, dict):
@@ -199,9 +191,7 @@ def log_grounded_parse_failure(text: str, page_idx: int, exc: BaseException) -> 
 
     Surfaces a warning when the grounded response payload is not
     parseable, so an operator can spot a regression in the LLM's
-    response shape. Kept separate from :func:`_parse_grounded_json` so
-    callers parsing the same response shape from a different code path
-    get the same observability.
+    response shape.
     """
     logger.warning(
         "Grounded bbox JSON parsing failed on page %d: %s — raw=%r",
@@ -217,5 +207,6 @@ __all__ = [
     "_NON_CONTENT_LABELS",
     "_clamp",
     "_parse_grounded_json",
+    "log_grounded_parse_failure",
     "parse_glm_layout_details",
 ]

@@ -399,23 +399,36 @@ async def update_translation_auth_token(body: AuthTokenUpdate):
 
 @router.get("/api/models")
 async def list_models():
-    """
-    Query the OpenAI-compatible endpoint for available models.
+    """Query available models using the active provider from ProviderManager or configured api_base."""
+    from omniscribe.api.services.provider_manager import get_provider_manager
 
-    Uses the current ``api_base`` from the config store.
-    """
-    if await is_ssrf_target(_config["api_base"]):
+    mgr = get_provider_manager()
+    active_provider = mgr.get_active_provider()
+
+    custom_base = _config.get("api_base")
+    if custom_base and custom_base != active_provider.api_url:
+        if await is_ssrf_target(custom_base):
+            return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
+        try:
+            from openai import AsyncOpenAI
+
+            client = AsyncOpenAI(
+                base_url=custom_base,
+                api_key=_config.get("api_key") or "lm-studio",
+            )
+            response = await client.models.list()
+            model_ids = [m.id for m in response.data] if response.data else []
+            return JSONResponse(content={"models": model_ids})
+        except Exception:
+            logger.exception("Model discovery failed")
+            return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
+
+    if active_provider.api_url and await is_ssrf_target(active_provider.api_url):
         return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
-    try:
-        from openai import AsyncOpenAI
 
-        client = AsyncOpenAI(
-            base_url=_config["api_base"],
-            api_key=_config["api_key"],
-        )
-        response = await client.models.list()
-        model_ids = [m.id for m in response.data] if response.data else []
-        return JSONResponse(content={"models": model_ids})
+    try:
+        models = await mgr.async_list_provider_models(active_provider.id)
+        return JSONResponse(content={"models": models})
     except Exception:
         logger.exception("Model discovery failed")
         return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
@@ -423,8 +436,24 @@ async def list_models():
 
 @router.get("/api/models/ocr")
 async def list_ocr_models():
-    """Model discovery for the OCR namespace (uses ``ocr_api_base``)."""
+    """Model discovery for the OCR namespace (uses ProviderManager or ``ocr_api_base``)."""
+    from omniscribe.api.services.provider_manager import get_provider_manager
+
+    mgr = get_provider_manager()
     config = cast(dict[str, Any], _config)
+    ocr_provider_id = config.get("ocr_provider")
+
+    if ocr_provider_id and mgr.get_provider(ocr_provider_id):
+        provider = mgr.get_provider(ocr_provider_id)
+        if provider and provider.api_url and await is_ssrf_target(provider.api_url):
+            return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
+        try:
+            models = await mgr.async_list_provider_models(ocr_provider_id)
+            return JSONResponse(content={"models": models})
+        except Exception:
+            logger.exception("OCR model discovery failed")
+            return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
+
     api_base = config.get("ocr_api_base") or config["api_base"]
     api_key = config.get("ocr_api_key") or config["api_key"]
     if await is_ssrf_target(api_base):
@@ -443,8 +472,24 @@ async def list_ocr_models():
 
 @router.get("/api/models/translation")
 async def list_translation_models():
-    """Model discovery for the translation namespace (uses ``translation_api_base``)."""
+    """Model discovery for the translation namespace (uses ProviderManager or ``translation_api_base``)."""
+    from omniscribe.api.services.provider_manager import get_provider_manager
+
+    mgr = get_provider_manager()
     config = cast(dict[str, Any], _config)
+    trans_provider_id = config.get("translation_provider")
+
+    if trans_provider_id and mgr.get_provider(trans_provider_id):
+        provider = mgr.get_provider(trans_provider_id)
+        if provider and provider.api_url and await is_ssrf_target(provider.api_url):
+            return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
+        try:
+            models = await mgr.async_list_provider_models(trans_provider_id)
+            return JSONResponse(content={"models": models})
+        except Exception:
+            logger.exception("Translation model discovery failed")
+            return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
+
     api_base = config.get("translation_api_base") or config["api_base"]
     api_key = config.get("translation_api_key") or config["api_key"]
     if await is_ssrf_target(api_base):

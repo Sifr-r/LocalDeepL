@@ -91,9 +91,9 @@ services:
       ALLOW_SSRF_LOCAL: "false"
       OMNISCRIBE_MAX_UPLOAD_MB: "1024"
       OMNISCRIBE_RATE_LIMIT_PER_MIN: "30"
-      LLM_API_BASE: "${LLM_API_BASE:-http://host.docker.internal:1234/v1}"
+      LLM_API_BASE: "${OMNISCRIBE_LLM_API_BASE:-http://host.docker.internal:1234/v1}"
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -132,10 +132,10 @@ require the global token.
 
 To send OCR images to a hosted VLM instead of LM Studio:
 
-1. Set `LLM_API_BASE` to the provider's OpenAI-compatible endpoint
+1. Set `OMNISCRIBE_LLM_API_BASE` to the provider's OpenAI-compatible endpoint
    (e.g. `https://api.openai.com/v1`).
-2. Set `LLM_API_KEY` to your provider key.
-3. Set `LLM_MODEL` to the model ID you have access to (e.g.
+2. Set `OMNISCRIBE_LLM_API_KEY` to your provider key.
+3. Set `OMNISCRIBE_LLM_MODEL` to the model ID you have access to (e.g.
    `gpt-4o-mini`).
 
 The Settings tab also exposes per-service auth tokens so you can
@@ -159,6 +159,26 @@ docker compose --profile async up -d   # adds the celery worker
 Set `REDIS_URL=redis://redis:6379/0` and the worker connects
 automatically. See `compose.yaml` for the full layout.
 
+## Windows Troubleshooting
+
+If you used `install.bat` + `start_app.vbs` and the browser opens
+to a blank page or never opens:
+
+- Check `start_app.log` next to `start_app.vbs`. It has one
+  timestamped line per step (uv pre-check, Docker detect, Redis
+  start, Celery launch, uvicorn poll result).
+- If the log says "uv is not on PATH" — the official uv installer
+  adds uv to your user PATH, but the change only applies to new
+  logon sessions. Log out of Windows and back in, then re-run
+  the Desktop shortcut.
+- If the log says "Docker is not available" — start Docker
+  Desktop. Redis + Celery are skipped, the web server still
+  starts, and only `/api/translate/async` is unavailable.
+- If the log says "Server did not respond within 60s" — open a
+  terminal in the project root and run
+  `uv run --extra web uvicorn src.omniscribe.server:app --port 8000`
+  directly to see uvicorn's traceback.
+
 ## Backup & Recovery
 
 OmniScribe keeps all job artifacts in process memory
@@ -174,7 +194,7 @@ for the protocol.
 
 1. `uv sync` (or `docker compose pull`)
 2. `uv run omniscribe-server` (or `docker compose up -d`)
-3. Visit `/api/health` to confirm the new version
+3. Visit `/health` to confirm the new version
 4. Review the [CHANGELOG](CHANGELOG.md) for breaking changes
 
 The settings tab persists user preferences via `localStorage`, not
@@ -195,9 +215,13 @@ Job artifacts in `/tmp/ocr_*` are removed by the startup sweep
 
 ## See Also
 
+- [README.md](README.md) — feature overview, install, web workspace
+- [CHANGELOG.md](CHANGELOG.md) — version history and breaking changes
 - [SECURITY.md](SECURITY.md) — threat model, hardening checklist,
   vulnerability disclosure
 - [ARCHITECTURE.md](ARCHITECTURE.md) — component map and API
   surface
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var
   reference
+
+_Last updated: 2026-08-12_

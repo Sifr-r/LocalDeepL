@@ -117,22 +117,20 @@ def test_celery_task_raises_value_error_on_missing_artifact():
 
 
 def test_extract_data_robust_json_parsing():
-    """`parse_extraction_json` returns {} on unrecoverable JSON, never raises."""
-    from omniscribe.api.services import ai
+    """`extract_json` returns None on unrecoverable JSON, never raises."""
+    from omniscribe.utils.json_parse import extract_json
 
     # Direct object — happy path
-    assert ai.parse_extraction_json('{"vendor": "Acme"}') == {"vendor": "Acme"}
+    assert extract_json('{"vendor": "Acme"}') == {"vendor": "Acme"}
 
     # Fenced block (```json ... ```) — also happy path
-    assert ai.parse_extraction_json('```json\n{"vendor": "Acme"}\n```') == {
-        "vendor": "Acme"
-    }
+    assert extract_json('```json\n{"vendor": "Acme"}\n```') == {"vendor": "Acme"}
 
     # Embedded object in surrounding prose
-    assert ai.parse_extraction_json('prefix text {"x": 1} suffix') == {"x": 1}
+    assert extract_json('prefix text {"x": 1} suffix') == {"x": 1}
 
-    # Unrecoverable garbage returns {} instead of raising
-    assert ai.parse_extraction_json("not json at all, no brackets here") == {}
+    # Unrecoverable garbage returns None instead of raising
+    assert extract_json("not json at all, no brackets here") is None
 
-    # Top-level array (not a dict) is rejected gracefully
-    assert ai.parse_extraction_json("[1, 2, 3]") == {}
+    # Top-level array is now accepted by the unified parser
+    assert extract_json("[1, 2, 3]") == [1, 2, 3]

@@ -1,1 +1,0 @@
-PyMuPDF (`fitz`) for PDF text extraction, Pillow + ImageDraw for bbox rendering, Rich for console tables, requests + xml.etree.ElementTree for TEI lexicon ingestion, ChromaDB with SentenceTransformer embeddings (`paraphrase-multilingual-MiniLM-L12-v2`) for the optional lexical index, and OpenAI-compatible HTTP clients (default `http://localhost:1234/v1`) for the VLM backends.

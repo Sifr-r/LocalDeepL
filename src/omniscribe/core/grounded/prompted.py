@@ -39,7 +39,10 @@ from omniscribe.core.ocr import (
     _list_loaded_model_ids,
     _model_in_loaded,
 )
-from omniscribe.core.ocr.resilience import CircuitBreaker, is_transient_error
+from omniscribe.core.ocr.resilience import (
+    get_default_circuit_breaker_registry,
+    is_transient_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +163,9 @@ class PromptedGroundedOCR:
         self.retry_base_delay_s = float(
             os.getenv("OMNISCRIBE_LLM_RETRY_BASE_DELAY", "1.0")
         )
-        self.circuit_breaker = CircuitBreaker()
+        self.circuit_breaker = get_default_circuit_breaker_registry().get_or_create(
+            self.api_base, self.model
+        )
 
     async def ensure_model_loaded(self) -> None:
         """Pre-flight check that ``self.model`` is loaded on the server.

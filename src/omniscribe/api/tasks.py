@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
+from typing import Any, cast
 
 from omniscribe.api.celery_app import celery_app
 from omniscribe.core.translation_config import TranslationSettings
@@ -86,9 +87,10 @@ class _CeleryTaskBase:
             loop = asyncio.get_event_loop()
         except RuntimeError:
             loop = None
+        coro = cast(Coroutine[Any, Any, Any], coro_factory())
         if loop is not None and loop.is_running():
-            return loop.create_task(coro_factory())
-        return asyncio.run(coro_factory())
+            return loop.create_task(coro)
+        return asyncio.run(coro)
 
 
 class _TranslationTask(_CeleryTaskBase):
@@ -164,10 +166,11 @@ def process_translation_task(
     from omniscribe.core.translation import run_translation
 
     async def translator_fn(prompt: str, lang: str) -> str:
-        # Re-use run_translation wrapper for now (which is sync inside run_translation,
-        # wait! run_translation uses the graph which is sync).
-        # We can just call run_translation synchronously.
-        return run_translation(
+        # ``run_translation`` is a sync function that runs the compiled
+        # translation graph; offload to a thread to keep the event loop
+        # responsive while it executes.
+        return await asyncio.to_thread(
+            run_translation,
             prompt,
             target_language=lang,
             settings=_current_translation_settings(),

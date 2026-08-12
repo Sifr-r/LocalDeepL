@@ -1,6 +1,7 @@
 """Typed API request and response schemas."""
 
 from .requests import (
+    ActiveProviderUpdate,
     AuthTokenUpdate,
     ConfigUpdate,
     DenseMode,
@@ -12,6 +13,10 @@ from .requests import (
     OcrConfigUpdate,
     PipelineMode,
     ProcessSettings,
+    ProviderConfig,
+    ProviderCreateRequest,
+    ProviderFormatEnum,
+    ProviderTemplate,
     SpellcheckMode,
     TranscriptionConfigUpdate,
     TranscriptionEngineType,
@@ -27,6 +32,7 @@ from .responses import (
 )
 
 __all__ = [
+    "ActiveProviderUpdate",
     "AuthTokenUpdate",
     "ConfigUpdate",
     "DenseMode",
@@ -39,6 +45,10 @@ __all__ = [
     "OcrConfigUpdate",
     "PipelineMode",
     "ProcessSettings",
+    "ProviderConfig",
+    "ProviderCreateRequest",
+    "ProviderFormatEnum",
+    "ProviderTemplate",
     "SpellcheckMode",
     "TranscriptionConfigResponse",
     "TranscriptionConfigUpdate",

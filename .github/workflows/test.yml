@@ -49,4 +49,16 @@ jobs:
         run: uv run mypy src
 
       - name: Run fast tests
-        run: uv run pytest -m "not slow" -v
+        run: uv run pytest -m "not slow" --cov=src/omniscribe --cov-report=term-missing --cov-report=xml -v
+
+      - name: Run pip-audit vulnerability check
+        run: uv run pip-audit
+
+      - name: Generate CycloneDX SBOM
+        run: uv run cyclonedx-py environment --output-format json --output-file sbom.json
+
+      - name: Upload CycloneDX SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-py${{ matrix.python }}.json
+          path: sbom.json

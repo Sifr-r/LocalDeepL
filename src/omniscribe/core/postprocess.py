@@ -295,9 +295,7 @@ class DictionaryPostProcessor:
             )
             return True
         except Exception as e:
-            logger.warning(
-                "Failed to load custom dictionary %s: %s", dict_path, e
-            )
+            logger.warning("Failed to load custom dictionary %s: %s", dict_path, e)
         return False
 
     async def _try_builtin_dict(self) -> None:
@@ -347,45 +345,46 @@ class DictionaryPostProcessor:
             logger.error(f"Error compiling wordlist {wordlist_path}: {e}")
             return False
 
+    def _replace_word(self, match: re.Match[str]) -> str:
+        spell = self.spell
+        word = match.group(0)
+
+        # Clean Unicode Nonspacing Marks (Harakat, stress marks) to check if purely alphabetic
+        cleaned = "".join(c for c in word if unicodedata.category(c) != "Mn")
+        if not cleaned.isalpha() or spell is None:
+            return word
+
+        try:
+            # If word is already known in dictionary, leave it untouched
+            # pyspellchecker internally lowercases all inputs for known check
+            if spell.known([word]):
+                return word
+
+            # Get spelling candidates at edit distance 1
+            candidates = spell.candidates(word)
+        except Exception as exc:
+            # Spellcheck is advisory; one bad word must not abort the page.
+            # Log so an operator can spot a broken underlying dictionary,
+            # but fall through and leave the original word untouched.
+            logger.warning("Spellcheck failed for word %r: %s", word, exc)
+            return word
+
+        # Safe auto-correction: only replace if there is exactly 1 highly confident candidate
+        if candidates and len(candidates) == 1:
+            corrected = next(iter(candidates))
+
+            # Match original casing (Title case, UPPERCASE, lowercase)
+            if word.isupper():
+                return corrected.upper()
+            elif word.istitle():
+                return corrected.title()
+            return corrected
+        return word
+
     def correct_text(self, text: str) -> str:
         spell = self.spell
         if spell is None:
             return text
 
-        def replace_word(match: re.Match[str]) -> str:
-            word = match.group(0)
-
-            # Clean Unicode Nonspacing Marks (Harakat, stress marks) to check if purely alphabetic
-            cleaned = "".join(c for c in word if unicodedata.category(c) != "Mn")
-            if not cleaned.isalpha():
-                return word
-
-            try:
-                # If word is already known in dictionary, leave it untouched
-                # pyspellchecker internally lowercases all inputs for known check
-                if spell.known([word]):
-                    return word
-
-                # Get spelling candidates at edit distance 1
-                candidates = spell.candidates(word)
-            except Exception as exc:
-                # Spellcheck is advisory; one bad word must not abort the page.
-                # Log so an operator can spot a broken underlying dictionary,
-                # but fall through and leave the original word untouched.
-                logger.warning("Spellcheck failed for word %r: %s", word, exc)
-                return word
-
-            # Safe auto-correction: only replace if there is exactly 1 highly confident candidate
-            if candidates and len(candidates) == 1:
-                corrected = next(iter(candidates))
-
-                # Match original casing (Title case, UPPERCASE, lowercase)
-                if word.isupper():
-                    return corrected.upper()
-                elif word.istitle():
-                    return corrected.title()
-                return corrected
-            return word
-
         # Match word boundaries supporting Arabic, Latin, and Cyrillic character classes
-        return re.sub(r"[^\W\d_]+", replace_word, text)
+        return re.sub(r"[^\W\d_]+", self._replace_word, text)

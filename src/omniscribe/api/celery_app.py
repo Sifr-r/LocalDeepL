@@ -61,7 +61,7 @@ class _MissingCeleryTask:
         # attributes that tests patch on the task itself are visible to
         # helpers like ``_CeleryTaskBase.emit_progress``.
         instance = cls()
-        instance.update_state = self.update_state  # type: ignore[attr-defined]
+        instance.update_state = self.update_state
         return instance
 
     def run(self, *args: Any, **kwargs: Any) -> Any:

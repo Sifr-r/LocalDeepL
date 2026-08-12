@@ -19,15 +19,17 @@ Real OCR requires an OpenAI-compatible VLM endpoint. The default is LM Studio at
 uv run pytest
 uv run pytest -m "not slow"
 uv run pytest -m slow
+uv run pytest -m live_llm
 uv run pytest tests/test_aligner.py -v
 uv run ruff check src tests
 uv run ruff format src tests --check
 uv run mypy src
+cd frontend && npm run check && npm test && npm run build
 ```
 
 - `pytest-asyncio` uses auto mode. Write `async def test_...` without decorators.
 - Slow tests load Surya and may download its model on the first run.
-- Markers are `slow` and `live_llm`.
+- Markers are `slow` and `live_llm`. Run `live_llm` tests manually with `uv run pytest -m live_llm` against a local LM Studio instance (`http://localhost:1234/v1`).
 
 ## Conventions
 
@@ -125,7 +127,7 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 - **VLM resilience**: every LLM call retries transient errors (429/5xx/connection resets) with exponential backoff, and a per-request circuit breaker fails fast after `OMNISCRIBE_CB_FAILURE_THRESHOLD` (default 5) consecutive failures. Tunables: `OMNISCRIBE_LLM_MAX_RETRIES` (default 2), `OMNISCRIBE_LLM_RETRY_BASE_DELAY` (default 1.0s), `OMNISCRIBE_CB_COOLDOWN` (default 30s).
 - **Model pre-flight**: each `/api/process` request verifies the configured model is actually loaded on the VLM server (`GET /v1/models`) before paying for conversion/detection — one extra HTTP round-trip per request, guarding against LM Studio's silent model fallback (issue #7).
 - Web runtime settings are initialized in `api/routers/config.py`.
-- **Windows quick-start**: run `install.bat` to install `uv`, sync the web extra, and create Desktop / Start-Menu shortcuts. `start_app.vbs` boots Redis + Celery + uvicorn hidden and opens the browser. `stop_app.bat` terminates them. `test_ui.py` is the headless Playwright smoke test against `examples/dense.pdf`.
+- **Windows quick-start**: run `install.bat` to install `uv`, sync the web extra, and create Desktop / Start-Menu shortcuts. `start_app.vbs` boots Redis (via Docker) + Celery + uvicorn hidden and opens the browser; it writes a timestamped append log to `start_app.log` next to itself. `stop_app.bat` terminates the uvicorn + Celery processes. `test_ui.py` is the headless Playwright smoke test against `examples/dense.pdf`.
 - **Developer scripts** live in `scripts/`. The most useful for OCR quality work are `scripts/confidence_eval.py` (hybrid + grounded vs the `examples/*.pdf` fixtures) and `scripts/confidence_image.py` (single-image confidence). The rest are debug/inspection/visualization tools.
 - **Docker**: `Dockerfile` builds a `python:3.12-slim` runtime with the `web` and `async-translation` extras. `compose.yaml` runs `api` + `redis` by default; add `--profile async` to also start a Celery worker. Image exposes port 8000; bind `LLM_API_BASE` to `http://host.docker.internal:1234/v1` to talk to a host-side LM Studio.
 - **Pre-commit**: `.pre-commit-config.yaml` runs ruff (check + format) and `uv-lock` on every commit. Enable with `uv tool run pre-commit install` after cloning.
@@ -137,6 +139,7 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 - Job/artifact state is in-memory only (`api/routers/state.py` singletons) — restarts lose history; no horizontal scaling.
 - `pages_structured` legacy dict is still the working format inside `HybridEngine`; `DocumentResult` is built at finalize. The output boundary now supports the lossless rich path (`DocumentResultWriter`), but intermediate stages still convert.
 - `dense.pdf` and `notes.pdf` ground-truth fixtures are bootstrapped from hybrid output (regression baseline, not absolute quality).
+- `surya-ocr 0.17.x` imports `requests` in `surya/common/s3.py` without declaring it. `pyproject.toml` includes a `requests>=2.31` workaround dependency; track for cleanup once `surya-ocr` updates upstream.
 
 ## Product-Planning Notes (scout plans, not code)
 
@@ -161,3 +164,13 @@ Per-track changelogs (project-specific findings that should
 survive into the post-scout roadmap) live in
 `.mavis/plans/scout/changelogs/`. Generic research patterns
 (fan-out, brief-correction) belong in agent memory, not here.
+
+## See Also
+
+- [README.md](README.md) — feature overview, install, web workspace
+- [CHANGELOG.md](CHANGELOG.md) — version history and breaking changes
+- [ARCHITECTURE.md](ARCHITECTURE.md) — pipeline, component map, and full API surface
+- [DEPLOYMENT.md](DEPLOYMENT.md) — local / LAN / public-internet deployment profiles
+- [SECURITY.md](SECURITY.md) — threat model, hardening checklist, vulnerability disclosure
+
+_Last updated: 2026-08-12_

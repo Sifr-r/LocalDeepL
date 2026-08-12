@@ -1,9 +1,0 @@
-schema_version: 1
-module_path: tests
-title: Pytest Test Suite for LocalDeepL Pipeline & Workflows
-scope:
-    - tests/
-source_files: []
-depends_on: []
-related_to:
-    - path: scripts_and_examples

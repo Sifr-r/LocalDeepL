@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import base64
-import io
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
 from PIL import Image, ImageOps
+
+from omniscribe.core.image_utils import decode_base64_image, encode_image_base64
 
 if TYPE_CHECKING:
     import numpy as np
@@ -127,7 +127,7 @@ class LocalPagePreprocessor:
         processed: dict[int, str] = {}
         metadata: dict[int, dict[str, object]] = {}
         for page_index, image_b64 in images.items():
-            image = _decode_image(image_b64)
+            image = decode_base64_image(image_b64)
             # `operations` is a list of strings (operation names in the order
             # they ran). The dict's value type is `object`, so we keep a
             # separate typed binding to give the appends a stable `list[str]`
@@ -160,20 +160,10 @@ class LocalPagePreprocessor:
                 page_meta["deskew"] = {"angle_degrees": angle}
                 operations.append("deskew")
 
-            processed[page_index] = _encode_image(Image.fromarray(array))
+            processed[page_index] = encode_image_base64(Image.fromarray(array))
             metadata[page_index] = page_meta
 
         return PagePreprocessingResult(images=processed, metadata=metadata)
-
-
-def _decode_image(image_b64: str) -> Image.Image:
-    return Image.open(io.BytesIO(base64.b64decode(image_b64))).convert("RGB")
-
-
-def _encode_image(image: Image.Image) -> str:
-    buf = io.BytesIO()
-    image.save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
 def _correct_orientation(image: Image.Image) -> tuple[Image.Image, dict[str, object]]:

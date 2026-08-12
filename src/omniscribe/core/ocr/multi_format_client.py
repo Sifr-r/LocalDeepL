@@ -1,0 +1,236 @@
+"""Multi-format asynchronous LLM completion dispatcher.
+
+Supports openai_compatible, anthropic_compatible, and ollama_compatible formats
+with retry, timeout, and contextual domain error handling.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+from typing import TYPE_CHECKING, Any
+
+import httpx
+
+if TYPE_CHECKING:
+    from omniscribe.api.schemas import ProviderConfig
+
+from omniscribe.core.ocr.exceptions import LLMCallError
+from omniscribe.core.ocr.resilience import RETRYABLE_STATUS_CODES, is_transient_error
+
+logger = logging.getLogger(__name__)
+
+
+async def complete_vlm_prompt(
+    provider_config: ProviderConfig,
+    prompt: str,
+    image_base64: str | None = None,
+    model: str | None = None,
+    temperature: float = 0.0,
+    max_tokens: int = 4096,
+) -> str:
+    """Execute asynchronous LLM completion based on provider configuration format.
+
+    Args:
+        provider_config: Configuration for target LLM provider.
+        prompt: Text prompt / instruction.
+        image_base64: Optional base64-encoded image string.
+        model: Model identifier override.
+        temperature: Generation temperature (default 0.0).
+        max_tokens: Maximum tokens to generate (default 4096).
+
+    Returns:
+        Generated text completion.
+
+    Raises:
+        LLMCallError: On non-200 responses, permanent API errors, or unrecoverable transient errors.
+    """
+    from omniscribe.api.schemas import ProviderFormatEnum
+
+    fmt = (
+        provider_config.format.value
+        if isinstance(provider_config.format, ProviderFormatEnum)
+        else str(provider_config.format)
+    )
+
+    target_model = (
+        model.strip()
+        if model and model.strip()
+        else (provider_config.models[0] if provider_config.models else "gpt-4o")
+    )
+
+    api_url = provider_config.api_url.rstrip("/")
+    if provider_config.base_path:
+        b_path = provider_config.base_path.strip("/")
+        if b_path:
+            api_url = f"{api_url}/{b_path}"
+
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    headers.update(provider_config.headers)
+
+    if fmt == ProviderFormatEnum.OPENAI_COMPATIBLE.value:
+        if api_url.endswith("/chat/completions"):
+            endpoint = api_url
+        elif api_url.endswith("/v1"):
+            endpoint = f"{api_url}/chat/completions"
+        else:
+            endpoint = f"{api_url}/v1/chat/completions"
+
+        if provider_config.api_key and "Authorization" not in headers:
+            headers["Authorization"] = f"Bearer {provider_config.api_key}"
+
+        if image_base64:
+            content: Any = [
+                {"type": "text", "text": prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"},
+                },
+            ]
+        else:
+            content = prompt
+
+        payload: dict[str, Any] = {
+            "model": target_model,
+            "messages": [{"role": "user", "content": content}],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+
+    elif fmt == ProviderFormatEnum.ANTHROPIC_COMPATIBLE.value:
+        if api_url.endswith("/v1/messages") or api_url.endswith("/messages"):
+            endpoint = api_url
+        elif api_url.endswith("/v1"):
+            endpoint = f"{api_url}/messages"
+        else:
+            endpoint = f"{api_url}/v1/messages"
+
+        headers["x-api-key"] = provider_config.api_key or ""
+        headers["anthropic-version"] = "2023-06-01"
+
+        if image_base64:
+            anthropic_content: list[dict[str, Any]] = [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": image_base64,
+                    },
+                },
+                {"type": "text", "text": prompt},
+            ]
+        else:
+            anthropic_content = [{"type": "text", "text": prompt}]
+
+        payload = {
+            "model": target_model,
+            "messages": [{"role": "user", "content": anthropic_content}],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+
+    elif fmt == ProviderFormatEnum.OLLAMA_COMPATIBLE.value:
+        endpoint = api_url if api_url.endswith("/api/chat") else f"{api_url}/api/chat"
+
+        if provider_config.api_key and "Authorization" not in headers:
+            headers["Authorization"] = f"Bearer {provider_config.api_key}"
+
+        user_msg: dict[str, Any] = {"role": "user", "content": prompt}
+        if image_base64:
+            user_msg["images"] = [image_base64]
+
+        payload = {
+            "model": target_model,
+            "messages": [user_msg],
+            "stream": False,
+            "options": {"temperature": temperature},
+        }
+
+    else:
+        raise LLMCallError(f"Unsupported provider format: '{provider_config.format}'")
+
+    max_retries = int(os.getenv("OMNISCRIBE_LLM_MAX_RETRIES", "2"))
+    retry_base_delay = float(os.getenv("OMNISCRIBE_LLM_RETRY_BASE_DELAY", "1.0"))
+
+    last_error: Exception | None = None
+    for attempt in range(1, max_retries + 2):
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(endpoint, json=payload, headers=headers)
+
+            if resp.status_code == 200:
+                data = resp.json()
+                if fmt == ProviderFormatEnum.OPENAI_COMPATIBLE.value:
+                    choices = data.get("choices", [])
+                    if choices and isinstance(choices, list):
+                        msg = choices[0].get("message", {})
+                        if isinstance(msg, dict):
+                            val = msg.get("content", "")
+                            return val if isinstance(val, str) else str(val or "")
+                    return ""
+
+                elif fmt == ProviderFormatEnum.ANTHROPIC_COMPATIBLE.value:
+                    content_list = data.get("content", [])
+                    if content_list and isinstance(content_list, list):
+                        first_item = content_list[0]
+                        if isinstance(first_item, dict):
+                            val = first_item.get("text", "")
+                            return val if isinstance(val, str) else str(val or "")
+                    return ""
+
+                elif fmt == ProviderFormatEnum.OLLAMA_COMPATIBLE.value:
+                    msg_obj = data.get("message", {})
+                    if isinstance(msg_obj, dict):
+                        val = msg_obj.get("content", "")
+                        return val if isinstance(val, str) else str(val or "")
+                    return ""
+
+            # Non-200 response handling
+            err_msg = (
+                f"Provider '{provider_config.id}' ({fmt}) returned HTTP status {resp.status_code}: "
+                f"{resp.text[:500]}"
+            )
+            if resp.status_code in RETRYABLE_STATUS_CODES and attempt <= max_retries:
+                logger.warning(
+                    "Transient HTTP %d from provider '%s' (attempt %d/%d), retrying in %.1fs...",
+                    resp.status_code,
+                    provider_config.id,
+                    attempt,
+                    max_retries + 1,
+                    retry_base_delay * (2 ** (attempt - 1)),
+                )
+                await asyncio.sleep(retry_base_delay * (2 ** (attempt - 1)))
+                continue
+
+            raise LLMCallError(err_msg)
+
+        except Exception as exc:
+            if isinstance(exc, LLMCallError):
+                raise exc
+            if is_transient_error(exc) and attempt <= max_retries:
+                logger.warning(
+                    "Transient transport error calling provider '%s' (attempt %d/%d): %s",
+                    provider_config.id,
+                    attempt,
+                    max_retries + 1,
+                    exc,
+                )
+                last_error = exc
+                await asyncio.sleep(retry_base_delay * (2 ** (attempt - 1)))
+                continue
+
+            raise LLMCallError(
+                f"VLM call failed for provider '{provider_config.id}' ({fmt}): {exc}"
+            ) from exc
+
+    if last_error:
+        raise LLMCallError(
+            f"VLM call failed for provider '{provider_config.id}' after {max_retries + 1} attempts: {last_error}"
+        ) from last_error
+
+    raise LLMCallError(f"VLM call failed for provider '{provider_config.id}'")
+
+
+__all__ = ["complete_vlm_prompt"]

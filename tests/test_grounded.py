@@ -28,6 +28,7 @@ from omniscribe.core.grounded import (
     PromptedGroundedOCR,
     _parse_grounded_json,
     _rasterize_to_jpeg_pages,
+    log_grounded_parse_failure,
     parse_glm_layout_details,
 )
 from omniscribe.core.ocr import LLMCallError, ModelNotLoadedError
@@ -483,6 +484,11 @@ class TestPromptedGroundedParser:
         assert _parse_grounded_json("123", 0, 100, 100) == []
         assert _parse_grounded_json("true", 0, 100, 100) == []
         assert _parse_grounded_json('"just a string"', 0, 100, 100) == []
+
+    def test_log_grounded_parse_failure_emits_warning(self, caplog):
+        with caplog.at_level("WARNING"):
+            log_grounded_parse_failure("invalid raw json", 1, ValueError("test err"))
+        assert "Grounded bbox JSON parsing failed on page 1: test err" in caplog.text
 
 
 class TestPromptedGroundedEnsureModelLoaded:

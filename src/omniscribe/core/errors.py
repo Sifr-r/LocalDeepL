@@ -277,7 +277,10 @@ def _redact(value: Any) -> Any:
     avoid putting secrets in ``details``. The denylist is a backstop.
     """
     if isinstance(value, dict):
-        return {k: ("***" if k.lower() in _REDACT_KEYS else _redact(v)) for k, v in value.items()}
+        return {
+            k: ("***" if k.lower() in _REDACT_KEYS else _redact(v))
+            for k, v in value.items()
+        }
     if isinstance(value, (list, tuple)):
         return [_redact(v) for v in value]
     return value
