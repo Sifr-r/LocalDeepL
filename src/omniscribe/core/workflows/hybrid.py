@@ -4,7 +4,7 @@ import asyncio
 import base64
 import logging
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, MutableMapping, Sequence
 from typing import TYPE_CHECKING
 
 from PIL import Image
@@ -45,14 +45,29 @@ logger = logging.getLogger(__name__)
 
 
 def _decode_chunk_bytes(
-    images_dict: Mapping[int, str], chunk_pages: Sequence[int]
+    images_dict: Mapping[int, str],
+    chunk_pages: Sequence[int],
+    decoded_cache: MutableMapping[int, Image.Image] | None = None,
 ) -> list[bytes]:
     """Decode a batch of base64 page images to bytes (synchronous helper).
 
     Runs inside ``asyncio.to_thread`` so the CPU-bound decode does not block the
     event loop. See refactor §1.3 in ``docs/superpowers/specs/deep_refactor_report.md``.
+
+    When ``decoded_cache`` is provided, also populates it with a ``PIL.Image``
+    per page so downstream stages (``_ocr_per_box``, ``_refine_uncertain``)
+    can skip a second base64 → image decode. The cache is updated in-place
+    alongside the returned bytes — same thread, same iteration, no extra work.
+    See refactor §1.2 (per-page decode cache).
     """
-    return [base64.b64decode(images_dict[p]) for p in chunk_pages]
+    result: list[bytes] = []
+    for p in chunk_pages:
+        b64 = images_dict[p]
+        raw = base64.b64decode(b64)
+        result.append(raw)
+        if decoded_cache is not None:
+            decoded_cache[p] = _decode_page_image(b64)
+    return result
 
 
 class HybridEngine(EngineBase):
@@ -82,6 +97,24 @@ class HybridEngine(EngineBase):
         self.ocr_processor = ocr_processor
         self.pdf_handler = pdf_handler
         self.page_preprocessor = page_preprocessor
+        # Phase 1.2 (per-page decode cache) — populated by `_detect_layout`
+        # via `_decode_chunk_bytes`, consumed by `_ocr_per_box` (via the
+        # `page_image` parameter it already accepts) and `_refine_uncertain`.
+        # Cleared at the top of every ``execute`` so per-run state never
+        # leaks across requests. See refactor §1.2 in
+        # ``docs/superpowers/specs/deep_refactor_report.md``.
+        self._decoded_cache: dict[int, Image.Image] = {}
+
+    def _reset_run_state(self) -> None:
+        """Clear run-scoped state. Call at the top of every ``execute``.
+
+        Extends :meth:`EngineBase._reset_run_state` to also drop the
+        per-page decoded-image cache (see __init__ docstring; refactor
+        §1.2). The cache can hold every page in a 1000-page PDF as a
+        PIL.Image, so resetting it is mandatory between requests.
+        """
+        super()._reset_run_state()
+        self._decoded_cache = {}
 
     async def execute(
         self,
@@ -300,9 +333,12 @@ class HybridEngine(EngineBase):
             chunk_pages = page_nums[i : i + DETECT_CHUNK_SIZE]
             # Decode base64 inside the worker thread alongside Surya inference
             # so neither the list comp nor the (possibly large) image bytes
-            # block the asyncio event loop. (Refactor §1.3.)
+            # block the asyncio event loop. (Refactor §1.3.) The cache write
+            # below populates ``self._decoded_cache`` with a ``PIL.Image`` per
+            # page so ``_ocr_per_box`` / ``_refine_uncertain`` can skip a
+            # second decode. (Refactor §1.2.)
             chunk_bytes = await asyncio.to_thread(
-                _decode_chunk_bytes, images_dict, chunk_pages
+                _decode_chunk_bytes, images_dict, chunk_pages, self._decoded_cache
             )
             chunk_boxes = await asyncio.to_thread(
                 self.aligner.get_detected_boxes_batch, chunk_bytes
@@ -363,6 +399,12 @@ class HybridEngine(EngineBase):
         ) -> tuple[int, PageBoxes, Exception | None]:
             try:
                 if p_num in per_box_pages:
+                    # Refactor §1.2: reuse the PIL.Image decoded during
+                    # layout detection instead of re-decoding in the worker
+                    # thread. Falls back to ``None`` (and the existing
+                    # in-worker decode) when ``_detect_layout`` was bypassed
+                    # (e.g. in tests that call ``_ocr_pages`` directly).
+                    cached_image = self._decoded_cache.get(p_num)
                     aligned = await self._ocr_per_box(
                         images_dict[p_num],
                         pages_structured[p_num],
@@ -370,6 +412,7 @@ class HybridEngine(EngineBase):
                         self_correction,
                         binarize,
                         dual_engine,
+                        page_image=cached_image,
                     )
                     return p_num, aligned, None
                 async with semaphore:
@@ -626,8 +669,14 @@ class HybridEngine(EngineBase):
         page_images: dict[int, Image.Image] = {}
         pages_needed = {p_num for p_num, _, _ in targets}
         for p_num in pages_needed:
-            page_images[p_num] = await asyncio.to_thread(
-                _decode_page_image, images_dict[p_num]
+            # Refactor §1.2: reuse the PIL.Image decoded during layout
+            # detection (or OCR per-box) when available; otherwise fall
+            # back to the original per-call decode in a worker thread.
+            cached = self._decoded_cache.get(p_num)
+            page_images[p_num] = (
+                cached
+                if cached is not None
+                else await asyncio.to_thread(_decode_page_image, images_dict[p_num])
             )
 
         async def refine_one(p_num: int, idx: int, bbox: BBox) -> tuple[int, int, str]:
