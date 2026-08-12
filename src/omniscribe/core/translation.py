@@ -163,9 +163,14 @@ async def translate_node(state: TranslationState) -> dict[str, str | int]:
       and dates from :class:`omniscribe.core.entity_memory.EntityMemory`.
     - ``sliding_window``: a tail of the previous translation, used as
       auxiliary consistency context.
-    """
-    from openai import AsyncOpenAI
 
+    Routes the LLM call through :func:`omniscribe.core.llm_client.call_llm`
+    (same dispatcher as ``evaluate_node`` and ``api.services.ai._complete_text``)
+    so retry / backoff / circuit-breaker behavior stays consistent across
+    every code path — see refactor §2.2. Errors are surfaced as the
+    ``[Translation Error: ...]`` prefix that ``evaluate_node`` already
+    short-circuits on (``str.startswith('[Translation Error')``).
+    """
     settings = _state_settings(state)
 
     prompt_parts = [
@@ -200,13 +205,13 @@ async def translate_node(state: TranslationState) -> dict[str, str | int]:
     prompt = "".join(prompt_parts)
 
     try:
-        client = AsyncOpenAI(base_url=settings.api_base, api_key=settings.api_key)
-        response = await client.chat.completions.create(
+        translated = await call_llm(
             model=settings.model,
+            api_base=settings.api_base,
+            api_key=settings.api_key,
             temperature=0.3,
             messages=[{"role": "user", "content": prompt}],
         )
-        translated = response.choices[0].message.content or ""
     except Exception as e:
         translated = f"[Translation Error: {e}]"
 

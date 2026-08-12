@@ -583,36 +583,11 @@ async def test_translate_node_includes_glossary_and_memory(monkeypatch):
 
     captured: dict[str, object] = {}
 
-    class _Message:
-        def __init__(self, content: str) -> None:
-            self.content = content
+    async def fake_call_llm(**kwargs):
+        captured["messages"] = kwargs.get("messages")
+        return "translated"
 
-    class _Choice:
-        def __init__(self, content: str) -> None:
-            self.message = _Message(content)
-
-    class _FakeResponse:
-        def __init__(self, content: str) -> None:
-            self.choices = [_Choice(content)]
-
-    def fake_completion(*args, **kwargs):
-        msgs = kwargs.get("messages")
-        if isinstance(msgs, list) and msgs and isinstance(msgs[0], dict):
-            captured["prompt"] = msgs[0]["content"]
-        return _FakeResponse("translated")
-
-    # Patch the AsyncOpenAI client used inside translate_node.
-    class _FakeCompletions:
-        async def create(self, **kwargs):
-            return fake_completion(**kwargs)
-
-    class _FakeChat:
-        completions = _FakeCompletions()
-
-    class _FakeClient:
-        chat = _FakeChat()
-
-    monkeypatch.setattr("openai.AsyncOpenAI", lambda **kw: _FakeClient())
+    monkeypatch.setattr(translation_mod, "call_llm", fake_call_llm)
 
     state = {
         "source_chunk": "Bonjour le monde",
@@ -623,7 +598,9 @@ async def test_translate_node_includes_glossary_and_memory(monkeypatch):
     }
     out = await translation_mod.translate_node(state)
     assert out["translated_chunk"] == "translated", out
-    prompt = captured.get("prompt", "")
+    messages = captured.get("messages")
+    assert isinstance(messages, list) and messages and isinstance(messages[0], dict)
+    prompt = messages[0]["content"]
     assert "GLOSSARY: Bonjour = Hello" in prompt
     assert "NAMES: Paris" in prompt
     assert "PREVIOUS CONTEXT" in prompt

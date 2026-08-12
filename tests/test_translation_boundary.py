@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from types import SimpleNamespace
 
 from omniscribe.core.translation_config import TranslationSettings
 
@@ -87,24 +86,22 @@ def test_optional_extras_split_chromadb_into_memory():
 
 
 async def test_translate_node_uses_injected_settings(monkeypatch):
+    """translate_node routes through call_llm (refactor §2.2 — unify LLM dispatch).
+
+    Pre-fix, translate_node instantiated AsyncOpenAI directly and bypassed the
+    shared ``call_llm`` wrapper, so it had no retry/backoff and was a divergent
+    fifth call path. After the fix it must go through ``call_llm`` like
+    ``evaluate_node`` / ``api.services.ai._complete_text`` already do.
+    """
     import omniscribe.core.translation as translation
 
-    captured = {}
+    captured: dict[str, object] = {}
 
-    class _FakeCompletions:
-        async def create(self, **kwargs):
-            captured.update(kwargs)
-            return SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(content="Bonjour"))]
-            )
+    async def fake_call_llm(**kwargs):
+        captured.update(kwargs)
+        return "Bonjour"
 
-    class _FakeChat:
-        completions = _FakeCompletions()
-
-    class _FakeClient:
-        chat = _FakeChat()
-
-    monkeypatch.setattr("openai.AsyncOpenAI", lambda **kw: _FakeClient())
+    monkeypatch.setattr(translation, "call_llm", fake_call_llm)
 
     state = {
         "source_chunk": "Hello",
@@ -125,3 +122,44 @@ async def test_translate_node_uses_injected_settings(monkeypatch):
 
     assert result["translated_chunk"] == "Bonjour"
     assert captured["model"] == "openai/test-model"
+    assert captured["api_base"] == "https://example.test/v1"
+    assert captured["api_key"] == "test-key"
+    assert captured["temperature"] == 0.3
+    msgs = captured["messages"]
+    assert isinstance(msgs, list) and msgs and isinstance(msgs[0], dict)
+    assert "SOURCE TEXT:" in msgs[0]["content"]
+
+
+async def test_translate_node_preserves_error_prefix_on_call_llm_failure(monkeypatch):
+    """Refactor §2.2 — the ``[Translation Error: ...]`` prefix contract is preserved.
+
+    ``evaluate_node`` short-circuits on the ``[Translation Error`` substring
+    (line 239 of ``core/translation.py``), so a switch from ``AsyncOpenAI`` to
+    ``call_llm`` must keep producing that prefix when the LLM raises.
+    """
+    import omniscribe.core.translation as translation
+
+    async def boom(**_kwargs):
+        raise RuntimeError("upstream gone")
+
+    monkeypatch.setattr(translation, "call_llm", boom)
+
+    state = {
+        "source_chunk": "Hello",
+        "target_language": "French",
+        "rag_context": [],
+        "translated_chunk": "",
+        "evaluation_score": 1.0,
+        "feedback": "",
+        "attempts": 0,
+        "settings": TranslationSettings(
+            api_base="https://example.test/v1",
+            api_key="test-key",
+            model="openai/test-model",
+        ),
+    }
+
+    result = await translation.translate_node(state)  # type: ignore[arg-type]
+    translated = result["translated_chunk"]
+    assert translated.startswith("[Translation Error")
+    assert "upstream gone" in translated
