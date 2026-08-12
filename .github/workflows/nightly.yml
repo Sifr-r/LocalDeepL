@@ -41,7 +41,7 @@ jobs:
         run: uv sync --extra web --extra async-translation
 
       - name: Cache HF Hub snapshot
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/huggingface
@@ -96,7 +96,7 @@ jobs:
         run: uv sync --extra web --extra async-translation
 
       - name: Cache HF Hub snapshot
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/huggingface
@@ -105,7 +105,7 @@ jobs:
             hf-surya-
 
       - name: Cache regression datasets
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             tests/fixtures/datasets/ocr_quality_full.json
