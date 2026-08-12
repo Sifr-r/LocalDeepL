@@ -101,7 +101,7 @@ transcription = [
 glossary = [
     "openpyxl>=3.1.0",        # XLSX support (CSV/TSV use stdlib)
     "sqlalchemy>=2.0.0",       # SQL pair-table reader
-    "gitpython>=3.1.0",        # Git glossary file fetcher
+    "gitpython>=3.1.58",        # Git glossary file fetcher
     "defusedxml>=0.7.1",       # Safe XML parsing for XLIFF/TBX/TMX
     "chardet>=5.2.0",          # Encoding detection fallback
 ]
