@@ -27,6 +27,7 @@ import tempfile
 import time
 import uuid
 from collections.abc import Sequence
+from concurrent.futures import Future as ConcurrentFuture
 from http import HTTPStatus
 from typing import cast
 
@@ -72,6 +73,20 @@ from .websocket import manager
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+async def _fire_and_forget_awaitable() -> None:
+    """Empty coroutine returned by the thread-bridge progress callbacks.
+
+    The OCR engine's :func:`omniscribe.core.workflows.base.notify` does
+    ``await cb(...)`` so each ``progress`` / ``on_warning`` callback must
+    return an awaitable. The thread-safe bridges in :func:`_run_ocr_pipeline`
+    fire ``manager.send_progress`` onto the main loop and return this
+    coroutine so the engine's ``await`` resolves immediately. That keeps the
+    worker thread fully decoupled from the main loop's responsiveness — see
+    refactor §3.1 in ``docs/superpowers/specs/deep_refactor_report.md``.
+    """
+    return None
 
 
 async def _create_document_metadata_artifact(
@@ -150,6 +165,14 @@ async def _run_ocr_pipeline(
     (sync route builds a file response, chunked runner merges artifacts
     and emits per-chunk WS frames). No upload validation, file response,
     or job history — those live in :func:`process_pdf`.
+
+    The ``await pipeline.run(...)`` call is wrapped in
+    :func:`asyncio.to_thread` so the uvicorn event loop is released while
+    the (CPU-bound) pipeline executes on a worker thread. Progress and
+    warning callbacks are bridged to the main loop via
+    :func:`asyncio.run_coroutine_threadsafe` so WebSocket frames still go
+    out in the order the engine emits them. See refactor §3.1 in
+    ``docs/superpowers/specs/deep_refactor_report.md``.
     """
     pipeline, backend = build_pipeline(
         settings,
@@ -163,55 +186,110 @@ async def _run_ocr_pipeline(
         verify_model=_config.get("verify_model", True),
     )
 
-    async def on_progress(stage, current, total, message):
-        await manager.send_progress(
-            progress_target,
-            message,
-            stage_to_percent(stage, current, total),
-            stage=stage,
-        )
+    # Capture the main loop so the worker thread can schedule WebSocket
+    # frame sends on it. ``run_coroutine_threadsafe`` is the documented
+    # cross-thread bridge for coroutines; the returned future is fire-
+    # and-forget from the worker's perspective (see the warning below).
+    main_loop = asyncio.get_running_loop()
 
-    async def on_warning(page_index, exc):
+    def _log_threadsafe_future_error(fut: ConcurrentFuture) -> None:
+        """Surface errors from fire-and-forget progress sends on the main loop.
+
+        ``run_coroutine_threadsafe`` returns a concurrent.futures.Future
+        that runs on the main loop. The worker thread does not await it
+        (that would re-couple worker throughput to main-loop responsive-
+        ness), so any exception raised by ``manager.send_progress`` would
+        otherwise be silently swallowed. We attach a done-callback that
+        runs on the main loop and logs via the module logger.
+        """
+        if fut.cancelled():
+            return
+        exc = fut.exception()
+        if exc is not None:
+            logger.warning("Progress frame failed on main loop: %s", exc)
+
+    def _progress_bridge(stage, current, total, message):
+        """Thread-safe progress callback (runs in the worker thread)."""
+        fut = asyncio.run_coroutine_threadsafe(
+            manager.send_progress(
+                progress_target,
+                message,
+                stage_to_percent(stage, current, total),
+                stage=stage,
+            ),
+            main_loop,
+        )
+        fut.add_done_callback(_log_threadsafe_future_error)
+        return _fire_and_forget_awaitable()
+
+    def _warning_bridge(page_index, exc):
+        """Thread-safe warning callback (runs in the worker thread)."""
         warning_message = f"OCR failed for page {page_index + 1}: {type(exc).__name__}"
-        await manager.send_progress(
-            progress_target,
-            warning_message,
-            0,
-            stage="ocr",
-            warning=True,
+        fut = asyncio.run_coroutine_threadsafe(
+            manager.send_progress(
+                progress_target,
+                warning_message,
+                0,
+                stage="ocr",
+                warning=True,
+            ),
+            main_loop,
+        )
+        fut.add_done_callback(_log_threadsafe_future_error)
+        return _fire_and_forget_awaitable()
+
+    def _run_pipeline_in_thread() -> dict[int, list[str]]:
+        """Sync entry point: drive the async ``pipeline.run`` in a fresh event loop.
+
+        Lives on the worker thread started by :func:`asyncio.to_thread`.
+        A fresh event loop is created via :func:`asyncio.run` because the
+        worker thread has no loop of its own. The bridged callbacks above
+        schedule the actual ``manager.send_progress`` coroutines on the
+        captured ``main_loop`` and return immediately, so this worker
+        thread never blocks waiting for the main loop.
+        """
+        return asyncio.run(
+            pipeline.run(
+                input_path,
+                output_path,
+                dpi=settings.dpi,
+                pages=settings.pages,
+                concurrency=settings.concurrency,
+                refine=settings.refine,
+                max_image_dim=settings.max_image_dim,
+                dense_threshold=settings.dense_threshold,
+                dense_mode=settings.dense_mode,
+                self_correction=settings.self_correction,
+                binarize=settings.binarize,
+                dual_engine=settings.dual_engine,
+                spellcheck=settings.spellcheck,
+                cross_page=settings.cross_page,
+                preprocessing_options=PagePreprocessingOptions(
+                    enabled=settings.preprocess_pages,
+                    orientation_detection=settings.orientation_detection,
+                    deskew=settings.deskew,
+                    denoise=settings.denoise,
+                    normalize_contrast=settings.normalize_contrast,
+                    crop_cleanup=settings.crop_cleanup,
+                ),
+                quality_routing_options=QualityRoutingOptions(
+                    enabled=settings.quality_routing
+                ),
+                progress=_progress_bridge,
+                on_warning=_warning_bridge,
+                # Phase 2 — forward the configured model id to the trust
+                # layer so :func:`omniscribe.core.ocr_quality.calibration.calibrate`
+                # can pick the right per-model calibration JSON.
+                trust_model_id=settings.model,
+            )
         )
 
-    pages_text = await pipeline.run(
-        input_path,
-        output_path,
-        dpi=settings.dpi,
-        pages=settings.pages,
-        concurrency=settings.concurrency,
-        refine=settings.refine,
-        max_image_dim=settings.max_image_dim,
-        dense_threshold=settings.dense_threshold,
-        dense_mode=settings.dense_mode,
-        self_correction=settings.self_correction,
-        binarize=settings.binarize,
-        dual_engine=settings.dual_engine,
-        spellcheck=settings.spellcheck,
-        cross_page=settings.cross_page,
-        preprocessing_options=PagePreprocessingOptions(
-            enabled=settings.preprocess_pages,
-            orientation_detection=settings.orientation_detection,
-            deskew=settings.deskew,
-            denoise=settings.denoise,
-            normalize_contrast=settings.normalize_contrast,
-            crop_cleanup=settings.crop_cleanup,
-        ),
-        quality_routing_options=QualityRoutingOptions(enabled=settings.quality_routing),
-        progress=on_progress,
-        on_warning=on_warning,
-        # Phase 2 — forward the configured model id to the trust layer
-        # so :func:`omniscribe.core.ocr_quality.calibration.calibrate`
-        # can pick the right per-model calibration JSON.
-        trust_model_id=settings.model,
-    )
+    # NOTE: cancellation semantics are unchanged. ``asyncio.to_thread`` is
+    # not cancellable; if the request is cancelled while the worker thread
+    # is running, the pipeline runs to completion and the response is
+    # discarded by FastAPI. This matches the pre-fix behavior (the pipeline
+    # had no cancellation token before either).
+    pages_text = await asyncio.to_thread(_run_pipeline_in_thread)
 
     failed_pages = list(pipeline.last_failed_pages)
 
@@ -301,6 +379,13 @@ async def process_pdf(
 
     Every optional parameter falls back to the in-memory config store
     when not supplied by the caller.
+
+    The OCR work is dispatched to a worker thread via
+    :func:`asyncio.to_thread` so this route does not block the uvicorn
+    event loop while the pipeline runs. For long-running jobs, prefer
+    :func:`process_pdf_async` (``POST /api/process/async``) which returns
+    a ``job_id`` immediately and lets the client poll
+    :func:`process_status` for completion.
     """
     try:
         settings = resolve_process_settings(
