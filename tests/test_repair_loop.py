@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from omniscribe.api.routers.websocket import ConnectionManager
 from omniscribe.api.services.progress import FrameType, ProgressService
 
 
@@ -59,3 +60,66 @@ class TestRepairFrameBuilders:
         )
         assert frame["scope"] == "job"
         assert "page_idx" not in frame
+
+
+class _FakeWebSocket:
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+
+    async def send_json(self, payload: dict) -> None:
+        self.sent.append(payload)
+
+
+def _manager_with_channel() -> tuple[ConnectionManager, _FakeWebSocket]:
+    manager = ConnectionManager()
+    ws = _FakeWebSocket()
+    manager.active["test-channel"] = ws  # type: ignore[assignment]
+    return manager, ws
+
+
+class TestRepairSenders:
+    async def test_send_block_retry(self) -> None:
+        manager, ws = _manager_with_channel()
+        await manager.send_block_retry(
+            "test-channel",
+            page_idx=0,
+            block_idx=2,
+            attempt=1,
+            confidence=0.5,
+            target=0.98,
+        )
+        assert ws.sent[0]["type"] == "block_retry"
+        assert ws.sent[0]["attempt"] == 1
+
+    async def test_send_block_revised(self) -> None:
+        manager, ws = _manager_with_channel()
+        await manager.send_block_revised(
+            "test-channel",
+            page_idx=0,
+            block_idx=2,
+            attempt=1,
+            bbox=[0.1, 0.1, 0.9, 0.2],
+            text="better text here now",
+            confidence=0.99,
+        )
+        assert ws.sent[0]["type"] == "block_revised"
+        assert ws.sent[0]["text"] == "better text here now"
+
+    async def test_send_quality_summary(self) -> None:
+        manager, ws = _manager_with_channel()
+        await manager.send_quality_summary(
+            "test-channel",
+            scope="job",
+            target=0.98,
+            avg_confidence=0.97,
+            repaired_count=3,
+            below_target_count=1,
+        )
+        assert ws.sent[0]["type"] == "quality_summary"
+        assert "page_idx" not in ws.sent[0]
+
+    async def test_senders_drop_silently_without_channel(self) -> None:
+        manager, _ = _manager_with_channel()
+        await manager.send_block_retry(
+            None, page_idx=0, block_idx=0, attempt=1, confidence=0.5, target=0.98
+        )  # must not raise

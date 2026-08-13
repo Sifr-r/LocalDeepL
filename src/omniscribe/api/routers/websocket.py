@@ -100,6 +100,42 @@ class ConnectionManagerLike(Protocol):
         page_idx: int,
     ) -> None: ...
 
+    async def send_block_retry(
+        self,
+        channel_id: str | None,
+        *,
+        page_idx: int,
+        block_idx: int,
+        attempt: int,
+        confidence: float,
+        target: float,
+    ) -> None: ...
+
+    async def send_block_revised(
+        self,
+        channel_id: str | None,
+        *,
+        page_idx: int,
+        block_idx: int,
+        attempt: int,
+        bbox: list[float],
+        text: str,
+        kind: str = "text",
+        confidence: float | None = None,
+    ) -> None: ...
+
+    async def send_quality_summary(
+        self,
+        channel_id: str | None,
+        *,
+        scope: str,
+        target: float,
+        avg_confidence: float,
+        repaired_count: int,
+        below_target_count: int,
+        page_idx: int | None = None,
+    ) -> None: ...
+
     async def send_chunk_init(
         self,
         channel_id: str | None,
@@ -216,6 +252,75 @@ class ConnectionManager:
                 text=text,
                 kind=kind,
                 confidence=confidence,
+            ),
+        )
+
+    async def send_block_retry(
+        self,
+        channel_id: str | None,
+        *,
+        page_idx: int,
+        block_idx: int,
+        attempt: int,
+        confidence: float,
+        target: float,
+    ) -> None:
+        await self.send(
+            channel_id,
+            _progress_service.build_block_retry_frame(
+                page_idx=page_idx,
+                block_idx=block_idx,
+                attempt=attempt,
+                confidence=confidence,
+                target=target,
+            ),
+        )
+
+    async def send_block_revised(
+        self,
+        channel_id: str | None,
+        *,
+        page_idx: int,
+        block_idx: int,
+        attempt: int,
+        bbox: list[float],
+        text: str,
+        kind: str = "text",
+        confidence: float | None = None,
+    ) -> None:
+        await self.send(
+            channel_id,
+            _progress_service.build_block_revised_frame(
+                page_idx=page_idx,
+                block_idx=block_idx,
+                attempt=attempt,
+                bbox=bbox,
+                text=text,
+                kind=kind,
+                confidence=confidence,
+            ),
+        )
+
+    async def send_quality_summary(
+        self,
+        channel_id: str | None,
+        *,
+        scope: str,
+        target: float,
+        avg_confidence: float,
+        repaired_count: int,
+        below_target_count: int,
+        page_idx: int | None = None,
+    ) -> None:
+        await self.send(
+            channel_id,
+            _progress_service.build_quality_summary_frame(
+                scope=scope,
+                target=target,
+                avg_confidence=avg_confidence,
+                repaired_count=repaired_count,
+                below_target_count=below_target_count,
+                page_idx=page_idx,
             ),
         )
 
