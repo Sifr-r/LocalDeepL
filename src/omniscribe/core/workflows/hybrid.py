@@ -28,6 +28,12 @@ from omniscribe.core.workflows.base import (
     WarningCallback,
     notify,
 )
+from omniscribe.core.workflows.repair import (
+    PageRepairSummary,
+    QualityRepairLoop,
+    RepairOptions,
+    emit_job_repair_summary,
+)
 from omniscribe.utils.image import crop_for_ocr_from_image
 
 if TYPE_CHECKING:
@@ -141,6 +147,7 @@ class HybridEngine(EngineBase):
         on_warning: WarningCallback | None = None,
         trust_model_id: str = "unknown",
         trust_images_dict: dict[int, str] | None = None,
+        repair_options: RepairOptions | None = None,
     ) -> dict[int, list[str]]:
         if not isinstance(dense_mode, DenseMode):
             raise ValueError(
@@ -202,6 +209,22 @@ class HybridEngine(EngineBase):
                 dual_engine=dual_engine,
                 progress=progress,
             )
+
+        # --- Phase 4b: quality repair of below-target blocks (spec §3.2) ---
+        # Default-off at the engine level: only callers that pass a
+        # RepairOptions opt in (the API layer does; in-process OCRPipeline
+        # users keep the pre-loop behavior).
+        if repair_options is not None and repair_options.enabled:
+            repair_summaries = await self._repair_pages(
+                pages_structured=pages_structured,
+                images_dict=images_dict,
+                page_nums=page_nums,
+                repair_options=repair_options,
+                concurrency=concurrency,
+                progress=progress,
+                on_warning=on_warning,
+            )
+            await emit_job_repair_summary(self.block_callbacks, repair_summaries)
 
         # --- Phase 5: assemble, post-process, route, emit ---
         return await self._finalize(
@@ -699,3 +722,112 @@ class HybridEngine(EngineBase):
 
         for p_num, idxs in refined_indices.items():
             _drop_refined_duplicates(sparse_structured[p_num], idxs)
+
+    async def _repair_pages(
+        self,
+        *,
+        pages_structured: dict[int, PageBoxes],
+        images_dict: dict[int, str],
+        page_nums: Sequence[int],
+        repair_options: RepairOptions,
+        concurrency: int,
+        progress: ProgressCallback | None,
+        on_warning: WarningCallback | None = None,
+    ) -> list[PageRepairSummary]:
+        """Phase 4b — re-OCR non-empty blocks below the quality target.
+
+        Runs after refine (empty-box recovery already happened) and before
+        finalize. Only blocks whose estimated confidence is below
+        ``repair_options.target`` are re-OCRed, via the same
+        crop → ``perform_ocr_on_crop`` primitive refine uses. Progress
+        reuses the ``refine`` stage so the pinned stage-weight bands keep
+        reporting monotonically. Returns one summary per visited page.
+        """
+        loop = QualityRepairLoop(repair_options)
+        cb = self.block_callbacks
+        semaphore = asyncio.Semaphore(max(1, concurrency))
+
+        targets = sum(
+            1
+            for p_num in page_nums
+            for _, text in pages_structured.get(p_num, [])
+            if text.strip() and _estimate_confidence(text) < repair_options.target
+        )
+        if not targets:
+            return []
+        await notify(
+            progress,
+            "refine",
+            0,
+            targets,
+            f"Repairing {targets} below-target blocks...",
+        )
+
+        summaries: list[PageRepairSummary] = []
+        completed = 0
+        for p_num in page_nums:
+            aligned = pages_structured.get(p_num)
+            if not aligned:
+                continue
+
+            # Refactor §1.2: reuse the decoded page image when available.
+            cached = self._decoded_cache.get(p_num)
+            page_image = (
+                cached
+                if cached is not None
+                else await asyncio.to_thread(_decode_page_image, images_dict[p_num])
+            )
+
+            async def re_ocr(
+                block_idx: int,
+                bbox: tuple[float, float, float, float],
+                *,
+                _img: Image.Image = page_image,
+                _page: int = p_num,
+            ) -> str:
+                nonlocal completed
+                async with semaphore:
+                    crop_b64 = await asyncio.to_thread(
+                        crop_for_ocr_from_image, _img, list(bbox)
+                    )
+                    if crop_b64 is None:
+                        return ""
+                    try:
+                        text = await self.ocr_processor.perform_ocr_on_crop(crop_b64)
+                    except CircuitOpenError:
+                        raise
+                    except Exception as exc:
+                        # Spec §3.2 graceful degradation: surface the
+                        # warning frame, then re-raise so repair_page
+                        # keeps the best-so-far text and the job goes on.
+                        if on_warning is not None:
+                            await on_warning(_page, exc)
+                        raise
+                completed += 1
+                await notify(
+                    progress,
+                    "refine",
+                    min(completed, targets),
+                    targets,
+                    f"Repairing below-target blocks ({min(completed, targets)}/{targets})",
+                )
+                return text
+
+            summary = await loop.repair_page(
+                page_idx=p_num,
+                page_blocks=aligned,
+                re_ocr=re_ocr,
+                on_block_retry=cb.on_block_retry,
+                on_block_revised=cb.on_block_revised,
+            )
+            summaries.append(summary)
+            if cb.on_quality_summary is not None:
+                await cb.on_quality_summary(
+                    "page",
+                    p_num,
+                    summary.target,
+                    summary.avg_confidence,
+                    summary.repaired_count,
+                    summary.below_target_count,
+                )
+        return summaries

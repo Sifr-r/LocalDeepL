@@ -15,10 +15,14 @@ non-``None`` :class:`RepairOptions`, so every in-process
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
-from omniscribe.core.callbacks import BlockRetryCallback, BlockRevisedCallback
+from omniscribe.core.callbacks import (
+    BlockCallbackSet,
+    BlockRetryCallback,
+    BlockRevisedCallback,
+)
 from omniscribe.core.ocr.resilience import CircuitOpenError
 from omniscribe.core.workflows.utils import _estimate_confidence
 
@@ -159,9 +163,38 @@ class QualityRepairLoop:
         )
 
 
+async def emit_job_repair_summary(
+    cb: BlockCallbackSet | None, summaries: Sequence[PageRepairSummary]
+) -> None:
+    """Aggregate per-page repair stats into one job-scope summary frame.
+
+    Block-weighted average: a page with more non-empty blocks counts
+    more. A run with no non-empty blocks reports a perfect 1.0 (nothing
+    below target). No-op unless a ``quality_summary`` observer is wired.
+    Shared by both engines.
+    """
+    if cb is None or cb.on_quality_summary is None or not summaries:
+        return
+    total_blocks = sum(s.block_count for s in summaries)
+    avg_confidence = (
+        sum(s.avg_confidence * s.block_count for s in summaries) / total_blocks
+        if total_blocks
+        else 1.0
+    )
+    await cb.on_quality_summary(
+        "job",
+        None,
+        summaries[0].target,
+        avg_confidence,
+        sum(s.repaired_count for s in summaries),
+        sum(s.below_target_count for s in summaries),
+    )
+
+
 __all__ = [
     "PageRepairSummary",
     "QualityRepairLoop",
     "ReOcrBlock",
     "RepairOptions",
+    "emit_job_repair_summary",
 ]

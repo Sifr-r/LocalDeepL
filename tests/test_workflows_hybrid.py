@@ -11,8 +11,13 @@ this file is the per-phase drill-down.
 
 from __future__ import annotations
 
+import pytest
+
+from omniscribe.core.callbacks import BlockCallbackSet
+from omniscribe.core.ocr.resilience import CircuitOpenError
 from omniscribe.core.routing import QualityRoutingOptions
 from omniscribe.core.workflows.hybrid import HybridEngine
+from omniscribe.core.workflows.repair import RepairOptions, emit_job_repair_summary
 from tests.conftest import _StubOCR
 from tests.test_pipeline import _make_tiny_b64_image, _StubAligner, _StubPDF
 
@@ -697,3 +702,202 @@ class _PreprocessResult:
     def __init__(self, images, metadata):
         self.images = images
         self.metadata = metadata
+
+
+# ---------------------------------------------------------------------------
+# _repair_pages (quality repair loop — spec §3.2)
+# ---------------------------------------------------------------------------
+
+
+class TestHybridRepairPages:
+    def _pages(self, text: str) -> dict:
+        return {0: [([0.1, 0.2, 0.9, 0.25], text)]}
+
+    async def test_below_target_block_is_repaired(self) -> None:
+        ocr = _StubOCR(crop_text="The quick brown fox jumps over the lazy dog")
+        engine = _engine(ocr=ocr)
+        pages = self._pages("x")
+
+        summaries = await engine._repair_pages(
+            pages_structured=pages,
+            images_dict={0: _make_tiny_b64_image()},
+            page_nums=[0],
+            repair_options=RepairOptions(target=0.98),
+            concurrency=2,
+            progress=None,
+        )
+
+        assert pages[0][0][1] == "The quick brown fox jumps over the lazy dog"
+        assert ocr.crop_calls == 1
+        assert len(summaries) == 1
+        assert summaries[0].repaired_count == 1
+        assert summaries[0].below_target_count == 0
+
+    async def test_healthy_page_makes_zero_crop_calls(self) -> None:
+        ocr = _StubOCR()
+        engine = _engine(ocr=ocr)
+        pages = self._pages("The quick brown fox jumps over the lazy dog")
+
+        summaries = await engine._repair_pages(
+            pages_structured=pages,
+            images_dict={0: _make_tiny_b64_image()},
+            page_nums=[0],
+            repair_options=RepairOptions(target=0.98),
+            concurrency=2,
+            progress=None,
+        )
+
+        assert ocr.crop_calls == 0
+        assert summaries == []
+
+    async def test_empty_blocks_are_left_to_refine(self) -> None:
+        ocr = _StubOCR()
+        engine = _engine(ocr=ocr)
+        pages = self._pages("")
+
+        summaries = await engine._repair_pages(
+            pages_structured=pages,
+            images_dict={0: _make_tiny_b64_image()},
+            page_nums=[0],
+            repair_options=RepairOptions(target=0.98),
+            concurrency=2,
+            progress=None,
+        )
+
+        assert ocr.crop_calls == 0
+        assert summaries == []
+
+    async def test_circuit_open_error_propagates(self) -> None:
+        class _BreakerOCR(_StubOCR):
+            async def perform_ocr_on_crop(self, image_base64, **kwargs):
+                raise CircuitOpenError(failures=5, retry_after=30.0)
+
+        engine = _engine(ocr=_BreakerOCR())
+
+        with pytest.raises(CircuitOpenError):
+            await engine._repair_pages(
+                pages_structured=self._pages("x"),
+                images_dict={0: _make_tiny_b64_image()},
+                page_nums=[0],
+                repair_options=RepairOptions(target=0.98),
+                concurrency=2,
+                progress=None,
+            )
+
+    async def test_progress_reuses_refine_stage(self) -> None:
+        ocr = _StubOCR(crop_text="The quick brown fox jumps over the lazy dog")
+        engine = _engine(ocr=ocr)
+        events: list[tuple[str, int, int]] = []
+
+        async def cb(stage: str, cur: int, tot: int, msg: str) -> None:
+            events.append((stage, cur, tot))
+
+        await engine._repair_pages(
+            pages_structured=self._pages("x"),
+            images_dict={0: _make_tiny_b64_image()},
+            page_nums=[0],
+            repair_options=RepairOptions(target=0.98),
+            concurrency=2,
+            progress=cb,
+        )
+        assert events[0] == ("refine", 0, 1)
+        assert events[-1] == ("refine", 1, 1)
+
+    async def test_repair_failure_emits_warning_and_keeps_best_text(self) -> None:
+        class _ExplodingOCR(_StubOCR):
+            async def perform_ocr_on_crop(self, image_base64, **kwargs):
+                raise RuntimeError("VLM exploded")
+
+        engine = _engine(ocr=_ExplodingOCR())
+        pages = self._pages("x")
+        warnings: list[tuple[int, Exception]] = []
+
+        async def on_warn(page_idx, exc):
+            warnings.append((page_idx, exc))
+
+        summaries = await engine._repair_pages(
+            pages_structured=pages,
+            images_dict={0: _make_tiny_b64_image()},
+            page_nums=[0],
+            repair_options=RepairOptions(target=0.98),
+            concurrency=2,
+            progress=None,
+            on_warning=on_warn,
+        )
+
+        # Spec §3.2: warning frame out, best-so-far text kept, job goes on.
+        assert len(warnings) == 1
+        assert warnings[0][0] == 0
+        assert isinstance(warnings[0][1], RuntimeError)
+        assert pages[0][0][1] == "x"
+        assert summaries[0].repaired_count == 0
+        assert summaries[0].below_target_count == 1
+
+    async def test_page_and_job_summary_callbacks_fire(self) -> None:
+        ocr = _StubOCR(crop_text="The quick brown fox jumps over the lazy dog")
+        seen: list[tuple[str, int | None]] = []
+
+        async def on_summary(scope, page_idx, target, avg, repaired, below):
+            seen.append((scope, page_idx))
+
+        engine = HybridEngine(
+            aligner=_StubAligner(),
+            ocr_processor=ocr,
+            pdf_handler=_StubPDF(n_pages=1),
+            output_writer=_noop_writer,
+            block_callbacks=BlockCallbackSet(on_quality_summary=on_summary),
+        )
+        pages = self._pages("x")
+        summaries = await engine._repair_pages(
+            pages_structured=pages,
+            images_dict={0: _make_tiny_b64_image()},
+            page_nums=[0],
+            repair_options=RepairOptions(target=0.98),
+            concurrency=2,
+            progress=None,
+        )
+        assert seen == [("page", 0)]
+
+        await emit_job_repair_summary(engine.block_callbacks, summaries)
+        assert seen == [("page", 0), ("job", None)]
+
+
+class TestHybridExecuteRepairWiring:
+    async def test_execute_repairs_below_target_blocks_when_enabled(self) -> None:
+        ocr = _StubOCR(
+            page_lines=["x"],
+            crop_text="The quick brown fox jumps over the lazy dog",
+        )
+        pdf = _StubPDF(n_pages=1)
+        # Wire the stub's embed method as the output writer so the
+        # finalized pages land in ``pdf.last_pages`` for inspection
+        # (``_engine``'s ``_noop_writer`` would discard them).
+        engine = HybridEngine(
+            aligner=_StubAligner(),
+            ocr_processor=ocr,
+            pdf_handler=pdf,
+            output_writer=pdf.embed_structured_text,
+        )
+
+        await engine.execute(
+            "in.pdf",
+            "out.pdf",
+            refine=False,
+            concurrency=2,
+            repair_options=RepairOptions(target=0.98),
+        )
+
+        # Box 0 holds "x" (below target); boxes 1-2 stay empty and are
+        # repair-skipped (refine owns empty-box recovery).
+        assert ocr.crop_calls == 1
+        assert pdf.last_pages[0][0][1] == (
+            "The quick brown fox jumps over the lazy dog"
+        )
+
+    async def test_execute_default_off_without_repair_options(self) -> None:
+        ocr = _StubOCR(page_lines=["x"])
+        engine = _engine(ocr=ocr, pdf=_StubPDF(n_pages=1))
+
+        await engine.execute("in.pdf", "out.pdf", refine=False, concurrency=2)
+
+        assert ocr.crop_calls == 0
