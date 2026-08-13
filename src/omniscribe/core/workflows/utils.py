@@ -11,14 +11,24 @@ if TYPE_CHECKING:
     from omniscribe.core.workflows.base import PageBoxes
 
 
-# Lightweight per-crop confidence heuristic (no new deps).
+# Confidence awarded to well-formed OCR output (multiple words, mostly
+# alphabetic). Deliberately above the default quality-loop target (0.98)
+# so healthy blocks are never repair candidates; noisy text lands in the
+# 0.85 band below it. See spec §3.2.
+WELL_FORMED_CONFIDENCE = 0.99
+
+
 def _estimate_confidence(text: str) -> float:
     """Cheap confidence proxy for OCR output.
 
     Returns a value in [0, 1] based on text quality signals:
-    - non-empty + alphabetic characters + multiple words => high
-    - single character or empty => low
-    - mostly punctuation or digits => medium
+    - empty / whitespace => 0.0
+    - no alphabetic characters at all => 0.3
+    - 3+ words that are mostly alphabetic => 0.99 (clears the default
+      0.98 quality target so healthy text is not re-OCRed)
+    - 3+ words with heavy digit/punctuation noise => 0.85
+    - 1-2 words with enough alpha => 0.7
+    - anything else => 0.4
     """
     if not text or not text.strip():
         return 0.0
@@ -28,7 +38,7 @@ def _estimate_confidence(text: str) -> float:
         return 0.3
     words = stripped.split()
     if len(words) >= 3:
-        return 0.85
+        return WELL_FORMED_CONFIDENCE if alpha / len(stripped) >= 0.6 else 0.85
     if len(words) >= 1 and alpha >= 3:
         return 0.7
     return 0.4

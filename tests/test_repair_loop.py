@@ -5,6 +5,7 @@ from __future__ import annotations
 from omniscribe.api.routers.websocket import ConnectionManager
 from omniscribe.api.services.progress import FrameType, ProgressService
 from omniscribe.core.callbacks import BlockCallbackSet
+from omniscribe.core.workflows.utils import _estimate_confidence
 
 
 class TestRepairFrameBuilders:
@@ -141,3 +142,24 @@ class TestRepairCallbackSet:
         assert cb.on_block is on_block
         assert cb.on_page_complete is on_page
         assert cb.on_block_retry is None
+
+
+class TestEstimateConfidenceCeiling:
+    def test_well_formed_multiword_text_clears_default_target(self) -> None:
+        assert (
+            _estimate_confidence("The quick brown fox jumps over the lazy dog") >= 0.98
+        )
+
+    def test_digit_heavy_multiword_text_stays_below_target(self) -> None:
+        assert _estimate_confidence("12 34 56 78") < 0.98
+
+    def test_mixed_noise_text_stays_at_intermediate_band(self) -> None:
+        # 4 words but low alpha ratio -> 0.85 band, still repair-worthy.
+        assert _estimate_confidence("a1 b2 c3 d4") == 0.85
+
+    def test_existing_bands_unchanged(self) -> None:
+        assert _estimate_confidence("") == 0.0
+        assert _estimate_confidence("   ") == 0.0
+        assert _estimate_confidence("12345") == 0.3
+        assert _estimate_confidence("ab") == 0.4
+        assert _estimate_confidence("hello there") == 0.7
