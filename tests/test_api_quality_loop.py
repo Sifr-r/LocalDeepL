@@ -197,13 +197,18 @@ class TestConfigEnvSeeds:
         monkeypatch.delenv("OMNISCRIBE_QUALITY_MAX_RETRIES", raising=False)
         from omniscribe.api.routers import config as config_mod
 
+        # Capture the shared dict BEFORE reload: importlib.reload rebinds
+        # ``config_mod._config`` to a new object, and restoring the module
+        # attribute in ``finally`` keeps identity with every ``from``
+        # importer (e.g. ``ocr._config``) intact for the rest of the run.
+        orig = config_mod._config
         importlib.reload(config_mod)
         try:
             assert config_mod._config["quality_loop_enabled"] is True
             assert config_mod._config["quality_target"] == pytest.approx(0.98)
             assert config_mod._config["quality_max_retries"] == 2
         finally:
-            importlib.reload(config_mod)
+            config_mod._config = orig
 
     def test_env_overrides(self, monkeypatch) -> None:
         monkeypatch.setenv("OMNISCRIBE_QUALITY_LOOP", "false")
@@ -211,6 +216,7 @@ class TestConfigEnvSeeds:
         monkeypatch.setenv("OMNISCRIBE_QUALITY_MAX_RETRIES", "4")
         from omniscribe.api.routers import config as config_mod
 
+        orig = config_mod._config  # see test_defaults_when_env_unset
         importlib.reload(config_mod)
         try:
             assert config_mod._config["quality_loop_enabled"] is False
@@ -220,7 +226,7 @@ class TestConfigEnvSeeds:
             monkeypatch.delenv("OMNISCRIBE_QUALITY_LOOP", raising=False)
             monkeypatch.delenv("OMNISCRIBE_QUALITY_TARGET", raising=False)
             monkeypatch.delenv("OMNISCRIBE_QUALITY_MAX_RETRIES", raising=False)
-            importlib.reload(config_mod)
+            config_mod._config = orig
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +284,13 @@ class TestProcessRouteRepairOptions:
         self._stub_route(monkeypatch)
         from omniscribe.pipeline import OCRPipeline
 
+        # The runtime config store is always seeded with the three keys,
+        # so drop them for this test: omitted form fields must fall
+        # through the store to the ProcessSettings schema defaults —
+        # the true API-level defaults (env-independent).
+        for key in ("quality_loop_enabled", "quality_target", "quality_max_retries"):
+            monkeypatch.delitem(ocr._config, key, raising=False)
+
         seen: dict = {}
 
         async def stub_run(self, input_path, output_path, **kwargs):
@@ -321,6 +334,20 @@ class TestProcessRouteRepairOptions:
         )
         assert response.status_code == 200
         assert seen["repair_options"].enabled is False
+
+    def test_out_of_bounds_target_is_rejected_with_422(self, monkeypatch) -> None:
+        # HTTP-level counterpart of ``test_target_bounds_enforced``: the
+        # route maps the Pydantic ValidationError from settings
+        # resolution to a stable 422 envelope before any pipeline work.
+        self._stub_route(monkeypatch)
+
+        client = _api_client()
+        response = client.post(
+            "/api/process",
+            data=_process_form(quality_target="1.5"),
+            files={"file": ("test.png", _stub_png_bytes(), "image/png")},
+        )
+        assert response.status_code == 422
 
 
 # ---------------------------------------------------------------------------

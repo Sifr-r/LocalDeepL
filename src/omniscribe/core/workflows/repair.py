@@ -37,6 +37,8 @@ ReOcrBlock = Callable[[int, tuple[float, float, float, float]], Awaitable[str]]
 class RepairOptions:
     """Toggle and bounds for the quality repair loop."""
 
+    #: Engines treat ``repair_options=None`` as off; constructing
+    #: ``RepairOptions()`` enables the loop since this defaults to True.
     enabled: bool = True
     target: float = 0.98
     max_retries: int = 2
