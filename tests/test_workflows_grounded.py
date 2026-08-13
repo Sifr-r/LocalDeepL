@@ -14,10 +14,14 @@ The ``test_pipeline.py`` suite exercises the hybrid path through
 
 from __future__ import annotations
 
+import pytest
+
 from omniscribe.core.document import DocumentResult
 from omniscribe.core.grounded import GroundedBlock, GroundedResponse
+from omniscribe.core.ocr.resilience import CircuitOpenError
 from omniscribe.core.processors import DocumentProcessor
 from omniscribe.core.workflows.grounded import GroundedEngine
+from omniscribe.core.workflows.repair import RepairOptions
 
 # ---------------------------------------------------------------------------
 # Stub backend
@@ -233,3 +237,146 @@ class TestGroundedExecute:
         assert engine.last_failed_pages == []
         assert engine.last_document_result is not None
         assert engine.last_document_result.pages == []
+
+
+# ---------------------------------------------------------------------------
+# Quality repair (spec §3.2)
+# ---------------------------------------------------------------------------
+
+
+class _CropCapableStubBackend(_StubGroundedBackend):
+    """Adds the ``ocr_crop`` primitive so the engine's feature-detection fires."""
+
+    def __init__(
+        self,
+        response: GroundedResponse | None = None,
+        crop_text: str = "The quick brown fox jumps over the lazy dog",
+    ) -> None:
+        super().__init__(response)
+        self.crop_text = crop_text
+        self.crop_calls = 0
+
+    async def ocr_crop(self, input_path, page_index, bbox):
+        self.crop_calls += 1
+        return self.crop_text
+
+
+class TestGroundedRepair:
+    def _below_target_response(self) -> GroundedResponse:
+        return GroundedResponse(
+            blocks=[
+                GroundedBlock(bbox=[0.1, 0.1, 0.9, 0.2], text="x", page_index=0),
+            ]
+        )
+
+    async def test_below_target_block_is_repaired_and_persisted(self) -> None:
+        backend = _CropCapableStubBackend(self._below_target_response())
+        engine = _engine(backend=backend)
+
+        await engine.execute(
+            "in.pdf",
+            "out.pdf",
+            dpi=150,
+            repair_options=RepairOptions(target=0.98),
+        )
+
+        assert backend.crop_calls == 1
+        assert backend.response.blocks[0].text == (
+            "The quick brown fox jumps over the lazy dog"
+        )
+        assert engine.last_document_result is not None
+        assert engine.last_document_result.pages[0].blocks[0].text == (
+            "The quick brown fox jumps over the lazy dog"
+        )
+
+    async def test_healthy_block_makes_zero_crop_calls(self) -> None:
+        backend = _CropCapableStubBackend(
+            GroundedResponse(
+                blocks=[
+                    GroundedBlock(
+                        bbox=[0.1, 0.1, 0.9, 0.2],
+                        text="The quick brown fox jumps over the lazy dog",
+                        page_index=0,
+                    )
+                ]
+            )
+        )
+        engine = _engine(backend=backend)
+
+        await engine.execute(
+            "in.pdf",
+            "out.pdf",
+            dpi=150,
+            repair_options=RepairOptions(target=0.98),
+        )
+
+        assert backend.crop_calls == 0
+
+    async def test_backend_without_ocr_crop_is_skipped(self) -> None:
+        # The plain stub has no ``ocr_crop`` — repair must be a no-op and
+        # leave the original text untouched.
+        backend = _StubGroundedBackend(self._below_target_response())
+        engine = _engine(backend=backend)
+
+        await engine.execute(
+            "in.pdf",
+            "out.pdf",
+            dpi=150,
+            repair_options=RepairOptions(target=0.98),
+        )
+
+        assert backend.response.blocks[0].text == "x"
+        assert engine.last_document_result is not None
+        assert engine.last_document_result.pages[0].blocks[0].text == "x"
+
+    async def test_circuit_open_error_propagates(self) -> None:
+        class _BreakerBackend(_CropCapableStubBackend):
+            async def ocr_crop(self, input_path, page_index, bbox):
+                raise CircuitOpenError(failures=5, retry_after=30.0)
+
+        backend = _BreakerBackend(self._below_target_response())
+        engine = _engine(backend=backend)
+
+        with pytest.raises(CircuitOpenError):
+            await engine.execute(
+                "in.pdf",
+                "out.pdf",
+                dpi=150,
+                repair_options=RepairOptions(target=0.98),
+            )
+
+    async def test_crop_failure_emits_warning_and_keeps_best_text(self) -> None:
+        class _ExplodingBackend(_CropCapableStubBackend):
+            async def ocr_crop(self, input_path, page_index, bbox):
+                raise RuntimeError("VLM exploded")
+
+        backend = _ExplodingBackend(self._below_target_response())
+        engine = _engine(backend=backend)
+        warnings: list[tuple[int, Exception]] = []
+
+        async def on_warn(page_idx, exc):
+            warnings.append((page_idx, exc))
+
+        await engine.execute(
+            "in.pdf",
+            "out.pdf",
+            dpi=150,
+            repair_options=RepairOptions(target=0.98),
+            on_warning=on_warn,
+        )
+
+        # Spec §3.2: warning frame out, best-so-far text kept, job goes on.
+        assert len(warnings) == 1
+        assert warnings[0][0] == 0
+        assert isinstance(warnings[0][1], RuntimeError)
+        assert backend.response.blocks[0].text == "x"
+        assert engine.last_document_result.pages[0].blocks[0].text == "x"
+
+    async def test_default_off_without_repair_options(self) -> None:
+        backend = _CropCapableStubBackend(self._below_target_response())
+        engine = _engine(backend=backend)
+
+        await engine.execute("in.pdf", "out.pdf", dpi=150)
+
+        assert backend.crop_calls == 0
+        assert backend.response.blocks[0].text == "x"

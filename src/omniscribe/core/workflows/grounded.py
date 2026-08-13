@@ -10,6 +10,7 @@ from omniscribe.core.grounded import (
     GroundedOCRBackend,
     GroundedResponse,
 )
+from omniscribe.core.ocr.resilience import CircuitOpenError
 from omniscribe.core.ocr_quality import TrustOrchestrator
 from omniscribe.core.processors import DocumentProcessor
 from omniscribe.core.workflows.base import (
@@ -18,7 +19,15 @@ from omniscribe.core.workflows.base import (
     PagesData,
     ProgressCallback,
     WarningCallback,
+    notify,
 )
+from omniscribe.core.workflows.repair import (
+    PageRepairSummary,
+    QualityRepairLoop,
+    RepairOptions,
+    emit_job_repair_summary,
+)
+from omniscribe.core.workflows.utils import _estimate_confidence
 
 if TYPE_CHECKING:
     from omniscribe.core.callbacks import BlockCallbackSet
@@ -82,6 +91,7 @@ class GroundedEngine(EngineBase):
         progress: ProgressCallback | None = None,
         on_warning: WarningCallback | None = None,
         trust_model_id: str = "unknown",
+        repair_options: RepairOptions | None = None,
     ) -> dict[int, list[str]]:
         """
         Grounded path: the backend returns (bbox, text) pairs directly.
@@ -103,6 +113,28 @@ class GroundedEngine(EngineBase):
         # hybrid path. Done before `_build_document_result` so the
         # block order matches what the backend produced.
         await self._emit_block_callbacks(response)
+
+        # --- Quality repair (spec §3.2) ---
+        # Grounded blocks carry no confidence, so the loop estimates it
+        # from text quality. Only backends that expose ``ocr_crop``
+        # (feature-detected; NOT part of the GroundedOCRBackend protocol)
+        # can be repaired — others skip silently and keep their text.
+        if (
+            repair_options is not None
+            and repair_options.enabled
+            and hasattr(self.grounded_backend, "ocr_crop")
+        ):
+            repair_summaries = await self._repair_blocks(
+                input_path=input_path,
+                response=response,
+                repair_options=repair_options,
+                progress=progress,
+                on_warning=on_warning,
+            )
+            await emit_job_repair_summary(self.block_callbacks, repair_summaries)
+            # Re-accumulate so overlays/DocumentResult/embedding see the
+            # repaired text (blocks were mutated in place).
+            pages_data = self._accumulate_pages(response.blocks)
 
         # Phase E (review E.5) — `block_metadata_overlays` is the
         # shape `EngineBase._build_document_result` expects for its
@@ -162,3 +194,113 @@ class GroundedEngine(EngineBase):
             bbox: BBox = (float(x0), float(y0), float(x1), float(y1))
             pages_data.setdefault(block.page_index, []).append((bbox, block.text))
         return pages_data
+
+    async def _repair_blocks(
+        self,
+        *,
+        input_path: str,
+        response: GroundedResponse,
+        repair_options: RepairOptions,
+        progress: ProgressCallback | None,
+        on_warning: WarningCallback | None = None,
+    ) -> list[PageRepairSummary]:
+        """Re-OCR below-target grounded blocks via the backend's ``ocr_crop``.
+
+        Accepted revisions are written back onto the ``GroundedBlock``
+        objects so the caller can re-accumulate ``pages_data`` and every
+        downstream stage sees the repaired text. The caller must have
+        feature-detected ``ocr_crop`` already (``hasattr`` in ``execute``).
+        """
+        loop = QualityRepairLoop(repair_options)
+        cb = self.block_callbacks
+        # ``ocr_crop`` exists by construction here (feature-detected by the
+        # caller); the ignore keeps mypy honest since it is not on the
+        # GroundedOCRBackend protocol.
+        crop_ocr = self.grounded_backend.ocr_crop  # type: ignore[attr-defined]
+
+        by_page: dict[int, list[GroundedBlock]] = {}
+        for block in response.blocks:
+            by_page.setdefault(block.page_index, []).append(block)
+
+        targets = sum(
+            1
+            for blocks in by_page.values()
+            for b in blocks
+            if b.text.strip() and _estimate_confidence(b.text) < repair_options.target
+        )
+        if not targets:
+            return []
+        await notify(
+            progress,
+            "refine",
+            0,
+            targets,
+            f"Repairing {targets} below-target blocks...",
+        )
+
+        summaries: list[PageRepairSummary] = []
+        completed = 0
+        for page_idx in sorted(by_page):
+            page_blocks_objs = by_page[page_idx]
+            page_blocks: list[tuple[tuple[float, float, float, float], str]] = [
+                (
+                    (
+                        float(b.bbox[0]),
+                        float(b.bbox[1]),
+                        float(b.bbox[2]),
+                        float(b.bbox[3]),
+                    ),
+                    b.text,
+                )
+                for b in page_blocks_objs
+            ]
+
+            async def re_ocr(
+                block_idx: int,
+                bbox: tuple[float, float, float, float],
+                *,
+                _page: int = page_idx,
+            ) -> str:
+                nonlocal completed
+                try:
+                    text: str = await crop_ocr(input_path, _page, bbox)
+                except CircuitOpenError:
+                    raise
+                except Exception as exc:
+                    # Spec §3.2 graceful degradation: warning frame out,
+                    # then re-raise so repair_page keeps the best-so-far
+                    # text and the job continues.
+                    if on_warning is not None:
+                        await on_warning(_page, exc)
+                    raise
+                completed += 1
+                await notify(
+                    progress,
+                    "refine",
+                    min(completed, targets),
+                    targets,
+                    f"Repairing below-target blocks ({min(completed, targets)}/{targets})",
+                )
+                return text
+
+            summary = await loop.repair_page(
+                page_idx=page_idx,
+                page_blocks=page_blocks,
+                re_ocr=re_ocr,
+                on_block_retry=cb.on_block_retry,
+                on_block_revised=cb.on_block_revised,
+            )
+            # Persist accepted revisions onto the GroundedBlock objects.
+            for obj, (_, text) in zip(page_blocks_objs, page_blocks, strict=True):
+                obj.text = text
+            summaries.append(summary)
+            if cb.on_quality_summary is not None:
+                await cb.on_quality_summary(
+                    "page",
+                    page_idx,
+                    summary.target,
+                    summary.avg_confidence,
+                    summary.repaired_count,
+                    summary.below_target_count,
+                )
+        return summaries
