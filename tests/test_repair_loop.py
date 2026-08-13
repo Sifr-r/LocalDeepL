@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import io
+
 import pytest
 
 from omniscribe.api.routers.websocket import ConnectionManager
@@ -290,3 +293,69 @@ class TestQualityRepairLoop:
         summary = await loop.repair_page(page_idx=0, page_blocks=blocks, re_ocr=re_ocr)
         assert summary.repaired_count == 0
         assert summary.block_count == 0
+
+
+def _tiny_jpeg_b64(width: int = 100, height: int = 100) -> str:
+    from PIL import Image
+
+    img = Image.new("RGB", (width, height), "white")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+class TestPromptedGroundedOCRCrop:
+    async def test_ocr_crop_calls_vlm_with_crop_prompt(self, monkeypatch) -> None:
+        from omniscribe.core.grounded import prompted as prompted_mod
+
+        backend = prompted_mod.PromptedGroundedOCR(
+            api_base="http://repair-test.local/v1", model="repair-model"
+        )
+        monkeypatch.setattr(
+            prompted_mod,
+            "_rasterize_to_jpeg_pages",
+            lambda path, dim, dpi: [(_tiny_jpeg_b64(), 100, 100)],
+        )
+        captured: dict = {}
+
+        async def fake_call_llm(**kwargs):
+            captured["messages"] = kwargs["messages"]
+            return "  recovered line  "
+
+        monkeypatch.setattr(prompted_mod, "call_llm", fake_call_llm)
+
+        text = await backend.ocr_crop("dummy.pdf", 0, (0.2, 0.2, 0.8, 0.4))
+        assert text == "recovered line"
+        assert (
+            captured["messages"][0]["content"][0]["text"]
+            == prompted_mod.CROP_OCR_PROMPT
+        )
+
+    async def test_ocr_crop_rejects_out_of_range_page(self, monkeypatch) -> None:
+        from omniscribe.core.grounded import prompted as prompted_mod
+
+        backend = prompted_mod.PromptedGroundedOCR(
+            api_base="http://repair-test.local/v1", model="repair-model"
+        )
+        monkeypatch.setattr(
+            prompted_mod,
+            "_rasterize_to_jpeg_pages",
+            lambda path, dim, dpi: [(_tiny_jpeg_b64(), 100, 100)],
+        )
+        with pytest.raises(ValueError, match="out of range"):
+            await backend.ocr_crop("dummy.pdf", 3, (0.2, 0.2, 0.8, 0.4))
+
+    async def test_ocr_crop_returns_empty_for_degenerate_bbox(
+        self, monkeypatch
+    ) -> None:
+        from omniscribe.core.grounded import prompted as prompted_mod
+
+        backend = prompted_mod.PromptedGroundedOCR(
+            api_base="http://repair-test.local/v1", model="repair-model"
+        )
+        monkeypatch.setattr(
+            prompted_mod,
+            "_rasterize_to_jpeg_pages",
+            lambda path, dim, dpi: [(_tiny_jpeg_b64(), 100, 100)],
+        )
+        assert await backend.ocr_crop("dummy.pdf", 0, (0.5, 0.5, 0.5, 0.5)) == ""

@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from collections.abc import Sequence
 
 from openai import AsyncOpenAI
 
@@ -80,6 +81,13 @@ DEFAULT_GROUNDING_PROMPT = (
     "No markdown fences, no prose — only the raw JSON array."
 )
 
+CROP_OCR_PROMPT = (
+    "You are a precise OCR engine. Transcribe EVERY line of text visible "
+    "in this cropped image, preserving line breaks. Do not paraphrase, "
+    "summarize, or add commentary. Output the text only — no JSON, no "
+    "markdown fences, no leading or trailing prose."
+)
+
 
 def _extract_grounded_crops(
     b64: str, blocks: list[GroundedBlock], w: int, h: int
@@ -112,6 +120,34 @@ def _extract_grounded_crops(
                     buf = io.BytesIO()
                     cropped.save(buf, format="PNG")
                     b.image_bytes = buf.getvalue()
+
+
+def _crop_normalized(b64: str, bbox: Sequence[float], w: int, h: int) -> str | None:
+    """Crop a normalized ``[x0, y0, x1, y1]`` bbox out of a page JPEG.
+
+    Adds 5% padding so glyph edges are never clipped. Returns ``None``
+    when the (clamped) box degenerates. Runs in a worker thread — PIL
+    decode/crop/encode is blocking CPU work.
+    """
+    import base64 as _b64
+    import io
+
+    from PIL import Image
+
+    pad_x = 0.05 * max(bbox[2] - bbox[0], 0.0)
+    pad_y = 0.05 * max(bbox[3] - bbox[1], 0.0)
+    box = (
+        max(0, int((bbox[0] - pad_x) * w)),
+        max(0, int((bbox[1] - pad_y) * h)),
+        min(w, int((bbox[2] + pad_x) * w)),
+        min(h, int((bbox[3] + pad_y) * h)),
+    )
+    if box[2] <= box[0] or box[3] <= box[1]:
+        return None
+    with Image.open(io.BytesIO(_b64.b64decode(b64))) as img:
+        buf = io.BytesIO()
+        img.crop(box).save(buf, format="JPEG", quality=90)
+    return _b64.b64encode(buf.getvalue()).decode("ascii")
 
 
 class PromptedGroundedOCR:
@@ -183,7 +219,42 @@ class PromptedGroundedOCR:
                 _format_model_not_loaded(self.api_base, self.model, loaded)
             )
 
-    async def _call_with_retry(self, image_b64: str) -> str:
+    async def ocr_crop(
+        self,
+        input_path: str,
+        page_index: int,
+        bbox: Sequence[float],
+    ) -> str:
+        """Re-OCR a single normalized-bbox crop from one page.
+
+        Used by the quality repair loop on the grounded path. The engine
+        feature-detects this method (``hasattr``) — it is intentionally
+        NOT part of the :class:`GroundedOCRBackend` protocol, so adding
+        it changes no existing backend contract.
+
+        P1 trade-off: the document is rasterized per call. Repair calls
+        are rare (only below-target blocks), so this is acceptable until
+        a page-image cache exists.
+        """
+        page_imgs = await asyncio.to_thread(
+            _rasterize_to_jpeg_pages,
+            input_path,
+            self.max_image_dim,
+            self.dpi,
+        )
+        if page_index >= len(page_imgs):
+            raise ValueError(
+                f"page_index {page_index} out of range "
+                f"({len(page_imgs)} pages rasterized)"
+            )
+        b64, w, h = page_imgs[page_index]
+        crop_b64 = await asyncio.to_thread(_crop_normalized, b64, bbox, w, h)
+        if crop_b64 is None:
+            return ""
+        text = await self._call_with_retry(crop_b64, prompt=CROP_OCR_PROMPT)
+        return text.strip()
+
+    async def _call_with_retry(self, image_b64: str, prompt: str | None = None) -> str:
         """One grounded VLM page call with retry + circuit-breaker protection.
 
         Same policy as :meth:`OCRProcessor._chat`: transient failures are
@@ -209,7 +280,7 @@ class PromptedGroundedOCR:
                         {
                             "role": "user",
                             "content": [
-                                {"type": "text", "text": self.prompt},
+                                {"type": "text", "text": prompt or self.prompt},
                                 {
                                     "type": "image_url",
                                     "image_url": {
@@ -326,4 +397,4 @@ class PromptedGroundedOCR:
         )
 
 
-__all__ = ["DEFAULT_GROUNDING_PROMPT", "PromptedGroundedOCR"]
+__all__ = ["CROP_OCR_PROMPT", "DEFAULT_GROUNDING_PROMPT", "PromptedGroundedOCR"]
