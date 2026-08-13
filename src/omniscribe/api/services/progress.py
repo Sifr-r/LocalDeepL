@@ -69,6 +69,9 @@ class FrameType(StrEnum):
     CHUNK_COMPLETE = "chunk_complete"
     CANCELLED = "cancelled"
     GLOSSARY_IMPORT = "glossary_import"
+    BLOCK_RETRY = "block_retry"
+    BLOCK_REVISED = "block_revised"
+    QUALITY_SUMMARY = "quality_summary"
 
 
 CHANNEL_TOKEN_BYTES: Final = 24
@@ -167,6 +170,75 @@ class ProgressService:
             "kind": kind,
             "confidence": confidence,
         }
+
+    @staticmethod
+    def build_block_retry_frame(
+        *,
+        page_idx: int,
+        block_idx: int,
+        attempt: int,
+        confidence: float,
+        target: float,
+    ) -> dict[str, Any]:
+        """Emitted when the repair loop flags a below-target block for re-OCR."""
+        return {
+            "type": FrameType.BLOCK_RETRY.value,
+            "page_idx": page_idx,
+            "block_idx": block_idx,
+            "attempt": int(attempt),
+            "confidence": confidence,
+            "target": target,
+        }
+
+    @staticmethod
+    def build_block_revised_frame(
+        *,
+        page_idx: int,
+        block_idx: int,
+        attempt: int,
+        bbox: list[float],
+        text: str,
+        kind: str = "text",
+        confidence: float | None = None,
+    ) -> dict[str, Any]:
+        """Emitted when a re-OCR pass produced an accepted result.
+
+        Same shape as ``block_complete`` plus ``attempt`` so the UI can
+        swap the streamed line and mark it "revised".
+        """
+        return {
+            "type": FrameType.BLOCK_REVISED.value,
+            "page_idx": page_idx,
+            "block_idx": block_idx,
+            "attempt": int(attempt),
+            "bbox": list(bbox),
+            "text": text,
+            "kind": kind,
+            "confidence": confidence,
+        }
+
+    @staticmethod
+    def build_quality_summary_frame(
+        *,
+        scope: str,
+        target: float,
+        avg_confidence: float,
+        repaired_count: int,
+        below_target_count: int,
+        page_idx: int | None = None,
+    ) -> dict[str, Any]:
+        """End-of-page / end-of-job repair statistics (spec §3.1)."""
+        frame: dict[str, Any] = {
+            "type": FrameType.QUALITY_SUMMARY.value,
+            "scope": scope,
+            "target": target,
+            "avg_confidence": avg_confidence,
+            "repaired_count": int(repaired_count),
+            "below_target_count": int(below_target_count),
+        }
+        if page_idx is not None:
+            frame["page_idx"] = page_idx
+        return frame
 
     @staticmethod
     def build_page_complete_frame(
