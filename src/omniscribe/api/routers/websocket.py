@@ -141,6 +141,7 @@ class ConnectionManagerLike(Protocol):
         channel_id: str | None,
         *,
         total_chunks: int,
+        chapters: list[dict[str, Any]] | None = None,
     ) -> None: ...
 
     async def send_chunk_complete(
@@ -153,6 +154,7 @@ class ConnectionManagerLike(Protocol):
         source_pages: list[int],
         text_chars_so_far: int,
         overall_percent: int | None = None,
+        chapters: list[dict[str, Any]] | None = None,
     ) -> None: ...
 
 
@@ -361,11 +363,14 @@ class ConnectionManager:
         channel_id: str | None,
         *,
         total_chunks: int,
+        chapters: list[dict[str, Any]] | None = None,
     ) -> None:
         """Emit the ``chunk_init`` pre-amble for a chunked OCR run."""
         await self.send(
             channel_id,
-            _progress_service.build_chunk_init_frame(total_chunks=total_chunks),
+            _progress_service.build_chunk_init_frame(
+                total_chunks=total_chunks, chapters=chapters
+            ),
         )
 
     async def send_chunk_complete(
@@ -378,6 +383,7 @@ class ConnectionManager:
         source_pages: list[int],
         text_chars_so_far: int,
         overall_percent: int | None = None,
+        chapters: list[dict[str, Any]] | None = None,
     ) -> None:
         """Emit the per-chunk terminal frame after a chunk finishes."""
         await self.send(
@@ -389,6 +395,7 @@ class ConnectionManager:
                 source_pages=list(source_pages),
                 text_chars_so_far=text_chars_so_far,
                 overall_percent=overall_percent,
+                chapters=chapters,
             ),
         )
 

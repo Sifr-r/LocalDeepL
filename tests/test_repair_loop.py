@@ -462,3 +462,26 @@ class TestEmitJobRepairSummary:
         ]
         await emit_job_repair_summary(None, summaries)  # must not raise
         await emit_job_repair_summary(BlockCallbackSet(), summaries)  # no observer
+
+
+class TestChunkFramesChaptersSchema:
+    def test_chunk_init_frame_defaults_empty_chapters(self) -> None:
+        frame = ProgressService.build_chunk_init_frame(total_chunks=3)
+        assert frame["chapters"] == []
+
+    def test_chunk_init_frame_passes_chapters_through(self) -> None:
+        chapters = [{"title": "Intro", "start_page": 1, "end_page": 4}]
+        frame = ProgressService.build_chunk_init_frame(
+            total_chunks=2, chapters=chapters
+        )
+        assert frame["chapters"] == chapters
+
+    def test_chunk_complete_frame_defaults_empty_chapters(self) -> None:
+        frame = ProgressService.build_chunk_complete_frame(
+            chunk_idx=1,
+            total_chunks=2,
+            page_range="1-25",
+            source_pages=[0, 1],
+            text_chars_so_far=100,
+        )
+        assert frame["chapters"] == []

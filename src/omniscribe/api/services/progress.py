@@ -267,11 +267,20 @@ class ProgressService:
         }
 
     @staticmethod
-    def build_chunk_init_frame(*, total_chunks: int) -> dict[str, Any]:
-        """Pre-amble emitted at the start of a chunked OCR run."""
+    def build_chunk_init_frame(
+        *,
+        total_chunks: int,
+        chapters: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Pre-amble emitted at the start of a chunked OCR run.
+
+        ``chapters`` is part of the P1 schema but populated from P5
+        onward; until then every frame carries an empty list.
+        """
         return {
             "type": FrameType.CHUNK_INIT.value,
             "total_chunks": int(total_chunks),
+            "chapters": list(chapters) if chapters else [],
         }
 
     @staticmethod
@@ -283,6 +292,7 @@ class ProgressService:
         source_pages: list[int],
         text_chars_so_far: int,
         overall_percent: int | None = None,
+        chapters: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Per-chunk terminal frame emitted after a chunk finishes."""
         frame: dict[str, Any] = {
@@ -292,6 +302,7 @@ class ProgressService:
             "page_range": page_range,
             "source_pages": [int(p) for p in source_pages],
             "text_chars_so_far": int(text_chars_so_far),
+            "chapters": list(chapters) if chapters else [],
         }
         if overall_percent is not None:
             frame["overall_percent"] = int(overall_percent)
