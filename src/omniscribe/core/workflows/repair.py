@@ -1,0 +1,167 @@
+"""Quality repair loop — selective re-OCR of below-target blocks (spec §3.2).
+
+Engine-agnostic: :class:`QualityRepairLoop` owns the
+estimate → re-OCR → accept decision while each engine supplies the
+per-block re-OCR coroutine (hybrid: crop → ``perform_ocr_on_crop``;
+grounded: ``PromptedGroundedOCR.ocr_crop``). Observer callbacks carry
+the ``block_retry`` / ``block_revised`` / ``quality_summary`` events to
+whatever transport the API layer wires up (see ``core/callbacks.py``).
+
+Default-off policy: engines only run the loop when they receive a
+non-``None`` :class:`RepairOptions`, so every in-process
+``OCRPipeline`` caller keeps the pre-loop behavior byte-for-byte.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+
+from omniscribe.core.callbacks import BlockRetryCallback, BlockRevisedCallback
+from omniscribe.core.ocr.resilience import CircuitOpenError
+from omniscribe.core.workflows.utils import _estimate_confidence
+
+logger = logging.getLogger(__name__)
+
+#: Per-block re-OCR primitive supplied by the engine:
+#: ``(block_idx, bbox) -> new_text``.
+ReOcrBlock = Callable[[int, tuple[float, float, float, float]], Awaitable[str]]
+
+
+@dataclass(frozen=True)
+class RepairOptions:
+    """Toggle and bounds for the quality repair loop."""
+
+    enabled: bool = True
+    target: float = 0.98
+    max_retries: int = 2
+
+
+@dataclass(frozen=True)
+class PageRepairSummary:
+    """End-of-page repair statistics (feeds the ``quality_summary`` frame)."""
+
+    page_idx: int
+    target: float
+    block_count: int
+    avg_confidence: float
+    repaired_count: int
+    below_target_count: int
+
+
+class QualityRepairLoop:
+    """Re-OCRs below-target blocks until they reach the target, stall, or exhaust retries."""
+
+    def __init__(
+        self,
+        options: RepairOptions | None = None,
+        confidence_estimator: Callable[[str], float] | None = None,
+    ) -> None:
+        self.options = options if options is not None else RepairOptions()
+        self._estimate = (
+            confidence_estimator
+            if confidence_estimator is not None
+            else _estimate_confidence
+        )
+
+    async def repair_page(
+        self,
+        *,
+        page_idx: int,
+        page_blocks: list[tuple[tuple[float, float, float, float], str]],
+        re_ocr: ReOcrBlock,
+        on_block_retry: BlockRetryCallback | None = None,
+        on_block_revised: BlockRevisedCallback | None = None,
+    ) -> PageRepairSummary:
+        """Repair one page in place; ``page_blocks`` entries are updated on accept.
+
+        Empty blocks are skipped entirely (the refine stage already owns
+        empty-box recovery) and are excluded from the summary stats.
+        """
+        opts = self.options
+        if not opts.enabled:
+            return PageRepairSummary(
+                page_idx=page_idx,
+                target=opts.target,
+                block_count=0,
+                avg_confidence=1.0,
+                repaired_count=0,
+                below_target_count=0,
+            )
+
+        repaired_count = 0
+        below_target_count = 0
+        confidences: list[float] = []
+        for block_idx, (bbox, text) in enumerate(page_blocks):
+            if not text or not text.strip():
+                continue
+            conf = self._estimate(text)
+            if conf >= opts.target:
+                confidences.append(conf)
+                continue
+
+            initial_conf = conf
+            for attempt in range(1, opts.max_retries + 1):
+                if on_block_retry is not None:
+                    await on_block_retry(
+                        page_idx, block_idx, attempt, conf, opts.target
+                    )
+                try:
+                    new_text = await re_ocr(block_idx, bbox)
+                except CircuitOpenError:
+                    # Infrastructure-level fail-fast: never swallow the
+                    # breaker signal — the whole run aborts just like
+                    # the refine stage does.
+                    raise
+                except Exception as e:
+                    logger.warning(
+                        "Quality repair failed for page %s block %s: %s: %s",
+                        page_idx,
+                        block_idx,
+                        type(e).__name__,
+                        e,
+                    )
+                    break
+
+                new_conf = self._estimate(new_text)
+                if new_conf <= conf:
+                    break  # stall guard: keep the best text seen so far
+                page_blocks[block_idx] = (bbox, new_text.strip())
+                if on_block_revised is not None:
+                    await on_block_revised(
+                        page_idx,
+                        block_idx,
+                        attempt,
+                        list(bbox),
+                        new_text.strip(),
+                        "text",
+                        new_conf,
+                    )
+                conf = new_conf
+                if conf >= opts.target:
+                    break
+
+            confidences.append(conf)
+            if conf > initial_conf:
+                repaired_count += 1
+            if conf < opts.target:
+                below_target_count += 1
+
+        avg_confidence = sum(confidences) / len(confidences) if confidences else 1.0
+        return PageRepairSummary(
+            page_idx=page_idx,
+            target=opts.target,
+            block_count=len(confidences),
+            avg_confidence=avg_confidence,
+            repaired_count=repaired_count,
+            below_target_count=below_target_count,
+        )
+
+
+__all__ = [
+    "PageRepairSummary",
+    "QualityRepairLoop",
+    "ReOcrBlock",
+    "RepairOptions",
+]

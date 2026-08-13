@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import pytest
+
 from omniscribe.api.routers.websocket import ConnectionManager
 from omniscribe.api.services.progress import FrameType, ProgressService
 from omniscribe.core.callbacks import BlockCallbackSet
+from omniscribe.core.ocr.resilience import CircuitOpenError
+from omniscribe.core.workflows.repair import QualityRepairLoop, RepairOptions
 from omniscribe.core.workflows.utils import _estimate_confidence
 
 
@@ -163,3 +167,126 @@ class TestEstimateConfidenceCeiling:
         assert _estimate_confidence("12345") == 0.3
         assert _estimate_confidence("ab") == 0.4
         assert _estimate_confidence("hello there") == 0.7
+
+
+class TestQualityRepairLoop:
+    async def test_blocks_at_or_above_target_are_not_repaired(self) -> None:
+        loop = QualityRepairLoop(RepairOptions(target=0.98))
+        blocks = [((0.1, 0.1, 0.9, 0.2), "The quick brown fox jumps over the lazy dog")]
+
+        async def re_ocr(block_idx, bbox):
+            raise AssertionError("re_ocr must not run for healthy blocks")
+
+        summary = await loop.repair_page(page_idx=0, page_blocks=blocks, re_ocr=re_ocr)
+        assert summary.repaired_count == 0
+        assert summary.below_target_count == 0
+        assert summary.block_count == 1
+
+    async def test_below_target_block_is_repaired_and_revised_event_fires(self) -> None:
+        loop = QualityRepairLoop(RepairOptions(target=0.98))
+        blocks = [((0.1, 0.1, 0.9, 0.2), "x")]
+        retries: list[tuple[int, int]] = []
+        revisions: list[str] = []
+
+        async def re_ocr(block_idx, bbox):
+            return "The quick brown fox jumps over the lazy dog"
+
+        async def on_retry(page_idx, block_idx, attempt, confidence, target):
+            retries.append((block_idx, attempt))
+
+        async def on_revised(
+            page_idx, block_idx, attempt, bbox, text, kind, confidence
+        ):
+            revisions.append(text)
+
+        summary = await loop.repair_page(
+            page_idx=0,
+            page_blocks=blocks,
+            re_ocr=re_ocr,
+            on_block_retry=on_retry,
+            on_block_revised=on_revised,
+        )
+        assert blocks[0][1] == "The quick brown fox jumps over the lazy dog"
+        assert retries == [(0, 1)]
+        assert revisions == ["The quick brown fox jumps over the lazy dog"]
+        assert summary.repaired_count == 1
+        assert summary.below_target_count == 0
+
+    async def test_empty_blocks_are_skipped_and_excluded_from_stats(self) -> None:
+        loop = QualityRepairLoop(RepairOptions(target=0.98))
+        blocks = [((0.1, 0.1, 0.9, 0.2), ""), ((0.1, 0.3, 0.9, 0.4), "   ")]
+
+        async def re_ocr(block_idx, bbox):
+            raise AssertionError("empty blocks must not be repaired")
+
+        summary = await loop.repair_page(page_idx=0, page_blocks=blocks, re_ocr=re_ocr)
+        assert summary.block_count == 0
+        assert summary.avg_confidence == 1.0
+
+    async def test_stall_guard_rejects_non_improvement(self) -> None:
+        loop = QualityRepairLoop(RepairOptions(target=0.98, max_retries=3))
+        # "two words" estimates 0.7; the retry returns same-band text (0.7),
+        # which is not an improvement -> the loop stops after one attempt.
+        blocks = [((0.1, 0.1, 0.9, 0.2), "two words")]
+        calls = 0
+
+        async def re_ocr(block_idx, bbox):
+            nonlocal calls
+            calls += 1
+            return "other phrase"
+
+        summary = await loop.repair_page(page_idx=0, page_blocks=blocks, re_ocr=re_ocr)
+        assert calls == 1
+        assert blocks[0][1] == "two words"
+        assert summary.repaired_count == 0
+        assert summary.below_target_count == 1
+
+    async def test_respects_max_retries(self) -> None:
+        loop = QualityRepairLoop(RepairOptions(target=0.98, max_retries=2))
+        blocks = [((0.1, 0.1, 0.9, 0.2), "x")]  # estimates 0.4
+        responses = iter(["two words", "a1 b2 c3 d4", "never reached"])
+        calls = 0
+
+        async def re_ocr(block_idx, bbox):
+            nonlocal calls
+            calls += 1
+            return next(responses)
+
+        summary = await loop.repair_page(page_idx=0, page_blocks=blocks, re_ocr=re_ocr)
+        assert calls == 2
+        assert blocks[0][1] == "a1 b2 c3 d4"  # best accepted revision wins
+        assert summary.repaired_count == 1
+        assert summary.below_target_count == 1
+
+    async def test_circuit_open_error_propagates(self) -> None:
+        loop = QualityRepairLoop(RepairOptions())
+        blocks = [((0.1, 0.1, 0.9, 0.2), "x")]
+
+        async def re_ocr(block_idx, bbox):
+            raise CircuitOpenError(failures=5, retry_after=30.0)
+
+        with pytest.raises(CircuitOpenError):
+            await loop.repair_page(page_idx=0, page_blocks=blocks, re_ocr=re_ocr)
+
+    async def test_generic_re_ocr_error_fails_open(self) -> None:
+        loop = QualityRepairLoop(RepairOptions())
+        blocks = [((0.1, 0.1, 0.9, 0.2), "x")]
+
+        async def re_ocr(block_idx, bbox):
+            raise RuntimeError("boom")
+
+        summary = await loop.repair_page(page_idx=0, page_blocks=blocks, re_ocr=re_ocr)
+        assert blocks[0][1] == "x"
+        assert summary.repaired_count == 0
+        assert summary.below_target_count == 1
+
+    async def test_disabled_options_are_a_noop(self) -> None:
+        loop = QualityRepairLoop(RepairOptions(enabled=False))
+        blocks = [((0.1, 0.1, 0.9, 0.2), "x")]
+
+        async def re_ocr(block_idx, bbox):
+            raise AssertionError("disabled loop must not re-OCR")
+
+        summary = await loop.repair_page(page_idx=0, page_blocks=blocks, re_ocr=re_ocr)
+        assert summary.repaired_count == 0
+        assert summary.block_count == 0
