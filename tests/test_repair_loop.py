@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from omniscribe.api.routers.websocket import ConnectionManager
 from omniscribe.api.services.progress import FrameType, ProgressService
+from omniscribe.core.callbacks import BlockCallbackSet
 
 
 class TestRepairFrameBuilders:
@@ -123,3 +124,20 @@ class TestRepairSenders:
         await manager.send_block_retry(
             None, page_idx=0, block_idx=0, attempt=1, confidence=0.5, target=0.98
         )  # must not raise
+
+
+class TestRepairCallbackSet:
+    def test_new_fields_default_to_none(self) -> None:
+        cb = BlockCallbackSet()
+        assert cb.on_block_retry is None
+        assert cb.on_block_revised is None
+        assert cb.on_quality_summary is None
+
+    def test_positional_construction_still_works(self) -> None:
+        async def on_block(*args): ...
+        async def on_page(*args): ...
+
+        cb = BlockCallbackSet(on_block, on_page)
+        assert cb.on_block is on_block
+        assert cb.on_page_complete is on_page
+        assert cb.on_block_retry is None

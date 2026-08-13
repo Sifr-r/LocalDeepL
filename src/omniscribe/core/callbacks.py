@@ -65,6 +65,26 @@ TranslateChunkCallback = Callable[
 ]
 
 
+# Repair-loop events (spec §3.2). Emitted by the quality repair loop:
+# `on_block_retry` fires just before a below-target block is re-OCRed,
+# `on_block_revised` fires whenever an accepted revision changes the
+# block text (same shape as `on_block` plus the attempt counter), and
+# `on_quality_summary` reports per-page / per-job repair statistics.
+#
+# Signatures:
+#   on_block_retry:     (page_idx, block_idx, attempt, confidence, target)
+#   on_block_revised:   (page_idx, block_idx, attempt, bbox, text, kind, confidence)
+#   on_quality_summary: (scope, page_idx | None, target, avg_confidence,
+#                        repaired_count, below_target_count)
+BlockRetryCallback = Callable[[int, int, int, float, float], Awaitable[None]]
+BlockRevisedCallback = Callable[
+    [int, int, int, list[float], str, str, float | None], Awaitable[None]
+]
+QualitySummaryCallback = Callable[
+    [str, int | None, float, float, int, int], Awaitable[None]
+]
+
+
 class BlockCallbackSet(NamedTuple):
     """Bag of optional per-block and per-page callbacks.
 
@@ -76,6 +96,9 @@ class BlockCallbackSet(NamedTuple):
 
     on_block: BlockCallback | None = None
     on_page_complete: PageCompleteCallback | None = None
+    on_block_retry: BlockRetryCallback | None = None
+    on_block_revised: BlockRevisedCallback | None = None
+    on_quality_summary: QualitySummaryCallback | None = None
 
 
 class TranslateCallbacks(NamedTuple):
@@ -93,7 +116,10 @@ class TranslateCallbacks(NamedTuple):
 __all__ = [
     "BlockCallback",
     "BlockCallbackSet",
+    "BlockRetryCallback",
+    "BlockRevisedCallback",
     "PageCompleteCallback",
+    "QualitySummaryCallback",
     "TranslateCallbacks",
     "TranslateChunkCallback",
 ]
