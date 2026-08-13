@@ -242,7 +242,7 @@ class PromptedGroundedOCR:
             self.max_image_dim,
             self.dpi,
         )
-        if page_index >= len(page_imgs):
+        if page_index < 0 or page_index >= len(page_imgs):
             raise ValueError(
                 f"page_index {page_index} out of range "
                 f"({len(page_imgs)} pages rasterized)"

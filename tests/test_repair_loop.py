@@ -359,3 +359,44 @@ class TestPromptedGroundedOCRCrop:
             lambda path, dim, dpi: [(_tiny_jpeg_b64(), 100, 100)],
         )
         assert await backend.ocr_crop("dummy.pdf", 0, (0.5, 0.5, 0.5, 0.5)) == ""
+
+    async def test_ocr_crop_rejects_negative_page(self, monkeypatch) -> None:
+        from omniscribe.core.grounded import prompted as prompted_mod
+
+        backend = prompted_mod.PromptedGroundedOCR(
+            api_base="http://repair-test.local/v1", model="repair-model"
+        )
+        monkeypatch.setattr(
+            prompted_mod,
+            "_rasterize_to_jpeg_pages",
+            lambda path, dim, dpi: [(_tiny_jpeg_b64(), 100, 100)],
+        )
+        with pytest.raises(ValueError, match="out of range"):
+            await backend.ocr_crop("dummy.pdf", -1, (0.2, 0.2, 0.8, 0.4))
+
+
+class TestCropNormalizedGeometry:
+    def test_padding_and_size(self) -> None:
+        from PIL import Image
+
+        from omniscribe.core.grounded.prompted import _crop_normalized
+
+        b64 = _tiny_jpeg_b64(100, 100)
+        out = _crop_normalized(b64, (0.2, 0.2, 0.8, 0.4), 100, 100)
+        assert out is not None
+        img = Image.open(io.BytesIO(base64.b64decode(out)))
+        # pad_x = 0.05 * 0.6 = 0.03 -> x: 17..83; pad_y = 0.05 * 0.2 = 0.01 -> y: 19..41
+        assert img.size == (66, 22)
+
+    def test_edge_hugging_bbox_is_clamped(self) -> None:
+        from PIL import Image
+
+        from omniscribe.core.grounded.prompted import _crop_normalized
+
+        b64 = _tiny_jpeg_b64(100, 100)
+        out = _crop_normalized(b64, (0.0, 0.0, 0.99, 0.99), 100, 100)
+        assert out is not None
+        img = Image.open(io.BytesIO(base64.b64decode(out)))
+        # padded box would exceed the page; clamping keeps it inside
+        assert img.size[0] <= 100 and img.size[1] <= 100
+        assert img.size[0] >= 99 and img.size[1] >= 98
