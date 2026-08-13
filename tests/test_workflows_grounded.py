@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import pytest
 
+from omniscribe.core.callbacks import BlockCallbackSet
 from omniscribe.core.document import DocumentResult
 from omniscribe.core.grounded import GroundedBlock, GroundedResponse
 from omniscribe.core.ocr.resilience import CircuitOpenError
@@ -255,9 +256,13 @@ class _CropCapableStubBackend(_StubGroundedBackend):
         super().__init__(response)
         self.crop_text = crop_text
         self.crop_calls = 0
+        # Records (input_path, page_index, bbox) per call so tests can
+        # pin the exact arguments the engine forwards to ``ocr_crop``.
+        self.crop_args: list[tuple[str, int, tuple[float, float, float, float]]] = []
 
     async def ocr_crop(self, input_path, page_index, bbox):
         self.crop_calls += 1
+        self.crop_args.append((input_path, page_index, tuple(bbox)))
         return self.crop_text
 
 
@@ -281,6 +286,10 @@ class TestGroundedRepair:
         )
 
         assert backend.crop_calls == 1
+        # I-1: the engine must forward input_path / page_index / bbox into
+        # ``ocr_crop`` untouched (bbox repacked from the GroundedBlock list
+        # into a float tuple by ``_repair_blocks``).
+        assert backend.crop_args == [("in.pdf", 0, (0.1, 0.1, 0.9, 0.2))]
         assert backend.response.blocks[0].text == (
             "The quick brown fox jumps over the lazy dog"
         )
@@ -311,6 +320,31 @@ class TestGroundedRepair:
         )
 
         assert backend.crop_calls == 0
+
+    async def test_empty_blocks_are_skipped(self) -> None:
+        # Empty and whitespace-only blocks are never repair candidates —
+        # no crop call, text left untouched (parity with hybrid's
+        # ``test_empty_blocks_are_left_to_refine``).
+        backend = _CropCapableStubBackend(
+            GroundedResponse(
+                blocks=[
+                    GroundedBlock(bbox=[0.1, 0.1, 0.9, 0.2], text="", page_index=0),
+                    GroundedBlock(bbox=[0.1, 0.3, 0.9, 0.4], text="   ", page_index=0),
+                ]
+            )
+        )
+        engine = _engine(backend=backend)
+
+        await engine.execute(
+            "in.pdf",
+            "out.pdf",
+            dpi=150,
+            repair_options=RepairOptions(target=0.98),
+        )
+
+        assert backend.crop_calls == 0
+        assert backend.response.blocks[0].text == ""
+        assert backend.response.blocks[1].text == "   "
 
     async def test_backend_without_ocr_crop_is_skipped(self) -> None:
         # The plain stub has no ``ocr_crop`` — repair must be a no-op and
@@ -370,6 +404,7 @@ class TestGroundedRepair:
         assert warnings[0][0] == 0
         assert isinstance(warnings[0][1], RuntimeError)
         assert backend.response.blocks[0].text == "x"
+        assert engine.last_document_result is not None
         assert engine.last_document_result.pages[0].blocks[0].text == "x"
 
     async def test_default_off_without_repair_options(self) -> None:
@@ -380,3 +415,79 @@ class TestGroundedRepair:
 
         assert backend.crop_calls == 0
         assert backend.response.blocks[0].text == "x"
+
+    async def test_progress_reuses_refine_stage(self) -> None:
+        # Parity with hybrid's ``test_progress_reuses_refine_stage``: repair
+        # progress rides the ``refine`` stage label, never a new one.
+        backend = _CropCapableStubBackend(self._below_target_response())
+        engine = _engine(backend=backend)
+        events: list[tuple[str, int, int]] = []
+
+        async def cb(stage: str, cur: int, tot: int, msg: str) -> None:
+            events.append((stage, cur, tot))
+
+        await engine.execute(
+            "in.pdf",
+            "out.pdf",
+            dpi=150,
+            repair_options=RepairOptions(target=0.98),
+            progress=cb,
+        )
+
+        assert events[0] == ("refine", 0, 1)
+        # ``EngineBase._emit`` appends the trailing ``embed`` frames, so
+        # pin the refine bracket on the refine-scoped subsequence.
+        refine_events = [e for e in events if e[0] == "refine"]
+        assert refine_events[0] == ("refine", 0, 1)
+        assert refine_events[-1] == ("refine", 1, 1)
+
+    async def test_page_and_job_summary_callbacks_fire(self) -> None:
+        # Parity with hybrid's ``test_page_and_job_summary_callbacks_fire``,
+        # except grounded's ``execute`` emits the job summary itself (hybrid's
+        # test calls ``_repair_pages`` + ``emit_job_repair_summary`` by hand).
+        seen: list[tuple[str, int | None]] = []
+
+        async def on_summary(scope, page_idx, target, avg, repaired, below):
+            seen.append((scope, page_idx))
+
+        backend = _CropCapableStubBackend(self._below_target_response())
+        # ``_engine()`` doesn't take ``block_callbacks`` — construct the
+        # engine directly, binding the NamedTuple field by keyword.
+        engine = GroundedEngine(
+            grounded_backend=backend,
+            output_writer=_noop_writer,
+            block_callbacks=BlockCallbackSet(on_quality_summary=on_summary),
+        )
+
+        await engine.execute(
+            "in.pdf",
+            "out.pdf",
+            dpi=150,
+            repair_options=RepairOptions(target=0.98),
+        )
+
+        # Page summary from ``_repair_blocks``, job summary from
+        # ``emit_job_repair_summary`` — both fired inside ``execute``.
+        assert seen == [("page", 0), ("job", None)]
+
+    async def test_multi_page_blocks_repaired_in_ascending_page_order(self) -> None:
+        # Insert page 1's block FIRST so ``sorted(by_page)`` ordering is
+        # actually exercised (dict insertion order alone would hide a bug).
+        blocks = [
+            GroundedBlock(bbox=[0.1, 0.3, 0.9, 0.4], text="y", page_index=1),
+            GroundedBlock(bbox=[0.1, 0.1, 0.9, 0.2], text="x", page_index=0),
+        ]
+        backend = _CropCapableStubBackend(GroundedResponse(blocks=blocks))
+        engine = _engine(backend=backend)
+
+        await engine.execute(
+            "in.pdf",
+            "out.pdf",
+            dpi=150,
+            repair_options=RepairOptions(target=0.98),
+        )
+
+        assert backend.crop_calls == 2
+        assert [page_idx for _, page_idx, _ in backend.crop_args] == [0, 1]
+        assert blocks[0].text == "The quick brown fox jumps over the lazy dog"
+        assert blocks[1].text == "The quick brown fox jumps over the lazy dog"

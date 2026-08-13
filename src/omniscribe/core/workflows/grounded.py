@@ -132,7 +132,7 @@ class GroundedEngine(EngineBase):
                 on_warning=on_warning,
             )
             await emit_job_repair_summary(self.block_callbacks, repair_summaries)
-            # Re-accumulate so overlays/DocumentResult/embedding see the
+            # Re-accumulate so DocumentResult and embedding see the
             # repaired text (blocks were mutated in place).
             pages_data = self._accumulate_pages(response.blocks)
 
