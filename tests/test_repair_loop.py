@@ -11,7 +11,12 @@ from omniscribe.api.routers.websocket import ConnectionManager
 from omniscribe.api.services.progress import FrameType, ProgressService
 from omniscribe.core.callbacks import BlockCallbackSet
 from omniscribe.core.ocr.resilience import CircuitOpenError
-from omniscribe.core.workflows.repair import QualityRepairLoop, RepairOptions
+from omniscribe.core.workflows.repair import (
+    PageRepairSummary,
+    QualityRepairLoop,
+    RepairOptions,
+    emit_job_repair_summary,
+)
 from omniscribe.core.workflows.utils import _estimate_confidence
 
 
@@ -400,3 +405,60 @@ class TestCropNormalizedGeometry:
         # padded box would exceed the page; clamping keeps it inside
         assert img.size[0] <= 100 and img.size[1] <= 100
         assert img.size[0] >= 99 and img.size[1] >= 98
+
+
+class TestEmitJobRepairSummary:
+    async def test_block_weighted_average_across_pages(self) -> None:
+        seen: list[tuple] = []
+
+        async def on_summary(scope, page_idx, target, avg, repaired, below):
+            seen.append((scope, page_idx, target, avg, repaired, below))
+
+        cb = BlockCallbackSet(on_quality_summary=on_summary)
+        summaries = [
+            PageRepairSummary(
+                page_idx=0,
+                target=0.98,
+                block_count=3,
+                avg_confidence=0.9,
+                repaired_count=1,
+                below_target_count=0,
+            ),
+            PageRepairSummary(
+                page_idx=1,
+                target=0.98,
+                block_count=1,
+                avg_confidence=0.5,
+                repaired_count=0,
+                below_target_count=1,
+            ),
+        ]
+
+        await emit_job_repair_summary(cb, summaries)
+
+        # (3*0.9 + 1*0.5) / 4 = 0.8
+        assert seen == [("job", None, 0.98, pytest.approx(0.8), 1, 1)]
+
+    async def test_empty_summaries_are_a_noop(self) -> None:
+        seen: list[tuple] = []
+
+        async def on_summary(*args):
+            seen.append(args)
+
+        cb = BlockCallbackSet(on_quality_summary=on_summary)
+        await emit_job_repair_summary(cb, [])
+        assert seen == []
+
+    async def test_none_callbacks_or_missing_observer_are_noops(self) -> None:
+        summaries = [
+            PageRepairSummary(
+                page_idx=0,
+                target=0.98,
+                block_count=1,
+                avg_confidence=0.9,
+                repaired_count=0,
+                below_target_count=0,
+            )
+        ]
+        await emit_job_repair_summary(None, summaries)  # must not raise
+        await emit_job_repair_summary(BlockCallbackSet(), summaries)  # no observer

@@ -742,10 +742,15 @@ class HybridEngine(EngineBase):
         crop → ``perform_ocr_on_crop`` primitive refine uses. Progress
         reuses the ``refine`` stage so the pinned stage-weight bands keep
         reporting monotonically. Returns one summary per visited page.
+
+        Repair is intentionally sequential (one block at a time): the
+        accept/stall decision is inherently serial per block and repair
+        calls are rare, so P1 does not fan out across pages or blocks;
+        ``concurrency`` is accepted for signature parity with the other
+        engine phases.
         """
         loop = QualityRepairLoop(repair_options)
         cb = self.block_callbacks
-        semaphore = asyncio.Semaphore(max(1, concurrency))
 
         targets = sum(
             1
@@ -786,23 +791,22 @@ class HybridEngine(EngineBase):
                 _page: int = p_num,
             ) -> str:
                 nonlocal completed
-                async with semaphore:
-                    crop_b64 = await asyncio.to_thread(
-                        crop_for_ocr_from_image, _img, list(bbox)
-                    )
-                    if crop_b64 is None:
-                        return ""
-                    try:
-                        text = await self.ocr_processor.perform_ocr_on_crop(crop_b64)
-                    except CircuitOpenError:
-                        raise
-                    except Exception as exc:
-                        # Spec §3.2 graceful degradation: surface the
-                        # warning frame, then re-raise so repair_page
-                        # keeps the best-so-far text and the job goes on.
-                        if on_warning is not None:
-                            await on_warning(_page, exc)
-                        raise
+                crop_b64 = await asyncio.to_thread(
+                    crop_for_ocr_from_image, _img, list(bbox)
+                )
+                if crop_b64 is None:
+                    return ""
+                try:
+                    text = await self.ocr_processor.perform_ocr_on_crop(crop_b64)
+                except CircuitOpenError:
+                    raise
+                except Exception as exc:
+                    # Spec §3.2 graceful degradation: surface the
+                    # warning frame, then re-raise so repair_page
+                    # keeps the best-so-far text and the job goes on.
+                    if on_warning is not None:
+                        await on_warning(_page, exc)
+                    raise
                 completed += 1
                 await notify(
                     progress,
