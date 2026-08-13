@@ -31,6 +31,7 @@ from omniscribe.core.workflows import (
     ProgressCallback,
     WarningCallback,
 )
+from omniscribe.core.workflows.repair import RepairOptions
 
 if TYPE_CHECKING:
     from omniscribe.core.callbacks import BlockCallbackSet
@@ -127,6 +128,7 @@ class OCRPipeline:
         progress: ProgressCallback | None = None,
         on_warning: WarningCallback | None = None,
         trust_model_id: str | None = None,
+        repair_options: RepairOptions | None = None,
     ) -> dict[int, list[str]]:
         # Phase 2 — `trust_model_id` is the model identifier the trust
         # layer calibrates against (e.g. ``"qwen2_5_vl_72b"``). When
@@ -147,6 +149,7 @@ class OCRPipeline:
                 progress=progress,
                 on_warning=on_warning,
                 trust_model_id=resolved_trust_model_id,
+                repair_options=repair_options,
             )
         else:
             try:
@@ -176,4 +179,5 @@ class OCRPipeline:
                 progress=progress,
                 on_warning=on_warning,
                 trust_model_id=resolved_trust_model_id,
+                repair_options=repair_options,
             )

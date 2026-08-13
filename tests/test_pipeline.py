@@ -13,11 +13,13 @@ import io
 import pytest
 from PIL import Image
 
+from omniscribe.core.grounded import GroundedResponse
 from omniscribe.core.workflows.hybrid import (
     _drop_refined_duplicates,
     _is_refinable,
     parse_page_range,
 )
+from omniscribe.core.workflows.repair import RepairOptions
 from omniscribe.pipeline import OCRPipeline
 from tests.conftest import _StubOCR
 
@@ -448,3 +450,56 @@ class TestOCRPipeline:
         # so this run is all-success. last_failed_pages must reset.
         await pipe.run("in.pdf", "out-2.pdf", concurrency=1, refine=False)
         assert pipe.last_failed_pages == []
+
+
+class TestPipelineRepairPassthrough:
+    async def test_hybrid_run_forwards_repair_options(self, stub_ocr):
+        pipe = OCRPipeline(_StubAligner(), stub_ocr, _StubPDF(n_pages=1))
+        captured: dict = {}
+
+        async def fake_execute(**kwargs):
+            captured.update(kwargs)
+            return {}
+
+        pipe._engine.execute = fake_execute  # type: ignore[method-assign]
+        opts = RepairOptions(target=0.9)
+
+        await pipe.run("in.pdf", "out.pdf", repair_options=opts)
+
+        assert captured["repair_options"] is opts
+
+    async def test_hybrid_run_defaults_repair_options_to_none(self, stub_ocr):
+        pipe = OCRPipeline(_StubAligner(), stub_ocr, _StubPDF(n_pages=1))
+        captured: dict = {}
+
+        async def fake_execute(**kwargs):
+            captured.update(kwargs)
+            return {}
+
+        pipe._engine.execute = fake_execute  # type: ignore[method-assign]
+
+        await pipe.run("in.pdf", "out.pdf")
+
+        assert captured["repair_options"] is None
+
+    async def test_grounded_run_forwards_repair_options(self):
+        class _TinyGroundedBackend:
+            async def ocr_document(self, pdf_path, progress=None, on_warning=None):
+                return GroundedResponse(blocks=[])
+
+        pipe = OCRPipeline(
+            grounded_backend=_TinyGroundedBackend(),
+            pdf_handler=_StubPDF(n_pages=1),
+        )
+        captured: dict = {}
+
+        async def fake_execute(**kwargs):
+            captured.update(kwargs)
+            return {}
+
+        pipe._engine.execute = fake_execute  # type: ignore[method-assign]
+        opts = RepairOptions(enabled=True, target=0.95)
+
+        await pipe.run("in.pdf", "out.pdf", repair_options=opts)
+
+        assert captured["repair_options"] is opts
