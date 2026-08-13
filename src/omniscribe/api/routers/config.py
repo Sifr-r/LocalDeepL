@@ -55,6 +55,17 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        logger.warning("Ignoring invalid float environment value for %s", name)
+        return default
+
+
 class RuntimeConfigDict(TypedDict, total=False):
     api_base: str
     api_key: str
@@ -79,6 +90,9 @@ class RuntimeConfigDict(TypedDict, total=False):
     normalize_contrast: bool
     crop_cleanup: bool
     quality_routing: bool
+    quality_loop_enabled: bool
+    quality_target: float
+    quality_max_retries: int
     document_processors: list[str]
     transcription_api_base: str
     transcription_api_key: str
@@ -116,6 +130,9 @@ _config: RuntimeConfigDict = {
     "normalize_contrast": _env_bool("OCR_NORMALIZE_CONTRAST", False),
     "crop_cleanup": _env_bool("OCR_CROP_CLEANUP", False),
     "quality_routing": _env_bool("OCR_QUALITY_ROUTING", False),
+    "quality_loop_enabled": _env_bool("OMNISCRIBE_QUALITY_LOOP", True),
+    "quality_target": _env_float("OMNISCRIBE_QUALITY_TARGET", 0.98),
+    "quality_max_retries": _env_int("OMNISCRIBE_QUALITY_MAX_RETRIES", 2),
     "document_processors": [],
     "transcription_api_base": os.getenv(
         "OMNISCRIBE_TRANSCRIPTION_API_BASE",

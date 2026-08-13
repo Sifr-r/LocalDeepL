@@ -199,6 +199,13 @@ class ProcessSettings(BaseModel):
     # (programmatic caller). ``None`` (the default) means the trust
     # layer is off, byte-identical to the pre-Phase-2 path.
     quality_options: OCrQualitySettings | None = None
+    # P1 — quality repair loop knobs (spec §3.2/§8). Form fields arrive
+    # as strings; Pydantic lax mode coerces them ("false" -> False,
+    # "0.9" -> 0.9). The API-level defaults enable the loop with the
+    # spec's bounds; engine callers that pass no RepairOptions stay off.
+    quality_loop_enabled: bool = True
+    quality_target: float = Field(default=0.98, ge=0.5, le=1.0)
+    quality_max_retries: int = Field(default=2, ge=0, le=5)
 
     @field_validator("api_base", "api_key", "model", mode="before")
     @classmethod

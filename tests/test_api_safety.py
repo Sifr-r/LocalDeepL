@@ -1047,6 +1047,15 @@ def test_run_ocr_pipeline_progress_bridge_does_not_block_worker_thread(
         async def send_page_complete(self, *args, **kwargs):
             return None
 
+        async def send_block_retry(self, *args, **kwargs):
+            return None
+
+        async def send_block_revised(self, *args, **kwargs):
+            return None
+
+        async def send_quality_summary(self, *args, **kwargs):
+            return None
+
     original_manager = ocr.manager
     ocr.manager = _SlowConnectionManager()  # type: ignore[assignment]
     original_text_store = state.text_artifacts

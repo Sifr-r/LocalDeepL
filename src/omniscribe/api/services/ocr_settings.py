@@ -64,6 +64,11 @@ def _form_param_keys() -> dict[str, str]:
         # Phase 2 — trust layer knob; arrives on the form as a JSON-encoded
         # string and is parsed by ``ProcessSettings.validate_quality_options``.
         "quality_options": "quality_options",
+        # P1 — quality repair loop knobs (spec §3.2); plain form fields
+        # coerced by ``ProcessSettings`` lax validation.
+        "quality_loop_enabled": "quality_loop_enabled",
+        "quality_target": "quality_target",
+        "quality_max_retries": "quality_max_retries",
     }
 
 

@@ -81,12 +81,63 @@ class SendPageCompleteCallback(Protocol):
     ) -> None: ...
 
 
+class SendBlockRetryCallback(Protocol):
+    """Structural type for the WebSocket ``block_retry`` sender (spec §3.1)."""
+
+    async def __call__(
+        self,
+        channel_id: str | None,
+        *,
+        page_idx: int,
+        block_idx: int,
+        attempt: int,
+        confidence: float,
+        target: float,
+    ) -> None: ...
+
+
+class SendBlockRevisedCallback(Protocol):
+    """Structural type for the WebSocket ``block_revised`` sender (spec §3.1)."""
+
+    async def __call__(
+        self,
+        channel_id: str | None,
+        *,
+        page_idx: int,
+        block_idx: int,
+        attempt: int,
+        bbox: list[float],
+        text: str,
+        kind: str = "text",
+        confidence: float | None = None,
+    ) -> None: ...
+
+
+class SendQualitySummaryCallback(Protocol):
+    """Structural type for the WebSocket ``quality_summary`` sender (spec §3.1)."""
+
+    async def __call__(
+        self,
+        channel_id: str | None,
+        *,
+        scope: str,
+        target: float,
+        avg_confidence: float,
+        repaired_count: int,
+        below_target_count: int,
+        page_idx: int | None = None,
+    ) -> None: ...
+
+
 def build_pipeline(
     settings: ProcessSettings,
     progress_target: str | None = None,
     *,
     manager_send_block: SendBlockCallback,
     manager_send_page_complete: SendPageCompleteCallback,
+    manager_send_block_retry: SendBlockRetryCallback,
+    manager_send_block_revised: SendBlockRevisedCallback,
+    manager_send_quality_summary: SendQualitySummaryCallback,
 ) -> tuple[OCRPipeline, Any]:
     """Build the OCR pipeline for a request.
 
@@ -102,6 +153,10 @@ def build_pipeline(
     on the form, see :class:`ProcessSettings`). When ``quality_options``
     is ``None`` or every sub-module is off, the orchestrator is
     ``None`` and the engine keeps the pre-Phase-2 byte layout.
+
+    P1 — the three repair-event senders wire the quality repair loop's
+    ``block_retry`` / ``block_revised`` / ``quality_summary`` frames
+    (spec §3.1) into the same callback set.
     """
     processors = build_document_processors(
         processor.value for processor in settings.document_processors
@@ -110,6 +165,9 @@ def build_pipeline(
         progress_target=progress_target,
         manager_send_block=manager_send_block,
         manager_send_page_complete=manager_send_page_complete,
+        manager_send_block_retry=manager_send_block_retry,
+        manager_send_block_revised=manager_send_block_revised,
+        manager_send_quality_summary=manager_send_quality_summary,
     )
     trust_orchestrator = _build_trust_orchestrator(settings.quality_options)
 
@@ -209,10 +267,13 @@ def build_block_callbacks(
     progress_target: str | None,
     manager_send_block: SendBlockCallback,
     manager_send_page_complete: SendPageCompleteCallback,
+    manager_send_block_retry: SendBlockRetryCallback,
+    manager_send_block_revised: SendBlockRevisedCallback,
+    manager_send_quality_summary: SendQualitySummaryCallback,
 ) -> BlockCallbackSet:
     """Construct the engine-side callbacks bridged to the WebSocket manager.
 
-    Both inner closures are no-ops when no progress channel is bound
+    Every inner closure is a no-op when no progress channel is bound
     (i.e. an API caller that did not open a WS gets the pure engine
     output, no per-block traffic).
     """
@@ -242,9 +303,72 @@ def build_block_callbacks(
             return
         await manager_send_page_complete(progress_target, page_idx=page_idx)
 
+    async def _on_block_retry(
+        page_idx: int,
+        block_idx: int,
+        attempt: int,
+        confidence: float,
+        target: float,
+    ) -> None:
+        if progress_target is None:
+            return
+        await manager_send_block_retry(
+            progress_target,
+            page_idx=page_idx,
+            block_idx=block_idx,
+            attempt=attempt,
+            confidence=confidence,
+            target=target,
+        )
+
+    async def _on_block_revised(
+        page_idx: int,
+        block_idx: int,
+        attempt: int,
+        bbox: list[float],
+        text: str,
+        kind: str,
+        confidence: float | None,
+    ) -> None:
+        if progress_target is None:
+            return
+        await manager_send_block_revised(
+            progress_target,
+            page_idx=page_idx,
+            block_idx=block_idx,
+            attempt=attempt,
+            bbox=bbox,
+            text=text,
+            kind=kind,
+            confidence=confidence,
+        )
+
+    async def _on_quality_summary(
+        scope: str,
+        page_idx: int | None,
+        target: float,
+        avg_confidence: float,
+        repaired_count: int,
+        below_target_count: int,
+    ) -> None:
+        if progress_target is None:
+            return
+        await manager_send_quality_summary(
+            progress_target,
+            scope=scope,
+            target=target,
+            avg_confidence=avg_confidence,
+            repaired_count=repaired_count,
+            below_target_count=below_target_count,
+            page_idx=page_idx,
+        )
+
     return BlockCallbackSet(
         on_block=_on_block,
         on_page_complete=_on_page_complete,
+        on_block_retry=_on_block_retry,
+        on_block_revised=_on_block_revised,
+        on_quality_summary=_on_quality_summary,
     )
 
 

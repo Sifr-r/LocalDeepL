@@ -64,6 +64,7 @@ from omniscribe.api.services.security import (
 )
 from omniscribe.core.preprocessing import PagePreprocessingOptions
 from omniscribe.core.routing import QualityRoutingOptions
+from omniscribe.core.workflows.repair import RepairOptions
 from omniscribe.utils import is_ssrf_target
 
 from . import state
@@ -179,6 +180,9 @@ async def _run_ocr_pipeline(
         progress_target=progress_target,
         manager_send_block=manager.send_block,
         manager_send_page_complete=manager.send_page_complete,
+        manager_send_block_retry=manager.send_block_retry,
+        manager_send_block_revised=manager.send_block_revised,
+        manager_send_quality_summary=manager.send_quality_summary,
     )
     await verify_backend_model(
         backend,
@@ -281,6 +285,16 @@ async def _run_ocr_pipeline(
                 # layer so :func:`omniscribe.core.ocr_quality.calibration.calibrate`
                 # can pick the right per-model calibration JSON.
                 trust_model_id=settings.model,
+                # P1 — quality repair loop (spec §3.2). Built from the
+                # resolved settings so form overrides and the env-seeded
+                # config-store defaults both flow through; chunked runs
+                # re-enter this helper per chunk and inherit the same
+                # options.
+                repair_options=RepairOptions(
+                    enabled=settings.quality_loop_enabled,
+                    target=settings.quality_target,
+                    max_retries=settings.quality_max_retries,
+                ),
             )
         )
 
@@ -374,6 +388,12 @@ async def process_pdf(
     # frontend's TrustPanel is open, the front-end posts a JSON object string
     # here; when closed, the field is omitted and the trust layer stays off.
     quality_options: str | None = Form(None),
+    # P1 — quality repair loop knobs (spec §3.2). Omitted fields fall
+    # back to the env-seeded runtime config; the API-level defaults
+    # enable the loop (target 0.98, two repair passes).
+    quality_loop_enabled: str | None = Form(None),
+    quality_target: str | None = Form(None),
+    quality_max_retries: str | None = Form(None),
 ):
     """Process a PDF or image file through the OCR pipeline.
 
@@ -420,6 +440,9 @@ async def process_pdf(
                 # through to ``ProcessSettings.quality_options``, where the
                 # field validator parses it into ``OCrQualitySettings``.
                 quality_options=quality_options,
+                quality_loop_enabled=quality_loop_enabled,
+                quality_target=quality_target,
+                quality_max_retries=quality_max_retries,
             ),
         )
     except ValidationError as exc:
@@ -577,6 +600,12 @@ async def process_pdf_async(
     # frontend's TrustPanel is open, the front-end posts a JSON object string
     # here; when closed, the field is omitted and the trust layer stays off.
     quality_options: str | None = Form(None),
+    # P1 — quality repair loop knobs (spec §3.2). Omitted fields fall
+    # back to the env-seeded runtime config; the API-level defaults
+    # enable the loop (target 0.98, two repair passes).
+    quality_loop_enabled: str | None = Form(None),
+    quality_target: str | None = Form(None),
+    quality_max_retries: str | None = Form(None),
 ):
     """Validate an upload and enqueue it on the single-worker OCR queue."""
     try:
@@ -612,6 +641,9 @@ async def process_pdf_async(
                 # through to ``ProcessSettings.quality_options``, where the
                 # field validator parses it into ``OCrQualitySettings``.
                 quality_options=quality_options,
+                quality_loop_enabled=quality_loop_enabled,
+                quality_target=quality_target,
+                quality_max_retries=quality_max_retries,
             ),
         )
     except ValidationError as exc:

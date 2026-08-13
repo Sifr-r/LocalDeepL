@@ -226,6 +226,9 @@ class TestPipelineFactoryTrustWiring:
             settings,
             manager_send_block=lambda *a, **kw: None,
             manager_send_page_complete=lambda *a, **kw: None,
+            manager_send_block_retry=lambda *a, **kw: None,
+            manager_send_block_revised=lambda *a, **kw: None,
+            manager_send_quality_summary=lambda *a, **kw: None,
         )
         assert pipeline._engine.trust_orchestrator is None
 
@@ -241,6 +244,9 @@ class TestPipelineFactoryTrustWiring:
             settings,
             manager_send_block=lambda *a, **kw: None,
             manager_send_page_complete=lambda *a, **kw: None,
+            manager_send_block_retry=lambda *a, **kw: None,
+            manager_send_block_revised=lambda *a, **kw: None,
+            manager_send_quality_summary=lambda *a, **kw: None,
         )
         orchestrator = pipeline._engine.trust_orchestrator
         assert orchestrator is not None
