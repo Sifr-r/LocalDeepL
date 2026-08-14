@@ -71,7 +71,7 @@ the same way.
 ### Caddyfile
 
 ```caddy
-localdeepl.example.com {
+omniscribe.example.com {
     encode zstd gzip
     reverse_proxy 127.0.0.1:8000
 }
@@ -82,7 +82,7 @@ localdeepl.example.com {
 ```yaml
 services:
   api:
-    image: ghcr.io/sifr-r/localdeepl:latest
+    image: ghcr.io/sifr-r/omniscribe:latest
     restart: unless-stopped
     ports:
       - "127.0.0.1:8000:8000"   # M9: localhost only
@@ -106,7 +106,7 @@ silent crashes; configure your orchestrator accordingly.
 
 ```bash
 export OMNISCRIBE_AUTH_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
-echo "$OMNISCRIBE_AUTH_TOKEN" >> ~/.config/localdeepl/token
+echo "$OMNISCRIBE_AUTH_TOKEN" >> ~/.config/omniscribe/token
 ```
 
 The placeholder-check (M10) refuses to start if the value is the
@@ -114,19 +114,22 @@ example `change-me-in-prod` or any other known placeholder.
 
 ### Per-service tokens (optional)
 
-If you want OCR and translation to accept different tokens (e.g. a
+If you want OCR, translation, and transcription to accept different tokens (e.g. a
 read-only OCR key for an internal script):
 
 ```bash
 export OMNISCRIBE_AUTH_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
+export OMNISCRIBE_OCR_AUTH_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
 export OMNISCRIBE_TRANSLATION_AUTH_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
+export OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
 ```
 
 Routes under `/api/process*`, `/api/models/ocr*`, `/api/config/ocr*`
 require the OCR token (or fall back to the global token). Routes
 under `/api/translate*`, `/api/extract*`, `/api/export*`,
-`/api/glossary*` require the translation token. All other routes
-require the global token.
+`/api/glossary*` require the translation token. Routes under
+`/api/transcribe*`, `/api/models/transcription*`, `/api/config/transcription*`
+require the transcription token. All other routes require the global token.
 
 ## Third-party VLM (OpenAI / Anthropic / Groq)
 
@@ -224,4 +227,4 @@ Job artifacts in `/tmp/ocr_*` are removed by the startup sweep
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var
   reference
 
-_Last updated: 2026-08-12_
+_Last updated: 2026-08-14_

@@ -110,7 +110,7 @@ def estimate_stroke_width(binary: np.ndarray) -> float:
     nz = dist[dist > 0]
     if nz.size == 0:
         return 0.0
-    return float(np.median(nz) * 2.0)
+    return float(np.median(np.asarray(nz, dtype=float)) * 2.0)
 
 
 def normalize_stroke_width(binary: np.ndarray, target: float = 4.0) -> np.ndarray:

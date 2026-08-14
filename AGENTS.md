@@ -68,7 +68,11 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/core/evaluation.py` | Local evaluation metric helpers (lightweight, for processor result scoring) |
 | `src/omniscribe/core/docx_writer.py` | Markdown → `.docx` converter for the docx export route |
 | `src/omniscribe/core/aligner.py` | Surya detection and DP alignment |
-| `src/omniscribe/core/ocr/` | LiteLLM OCR calls, prompts, limits, filters, and resilience (retry + circuit breaker) |
+| `src/omniscribe/core/ocr/` | OpenAI/Anthropic/Ollama multi-format client, prompts, limits, filters, and resilience (retry + circuit breaker) |
+| `src/omniscribe/core/ocr_quality/` | OCR Quality Trust Layer (watermark, script detector, hallucination guard, Platt scaling calibration, trust scorer, orchestrator) |
+| `src/omniscribe/core/transcription/` | Speech-to-text audio transcription engines (local & OpenAI-compatible API backends) |
+| `src/omniscribe/core/glossary_library/` | Terminology glossary store and library management |
+| `src/omniscribe/core/glossary_sources/` | Glossary import parsers (TBX, CSV, JSON, URL) |
 | `src/omniscribe/core/ocr/resilience.py` | `is_transient_error` classification, `CircuitBreaker` (closed/open/half-open), `CircuitOpenError` |
 | `src/omniscribe/core/pdf/` | PDF/image rasterization (`rasterizer.py`), sandwich PDF embedding (`embedder.py`), and `PDFHandler` facade (`handler.py`) |
 | `src/omniscribe/core/grounded/` | Grounded backends and bbox JSON parsers (retry + circuit breaker on the VLM call) |
@@ -81,8 +85,13 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/core/workflows/grounded.py` | `GroundedEngine` — single bbox-native VLM call → post-process → processors → output |
 | `src/omniscribe/core/workflows/repair.py` | `QualityRepairLoop` / `RepairOptions` — engine-agnostic block-level low-confidence re-OCR with stall guard and fail-open |
 | `src/omniscribe/resources/dictionaries/` | Packaged spellcheck dictionaries |
+| `src/omniscribe/resources/calibration/` | Pre-trained model confidence calibration files (e.g. `qwen2_5_vl_72b.json`) |
 | `src/omniscribe/api/routers/config.py` | Runtime configuration and model discovery |
 | `src/omniscribe/api/routers/ocr.py` | OCR upload, process, and synchronous AI routes |
+| `src/omniscribe/api/routers/providers.py` | Multi-format provider catalog, details, and active provider switching |
+| `src/omniscribe/api/routers/transcription.py` | Voice transcription and transcription provider configuration |
+| `src/omniscribe/api/routers/glossary_imports.py` | Terminology library and file/URL glossary import routes |
+| `src/omniscribe/api/routers/health.py` | Liveness (`/health`, `/healthz`) and readiness (`/ready`, `/readyz`) probe endpoints |
 | `src/omniscribe/api/routers/websocket.py` | Token-bound WebSocket progress transport |
 | `src/omniscribe/api/routers/jobs.py` | `GET/DELETE /api/jobs` — job history and clear-all |
 | `src/omniscribe/api/routers/artifacts.py` | Token-bound artifact download routes (text, metadata, exports) |
@@ -91,6 +100,7 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/api/routers/state.py` | Module-level singletons (`text_artifacts`, `metadata_artifacts`, `export_artifacts`, `job_history`, `progress_service`) |
 | `src/omniscribe/api/routers/common.py` | Shared router helpers (`_stable_server_error`, `_extract_bearer_token`, `_path_exists`) |
 | `src/omniscribe/api/schemas/requests.py` | `ConfigUpdate`, `ProcessSettings`, `TranslationRequest`, `ExtractionRequest`, `ExtractionTemplate`, `DocumentExportRequest`, `DocumentExportFormat`, `ExportDocxRequest`; enums: `PipelineMode`, `DenseMode`, `SpellcheckMode`, `DocumentProcessorName` |
+| `src/omniscribe/api/services/provider_manager.py` | `ProviderManager` service — provider templates, env-var discovery, disk persistence, and active provider switching |
 | `src/omniscribe/api/services/security.py` | API upload validation, stable error constants, temporary-file cleanup, opaque text artifact IDs |
 | `src/omniscribe/api/services/security_config.py` | `SecuritySettings.from_env()` — env-driven knobs for `OMNISCRIBE_AUTH_TOKEN`, `_CORS_ORIGINS`, `_MAX_UPLOAD_MB`, `_RATE_LIMIT_PER_MIN` |
 | `src/omniscribe/api/services/security_middleware.py` | ASGI middlewares wired by `server.create_app()`: `BearerAuthMiddleware` (constant-time `secrets.compare_digest`), `MaxUploadSizeMiddleware` (rejects on `Content-Length`), `RateLimitMiddleware` (per-IP 60s sliding window, in-memory). WebSocket handshake auth is still enforced per-channel in `routers/websocket.py` |

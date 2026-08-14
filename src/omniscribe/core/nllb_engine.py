@@ -59,7 +59,7 @@ class NLLBEngine:
         self.model_name = model_name
         self._lock = threading.Lock()
         self._pipeline: typing.Any = None
-        self._tokenizer = None
+        self._tokenizer: typing.Any = None
 
     def is_available(self) -> bool:
         try:
@@ -88,7 +88,8 @@ class NLLBEngine:
             self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
             model = AutoModelForSeq2SeqLM.from_pretrained(self.model_name)
             device = "cuda" if torch.cuda.is_available() else "cpu"
-            self._pipeline = pipeline(
+            pipe_fn: typing.Any = pipeline
+            self._pipeline = pipe_fn(
                 "translation",
                 model=model,
                 tokenizer=self._tokenizer,

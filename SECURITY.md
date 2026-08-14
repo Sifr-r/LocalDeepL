@@ -162,4 +162,4 @@ Before exposing OmniScribe beyond `localhost`:
 - [DEPLOYMENT.md](DEPLOYMENT.md) — local / LAN / public-internet deployment profiles
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var reference
 
-_Last updated: 2026-08-12_
+_Last updated: 2026-08-14_

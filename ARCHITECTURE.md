@@ -34,7 +34,15 @@ PDF/image -> grounded bbox-native VLM OCR -> optional quality repair -> optional
 | `src/omniscribe/core/processors/layout.py` | `LayoutEnrichmentProcessor` — page region and layout role labeling (headers, footers, page numbers, figures, captions) |
 | `src/omniscribe/core/processors/table.py` | `TableExtractionProcessor` — table grid structure extraction from aligned text blocks |
 | `src/omniscribe/core/aligner.py` | Surya detection and DP text-to-box alignment |
-| `src/omniscribe/core/ocr/` | OpenAI-compatible VLM client, `OCRProcessor`, prompts, response filters, limits, exceptions, retry, and circuit-breaker resilience; `__init__.py` preserves the public import surface |
+| `src/omniscribe/core/ocr/` | OpenAI/Anthropic/Ollama multi-format VLM client, prompts, response filters, limits, exceptions, retry, and circuit-breaker resilience; `__init__.py` preserves the public import surface |
+| `src/omniscribe/core/ocr_quality/` | OCR Quality Trust Layer — watermark detection, script detection, hallucination guard, Platt scaling calibration fit/eval, trust scorer, and orchestrator |
+| `src/omniscribe/core/transcription/` | Speech-to-text audio transcription engines (local Whisper & OpenAI-compatible API backends) |
+| `src/omniscribe/core/glossary_library/` | In-memory and persistent terminology glossary terms, library store, and search |
+| `src/omniscribe/core/glossary_sources/` | Terminology import parsers for TBX, CSV, JSON, and web URLs |
+| `src/omniscribe/core/tree_export.py` | Hierarchical block-tree export builder |
+| `src/omniscribe/core/docx_tree_writer.py` | Hierarchical block-tree to `.docx` converter |
+| `src/omniscribe/core/html_writer.py` | Semantic HTML document writer from `DocumentResult` |
+| `src/omniscribe/core/block_tree.py` | Hierarchical block-tree data structure and tree nodes |
 | `src/omniscribe/core/pdf/__init__.py` | Package re-exports for `PDFHandler`, `DocumentResultWriter`, `IMAGE_EXTENSIONS`, `_emit_pymupdf_agpl_notice`, and public PDF symbols |
 | `src/omniscribe/core/pdf/rasterizer.py` | PyMuPDF AGPL warning emission, safe DPI calculation, image extension validation, and PDF/image rasterization to JPEG/PNG base64 |
 | `src/omniscribe/core/pdf/embedder.py` | Invisible text layer PDF rendering over rasterized backgrounds, normalized bbox coordinate transformations, and font sizing calculation |
@@ -55,17 +63,20 @@ PDF/image -> grounded bbox-native VLM OCR -> optional quality repair -> optional
 | `src/omniscribe/core/workflows/utils.py` | Stand-alone workflow helper functions (`parse_page_range`, `_estimate_confidence`, `_decode_page_image`, `_normalize_for_dedup`, `_drop_refined_duplicates`, `_is_refinable`) and workflow constants (`REFINABLE_MIN_WIDTH`, `REFINABLE_MIN_HEIGHT`, `DETECT_CHUNK_SIZE`) |
 | `src/omniscribe/core/workflows/__init__.py` | Re-exports `EngineBase`, `HybridEngine`, `GroundedEngine`, public helper `parse_page_range`, constants, and callback type aliases |
 | `src/omniscribe/resources/dictionaries/` | Packaged compiled spellcheck dictionaries loaded before legacy repository-root dictionaries |
+| `src/omniscribe/resources/calibration/` | Pre-trained model confidence calibration files (e.g. `qwen2_5_vl_72b.json`) |
 | `src/omniscribe/api/routers/config.py` | Runtime configuration and model discovery routes (`GET/POST /api/config`) |
 | `src/omniscribe/api/routers/ocr.py` | Thin `POST /api/process` orchestrator — validate the request, build the pipeline, run it, build the response, record the job; delegates all heavy lifting to `api/services/ocr_*.py` |
 | `src/omniscribe/api/routers/websocket.py` | Token-bound WebSocket progress transport and progress session issuance |
 | `src/omniscribe/api/routers/jobs.py` | `GET/DELETE /api/jobs` — recent job history and clear-all |
 | `src/omniscribe/api/routers/artifacts.py` | Token-bound artifact download routes for text, metadata, and document exports |
 | `src/omniscribe/api/routers/translation.py` | Synchronous `POST /api/translate`, async `POST /api/translate/async`, tree translation `POST /api/translate/tree`, glossary and NLLB endpoints |
+| `src/omniscribe/api/routers/transcription.py` | Voice transcription and transcription provider configuration routes (`POST /api/transcribe`, `GET/POST /api/config/transcription`) |
+| `src/omniscribe/api/routers/glossary_imports.py` | Local glossary library and external URL glossary import routes |
+| `src/omniscribe/api/routers/health.py` | Liveness (`/health`, `/healthz`) and readiness (`/ready`, `/readyz`) probe endpoints |
 | `src/omniscribe/api/routers/extraction.py` | `POST /api/extract` — structured data extraction, plus document export routes |
 | `src/omniscribe/api/routers/state.py` | Compatibility aliases over the `LocalStateBackend` singleton, plus the process-local glossary library |
-| `src/omniscribe/api/routers/providers.py` | OpenAI-compatible provider catalog and provider detail routes |
+| `src/omniscribe/api/routers/providers.py` | Multi-format provider catalog and provider detail routes |
 | `src/omniscribe/api/routers/common.py` | Shared router helpers: `_stable_server_error`, `_extract_bearer_token`, `_path_exists`, `_cleanup` |
-
 | `src/omniscribe/api/schemas/__init__.py` | Re-exports the typed request models and StrEnums |
 | `src/omniscribe/api/schemas/requests.py` | `ConfigUpdate`, `ProcessSettings`, `TranslationRequest`, `ExtractionRequest`, `ExtractionTemplate`, `DocumentExportRequest`, `DocumentExportFormat`, `ExportDocxRequest`; enums: `PipelineMode`, `DenseMode`, `SpellcheckMode`, `DocumentProcessorName` |
 | `src/omniscribe/core/ocr/multi_format_client.py` | Multi-format LLM completion dispatcher (`openai_compatible`, `anthropic_compatible`, `ollama_compatible`), vision base64 payloads, exponential backoff resilience retries, and timeout boundaries |
@@ -75,8 +86,14 @@ PDF/image -> grounded bbox-native VLM OCR -> optional quality repair -> optional
 | `src/omniscribe/api/services/ocr_response.py` | Response assembly for `POST /api/process` — validation-error JSON, FileResponse construction with token-bound headers (`X-Document-Quality`, `X-Document-Structure`, `X-Document-Sections`, artifact-id/token pairs), and stable error envelopes |
 | `src/omniscribe/api/services/ocr_chunked_runner.py` | Bounded-page PDF execution, per-chunk progress frames, text/page remapping, and merged searchable-PDF output |
 | `src/omniscribe/api/services/ocr_jobs.py` | Single-worker asyncio OCR queue, background job lifecycle records, status serialization, and cancellation semantics |
+| `src/omniscribe/api/services/transcription.py` | Audio transcription service boundary, input validation, and provider execution |
+| `src/omniscribe/api/services/tree_artifact.py` | Document tree artifact persistence and retrieval |
+| `src/omniscribe/api/services/http_fetch.py` | SSRF-safe remote document fetcher with redirect and private IP guards |
 | `src/omniscribe/api/services/state_backend.py` | `StateBackend` protocol and process-local `LocalStateBackend`, including artifacts, history, progress, glossary, and OCR queue |
+| `src/omniscribe/api/services/state_backend_redis.py` | Redis-backed distributed state backend implementation |
 | `src/omniscribe/api/services/security.py` | API upload validation, stable error constants, temporary-file cleanup, and opaque text artifact IDs |
+| `src/omniscribe/api/services/security_config.py` | `SecuritySettings.from_env()` — env-driven knobs for `OMNISCRIBE_AUTH_TOKEN`, `_CORS_ORIGINS`, `_MAX_UPLOAD_MB`, `_RATE_LIMIT_PER_MIN` |
+| `src/omniscribe/api/services/security_middleware.py` | ASGI middlewares wired by `server.create_app()`: `BearerAuthMiddleware`, `MaxUploadSizeMiddleware`, `RateLimitMiddleware` |
 | `src/omniscribe/api/services/artifacts.py` | `TextArtifactStore`, `PageText`, `TextArtifactHandle`, and the opaque artifact-id / token primitives shared by text, metadata, and export stores |
 | `src/omniscribe/api/services/jobs.py` | `JobHistory`, `JobRecord`, `JobStatus` — durable job history with per-page failure tracking |
 | `src/omniscribe/api/services/progress.py` | `ProgressService`, `ProgressChannel`, stage weights, channel/session token validation |
@@ -85,6 +102,8 @@ PDF/image -> grounded bbox-native VLM OCR -> optional quality repair -> optional
 | `src/omniscribe/api/services/workflow.py` | Aggregated orchestration tracking, unifying Celery and synchronous pipeline state |
 | `src/omniscribe/api/services/ai.py` | AI service module backing `POST /api/translate` and `POST /api/extract` — OpenAI-compatible calls with fenced-JSON parsing, retry, and stable error mapping |
 | `src/omniscribe/api/tasks.py` | Optional Celery translation task execution |
+| `src/omniscribe/utils/structured_logging.py` | Structured JSON logging formatter and handlers |
+| `src/omniscribe/utils/prompt_safety.py` | Prompt injection detection and input sanitization |
 | `src/omniscribe/utils/image.py` | Image crop, blank-region detection, and crop encoding helpers |
 | `src/omniscribe/utils/security.py` | SSRF target validation |
 | `src/omniscribe/utils/tqdm_patch.py` | Surya progress-bar suppression |
@@ -519,6 +538,15 @@ Conducted a comprehensive 4-domain audit (Core Pipeline, Backend API/Security, F
 | File | Responsibility |
 | --- | --- |
 | `pyproject.toml` | Promoted `redis>=5.0.0` and `chromadb>=0.5.0` to core `[project.dependencies]` so Celery distributed backend state and vector lexicon RAG support are packaged out-of-the-box |
+
+### 2026-08-14: Full Dependency Modernization & Security Audit Resolution
+
+| File | Responsibility |
+| --- | --- |
+| `pyproject.toml` | Upgraded `surya-ocr>=0.22.1`, bounded `openai>=2.11.0,<3`, pinned `numpy<2.3.0` for Python 3.11 typing stub compatibility, removed unmaintained `comet` (`unbabel-comet`) extra to unblock modern `transformers 5.x` and `huggingface-hub>=1.5.0`, and locked `redis>=5.0.0` and `chromadb>=0.5.0` |
+| `uv.lock` | Updated 220 resolved packages across runtime, upgrading `transformers` (v4.57.6 -> v5.15.0), `protobuf` (v4.25.9 -> v7.35.1), `huggingface-hub` (v0.36.2 -> v1.27.0), `pypdfium2` (v4.30.0 -> v5.13.0), resolving 45 of 46 known `pip-audit` security advisories |
+| `src/omniscribe/core/nllb_engine.py` | Adapted HuggingFace pipeline and tokenizer typing for `transformers` 5.x |
+| `src/omniscribe/core/handwriting_preprocessor.py` | Adapted numpy stroke width calculation for NumPy 2.x typing |
 
 ## See Also
 

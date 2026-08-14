@@ -13,7 +13,9 @@ OmniScribe turns scanned PDFs and images into searchable, selectable PDFs using 
 - **Hybrid OCR**: Surya layout detection, VLM OCR, DP alignment, optional refine, and searchable PDF embedding.
 - **Grounded OCR**: Bbox-native VLM path for models that return positioned text directly.
 - **Local Document Intelligence**: Optional web/API processors for preprocessing (including page cleanup and handwriting preprocessing), reading order, quality analysis, structure, sections, layout enrichment, table extraction, quality routing, metadata reports, and structured exports.
-- **Web Workstation**: Single-page workstation UI built with the DocuVerse CSS system (dark/light themes, glassmorphism, floating dock), page selection, WebSocket progress, preview, translation, extraction, export artifacts, and job history.
+- **Provider Management**: Multi-format provider configuration (OpenAI, Anthropic, Ollama compatible), automatic env-var discovery, and runtime switching.
+- **Voice Transcription**: Local and API-based speech-to-text audio transcription via `/api/transcribe`.
+- **Web Workstation**: Single-page workstation UI built with Svelte 5 + Tailwind CSS v4 (dark/light themes, glassmorphism, floating dock), page selection, WebSocket progress, preview, translation, extraction, export artifacts, and job history.
 
 ## Installation
 
@@ -83,8 +85,8 @@ scaling via pure-numpy gradient descent with backtracking line-search)
 and a pre-trained `qwen2_5_vl_72b.json` that drops ECE by 21.6% vs.
 raw confidence on the synthetic fixture. The `slow_dataset`-gated
 regression tests run on OCR-Quality and KIE-HVQA fixtures via the
-nightly workflow. See [docs/ocr_quality.md](docs/ocr_quality.md) for
-the flag reference, fallback semantics, and dataset attribution.
+nightly workflow. See [ARCHITECTURE.md](ARCHITECTURE.md) for the flag
+reference, fallback semantics, and dataset attribution.
 
 OCR responses include token-bound text artifact headers. When processor metadata exists, responses also include `X-Document-Metadata-Artifact-Id` and `X-Document-Metadata-Artifact-Token`; fetch `GET /metadata/{artifact_id}` with the token to retrieve compact page/block metadata. Use `POST /api/export/document` to create token-bound JSON, Markdown, plain text, Docling-compatible, or MinerU-compatible export artifacts. `POST /api/export/docx` produces a `.docx` from Markdown page text. `POST /api/extract` runs structured data extraction against OCR text using a built-in template (`invoice`, `resume`, `academic`) or a custom prompt.
 
@@ -109,6 +111,7 @@ uv run pytest -m slow
 uv run ruff check src tests
 uv run ruff format src tests --check
 uv run mypy src
+cd frontend && npm run check && npm test && npm run build
 ```
 
 Slow tests load Surya and may download its model on the first run.
@@ -145,4 +148,4 @@ PDF-handling surface that pypdfium2 covers with feature parity.
 - [SECURITY.md](SECURITY.md) — threat model, hardening checklist, vulnerability disclosure
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var reference
 
-_Last updated: 2026-08-12_
+_Last updated: 2026-08-14_
