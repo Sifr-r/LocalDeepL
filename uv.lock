@@ -2771,6 +2771,7 @@ name = "omniscribe"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "chromadb" },
     { name = "httpx" },
     { name = "openai" },
     { name = "pillow" },
@@ -2778,6 +2779,7 @@ dependencies = [
     { name = "pyspellchecker" },
     { name = "python-docx" },
     { name = "python-dotenv" },
+    { name = "redis" },
     { name = "requests" },
     { name = "surya-ocr" },
     { name = "torch" },
@@ -2849,6 +2851,7 @@ dev = [
 requires-dist = [
     { name = "celery", marker = "extra == 'async-translation'", specifier = ">=5.4.0" },
     { name = "chardet", marker = "extra == 'glossary'", specifier = ">=5.2.0" },
+    { name = "chromadb", specifier = ">=0.5.0" },
     { name = "chromadb", marker = "extra == 'memory'", specifier = ">=0.5.0" },
     { name = "defusedxml", marker = "extra == 'glossary'", specifier = ">=0.7.1" },
     { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.124.4" },
@@ -2867,6 +2870,7 @@ requires-dist = [
     { name = "python-docx", specifier = ">=1.1.0" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "python-multipart", marker = "extra == 'web'", specifier = ">=0.0.20" },
+    { name = "redis", specifier = ">=5.0.0" },
     { name = "redis", marker = "extra == 'async-translation'", specifier = ">=5.0.0" },
     { name = "requests", specifier = ">=2.31" },
     { name = "sacrebleu", marker = "extra == 'quality'", specifier = ">=2.4.0" },

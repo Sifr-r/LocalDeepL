@@ -36,6 +36,8 @@ dependencies = [
     "requests>=2.31",
     "pyspellchecker>=0.8.1",
     "python-docx>=1.1.0",
+    "redis>=5.0.0",
+    "chromadb>=0.5.0",
 ]
 
 [project.optional-dependencies]
