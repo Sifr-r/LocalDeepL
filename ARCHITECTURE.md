@@ -11,9 +11,9 @@ invisible text layer.
 
 ```text
 PDF/image -> raster pages -> Surya detection -> sparse: full-page VLM OCR -> DP alignment --+
-                                      \-> dense: per-box VLM OCR ---------------------------+-> optional refine -> optional post-process -> DocumentResult -> optional document processors -> searchable PDF
+                                      \-> dense: per-box VLM OCR ---------------------------+-> optional refine -> optional quality repair -> optional post-process -> DocumentResult -> optional document processors -> searchable PDF
 
-PDF/image -> grounded bbox-native VLM OCR -> optional post-process -> DocumentResult -> optional document processors -> searchable PDF
+PDF/image -> grounded bbox-native VLM OCR -> optional quality repair -> optional post-process -> DocumentResult -> optional document processors -> searchable PDF
 ```
 
 ## Directory Responsibilities
@@ -51,6 +51,7 @@ PDF/image -> grounded bbox-native VLM OCR -> optional post-process -> DocumentRe
 | `src/omniscribe/core/workflows/base.py` | `EngineBase`, `OutputWriter`, `ProgressCallback`, `WarningCallback` shared by both engines |
 | `src/omniscribe/core/workflows/hybrid.py` | `HybridEngine` — Surya detect → VLM OCR (sparse/dense) → DP align → optional refine → post-process → processors → output |
 | `src/omniscribe/core/workflows/grounded.py` | `GroundedEngine` — single bbox-native VLM call → post-process → processors → output |
+| `src/omniscribe/core/workflows/repair.py` | `QualityRepairLoop` and `RepairOptions` — engine-agnostic block-level low-confidence re-OCR (stall guard, fail-open, `CircuitOpenError` re-raise) plus the job-level `quality_summary` aggregator |
 | `src/omniscribe/core/workflows/utils.py` | Stand-alone workflow helper functions (`parse_page_range`, `_estimate_confidence`, `_decode_page_image`, `_normalize_for_dedup`, `_drop_refined_duplicates`, `_is_refinable`) and workflow constants (`REFINABLE_MIN_WIDTH`, `REFINABLE_MIN_HEIGHT`, `DETECT_CHUNK_SIZE`) |
 | `src/omniscribe/core/workflows/__init__.py` | Re-exports `EngineBase`, `HybridEngine`, `GroundedEngine`, public helper `parse_page_range`, constants, and callback type aliases |
 | `src/omniscribe/resources/dictionaries/` | Packaged compiled spellcheck dictionaries loaded before legacy repository-root dictionaries |
@@ -196,6 +197,23 @@ CORS respectively. Artifact IDs use a separate artifact token supplied through
 | `GET` / `POST` / `DELETE` | `/api/glossary/library...` | `glossary_imports` | Local glossary library management |
 
 ## Change Blueprint
+
+### 2026-08-13: Quality repair loop (automatic low-confidence block retry)
+
+`core/workflows/repair.py` adds an engine-agnostic `QualityRepairLoop`:
+blocks whose estimated confidence is below `RepairOptions.target` are
+re-OCR'd crop-scoped (hybrid reuses refine's crop primitive; grounded goes
+through the backend's `ocr_crop`) up to `max_retries` times, accepting a
+retry only while confidence strictly improves. Unexpected errors fail open
+with the original text; `CircuitOpenError` is re-raised so the circuit
+breaker stays authoritative. Both engines run repair sequentially after
+block emission and before post-processing/embedding, so every downstream
+stage sees the repaired text. `OCRPipeline.run` accepts `repair_options=`
+(engines default off); `/api/process` defaults on with form fields
+`quality_loop_enabled` / `quality_target` / `quality_max_retries` and env
+seeds `OMNISCRIBE_QUALITY_LOOP` / `_TARGET` / `_MAX_RETRIES`. New
+WebSocket frames: `block_retry`, `block_revised`, `quality_summary`;
+progress accounting reuses the `refine` stage band.
 
 ### 2026-08-02: Canonical `/api` aliases and background OCR reliability
 

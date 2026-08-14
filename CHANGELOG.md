@@ -31,6 +31,37 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   env var (falls back to the global `OMNISCRIBE_AUTH_TOKEN`).
   Bypasses bearer auth on `/health`, `/healthz`, `/ready`,
   `/readyz` regardless of token configuration.
+- **Quality repair loop (automatic low-confidence retry)** —
+  engine-agnostic block-level quality retry in
+  `core/workflows/repair.py` (`QualityRepairLoop` +
+  `RepairOptions`). Blocks whose estimated confidence falls
+  below the target are re-OCR'd crop-scoped (hybrid reuses
+  refine's crop → `perform_ocr_on_crop` primitive; grounded
+  goes through the backend's `ocr_crop`) up to
+  `max_retries` times; a retry is accepted only while
+  confidence strictly improves (stall guard), and any
+  unexpected error fails open with the original text.
+  `CircuitOpenError` is re-raised so the circuit breaker
+  stays authoritative. Repair runs sequentially after block
+  emission in both engines, before post-processing and
+  embedding, so downstream stages always see the repaired
+  text.
+  - `OCRPipeline.run` accepts `repair_options=`; engines
+    default **off** (`repair_options=None`) for in-process
+    callers, while `/api/process` defaults **on** — upgrade
+    note: expect up to `quality_max_retries` extra VLM
+    passes per low-confidence block unless disabled.
+  - Per-request form fields `quality_loop_enabled`,
+    `quality_target` (0.5–1.0, default 0.98) and
+    `quality_max_retries` (0–5, default 2) on
+    `/api/process`; out-of-range values return 422.
+  - Env seeds `OMNISCRIBE_QUALITY_LOOP` /
+    `OMNISCRIBE_QUALITY_TARGET` /
+    `OMNISCRIBE_QUALITY_MAX_RETRIES` (out-of-range values
+    fall back to the defaults).
+  - New WebSocket frames: `block_retry`, `block_revised` and
+    `quality_summary` (job-level repaired-block count);
+    progress accounting reuses the `refine` stage band.
 
 ### Fixed
 

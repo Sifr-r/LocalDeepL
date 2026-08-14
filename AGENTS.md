@@ -79,6 +79,7 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/core/workflows/utils.py` | Stand-alone workflow helper functions (`parse_page_range`, `_estimate_confidence`, `_decode_page_image`, `_drop_refined_duplicates`) and constants |
 | `src/omniscribe/core/workflows/hybrid.py` | `HybridEngine` — Surya detect → VLM OCR → DP align → refine → post-process → processors → output |
 | `src/omniscribe/core/workflows/grounded.py` | `GroundedEngine` — single bbox-native VLM call → post-process → processors → output |
+| `src/omniscribe/core/workflows/repair.py` | `QualityRepairLoop` / `RepairOptions` — engine-agnostic block-level low-confidence re-OCR with stall guard and fail-open |
 | `src/omniscribe/resources/dictionaries/` | Packaged spellcheck dictionaries |
 | `src/omniscribe/api/routers/config.py` | Runtime configuration and model discovery |
 | `src/omniscribe/api/routers/ocr.py` | OCR upload, process, and synchronous AI routes |
@@ -126,6 +127,7 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 - **Auth**: set `OMNISCRIBE_AUTH_TOKEN` to require `Authorization: Bearer <token>` on every HTTP route (constant-time compare, ASGI middleware). Unset = open (local-desktop default).
 - **VLM resilience**: every LLM call retries transient errors (429/5xx/connection resets) with exponential backoff, and a per-request circuit breaker fails fast after `OMNISCRIBE_CB_FAILURE_THRESHOLD` (default 5) consecutive failures. Tunables: `OMNISCRIBE_LLM_MAX_RETRIES` (default 2), `OMNISCRIBE_LLM_RETRY_BASE_DELAY` (default 1.0s), `OMNISCRIBE_CB_COOLDOWN` (default 30s).
 - **Model pre-flight**: each `/api/process` request verifies the configured model is actually loaded on the VLM server (`GET /v1/models`) before paying for conversion/detection — one extra HTTP round-trip per request, guarding against LM Studio's silent model fallback (issue #7).
+- **Quality repair loop**: `/api/process` re-OCRs blocks whose estimated confidence is below the target (crop-scoped, sequential, accept-only-while-improving) after block emission and before embedding. Defaults ON at the API layer (up to 2 extra VLM passes per low-confidence block); in-process `OCRPipeline.run` callers stay off unless they pass `repair_options=`. Per-request form fields `quality_loop_enabled` / `quality_target` (0.5–1.0) / `quality_max_retries` (0–5); env seeds `OMNISCRIBE_QUALITY_LOOP`, `OMNISCRIBE_QUALITY_TARGET`, `OMNISCRIBE_QUALITY_MAX_RETRIES`. WebSocket frames: `block_retry`, `block_revised`, `quality_summary`.
 - Web runtime settings are initialized in `api/routers/config.py`.
 - **Windows quick-start**: run `install.bat` to install `uv`, sync the web extra, and create Desktop / Start-Menu shortcuts. `start_app.vbs` boots Redis (via Docker) + Celery + uvicorn hidden and opens the browser; it writes a timestamped append log to `start_app.log` next to itself. `stop_app.bat` terminates the uvicorn + Celery processes. `test_ui.py` is the headless Playwright smoke test against `examples/dense.pdf`.
 - **Developer scripts** live in `scripts/`. The most useful for OCR quality work are `scripts/confidence_eval.py` (hybrid + grounded vs the `examples/*.pdf` fixtures) and `scripts/confidence_image.py` (single-image confidence). The rest are debug/inspection/visualization tools.
@@ -173,4 +175,4 @@ survive into the post-scout roadmap) live in
 - [DEPLOYMENT.md](DEPLOYMENT.md) — local / LAN / public-internet deployment profiles
 - [SECURITY.md](SECURITY.md) — threat model, hardening checklist, vulnerability disclosure
 
-_Last updated: 2026-08-12_
+_Last updated: 2026-08-14_
