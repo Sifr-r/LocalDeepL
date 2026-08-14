@@ -23,11 +23,28 @@ import os
 import threading
 import time
 from collections.abc import Callable
+from enum import StrEnum
 
 logger = logging.getLogger(__name__)
 
+
+class CircuitState(StrEnum):
+    """Three-state model for :class:`CircuitBreaker`.
+
+    ``CLOSED`` is the healthy default; ``OPEN`` blocks calls; ``HALF_OPEN``
+    allows a single probe through after the cooldown expires. Inherits
+    from :class:`StrEnum` so the enum value compares equal to its name in
+    logs and serializes to its string form.
+    """
+
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
 # HTTP status codes that indicate a transient server-side condition.
-RETRYABLE_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
+# 425 Too Early (RFC 8470) is included: 0-RTT handshakes that the server
+# rejects are safe to retry after a short backoff.
+RETRYABLE_STATUS_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 # Python-level exception types that are never worth retrying — they
 # indicate a local programming bug rather than an upstream outage.
@@ -202,12 +219,28 @@ class CircuitBreaker:
         self._lock = asyncio.Lock()
 
     @property
-    def is_open(self) -> bool:
-        """True when the breaker is open AND the cooldown has not expired."""
+    def state(self) -> CircuitState:
+        """Current breaker state.
+
+        ``OPEN`` while the cooldown is still in effect; ``HALF_OPEN`` once
+        the cooldown has elapsed (a single probe is allowed through);
+        ``CLOSED`` when the breaker is healthy. The state is recomputed on
+        each read using :attr:`_clock` so the transition to ``HALF_OPEN``
+        is observed lazily without a background timer.
+        """
         if self._opened_at is None:
-            return False
-        # Cooldown elapsed → half-open: allow a probe through.
-        return self._clock() - self._opened_at < self.cooldown_seconds
+            return CircuitState.CLOSED
+        if self._clock() - self._opened_at < self.cooldown_seconds:
+            return CircuitState.OPEN
+        return CircuitState.HALF_OPEN
+
+    @property
+    def is_open(self) -> bool:
+        """True when the breaker is in the ``OPEN`` state (cooldown not yet
+        expired). Prefer :attr:`state` for explicit ``CLOSED`` / ``OPEN`` /
+        ``HALF_OPEN`` introspection; this bool property is kept for
+        back-compat with call sites that only need a yes/no answer."""
+        return self.state is CircuitState.OPEN
 
     @property
     def consecutive_failures(self) -> int:
@@ -352,6 +385,7 @@ __all__ = [
     "CircuitBreaker",
     "CircuitBreakerRegistry",
     "CircuitOpenError",
+    "CircuitState",
     "get_default_circuit_breaker_registry",
     "is_transient_error",
     "reset_default_circuit_breaker_registry",

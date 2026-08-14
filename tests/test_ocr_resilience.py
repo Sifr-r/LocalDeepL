@@ -12,6 +12,7 @@ from omniscribe.core.ocr.processor import OCRProcessor
 from omniscribe.core.ocr.resilience import (
     CircuitBreaker,
     CircuitOpenError,
+    CircuitState,
     is_transient_error,
 )
 
@@ -151,6 +152,72 @@ def test_breaker_reopens_after_failed_probe():
         await cb.record_failure()  # probe failed
         with pytest.raises(CircuitOpenError):
             await cb.check()
+
+    asyncio.run(_drive())
+
+
+# ---------------------------------------------------------------------------
+# CircuitState enum + state property
+# ---------------------------------------------------------------------------
+
+
+def test_breaker_state_starts_closed():
+    cb = CircuitBreaker(failure_threshold=2, cooldown_seconds=10.0)
+    assert cb.state is CircuitState.CLOSED
+    assert cb.is_open is False
+
+
+def test_breaker_state_transitions_closed_to_open():
+    now = [0.0]
+    cb = CircuitBreaker(
+        failure_threshold=2, cooldown_seconds=30.0, clock=lambda: now[0]
+    )
+
+    async def _drive() -> None:
+        assert cb.state is CircuitState.CLOSED
+        await cb.record_failure()
+        assert cb.state is CircuitState.CLOSED  # under threshold
+        await cb.record_failure()
+        assert cb.state is CircuitState.OPEN
+        assert cb.is_open is True
+
+    asyncio.run(_drive())
+
+
+def test_breaker_state_transitions_open_to_half_open():
+    now = [0.0]
+    cb = CircuitBreaker(
+        failure_threshold=2, cooldown_seconds=30.0, clock=lambda: now[0]
+    )
+
+    async def _drive() -> None:
+        await cb.record_failure()
+        await cb.record_failure()
+        assert cb.state is CircuitState.OPEN
+        # Cooldown elapsed → half-open: a probe is allowed.
+        now[0] = 31.0
+        assert cb.state is CircuitState.HALF_OPEN
+        # is_open is False during half-open (a probe is allowed through).
+        assert cb.is_open is False
+        await cb.check()  # should not raise
+
+    asyncio.run(_drive())
+
+
+def test_breaker_state_transitions_half_open_to_closed_on_success():
+    now = [0.0]
+    cb = CircuitBreaker(
+        failure_threshold=2, cooldown_seconds=30.0, clock=lambda: now[0]
+    )
+
+    async def _drive() -> None:
+        await cb.record_failure()
+        await cb.record_failure()
+        now[0] = 31.0
+        assert cb.state is CircuitState.HALF_OPEN
+        await cb.record_success()
+        assert cb.state is CircuitState.CLOSED
+        assert cb.consecutive_failures == 0
 
     asyncio.run(_drive())
 
