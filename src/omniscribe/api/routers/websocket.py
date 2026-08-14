@@ -49,13 +49,22 @@ import asyncio
 from http import HTTPStatus
 from typing import Any, Protocol, runtime_checkable
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Header, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 from omniscribe.api.routers import state
 
 router = APIRouter()
 _progress_service = state.progress_service
+
+# Header used by the frontend ``/api/progress/cancel/{channel_id}`` POST
+# to prove ownership of the channel. The token is the same
+# ``session_token`` issued by ``/api/progress/session`` and stored in
+# :class:`ConnectionManager._tokens`. Using a dedicated header (rather
+# than reusing ``Authorization``) keeps the cancel route independent of
+# the global bearer-auth policy — the cancel endpoint is always
+# session-bound even when the server is open in local dev.
+PROGRESS_SESSION_TOKEN_HEADER = "X-Progress-Token"
 
 
 @runtime_checkable
@@ -421,9 +430,39 @@ async def create_progress_session(body: dict | None = None):
 
 
 @router.post("/api/progress/cancel/{channel_id}")
-async def cancel_channel(channel_id: str, body: dict | None = None):
-    """Set the cancel flag for an active channel."""
+async def cancel_channel(
+    channel_id: str,
+    body: dict | None = None,
+    x_progress_token: str | None = Header(default=None, alias=PROGRESS_SESSION_TOKEN_HEADER),
+):
+    """Set the cancel flag for an active channel.
+
+    The request must present the session token that was issued for the
+    channel via :func:`create_progress_session` in the
+    ``X-Progress-Token`` header. The token is verified by
+    :meth:`ConnectionManager.is_authorized` (HMAC compare). Requests with
+    a missing, malformed, or non-matching token are rejected with 403;
+    the cancel flag is only flipped when the caller proves ownership of
+    the channel.
+    """
     channel_id = _progress_service.validate_channel_id(channel_id)
+    if x_progress_token is None:
+        return JSONResponse(
+            status_code=HTTPStatus.FORBIDDEN,
+            content={"error": f"Missing {PROGRESS_SESSION_TOKEN_HEADER} header."},
+        )
+    try:
+        token = _progress_service.validate_session_token(x_progress_token)
+    except (TypeError, ValueError):
+        return JSONResponse(
+            status_code=HTTPStatus.FORBIDDEN,
+            content={"error": "Invalid session token."},
+        )
+    if not manager.is_authorized(channel_id, token):
+        return JSONResponse(
+            status_code=HTTPStatus.FORBIDDEN,
+            content={"error": "Session token does not match channel."},
+        )
     manager.request_cancel(channel_id)
     return {"status": "cancel_requested"}
 

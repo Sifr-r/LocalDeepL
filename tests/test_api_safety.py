@@ -172,6 +172,91 @@ def test_upload_validation_uses_streaming_limit_and_content_signature():
     asyncio.run(run_checks())
 
 
+def test_upload_deadline_rejects_slow_loris_client():
+    """A slow-loris client streaming 1 byte at a time must be rejected
+    by the wall-clock deadline even though it never crosses the byte cap."""
+
+    class _SlowLoris:
+        """Stream a valid PDF header in one chunk (so the suffix
+        detector is satisfied) and then 1 byte per call so the deadline
+        fires before the byte cap is reached."""
+
+        def __init__(self) -> None:
+            self._data = b"%PDF-1.4\n" + b"x" * 200
+            self._offset = 0
+            self._calls = 0
+
+        async def read(self, size: int = -1) -> bytes:
+            self._calls += 1
+            if self._offset >= len(self._data):
+                return b""
+            if self._calls == 1:
+                # First read: return the full PDF header so the
+                # suffix detector accepts the upload.
+                chunk = self._data[:9]
+            else:
+                # Subsequent reads: 1 byte at a time with a sleep.
+                await asyncio.sleep(0.01)
+                chunk = self._data[self._offset : self._offset + 1]
+            self._offset += len(chunk)
+            return chunk
+
+    async def run_checks():
+        with pytest.raises(UploadValidationError) as exc:
+            await save_validated_upload(
+                _SlowLoris(),  # type: ignore[arg-type]
+                max_bytes=10_000,
+                deadline_seconds=0.1,
+            )
+        assert exc.value.status_code == 408
+        assert "deadline" in str(exc.value).lower()
+
+    asyncio.run(run_checks())
+
+
+def test_upload_deadline_disabled_when_zero():
+    """Passing ``deadline_seconds=0`` (or None) disables the wall-clock
+    check so existing tests and the local-dev override don't regress."""
+
+    async def run_checks():
+        # Tiny body, generous byte cap, no deadline → must succeed.
+        result = await save_validated_upload(
+            _AsyncUpload(b"%PDF-1.4\nshort"),  # type: ignore[arg-type]
+            max_bytes=1024,
+            deadline_seconds=0.0,
+        )
+        assert result.size_bytes == 14
+        Path(result.path).unlink(missing_ok=True)
+
+    asyncio.run(run_checks())
+
+
+def test_upload_deadline_resolves_from_env(monkeypatch: pytest.MonkeyPatch):
+    """An invalid env value falls back to the default deadline (60s) and
+    doesn't raise. A valid value is honored."""
+
+    async def run_checks():
+        # Bad value → use default; small body should still upload.
+        monkeypatch.setenv("OMNISCRIBE_UPLOAD_DEADLINE_SECONDS", "not-a-number")
+        result = await save_validated_upload(
+            _AsyncUpload(b"%PDF-1.4\nshort"),  # type: ignore[arg-type]
+            max_bytes=1024,
+        )
+        assert result.size_bytes == 14
+        Path(result.path).unlink(missing_ok=True)
+
+        # Explicit disable → 0 in env, no deadline.
+        monkeypatch.setenv("OMNISCRIBE_UPLOAD_DEADLINE_SECONDS", "0")
+        result = await save_validated_upload(
+            _AsyncUpload(b"%PDF-1.4\nshort2"),  # type: ignore[arg-type]
+            max_bytes=1024,
+        )
+        assert result.size_bytes == 15
+        Path(result.path).unlink(missing_ok=True)
+
+    asyncio.run(run_checks())
+
+
 def test_process_issues_opaque_text_artifact_ids_and_prevents_client_id_lookup(
     tmp_path,
 ):
@@ -470,6 +555,48 @@ def test_progress_session_uses_token_bound_websocket_channels():
             session["channel_id"], session["session_token"]
         )
         assert not websocket.manager.is_authorized(session["channel_id"], "A" * 32)
+
+
+def test_progress_cancel_requires_session_token_header():
+    """``/api/progress/cancel/{channel_id}`` must reject any request that
+    does not present the ``X-Progress-Token`` header (or presents a token
+    that does not match the channel). Without this guard, any
+    authenticated user can cancel any other user's channel by guessing
+    the channel_id."""
+    client = _api_client()
+    session = client.post(
+        "/api/progress/session", json={"client_id": "x"}
+    ).json()
+    channel_id = session["channel_id"]
+    token = session["session_token"]
+
+    # The session token is only registered in ``manager._tokens`` once
+    # a websocket connects (the channel lifecycle is connect →
+    # register-token → cancel-flag). Open a stub websocket first so the
+    # manager has the binding in place.
+    with client.websocket_connect(f"/ws/{channel_id}?token={token}"):
+        # 1) No header → 403, cancel flag NOT set.
+        no_header = client.post(f"/api/progress/cancel/{channel_id}")
+        assert no_header.status_code == 403
+        assert "X-Progress-Token" in no_header.json()["error"]
+        assert not websocket.manager.is_cancelled(channel_id)
+
+        # 2) Wrong token → 403, cancel flag NOT set.
+        bad_token = client.post(
+            f"/api/progress/cancel/{channel_id}",
+            headers={"X-Progress-Token": "B" * len(token)},
+        )
+        assert bad_token.status_code == 403
+        assert not websocket.manager.is_cancelled(channel_id)
+
+        # 3) Correct token → 200, cancel flag set.
+        ok = client.post(
+            f"/api/progress/cancel/{channel_id}",
+            headers={"X-Progress-Token": token},
+        )
+        assert ok.status_code == 200
+        assert ok.json() == {"status": "cancel_requested"}
+        assert websocket.manager.is_cancelled(channel_id)
 
 
 def test_process_surfaces_partial_page_failures_in_headers_and_history(tmp_path: Path):

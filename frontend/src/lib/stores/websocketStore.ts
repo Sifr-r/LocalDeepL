@@ -113,6 +113,7 @@ function createWebSocketStore() {
     // Capture the latest snapshot synchronously — avoids leaking a Svelte subscription.
     const snap = get({ subscribe });
     const targetChannelId = channelId ?? snap.channelId ?? undefined;
+    const targetToken = snap.sessionToken ?? undefined;
   
     if (controller && targetChannelId) {
       controller.send({ type: 'cancel', channel_id: targetChannelId });
@@ -122,7 +123,8 @@ function createWebSocketStore() {
       try {
         await fetchApi(`/progress/cancel/${encodeURIComponent(targetChannelId)}`, {
           method: 'POST',
-          silent: true
+          silent: true,
+          headers: targetToken ? { 'X-Progress-Token': targetToken } : undefined
         });
       } catch (err) {
         console.warn('Failed to call progress cancel endpoint:', err);

@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,33 @@ logger = logging.getLogger(__name__)
 # request rejected by one layer can be silently accepted by the other.
 MAX_UPLOAD_BYTES: int = _DEFAULT_MAX_UPLOAD_MB * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 1024 * 1024
+
+# Wall-clock deadline for a single in-progress upload. The byte cap above
+# already rejects bodies larger than ``MAX_UPLOAD_BYTES``, but a slow-loris
+# client streaming 1 byte at a time would otherwise pin a worker forever
+# without ever crossing the size threshold. The deadline is env-driven
+# (default 60s) so deployments on slow links can extend it.
+_DEFAULT_UPLOAD_DEADLINE_SECONDS = 60.0
+
+
+def _get_upload_deadline_seconds() -> float:
+    """Resolve the per-request upload deadline from the env, clamped to
+    a sane range. ``0`` or negative disables the check (used in tests)."""
+    raw = os.getenv("OMNISCRIBE_UPLOAD_DEADLINE_SECONDS")
+    if not raw:
+        return _DEFAULT_UPLOAD_DEADLINE_SECONDS
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning(
+            "OMNISCRIBE_UPLOAD_DEADLINE_SECONDS=%r is not numeric; using default %.0fs",
+            raw,
+            _DEFAULT_UPLOAD_DEADLINE_SECONDS,
+        )
+        return _DEFAULT_UPLOAD_DEADLINE_SECONDS
+    if value <= 0:
+        return 0.0  # explicit disable
+    return max(1.0, min(value, 24 * 3600.0))  # clamp 1s..24h
 
 SAFE_API_BASE_ERROR = (
     "Invalid api_base. Local, private, malformed, or unresolvable endpoints are "
@@ -92,6 +120,7 @@ async def save_validated_upload(
     file: UploadFile,
     *,
     max_bytes: int = MAX_UPLOAD_BYTES,
+    deadline_seconds: float | None = None,
 ) -> UploadResult:
     first_chunk = await file.read(UPLOAD_CHUNK_BYTES)
     if not first_chunk:
@@ -102,6 +131,15 @@ async def save_validated_upload(
     input_path = tmp.name
     size = 0
 
+    # Wall-clock deadline. Resolved lazily so env changes (or test
+    # fixtures that swap ``OMNISCRIBE_UPLOAD_DEADLINE_SECONDS``) are
+    # honored without re-importing the module. A value of ``0`` or
+    # ``None`` disables the check.
+    if deadline_seconds is None:
+        deadline_seconds = _get_upload_deadline_seconds()
+    deadline_enabled = deadline_seconds > 0
+    started = time.monotonic() if deadline_enabled else 0.0
+
     try:
         while first_chunk:
             size += len(first_chunk)
@@ -109,6 +147,11 @@ async def save_validated_upload(
                 raise UploadValidationError(
                     f"File too large. Maximum size is {max_bytes // (1024 * 1024)}MB.",
                     status_code=413,
+                )
+            if deadline_enabled and time.monotonic() - started > deadline_seconds:
+                raise UploadValidationError(
+                    f"Upload exceeded {deadline_seconds:.0f}s deadline.",
+                    status_code=408,
                 )
             await asyncio.to_thread(tmp.write, first_chunk)
             first_chunk = await file.read(UPLOAD_CHUNK_BYTES)
