@@ -127,7 +127,9 @@ def create_app() -> ASGIApplication:
     # slot and a 413 likewise doesn't count against the bucket.
     if security.rate_limit_enabled:
         web_app.add_middleware(
-            RateLimitMiddleware, per_minute=security.rate_limit_per_minute
+            RateLimitMiddleware,
+            per_minute=security.rate_limit_per_minute,
+            trusted_proxies=security.trusted_proxies,
         )
     web_app.add_middleware(MaxUploadSizeMiddleware, max_bytes=security.max_upload_bytes)
     # Per-service auth tokens (OCR / translation / transcription) take precedence over

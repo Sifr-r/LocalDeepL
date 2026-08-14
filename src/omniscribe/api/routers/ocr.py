@@ -32,6 +32,7 @@ from http import HTTPStatus
 from typing import cast
 
 from fastapi import APIRouter, File, Form, UploadFile
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from omniscribe import OCRPipeline
@@ -64,6 +65,7 @@ from omniscribe.api.services.security import (
 )
 from omniscribe.core.preprocessing import PagePreprocessingOptions
 from omniscribe.core.routing import QualityRoutingOptions
+from omniscribe.core.workflows.base import OCRCancelled
 from omniscribe.core.workflows.repair import RepairOptions
 from omniscribe.utils import is_ssrf_target
 
@@ -174,6 +176,13 @@ async def _run_ocr_pipeline(
     :func:`asyncio.run_coroutine_threadsafe` so WebSocket frames still go
     out in the order the engine emits them. See refactor §3.1 in
     ``docs/superpowers/specs/deep_refactor_report.md``.
+
+    Phase 3 fix (report §2.1) — the WebSocket cancel channel is wired
+    into the engine via ``manager.is_cancelled(progress_target)``. The
+    engine consults it between page boundaries and raises
+    :class:`OCRCancelled` if the client cancelled. The bridge is built
+    here (not in the worker thread) so the closure captures the live
+    ``progress_target`` without a thread-local handoff.
     """
     pipeline, backend = build_pipeline(
         settings,
@@ -195,6 +204,16 @@ async def _run_ocr_pipeline(
     # cross-thread bridge for coroutines; the returned future is fire-
     # and-forget from the worker's perspective (see the warning below).
     main_loop = asyncio.get_running_loop()
+
+    # Phase 3 fix (report §2.1) — the cancel callback runs on the
+    # worker thread (inside ``pipeline.run``); ``manager.is_cancelled``
+    # is a plain dict lookup on the main loop's WebSocket state, so
+    # it's safe to call from any thread. We bind the channel id here
+    # to keep the worker-thread closure free of late-binding bugs.
+    cancel_channel = progress_target
+
+    def _cancel_check() -> bool:
+        return manager.is_cancelled(cancel_channel)
 
     def _log_threadsafe_future_error(fut: ConcurrentFuture) -> None:
         """Surface errors from fire-and-forget progress sends on the main loop.
@@ -295,14 +314,20 @@ async def _run_ocr_pipeline(
                     target=settings.quality_target,
                     max_retries=settings.quality_max_retries,
                 ),
+                # Phase 3 fix (report §2.1) — hand the cancel callback
+                # to the engine so the per-page loop can short-circuit
+                # a user-initiated cancel between page completions.
+                cancel_check=_cancel_check,
             )
         )
 
-    # NOTE: cancellation semantics are unchanged. ``asyncio.to_thread`` is
-    # not cancellable; if the request is cancelled while the worker thread
-    # is running, the pipeline runs to completion and the response is
-    # discarded by FastAPI. This matches the pre-fix behavior (the pipeline
-    # had no cancellation token before either).
+    # ``asyncio.to_thread`` is *not* cancellable: the worker thread
+    # keeps running until ``_run_pipeline_in_thread`` returns. The
+    # ``cancel_check`` wired above lets the engine itself raise
+    # :class:`OCRCancelled` on the next page boundary; the route
+    # handler catches that and returns a 503 to the client.
+    # The worker thread therefore stops within one page of the
+    # cancel signal instead of running the full VLM spend.
     pages_text = await asyncio.to_thread(_run_pipeline_in_thread)
 
     failed_pages = list(pipeline.last_failed_pages)
@@ -546,6 +571,33 @@ async def process_pdf(
         await asyncio.to_thread(_cleanup, input_path, output_path, text_path)
         raise
 
+    except OCRCancelled:
+        # Phase 3 fix (report §2.1) — the engine raised
+        # :class:`OCRCancelled` from inside the per-page OCR loop
+        # because the WebSocket cancel channel fired. Translate it
+        # into a 503 Service Unavailable with ``cancelled: true``
+        # so the client can distinguish a user-initiated cancel
+        # from a 500 server error. We intentionally do NOT record
+        # a JobHistory entry on cancel: the in-memory ``JobStatus``
+        # schema (Literal["complete", "error", "rejected"]) is
+        # wider than the current API surface and adding a new
+        # value would force every consumer to special-case it.
+        # The cancel shows up in the application log instead.
+        logger.info(
+            "OCR run cancelled by client before completion: job_id=%s", job_id
+        )
+        await asyncio.to_thread(_cleanup, input_path, output_path, text_path)
+        await manager.send_progress(
+            progress_target, "Cancelled.", 0, stage="cancelled"
+        )
+        return JSONResponse(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+            content={
+                "cancelled": True,
+                "error": "OCR run was cancelled before completion.",
+            },
+        )
+
     except Exception:
         duration_s = time.monotonic() - t_start
         _record_job(
@@ -705,6 +757,22 @@ async def process_pdf_async(
                 output_pdf_path=output_path,
                 failed_pages=failed_pages,
             )
+        except OCRCancelled:
+            # Phase 3 fix (report §2.1) — same as the sync route:
+            # the engine raised :class:`OCRCancelled` because the
+            # WebSocket cancel channel fired. Log it, do NOT
+            # record a job history entry (the JobStatus Literal
+            # doesn't include "cancelled"), and re-raise so the
+            # queue worker surfaces the failure to the polling
+            # client. ``_cleanup`` runs in the ``finally`` block
+            # below and drops the input/output/text paths.
+            logger.info(
+                "Async OCR run cancelled by client: job_id=%s", job_id
+            )
+            await manager.send_progress(
+                progress_target, "Cancelled.", 0, stage="cancelled"
+            )
+            raise
         except Exception:
             _record_job(
                 job_id=job_id,

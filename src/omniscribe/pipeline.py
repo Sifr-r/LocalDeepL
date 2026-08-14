@@ -31,6 +31,7 @@ from omniscribe.core.workflows import (
     ProgressCallback,
     WarningCallback,
 )
+from omniscribe.core.workflows.base import CancelCheck
 from omniscribe.core.workflows.repair import RepairOptions
 
 if TYPE_CHECKING:
@@ -129,6 +130,7 @@ class OCRPipeline:
         on_warning: WarningCallback | None = None,
         trust_model_id: str | None = None,
         repair_options: RepairOptions | None = None,
+        cancel_check: CancelCheck | None = None,
     ) -> dict[int, list[str]]:
         # Phase 2 — `trust_model_id` is the model identifier the trust
         # layer calibrates against (e.g. ``"qwen2_5_vl_72b"``). When
@@ -137,6 +139,15 @@ class OCRPipeline:
         # ``"unknown"`` so the orchestrator is still called if one was
         # injected. Tests and the API pass ``settings.model`` through
         # here so the per-model calibration JSON is picked up.
+        # Phase 3 fix (report §2.1) — ``cancel_check`` is the
+        # cooperative cancellation callback wired from the WebSocket
+        # cancel channel. The API layer builds it from
+        # ``manager.is_cancelled(progress_target)``; the engine
+        # consults it between page boundaries so a user-initiated
+        # cancel actually stops the VLM spend instead of waiting for
+        # the full document to finish (the worker thread that
+        # drives ``execute`` is wrapped in ``asyncio.to_thread`` and
+        # is therefore not interruptible from the main loop).
         resolved_trust_model_id = trust_model_id or "unknown"
         if self.grounded_backend is not None:
             grounded_engine = cast(GroundedEngine, self._engine)
@@ -150,6 +161,7 @@ class OCRPipeline:
                 on_warning=on_warning,
                 trust_model_id=resolved_trust_model_id,
                 repair_options=repair_options,
+                cancel_check=cancel_check,
             )
         else:
             try:
@@ -180,4 +192,5 @@ class OCRPipeline:
                 on_warning=on_warning,
                 trust_model_id=resolved_trust_model_id,
                 repair_options=repair_options,
+                cancel_check=cancel_check,
             )

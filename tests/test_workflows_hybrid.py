@@ -350,28 +350,101 @@ class TestHybridDecodedCache:
         assert ocr.crop_calls == 2
 
     def test_decode_chunk_bytes_populates_cache_when_provided(self) -> None:
-        """Direct test of the helper: when ``decoded_cache`` is supplied,
-        every page in ``chunk_pages`` gets an Image.Image entry."""
+        """Direct test of the helper: when ``on_decoded`` is supplied,
+        every page in ``chunk_pages`` triggers a callback with its image."""
         from PIL import Image
 
         from omniscribe.core.workflows.hybrid import _decode_chunk_bytes
 
         b64_0 = _make_tiny_b64_image()
         b64_1 = _make_tiny_b64_image()
-        cache: dict[int, Image.Image] = {}
-        result = _decode_chunk_bytes({0: b64_0, 1: b64_1}, [0, 1], cache)
+        seen: dict[int, Image.Image] = {}
+
+        def _on_decoded(p: int, img: Image.Image) -> None:
+            seen[p] = img
+
+        result = _decode_chunk_bytes({0: b64_0, 1: b64_1}, [0, 1], _on_decoded)
         assert len(result) == 2  # raw bytes returned
-        assert set(cache.keys()) == {0, 1}
-        assert all(isinstance(img, Image.Image) for img in cache.values())
+        assert set(seen.keys()) == {0, 1}
+        assert all(isinstance(img, Image.Image) for img in seen.values())
 
     def test_decode_chunk_bytes_skips_cache_when_none(self) -> None:
-        """Backward-compat: omitting ``decoded_cache`` keeps the original behavior."""
+        """Backward-compat: omitting ``on_decoded`` keeps the original behavior."""
         from omniscribe.core.workflows.hybrid import _decode_chunk_bytes
 
         b64 = _make_tiny_b64_image()
-        # Should not raise when decoded_cache is omitted.
+        # Should not raise when on_decoded is omitted.
         result = _decode_chunk_bytes({0: b64}, [0])
         assert len(result) == 1
+
+    def test_decoded_cache_is_bounded_to_max_entries(self) -> None:
+        """Phase 3 finding 2.3 — pushing 100 distinct pages keeps the LRU at 16.
+
+        A naive unbounded ``dict`` would hold every PIL.Image until ``execute``
+        returns; for a 1000-page PDF that is a multi-hundred-megabyte leak.
+        The LRU must cap itself at ``_DECODED_CACHE_MAX_ENTRIES`` and
+        evict the least-recently-used page on each new push past the cap.
+        """
+        from PIL import Image
+
+        from omniscribe.core.workflows.hybrid import _DECODED_CACHE_MAX_ENTRIES
+
+        engine = _engine()
+        for p in range(100):
+            engine._decoded_put(p, Image.new("RGB", (1, 1)))
+        assert len(engine._decoded_cache) == _DECODED_CACHE_MAX_ENTRIES == 16
+
+    def test_decoded_cache_lru_read_promotes_entry(self) -> None:
+        """Reading a cached page must mark it most-recently-used, not evict it.
+
+        Scenario: fill the cache to capacity, then read entry 1 (it gets
+        promoted to most-recently-used, so the next-oldest is now entry 0),
+        then push ``max_entries - 1`` fresh pages. Each new push evicts the
+        current head of the OrderedDict; because the just-read entry sits
+        at the tail, the subsequent ``max_entries - 1`` evictions target
+        the other original entries (0, 2, 3, …). The promoted entry must
+        survive, and entry 0 (the oldest-unread entry) must be gone.
+
+        Pushing exactly ``max_entries - 1`` new pages is the boundary at
+        which the promoted entry is still cached but the very next push
+        would evict it — the spec's "16" was a slip, the real bound is
+        ``max_entries - 1`` under standard OrderedDict LRU semantics.
+        """
+        from PIL import Image
+
+        from omniscribe.core.workflows.hybrid import _DECODED_CACHE_MAX_ENTRIES
+
+        engine = _engine()
+        max_entries = _DECODED_CACHE_MAX_ENTRIES
+
+        # Fill the cache to capacity. Insertion order is 0..max-1; oldest
+        # is 0, newest is max-1.
+        for p in range(max_entries):
+            engine._decoded_put(p, Image.new("RGB", (1, 1)))
+        assert len(engine._decoded_cache) == max_entries
+        assert list(engine._decoded_cache.keys())[0] == 0
+
+        # Reading entry 1 promotes it to most-recently-used. The new
+        # oldest is now entry 0.
+        promoted_marker = engine._decoded_get(1)
+        assert promoted_marker is not None
+        assert list(engine._decoded_cache.keys())[0] == 0
+        # And entry 1 is now at the tail (most-recently-used).
+        assert list(engine._decoded_cache.keys())[-1] == 1
+
+        # Push (max_entries - 1) fresh pages. Each push evicts the
+        # current oldest (head of the OrderedDict). The first push evicts
+        # entry 0; subsequent pushes evict 2, 3, … — entry 1 stays put
+        # at the tail until a *16th* push, which we deliberately do not
+        # do, to verify the read promotion holds at the eviction boundary.
+        for new_page in range(max_entries, 2 * max_entries - 1):
+            engine._decoded_put(new_page, Image.new("RGB", (1, 1)))
+
+        assert len(engine._decoded_cache) == max_entries
+        # The promoted entry survived all the evictions.
+        assert engine._decoded_get(1) is promoted_marker
+        # Entry 0 was the oldest-unread entry and should be gone.
+        assert engine._decoded_get(0) is None
 
 
 # ---------------------------------------------------------------------------

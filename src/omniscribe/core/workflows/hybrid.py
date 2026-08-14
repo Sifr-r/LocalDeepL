@@ -4,8 +4,8 @@ import asyncio
 import base64
 import contextlib
 import logging
-from collections import defaultdict
-from collections.abc import Mapping, MutableMapping, Sequence
+from collections import OrderedDict, defaultdict
+from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from PIL import Image
@@ -21,7 +21,9 @@ from omniscribe.core.processors import DocumentProcessor
 from omniscribe.core.routing import QualityRoutingOptions, QualityRoutingPolicy
 from omniscribe.core.workflows.base import (
     AnyOutputWriter,
+    CancelCheck,
     EngineBase,
+    OCRCancelled,
     PageBoxes,
     PagesData,
     ProgressCallback,
@@ -50,31 +52,35 @@ from omniscribe.core.workflows.utils import (
 
 logger = logging.getLogger(__name__)
 
+# Phase 3 finding 2.3 — bound the per-page decoded-image LRU to keep
+# long-document runs from holding a PIL.Image per page for the whole run.
+_DECODED_CACHE_MAX_ENTRIES = 16
+
 
 def _decode_chunk_bytes(
     images_dict: Mapping[int, str],
     chunk_pages: Sequence[int],
-    decoded_cache: MutableMapping[int, Image.Image] | None = None,
+    on_decoded: Callable[[int, Image.Image], None] | None = None,
 ) -> list[bytes]:
     """Decode a batch of base64 page images to bytes (synchronous helper).
 
     Runs inside ``asyncio.to_thread`` so the CPU-bound decode does not block the
     event loop. See refactor §1.3 in ``docs/superpowers/specs/deep_refactor_report.md``.
 
-    When ``decoded_cache`` is provided, also populates it with a ``PIL.Image``
-    per page so downstream stages (``_ocr_per_box``, ``_refine_uncertain``)
-    can skip a second base64 → image decode. The cache is updated in-place
-    alongside the returned bytes — same thread, same iteration, no extra work.
-    See refactor §1.2 (per-page decode cache).
+    When ``on_decoded`` is provided, it is invoked with each ``(page_num, image)``
+    so downstream stages (``_ocr_per_box``, ``_refine_uncertain``) can skip a
+    second base64 → image decode. The callback is the LRU-aware path: the
+    engine forwards ``_decoded_put`` here so the cache evicts old entries
+    instead of growing unbounded. See refactor §1.2 (per-page decode cache).
     """
     result: list[bytes] = []
     for p in chunk_pages:
         b64 = images_dict[p]
         raw = base64.b64decode(b64)
         result.append(raw)
-        if decoded_cache is not None:
+        if on_decoded is not None:
             with contextlib.suppress(Exception):
-                decoded_cache[p] = _decode_page_image(b64)
+                on_decoded(p, _decode_page_image(b64))
     return result
 
 
@@ -106,12 +112,39 @@ class HybridEngine(EngineBase):
         self.pdf_handler = pdf_handler
         self.page_preprocessor = page_preprocessor
         # Phase 1.2 (per-page decode cache) — populated by `_detect_layout`
-        # via `_decode_chunk_bytes`, consumed by `_ocr_per_box` (via the
-        # `page_image` parameter it already accepts) and `_refine_uncertain`.
+        # via `_decode_chunk_bytes` (which forwards into ``_decoded_put``),
+        # consumed by `_ocr_per_box` (via the `page_image` parameter it
+        # already accepts) and `_refine_uncertain`. Implemented as a
+        # bounded LRU so a 1000-page run never holds a PIL.Image per page
+        # for the lifetime of the request — Phase 3 finding 2.3.
         # Cleared at the top of every ``execute`` so per-run state never
         # leaks across requests. See refactor §1.2 in
         # ``docs/superpowers/specs/deep_refactor_report.md``.
-        self._decoded_cache: dict[int, Image.Image] = {}
+        self._decoded_cache: OrderedDict[int, Image.Image] = OrderedDict()
+
+    def _decoded_get(self, page_num: int) -> Image.Image | None:
+        """Return the cached image for ``page_num`` and mark it most-recently-used.
+
+        Returns ``None`` on a miss so callers can fall back to a fresh
+        decode. Reads update the LRU ordering, matching the standard
+        ``OrderedDict``-backed LRU pattern.
+        """
+        cached = self._decoded_cache.get(page_num)
+        if cached is not None:
+            self._decoded_cache.move_to_end(page_num)
+        return cached
+
+    def _decoded_put(self, page_num: int, image: Image.Image) -> None:
+        """Cache ``image`` for ``page_num`` and evict the LRU entry if over capacity.
+
+        Writes are LRU-aware: a re-put bumps the entry to most-recently-used
+        and, once the cache exceeds ``_DECODED_CACHE_MAX_ENTRIES``, the
+        least-recently-used entry is dropped.
+        """
+        self._decoded_cache[page_num] = image
+        self._decoded_cache.move_to_end(page_num)
+        if len(self._decoded_cache) > _DECODED_CACHE_MAX_ENTRIES:
+            self._decoded_cache.popitem(last=False)
 
     def _reset_run_state(self) -> None:
         """Clear run-scoped state. Call at the top of every ``execute``.
@@ -122,7 +155,7 @@ class HybridEngine(EngineBase):
         PIL.Image, so resetting it is mandatory between requests.
         """
         super()._reset_run_state()
-        self._decoded_cache = {}
+        self._decoded_cache = OrderedDict()
 
     async def execute(
         self,
@@ -148,6 +181,7 @@ class HybridEngine(EngineBase):
         trust_model_id: str = "unknown",
         trust_images_dict: dict[int, str] | None = None,
         repair_options: RepairOptions | None = None,
+        cancel_check: CancelCheck | None = None,
     ) -> dict[int, list[str]]:
         if not isinstance(dense_mode, DenseMode):
             raise ValueError(
@@ -165,6 +199,17 @@ class HybridEngine(EngineBase):
             preprocessing_options=preprocessing_options,
             progress=progress,
         )
+
+        # Phase 3 fix (report §2.1) — the worker thread is wrapped in
+        # ``asyncio.to_thread`` and is therefore not interruptible from
+        # the main loop. The WebSocket cancel channel is consulted at
+        # every page boundary via this callable so a user-initiated
+        # cancel actually short-circuits the VLM spend instead of
+        # waiting for the run to finish. The check sits here so an
+        # already-cancelled request aborts *before* layout detection
+        # is even started.
+        if cancel_check is not None and cancel_check():
+            raise OCRCancelled("OCR cancelled before layout detection.")
 
         # --- Phase 2: batched layout detection ---
         pages_structured = await self._detect_layout(
@@ -194,7 +239,15 @@ class HybridEngine(EngineBase):
             dual_engine=dual_engine,
             progress=progress,
             on_warning=on_warning,
+            cancel_check=cancel_check,
         )
+
+        # Phase 3 fix (report §2.1) — gate the refine phase on the cancel
+        # signal as well. Refine re-OCRs every empty sparse box, so
+        # without this check a cancelled request would still pay for
+        # the second pass on every sparse page.
+        if cancel_check is not None and cancel_check():
+            raise OCRCancelled("OCR cancelled after OCR loop.")
 
         # --- Phase 4: refine empty boxes on the sparse pages ---
         if refine:
@@ -208,6 +261,7 @@ class HybridEngine(EngineBase):
                 binarize=binarize,
                 dual_engine=dual_engine,
                 progress=progress,
+                cancel_check=cancel_check,
             )
 
         # --- Phase 4b: quality repair of below-target blocks (spec §3.2) ---
@@ -363,7 +417,7 @@ class HybridEngine(EngineBase):
             # page so ``_ocr_per_box`` / ``_refine_uncertain`` can skip a
             # second decode. (Refactor §1.2.)
             chunk_bytes = await asyncio.to_thread(
-                _decode_chunk_bytes, images_dict, chunk_pages, self._decoded_cache
+                _decode_chunk_bytes, images_dict, chunk_pages, self._decoded_put
             )
             chunk_boxes = await asyncio.to_thread(
                 self.aligner.get_detected_boxes_batch, chunk_bytes
@@ -414,6 +468,7 @@ class HybridEngine(EngineBase):
         dual_engine: bool,
         progress: ProgressCallback | None,
         on_warning: WarningCallback | None,
+        cancel_check: CancelCheck | None = None,
     ) -> None:
         """Fan out OCR across pages, dispatching sparse vs dense per page."""
         semaphore = asyncio.Semaphore(max(1, concurrency))
@@ -429,7 +484,7 @@ class HybridEngine(EngineBase):
                     # thread. Falls back to ``None`` (and the existing
                     # in-worker decode) when ``_detect_layout`` was bypassed
                     # (e.g. in tests that call ``_ocr_pages`` directly).
-                    cached_image = self._decoded_cache.get(p_num)
+                    cached_image = self._decoded_get(p_num)
                     aligned = await self._ocr_per_box(
                         images_dict[p_num],
                         pages_structured[p_num],
@@ -456,6 +511,13 @@ class HybridEngine(EngineBase):
                     return p_num, aligned, None
             except CircuitOpenError:
                 raise
+            except OCRCancelled:
+                # Phase 3 fix (report §2.1) — let the cancel signal
+                # propagate out of the per-page isolation block. The
+                # generic ``except Exception`` below would otherwise
+                # swallow it as a benign per-page failure and the
+                # cancel would never reach the route handler.
+                raise
             except Exception as e:
                 logger.warning(
                     "OCR failed for page %s: %s: %s", p_num, type(e).__name__, e
@@ -469,42 +531,65 @@ class HybridEngine(EngineBase):
             else f"OCR ({len(per_box_pages)} dense / {total - len(per_box_pages)} sparse)"
         )
         await notify(progress, "ocr", 0, total, f"{ocr_label} (0/{total})...")
-        async with asyncio.TaskGroup() as tg:
-            tasks = [tg.create_task(process_page(p)) for p in page_nums]
-            for coro in asyncio.as_completed(tasks):
-                p_num, aligned, page_error = await coro
+        try:
+            async with asyncio.TaskGroup() as tg:
+                tasks = [tg.create_task(process_page(p)) for p in page_nums]
+                for coro in asyncio.as_completed(tasks):
+                    # Phase 3 fix (report §2.1) — the cooperative cancel
+                    # check fires *between* page completions. Catching it
+                    # here (before draining the rest of the TaskGroup via
+                    # ``tg.__aexit__``) keeps the engine from paying the
+                    # VLM cost on remaining in-flight pages: as soon as
+                    # the last dispatched page lands, the OCRCancelled
+                    # we raise propagates out of ``__aexit__`` and
+                    # cancels every still-in-flight child task.
+                    p_num, aligned, page_error = await coro
 
-                pages_structured[p_num] = aligned
-                completed += 1
-                # Phase B (review M2) — emit per-block and per-page
-                # events through the injected callback set instead of
-                # importing the WebSocket manager. The engine no longer
-                # depends on `omniscribe.api`; the API layer is
-                # responsible for translating these callbacks into
-                # WebSocket frames (or any other transport).
-                #
-                # The emissions sit inside the `as_completed` loop on
-                # purpose: it gives the UI a strictly monotonic per-block
-                # ordering across pages, which the live bbox overlay
-                # assumes. If you reorder this loop, the live UI will
-                # start flashing blocks out of order.
-                await self._emit_page_callbacks(
-                    p_num,
-                    aligned,
-                    _estimate_confidence,
-                )
+                    pages_structured[p_num] = aligned
+                    completed += 1
 
-                await notify(
-                    progress,
-                    "ocr",
-                    completed,
-                    total,
-                    f"{ocr_label} ({completed}/{total})",
-                )
-                if page_error is not None:
-                    self.last_failed_pages.append(p_num)
-                    if on_warning is not None:
-                        await on_warning(p_num, page_error)
+                    if cancel_check is not None and cancel_check():
+                        raise OCRCancelled(
+                            f"OCR cancelled after page {p_num} ({completed}/{total})."
+                        )
+
+                    # Phase B (review M2) — emit per-block and per-page
+                    # events through the injected callback set instead of
+                    # importing the WebSocket manager. The engine no
+                    # longer depends on `omniscribe.api`; the API layer
+                    # is responsible for translating these callbacks
+                    # into WebSocket frames (or any other transport).
+                    #
+                    # The emissions sit inside the `as_completed` loop on
+                    # purpose: it gives the UI a strictly monotonic
+                    # per-block ordering across pages, which the live
+                    # bbox overlay assumes. If you reorder this loop,
+                    # the live UI will start flashing blocks out of
+                    # order.
+                    await self._emit_page_callbacks(
+                        p_num,
+                        aligned,
+                        _estimate_confidence,
+                    )
+
+                    await notify(
+                        progress,
+                        "ocr",
+                        completed,
+                        total,
+                        f"{ocr_label} ({completed}/{total})",
+                    )
+                    if page_error is not None:
+                        self.last_failed_pages.append(p_num)
+                        if on_warning is not None:
+                            await on_warning(p_num, page_error)
+        except* OCRCancelled as eg:
+            # Python 3.12 ``asyncio.TaskGroup`` wraps every non-Exception
+            # sub-exception (including OCRCancelled, a BaseException
+            # subclass) in a ``BaseExceptionGroup`` when it's raised
+            # inside the group. Unwrap so the route handler's plain
+            # ``except OCRCancelled`` catches it as expected.
+            raise eg.exceptions[0] from None
 
     async def _refine_pages(
         self,
@@ -518,6 +603,7 @@ class HybridEngine(EngineBase):
         binarize: bool,
         dual_engine: bool,
         progress: ProgressCallback | None,
+        cancel_check: CancelCheck | None = None,
     ) -> None:
         """Crop-and-re-OCR empty boxes on the sparse pages, then dedup nearby matches."""
         sparse_structured = {
@@ -534,6 +620,7 @@ class HybridEngine(EngineBase):
             self_correction,
             binarize,
             dual_engine,
+            cancel_check=cancel_check,
         )
 
     async def _finalize(
@@ -647,6 +734,7 @@ class HybridEngine(EngineBase):
         self_correction: bool = False,
         binarize: bool = False,
         dual_engine: bool = False,
+        cancel_check: CancelCheck | None = None,
     ) -> None:
         targets: list[tuple[int, int, BBox]] = []
         for p_num, aligned in sparse_structured.items():
@@ -668,7 +756,7 @@ class HybridEngine(EngineBase):
             # Refactor §1.2: reuse the PIL.Image decoded during layout
             # detection (or OCR per-box) when available; otherwise fall
             # back to the original per-call decode in a worker thread.
-            cached = self._decoded_cache.get(p_num)
+            cached = self._decoded_get(p_num)
             page_images[p_num] = (
                 cached
                 if cached is not None
@@ -692,6 +780,10 @@ class HybridEngine(EngineBase):
                     return p_num, idx, text
             except CircuitOpenError:
                 raise
+            except OCRCancelled:
+                # Phase 3 fix (report §2.1) — let the cancel signal
+                # propagate past the per-box isolation block.
+                raise
             except Exception as e:
                 logger.warning(
                     "Refine failed for page %s box %s: %s: %s",
@@ -704,21 +796,38 @@ class HybridEngine(EngineBase):
 
         completed = 0
         refined_indices: dict[int, set[int]] = defaultdict(set)
-        async with asyncio.TaskGroup() as tg:
-            tasks = [tg.create_task(refine_one(p, i, b)) for p, i, b in targets]
-            for coro in asyncio.as_completed(tasks):
-                p_num, idx, text = await coro
-                bbox_cur, _ = sparse_structured[p_num][idx]
-                sparse_structured[p_num][idx] = (bbox_cur, text.strip())
-                refined_indices[p_num].add(idx)
-                completed += 1
-                await notify(
-                    progress,
-                    "refine",
-                    completed,
-                    total,
-                    f"Refining boxes ({completed}/{total})",
-                )
+        try:
+            async with asyncio.TaskGroup() as tg:
+                tasks = [tg.create_task(refine_one(p, i, b)) for p, i, b in targets]
+                for coro in asyncio.as_completed(tasks):
+                    # Phase 3 fix (report §2.1) — same cooperative cancel
+                    # check as in :meth:`_ocr_pages`. Refine re-OCRs
+                    # every empty box, so without this check a cancelled
+                    # request would still pay for every queued box.
+                    p_num, idx, text = await coro
+                    bbox_cur, _ = sparse_structured[p_num][idx]
+                    sparse_structured[p_num][idx] = (bbox_cur, text.strip())
+                    refined_indices[p_num].add(idx)
+                    completed += 1
+
+                    if cancel_check is not None and cancel_check():
+                        raise OCRCancelled(
+                            f"OCR cancelled after refine box {completed}/{total}."
+                        )
+
+                    await notify(
+                        progress,
+                        "refine",
+                        completed,
+                        total,
+                        f"Refining boxes ({completed}/{total})",
+                    )
+        except* OCRCancelled as eg:
+            # See the matching note in :meth:`_ocr_pages` —
+            # ``asyncio.TaskGroup`` wraps the OCRCancelled in a
+            # ``BaseExceptionGroup`` in Python 3.12; unwrap so the
+            # route handler's ``except OCRCancelled`` catches it.
+            raise eg.exceptions[0] from None
 
         for p_num, idxs in refined_indices.items():
             _drop_refined_duplicates(sparse_structured[p_num], idxs)
@@ -776,7 +885,7 @@ class HybridEngine(EngineBase):
                 continue
 
             # Refactor §1.2: reuse the decoded page image when available.
-            cached = self._decoded_cache.get(p_num)
+            cached = self._decoded_get(p_num)
             page_image = (
                 cached
                 if cached is not None

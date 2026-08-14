@@ -63,6 +63,7 @@ explicitly opt into profile (2) or (3) by setting the relevant env vars.
 | Per-service auth       | `OMNISCRIBE_OCR_AUTH_TOKEN`, `OMNISCRIBE_TRANSLATION_AUTH_TOKEN`, `OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN` | Unset | Set when OCR, translation, or transcription should accept different tokens |
 | Upload size            | `OMNISCRIBE_MAX_UPLOAD_MB`        | 10 GB               | Lower for public deployments            |
 | Rate limit             | `OMNISCRIBE_RATE_LIMIT_PER_MIN`   | 60 req/min/IP       | Lower for public deployments            |
+| Trusted reverse proxies | `OMNISCRIBE_TRUSTED_PROXIES`    | Unset (peer IP only) | Comma-separated CIDR list; X-Forwarded-For is honoured only when the ASGI peer is inside one of these ranges |
 | SSRF (URL fetcher)     | `ALLOW_SSRF_LOCAL`                 | `true`              | Set `false` for any non-local exposure  |
 | CORS                   | `OMNISCRIBE_CORS_ORIGINS`          | localhost-only      | Comma-separated allow-list for cross-origin browser clients |
 | VLM resilience         | `OMNISCRIBE_LLM_MAX_RETRIES`, `OMNISCRIBE_LLM_RETRY_BASE_DELAY`, `OMNISCRIBE_CB_FAILURE_THRESHOLD`, `OMNISCRIBE_CB_COOLDOWN` | retries=2, base=1.0s, failures=5, cooldown=30s | Higher to ride out a flaky provider; lower to fail fast |
@@ -143,6 +144,9 @@ Before exposing OmniScribe beyond `localhost`:
       network (e.g. 1024 MB)
 - [ ] Set `OMNISCRIBE_RATE_LIMIT_PER_MIN` low enough to bound abuse
       (e.g. 30)
+- [ ] If fronted by a reverse proxy, set `OMNISCRIBE_TRUSTED_PROXIES`
+      to the proxy's CIDR (e.g. `10.0.0.0/24`) so the rate limiter sees
+      the real client IP, not the proxy's
 - [ ] Front the service with a reverse proxy enforcing HTTPS +
       `Strict-Transport-Security`
 - [ ] Run the server as a dedicated unprivileged user

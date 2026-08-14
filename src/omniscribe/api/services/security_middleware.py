@@ -41,16 +41,20 @@ they run *before* FastAPI's routing logic — no per-router boilerplate.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
+import posixpath
 import secrets
 import time
+import urllib.parse
 from collections import deque
-from typing import Final, TypedDict
+from typing import Any, Final, TypedDict
 
 _LOGGER = logging.getLogger(__name__)
 
 _UNAUTHORIZED: Final[dict[str, str]] = {"error": "Unauthorized"}
+_INVALID_PATH: Final[dict[str, str]] = {"error": "Invalid path"}
 _TOO_LARGE: Final[dict[str, str]] = {"error": "Upload exceeds maximum size"}
 _TOO_MANY_REQUESTS: Final[dict[str, str]] = {"error": "Rate limit exceeded"}
 
@@ -85,6 +89,48 @@ def _normalize_token(value: str | None) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
+
+
+def _normalize_path(scope: dict[str, Any]) -> str:
+    """Return a canonical, safe path for route classification.
+
+    Starlette URL-decodes ``scope["path"]`` for the common case, but
+    leaves reserved characters (e.g. ``%2F`` for ``/``) intact because
+    decoding them would change the path structure. ``scope["raw_path"]``
+    carries the undecoded wire bytes when the ASGI server provides them.
+
+    We percent-decode the raw bytes once more with ``errors="replace"``
+    so any remaining ``%2F`` is collapsed, then run
+    :func:`posixpath.normpath` to fold ``..`` segments. The result is the
+    canonical path the route allowlist should match against — a request
+    for ``/api/process%2F/../models/ocr`` is reclassified to OCR after
+    collapsing, instead of falling through to the global token bucket.
+
+    Any path containing a non-ASCII character (a Cyrillic
+    homoglyph standing in for ``a`` in ``/api/process``, UTF-8
+    replacement chars, raw 8-bit bytes that Starlette did not decode,
+    etc.) is rejected by returning ``""``. The caller turns that into
+    a 400 before the token compare so a homoglyph cannot be used to
+    escape the per-route grouping.
+    """
+    raw_path = scope.get("raw_path")
+    if isinstance(raw_path, (bytes, bytearray)) and raw_path:
+        try:
+            candidate = bytes(raw_path).decode("utf-8", errors="replace")
+        except (AttributeError, UnicodeDecodeError):
+            return ""
+    else:
+        candidate = str(scope.get("path", ""))
+
+    candidate = urllib.parse.unquote(candidate, errors="replace")
+
+    if any(ord(ch) > 127 for ch in candidate):
+        return ""
+
+    collapsed = posixpath.normpath(candidate)
+    if not collapsed or collapsed == ".":
+        return "/"
+    return collapsed
 
 
 def _is_ocr_route(path: str) -> bool:
@@ -220,16 +266,23 @@ class BearerAuthMiddleware:
             await self.app(scope, receive, send)
             return
 
-        path = scope.get("path", "")
+        normalized = _normalize_path(scope)
+        # Non-ASCII paths (homoglyphs, raw 8-bit bytes, percent-decoded
+        # multibyte sequences) are rejected before the token compare so
+        # they cannot be used to escape the per-route grouping.
+        if not normalized:
+            await _send_json(scope, receive, send, _INVALID_PATH, 400)
+            return
+
         # Health and readiness probes must always reach the inner app so
         # the orchestrator can probe even when a global bearer token is
         # configured. The exempt set is exact (no prefix matching) so a
         # future ``/health/details`` endpoint stays protected.
-        if _is_health_path(path):
+        if _is_health_path(normalized):
             await self.app(scope, receive, send)
             return
 
-        token = self._token_for(path)
+        token = self._token_for(normalized)
         if token is None:
             await self.app(scope, receive, send)
             return
@@ -390,23 +443,67 @@ class RateLimitMiddleware:
     reject if the deque is at capacity. Suitable for soft abuse
     protection on a single-worker server; not a substitute for a proper
     edge gateway.
+
+    When ``trusted_proxies`` is non-empty, the limiter consults the
+    ``X-Forwarded-For`` header on requests whose ASGI peer is inside
+    one of the configured CIDR ranges. Requests from untrusted peers
+    never see the header (the standard "do not trust client-supplied
+    headers from an untrusted source" rule).
     """
 
     WINDOW_SECONDS: Final[float] = 60.0
+    _XFF_HEADER: Final[bytes] = b"x-forwarded-for"
 
-    def __init__(self, app, per_minute: int, clock=time.monotonic) -> None:
+    def __init__(
+        self,
+        app,
+        per_minute: int,
+        clock=time.monotonic,
+        trusted_proxies: list[ipaddress.IPv4Network | ipaddress.IPv6Network] | None = None,
+    ) -> None:
         self.app = app
         self.per_minute = per_minute
         self.clock = clock
         self._hits: dict[str, deque[float]] = {}
+        self._trusted_proxies: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = (
+            list(trusted_proxies) if trusted_proxies else []
+        )
+
+    @staticmethod
+    def _extract_xff(scope) -> str | None:
+        """Return the leftmost ``X-Forwarded-For`` entry, trimmed, or None."""
+        for name, value in scope.get("headers", ()) or ():
+            if name.lower() == RateLimitMiddleware._XFF_HEADER:
+                try:
+                    raw = value.decode("latin-1").strip()
+                except (UnicodeDecodeError, AttributeError):
+                    return None
+                if not raw:
+                    return None
+                return raw.split(",", 1)[0].strip() or None
+        return None
 
     def _client_key(self, scope) -> str:
         client = scope.get("client")
         if client is None:
             return "unknown"
-        # `scope["client"]` is a tuple[str, int] (host, port) per ASGI; we
-        # only care about the IP, and the value is untyped at our layer.
-        return str(client[0])
+        peer_ip = str(client[0])
+        if not self._trusted_proxies:
+            return peer_ip
+        try:
+            peer = ipaddress.ip_address(peer_ip)
+        except ValueError:
+            return peer_ip
+        if not any(peer in network for network in self._trusted_proxies):
+            return peer_ip
+        candidate = self._extract_xff(scope)
+        if candidate is None:
+            return peer_ip
+        try:
+            ipaddress.ip_address(candidate)
+        except ValueError:
+            return peer_ip
+        return candidate
 
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] != "http":

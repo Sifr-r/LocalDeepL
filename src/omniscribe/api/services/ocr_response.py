@@ -34,8 +34,67 @@ from omniscribe.api.services.workflow import build_workflow_summary
 
 _METADATA_HEADER_FIELDS = ("quality", "structure", "sections")
 
+# Cap each leaf string before JSON serialization so a single oversized
+# processor value cannot balloon the response header to multi-MB.
+_METADATA_VALUE_MAX_CHARS = 4 * 1024
+
+# Substring tokens (lowercased) that mark a metadata key as sensitive —
+# any key whose lowercased name contains one of these has its value
+# replaced with the literal ``"[redacted]"`` before serialization.
+_SENSITIVE_KEY_TOKENS = (
+    "path",
+    "filename",
+    "email",
+    "secret",
+    "token",
+    "password",
+    "key",
+)
+
+_TRUNCATED_SUFFIX = "\u2026[truncated]"
+
 _TRUST_HISTOGRAM_BINS = ("0.0-0.2", "0.2-0.4", "0.4-0.6", "0.6-0.8", "0.8-1")
 _TRUST_BIN_EDGES = (0.2, 0.4, 0.6, 0.8, 1.0)
+
+
+def _is_sensitive_key(key: object) -> bool:
+    """Return ``True`` when ``key`` is a string containing a sensitive token."""
+    if not isinstance(key, str):
+        return False
+    lowered = key.lower()
+    return any(token in lowered for token in _SENSITIVE_KEY_TOKENS)
+
+
+def _redact_metadata(value: object) -> object:
+    """Recursively redact sensitive keys and truncate oversized strings.
+
+    Walks ``dict`` and ``list`` containers in place-shape. For each
+    ``dict`` key whose lowercased name contains any
+    :data:`_SENSITIVE_KEY_TOKENS` substring, the value is replaced with
+    the literal ``"[redacted]"``. Any ``str`` value longer than
+    :data:`_METADATA_VALUE_MAX_CHARS` is truncated to that cap and
+    suffixed with ``"\u2026[truncated]"``. Other primitive types pass
+    through unchanged so numeric scores and booleans survive the round
+    trip into JSON.
+
+    The redacted form is what lands in the response header — the
+    underlying ``page.metadata`` storage is untouched, so processors
+    can keep their internal data intact.
+    """
+    if isinstance(value, dict):
+        return {
+            k: "[redacted]" if _is_sensitive_key(k) else _redact_metadata(v)
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_metadata(item) for item in value]
+    if isinstance(value, tuple):
+        return [_redact_metadata(item) for item in value]
+    if isinstance(value, str):
+        if len(value) > _METADATA_VALUE_MAX_CHARS:
+            return value[:_METADATA_VALUE_MAX_CHARS] + _TRUNCATED_SUFFIX
+        return value
+    return value
 
 
 def _trust_bin(score: float) -> str:
@@ -145,7 +204,12 @@ def _document_metadata_header(pipeline: OCRPipeline, field_name: str) -> str | N
             continue
         value = meta.get(field_name)
         if isinstance(value, dict):
-            pages.append({"page_index": page.page_index, field_name: value})
+            # Redact sensitive keys + truncate oversized strings before
+            # serialization so a processor cannot leak PII into the
+            # response header (Phase 3 fix, finding 1.8).
+            pages.append(
+                {"page_index": page.page_index, field_name: _redact_metadata(value)}
+            )
 
     if not pages:
         return None

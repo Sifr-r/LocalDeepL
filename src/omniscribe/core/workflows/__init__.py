@@ -1,8 +1,10 @@
 # Export the core classes for simpler importing
 from .base import (
     AnyOutputWriter,
+    CancelCheck,
     DocumentResultWriter,
     EngineBase,
+    OCRCancelled,
     OutputWriter,
     PageBoxes,
     PagesData,
@@ -24,10 +26,12 @@ __all__ = [
     "REFINABLE_MIN_HEIGHT",
     "REFINABLE_MIN_WIDTH",
     "AnyOutputWriter",
+    "CancelCheck",
     "DocumentResultWriter",
     "EngineBase",
     "GroundedEngine",
     "HybridEngine",
+    "OCRCancelled",
     "OutputWriter",
     "PageBoxes",
     "PagesData",

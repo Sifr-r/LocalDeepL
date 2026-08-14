@@ -97,8 +97,20 @@ export async function fetchFile(path: string, options: FetchOptions = {}): Promi
     }
   }
 
+  // Resolve the bearer the same way as fetchApi: per-route token when the
+  // path targets a known service group, else auth.global. The caller can
+  // still override with an explicit Authorization header in options.
   const auth = get(authStore) || {};
-  const token = auth.global;
+  let token: string | undefined;
+  if (url.includes('/api/process') || url.includes('/api/ocr') || url.includes('/api/text') || url.includes('/api/export')) {
+    token = auth.ocr || auth.global;
+  } else if (url.includes('/api/translate')) {
+    token = auth.translation || auth.global;
+  } else if (url.includes('/api/transcribe')) {
+    token = auth.transcription || auth.global;
+  } else {
+    token = auth.global;
+  }
   const headers: Record<string, string> = {};
   if (options.headers) {
     if (typeof Headers !== 'undefined' && options.headers instanceof Headers) {

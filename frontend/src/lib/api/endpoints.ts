@@ -1,4 +1,4 @@
-import { fetchApi, fetchApiWithHeaders } from './client';
+import { fetchApi, fetchApiWithHeaders, fetchFile } from './client';
 import type {
   RuntimeConfig,
   ProviderPreset,
@@ -157,9 +157,14 @@ export const providersApi = {
   get: getProviderDetails
 };
 
+// Artifact GETs carry the token-bound access token in the Authorization
+// header (SECURITY.md: artifact tokens must not be placed in query strings).
+// The server enforces this via `get_access_token` (header-only).
 export const artifactsApi = {
-  getText: (id: string, token: string) => fetchApi<string>(`/text/${id}?token=${token}`),
-  getExport: (id: string, token: string) => fetchApi(`/export/${id}?token=${token}`)
+  getText: (id: string, token: string) =>
+    fetchFile(`/text/${id}`, { headers: { Authorization: `Bearer ${token}` } }),
+  getExport: (id: string, token: string) =>
+    fetchFile(`/export/${id}`, { headers: { Authorization: `Bearer ${token}` } })
 };
 
 export const extractionApi = {

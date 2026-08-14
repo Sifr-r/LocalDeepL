@@ -61,6 +61,27 @@ PageBoxes = list[tuple[tuple[float, float, float, float], str]]
 PagesData = dict[int, PageBoxes]
 
 
+#: Type of the optional cancel-check callable engines accept on ``execute``.
+#: Returns ``True`` when the in-flight run should abort cooperatively at the
+#: next page boundary. See :class:`OCRCancelled` and report finding 2.1.
+CancelCheck = Callable[[], bool]
+
+
+class OCRCancelled(BaseException):
+    """Raised by the OCR engines when the cooperative cancel-check fires.
+
+    Inherits from :class:`BaseException` (not :class:`Exception`) so the
+    per-page isolation blocks in :meth:`HybridEngine._ocr_pages` and
+    :meth:`HybridEngine._refine_pages` do not swallow the signal as a
+    page-level failure. The API layer catches it and translates it into
+    a 503 Service Unavailable with ``cancelled: true`` so the WebSocket
+    cancel handshake actually short-circuits the VLM spend.
+
+    Phase 3 fix for report finding 2.1 (HIGH) — see
+    ``docs/superpowers/specs/deep_refactor_report.md`` §2.1.
+    """
+
+
 class EngineBase:
     """
     Base class for OCR workflows (Hybrid and Grounded).

@@ -215,6 +215,13 @@ revised*.md
 /chroma_db/
 examples/output_*.pdf
 
+# Local planning / research / skill artifacts
+/.minimax/
+/.research/
+/.superpowers/
+/docs/
+/orig2.py
+
 screenshot*.png
 !install.bat
 !stop_app.bat

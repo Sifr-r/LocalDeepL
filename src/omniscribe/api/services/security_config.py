@@ -30,6 +30,7 @@ no CORS, no size cap beyond Starlette's defaults, no rate limit.
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import os
 from dataclasses import dataclass, field
@@ -143,6 +144,33 @@ def _env_list_csv(name: str) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def _env_cidr_list(name: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+    """Read a comma-separated list of CIDR ranges.
+
+    Drops invalid entries with a warning rather than silently widening
+    to "trust all" or rejecting the whole var. An empty list preserves
+    the historical peer-only behaviour.
+    """
+    import ipaddress
+    raw = os.getenv(name)
+    if not raw and name != _legacy_name(name):
+        raw = os.getenv(_legacy_name(name))
+    if not raw:
+        return []
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for item in raw.split(","):
+        candidate = item.strip()
+        if not candidate:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(candidate, strict=False))
+        except ValueError as exc:
+            _LOGGER.warning(
+                "Ignoring invalid CIDR %r in %s: %s", candidate, name, exc
+            )
+    return networks
+
+
 def _validate_auth_token(env_name: str, token: str | None) -> str | None:
     """Trim and fail-fast on well-known placeholder values.
 
@@ -176,6 +204,9 @@ class SecuritySettings:
     cors_origins: list[str] = field(default_factory=list)
     max_upload_bytes: int = DEFAULT_MAX_UPLOAD_MB * 1024 * 1024
     rate_limit_per_minute: int | None = None
+    trusted_proxies: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = field(
+        default_factory=list
+    )
 
     @property
     def auth_enabled(self) -> bool:
@@ -205,6 +236,18 @@ class SecuritySettings:
     @property
     def rate_limit_enabled(self) -> bool:
         return self.rate_limit_per_minute is not None and self.rate_limit_per_minute > 0
+
+    def is_trusted_proxy(self, peer_ip: str) -> bool:
+        """True when ``peer_ip`` is contained in any configured trusted CIDR.
+
+        Returns False on unparseable input rather than raising — the
+        rate limiter should fail-closed to the peer IP, not crash.
+        """
+        try:
+            address = ipaddress.ip_address(peer_ip)
+        except ValueError:
+            return False
+        return any(address in network for network in self.trusted_proxies)
 
     @staticmethod
     def from_env() -> SecuritySettings:
@@ -285,4 +328,5 @@ class SecuritySettings:
             cors_origins=origins,
             max_upload_bytes=max_mb * 1024 * 1024,
             rate_limit_per_minute=rate,
+            trusted_proxies=_env_cidr_list("OMNISCRIBE_TRUSTED_PROXIES"),
         )

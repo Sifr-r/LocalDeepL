@@ -15,7 +15,9 @@ from omniscribe.core.ocr_quality import TrustOrchestrator
 from omniscribe.core.processors import DocumentProcessor
 from omniscribe.core.workflows.base import (
     AnyOutputWriter,
+    CancelCheck,
     EngineBase,
+    OCRCancelled,
     PagesData,
     ProgressCallback,
     WarningCallback,
@@ -92,12 +94,21 @@ class GroundedEngine(EngineBase):
         on_warning: WarningCallback | None = None,
         trust_model_id: str = "unknown",
         repair_options: RepairOptions | None = None,
+        cancel_check: CancelCheck | None = None,
     ) -> dict[int, list[str]]:
         """
         Grounded path: the backend returns (bbox, text) pairs directly.
         No Surya, no DP, no refine — the model already knows where the text is.
         """
         self._reset_run_state()
+
+        # Phase 3 fix (report §2.1) — same cooperative cancel check as
+        # the hybrid path. The grounded backend may produce a single
+        # large VLM call that internally fans out across pages; we
+        # consult the cancel channel up front so an already-cancelled
+        # request can short-circuit before paying for the call.
+        if cancel_check is not None and cancel_check():
+            raise OCRCancelled("Grounded OCR cancelled before backend call.")
 
         response = await self.grounded_backend.ocr_document(
             input_path, progress=progress, on_warning=on_warning
