@@ -480,14 +480,6 @@ the three services.
 | `tests/test_provider_api_routes.py` | Unit tests for provider REST management API routes |
 
 
-## See Also
-
-- [README.md](README.md) — feature overview, install, web workspace
-- [CHANGELOG.md](CHANGELOG.md) — version history and breaking changes
-- [DEPLOYMENT.md](DEPLOYMENT.md) — local / LAN / public-internet deployment profiles
-- [SECURITY.md](SECURITY.md) — threat model, hardening checklist, vulnerability disclosure
-- [AGENTS.md](AGENTS.md) — contributor guide and full env-var reference
-
 ### 2026-08-12: Full Svelte 5 + TailwindCSS v4 Frontend Migration & Legacy Cleanup
 
 | File | Responsibility |
@@ -506,4 +498,21 @@ the three services.
 | `frontend/src/lib/components/modals/ExportModal.svelte` | Fixed `tagVariant` type annotations and converted property bindings to standard `class` props |
 | `src/omniscribe/static/` | Compiled production Svelte 5 + Tailwind v4 single-page application assets served by FastAPI |
 
-_Last updated: 2026-08-12_
+### 2026-08-14: Multi-Domain Architecture, Security & Quality Audit
+
+Conducted a comprehensive 4-domain audit (Core Pipeline, Backend API/Security, Frontend Workstation, and QA/DevOps):
+1. **Core Pipeline**: Confirmed normalized `[0..1]` bounding box invariant, monotonic DP alignment, cooperative cancellation via `OCRCancelled` (`BaseException`), bounded 16-entry image LRU cache, and quality repair loop stall guards. Identified `complete_vlm_prompt` export omission in `core/ocr/__init__.py` and `DocumentTree` child index desync on reading order sort.
+2. **API & Security**: Identified and cataloged readiness probe fix (`OCRJobQueue.running` property), third-party provider API key response masking, artifact token separation from server bearer authentication, and uniform SSRF validation on tree translation and transcription endpoints.
+3. **Frontend Workstation**: Verified Svelte 5 + TypeScript build and Vitest suite (17/17 passed). Identified unmounted navigation views (`JobHistoryView`, `TranscriptionView`, `ExtractionView`) in `App.svelte` and modal focus trapping requirements.
+4. **QA & DevOps**: Executed full test and lint suites (1,230 fast tests passing in 37.9s, 0 Ruff errors, 0 format issues, 144 source files clean in Mypy strict mode). Cataloged missing dev CI dependencies in `pyproject.toml` (`pytest-cov`, `pip-audit`, `cyclonedx-python-lib`, `rich`) and frontend CI job integration.
+
+## See Also
+
+- [README.md](README.md) — feature overview, install, web workspace
+- [CHANGELOG.md](CHANGELOG.md) — version history and breaking changes
+- [DEPLOYMENT.md](DEPLOYMENT.md) — local / LAN / public-internet deployment profiles
+- [SECURITY.md](SECURITY.md) — threat model, hardening checklist, vulnerability disclosure
+- [AGENTS.md](AGENTS.md) — contributor guide and full env-var reference
+
+_Last updated: 2026-08-14_
+
