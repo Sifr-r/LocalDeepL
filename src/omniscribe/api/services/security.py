@@ -52,6 +52,7 @@ def _get_upload_deadline_seconds() -> float:
         return 0.0  # explicit disable
     return max(1.0, min(value, 24 * 3600.0))  # clamp 1s..24h
 
+
 SAFE_API_BASE_ERROR = (
     "Invalid api_base. Local, private, malformed, or unresolvable endpoints are "
     "blocked unless ALLOW_SSRF_LOCAL=true is explicitly configured."

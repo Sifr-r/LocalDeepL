@@ -152,6 +152,7 @@ def _env_cidr_list(name: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Netw
     the historical peer-only behaviour.
     """
     import ipaddress
+
     raw = os.getenv(name)
     if not raw and name != _legacy_name(name):
         raw = os.getenv(_legacy_name(name))
@@ -165,9 +166,7 @@ def _env_cidr_list(name: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Netw
         try:
             networks.append(ipaddress.ip_network(candidate, strict=False))
         except ValueError as exc:
-            _LOGGER.warning(
-                "Ignoring invalid CIDR %r in %s: %s", candidate, name, exc
-            )
+            _LOGGER.warning("Ignoring invalid CIDR %r in %s: %s", candidate, name, exc)
     return networks
 
 

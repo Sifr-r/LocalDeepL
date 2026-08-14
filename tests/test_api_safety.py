@@ -564,9 +564,7 @@ def test_progress_cancel_requires_session_token_header():
     authenticated user can cancel any other user's channel by guessing
     the channel_id."""
     client = _api_client()
-    session = client.post(
-        "/api/progress/session", json={"client_id": "x"}
-    ).json()
+    session = client.post("/api/progress/session", json={"client_id": "x"}).json()
     channel_id = session["channel_id"]
     token = session["session_token"]
 

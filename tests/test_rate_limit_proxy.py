@@ -87,9 +87,7 @@ def test_trusted_proxy_uses_single_value_xff() -> None:
         app=_StubApp(), per_minute=10, trusted_proxies=_trusted_loopback()
     )
 
-    key = middleware._client_key(
-        _scope(client_ip="127.0.0.1", xff="10.0.0.5")
-    )
+    key = middleware._client_key(_scope(client_ip="127.0.0.1", xff="10.0.0.5"))
 
     assert key == "10.0.0.5"
 
@@ -115,9 +113,7 @@ def test_trusted_proxy_trusts_ipv6_loopback() -> None:
         trusted_proxies=[ipaddress.ip_network("::1/128", strict=False)],
     )
 
-    key = middleware._client_key(
-        _scope(client_ip="::1", xff="2001:db8::1")
-    )
+    key = middleware._client_key(_scope(client_ip="::1", xff="2001:db8::1"))
 
     assert key == "2001:db8::1"
 
@@ -138,9 +134,7 @@ def test_trusted_proxy_falls_back_to_peer_when_xff_unparseable() -> None:
         app=_StubApp(), per_minute=10, trusted_proxies=_trusted_loopback()
     )
 
-    key = middleware._client_key(
-        _scope(client_ip="127.0.0.1", xff="garbage")
-    )
+    key = middleware._client_key(_scope(client_ip="127.0.0.1", xff="garbage"))
 
     assert key == "127.0.0.1"
 
@@ -165,9 +159,7 @@ def test_trusted_proxy_falls_back_to_peer_when_xff_empty_token() -> None:
         app=_StubApp(), per_minute=10, trusted_proxies=_trusted_loopback()
     )
 
-    key = middleware._client_key(
-        _scope(client_ip="127.0.0.1", xff="   , 10.0.0.5")
-    )
+    key = middleware._client_key(_scope(client_ip="127.0.0.1", xff="   , 10.0.0.5"))
 
     assert key == "127.0.0.1"
 
@@ -187,9 +179,7 @@ def test_untrusted_peer_ignores_xff_header() -> None:
         app=_StubApp(), per_minute=10, trusted_proxies=_trusted_loopback()
     )
 
-    key = middleware._client_key(
-        _scope(client_ip="10.0.0.5", xff="8.8.8.8")
-    )
+    key = middleware._client_key(_scope(client_ip="10.0.0.5", xff="8.8.8.8"))
 
     assert key == "10.0.0.5"
 
@@ -205,9 +195,7 @@ def test_untrusted_peer_ignores_xff_even_if_peer_is_in_different_cidr() -> None:
         trusted_proxies=[ipaddress.ip_network("10.0.0.0/8", strict=False)],
     )
 
-    key = middleware._client_key(
-        _scope(client_ip="192.168.1.10", xff="8.8.8.8")
-    )
+    key = middleware._client_key(_scope(client_ip="192.168.1.10", xff="8.8.8.8"))
 
     assert key == "192.168.1.10"
 
@@ -224,18 +212,14 @@ def test_no_trusted_proxies_keys_on_peer_regardless_of_header() -> None:
     """
     middleware = RateLimitMiddleware(app=_StubApp(), per_minute=10)
 
-    key = middleware._client_key(
-        _scope(client_ip="10.0.0.5", xff="8.8.8.8")
-    )
+    key = middleware._client_key(_scope(client_ip="10.0.0.5", xff="8.8.8.8"))
 
     assert key == "10.0.0.5"
 
 
 def test_no_trusted_proxies_with_no_header_uses_peer() -> None:
     """No trusted proxies and no XFF → peer is the key (the legacy path)."""
-    middleware = RateLimitMiddleware(
-        app=_StubApp(), per_minute=10, trusted_proxies=[]
-    )
+    middleware = RateLimitMiddleware(app=_StubApp(), per_minute=10, trusted_proxies=[])
 
     key = middleware._client_key(_scope(client_ip="10.0.0.5", xff=None))
 
@@ -269,9 +253,7 @@ def test_unparseable_peer_falls_back_to_peer_string() -> None:
         app=_StubApp(), per_minute=10, trusted_proxies=_trusted_loopback()
     )
 
-    key = middleware._client_key(
-        _scope(client_ip="not-an-ip", xff="8.8.8.8")
-    )
+    key = middleware._client_key(_scope(client_ip="not-an-ip", xff="8.8.8.8"))
 
     assert key == "not-an-ip"
 

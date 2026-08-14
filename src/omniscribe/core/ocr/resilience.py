@@ -41,6 +41,7 @@ class CircuitState(StrEnum):
     OPEN = "open"
     HALF_OPEN = "half_open"
 
+
 # HTTP status codes that indicate a transient server-side condition.
 # 425 Too Early (RFC 8470) is included: 0-RTT handshakes that the server
 # rejects are safe to retry after a short backoff.

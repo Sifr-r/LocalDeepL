@@ -55,9 +55,7 @@ class TestRedactMetadata:
     def test_redacts_top_level_sensitive_key_preserves_others(self) -> None:
         """Spec test 1: top-level ``path`` becomes ``[redacted]`` and
         a non-sensitive sibling like ``quality_score`` survives."""
-        result = _redact_metadata(
-            {"path": "/etc/passwd", "quality_score": 0.95}
-        )
+        result = _redact_metadata({"path": "/etc/passwd", "quality_score": 0.95})
         assert result == {"path": "[redacted]", "quality_score": 0.95}
 
     def test_truncates_long_string_to_cap_plus_marker(self) -> None:
@@ -76,12 +74,8 @@ class TestRedactMetadata:
     def test_recursively_redacts_nested_sensitive_key(self) -> None:
         """Spec test 3: a sensitive key nested inside a child dict is
         still redacted by the recursive walk."""
-        result = _redact_metadata(
-            {"outer": {"file_path": "/etc/foo", "label": "ok"}}
-        )
-        assert result == {
-            "outer": {"file_path": "[redacted]", "label": "ok"}
-        }
+        result = _redact_metadata({"outer": {"file_path": "/etc/foo", "label": "ok"}})
+        assert result == {"outer": {"file_path": "[redacted]", "label": "ok"}}
 
     def test_header_omitted_when_redacted_payload_empty(self) -> None:
         """Spec test 4: the X-Document-Quality header is omitted when
@@ -101,9 +95,7 @@ class TestRedactMetadata:
     def test_substring_match_redacts_underscored_key(self) -> None:
         """The ``key`` token is a substring — ``api_key`` / ``public_key``
         style names must be redacted too."""
-        result = _redact_metadata(
-            {"api_key": "abc", "public_key": "xyz", "score": 1}
-        )
+        result = _redact_metadata({"api_key": "abc", "public_key": "xyz", "score": 1})
         assert result == {
             "api_key": "[redacted]",
             "public_key": "[redacted]",
@@ -126,9 +118,7 @@ class TestRedactMetadata:
     def test_string_at_or_below_cap_is_preserved_unchanged(self) -> None:
         """Boundary: strings shorter than the cap pass through with
         no truncation suffix."""
-        result = _redact_metadata(
-            {"label": "a" * _METADATA_VALUE_MAX_CHARS}
-        )
+        result = _redact_metadata({"label": "a" * _METADATA_VALUE_MAX_CHARS})
         assert result["label"] == "a" * _METADATA_VALUE_MAX_CHARS
         assert not result["label"].endswith(_TRUNCATED_SUFFIX)
 
@@ -207,9 +197,7 @@ class TestDocumentMetadataHeaderEndToEnd:
 
     def test_header_truncates_long_string_before_serialization(self) -> None:
         long_value = "A" * (10 * 1024)
-        pipeline = _FakePipeline(
-            [_FakePage(0, {"quality": {"body": long_value}})]
-        )
+        pipeline = _FakePipeline([_FakePage(0, {"quality": {"body": long_value}})])
         header = _document_metadata_header(pipeline, "quality")
         assert header is not None
         decoded = json.loads(header)
@@ -224,18 +212,14 @@ class TestDocumentMetadataHeaderEndToEnd:
     def test_metadata_headers_from_pipeline_skips_missing_fields(self) -> None:
         """Only the populated fields land in the header dict — the
         short-circuit per ``_METADATA_HEADER_FIELDS`` is preserved."""
-        pipeline = _FakePipeline(
-            [_FakePage(0, {"structure": {"score": 0.5}})]
-        )
+        pipeline = _FakePipeline([_FakePage(0, {"structure": {"score": 0.5}})])
         headers = _metadata_headers_from_pipeline(pipeline)
         # Only ``structure`` is populated, not quality or sections.
         assert set(headers) == {"X-Document-Structure"}
         assert "X-Document-Quality" not in headers
         assert "X-Document-Sections" not in headers
         decoded = json.loads(headers["X-Document-Structure"])
-        assert decoded == {
-            "pages": [{"page_index": 0, "structure": {"score": 0.5}}]
-        }
+        assert decoded == {"pages": [{"page_index": 0, "structure": {"score": 0.5}}]}
 
 
 # ---------------------------------------------------------------------------
@@ -261,9 +245,7 @@ class TestMetadataConstants:
         """Every field in ``_METADATA_HEADER_FIELDS`` flows through
         :func:`_document_metadata_header` and therefore through
         :func:`_redact_metadata`."""
-        pipeline = _FakePipeline(
-            [_FakePage(0, {field: {"path": "/leak", "ok": 1}})]
-        )
+        pipeline = _FakePipeline([_FakePage(0, {field: {"path": "/leak", "ok": 1}})])
         header = _document_metadata_header(pipeline, field)
         assert header is not None
         decoded = json.loads(header)

@@ -433,7 +433,9 @@ async def create_progress_session(body: dict | None = None):
 async def cancel_channel(
     channel_id: str,
     body: dict | None = None,
-    x_progress_token: str | None = Header(default=None, alias=PROGRESS_SESSION_TOKEN_HEADER),
+    x_progress_token: str | None = Header(
+        default=None, alias=PROGRESS_SESSION_TOKEN_HEADER
+    ),
 ):
     """Set the cancel flag for an active channel.
 

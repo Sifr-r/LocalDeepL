@@ -583,13 +583,9 @@ async def process_pdf(
         # wider than the current API surface and adding a new
         # value would force every consumer to special-case it.
         # The cancel shows up in the application log instead.
-        logger.info(
-            "OCR run cancelled by client before completion: job_id=%s", job_id
-        )
+        logger.info("OCR run cancelled by client before completion: job_id=%s", job_id)
         await asyncio.to_thread(_cleanup, input_path, output_path, text_path)
-        await manager.send_progress(
-            progress_target, "Cancelled.", 0, stage="cancelled"
-        )
+        await manager.send_progress(progress_target, "Cancelled.", 0, stage="cancelled")
         return JSONResponse(
             status_code=HTTPStatus.SERVICE_UNAVAILABLE,
             content={
@@ -766,9 +762,7 @@ async def process_pdf_async(
             # queue worker surfaces the failure to the polling
             # client. ``_cleanup`` runs in the ``finally`` block
             # below and drops the input/output/text paths.
-            logger.info(
-                "Async OCR run cancelled by client: job_id=%s", job_id
-            )
+            logger.info("Async OCR run cancelled by client: job_id=%s", job_id)
             await manager.send_progress(
                 progress_target, "Cancelled.", 0, stage="cancelled"
             )

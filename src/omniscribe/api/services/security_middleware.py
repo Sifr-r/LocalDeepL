@@ -459,7 +459,8 @@ class RateLimitMiddleware:
         app,
         per_minute: int,
         clock=time.monotonic,
-        trusted_proxies: list[ipaddress.IPv4Network | ipaddress.IPv6Network] | None = None,
+        trusted_proxies: list[ipaddress.IPv4Network | ipaddress.IPv6Network]
+        | None = None,
     ) -> None:
         self.app = app
         self.per_minute = per_minute

@@ -84,9 +84,7 @@ class TestHybridOCRPagesCancel:
         ocr = _StubOCR()
         engine = _engine(ocr=ocr)
         images = {p: _make_tiny_b64_image() for p in range(10)}
-        pages_structured = {
-            p: [([0.1, 0.1, 0.9, 0.2], "")] * 3 for p in range(10)
-        }
+        pages_structured = {p: [([0.1, 0.1, 0.9, 0.2], "")] * 3 for p in range(10)}
 
         cancel_calls = {"n": 0}
 
@@ -138,9 +136,7 @@ class TestHybridOCRPagesCancel:
         ocr = _StubOCR()
         engine = _engine(ocr=ocr)
         images = {p: _make_tiny_b64_image() for p in range(5)}
-        pages_structured = {
-            p: [([0.1, 0.1, 0.9, 0.2], "")] * 3 for p in range(5)
-        }
+        pages_structured = {p: [([0.1, 0.1, 0.9, 0.2], "")] * 3 for p in range(5)}
 
         await engine._ocr_pages(
             images_dict=images,
@@ -164,9 +160,7 @@ class TestHybridOCRPagesCancel:
         ocr = _StubOCR()
         engine = _engine(ocr=ocr)
         images = {p: _make_tiny_b64_image() for p in range(3)}
-        pages_structured = {
-            p: [([0.1, 0.1, 0.9, 0.2], "")] * 3 for p in range(3)
-        }
+        pages_structured = {p: [([0.1, 0.1, 0.9, 0.2], "")] * 3 for p in range(3)}
 
         await engine._ocr_pages(
             images_dict=images,
@@ -190,9 +184,7 @@ class TestHybridOCRPagesCancel:
         ocr = _StubOCR(crop_text="from crop")
         engine = _engine(ocr=ocr)
         images = {p: _make_tiny_b64_image() for p in range(5)}
-        pages_structured = {
-            p: [([0.1, 0.1, 0.9, 0.2], "")] * 3 for p in range(5)
-        }
+        pages_structured = {p: [([0.1, 0.1, 0.9, 0.2], "")] * 3 for p in range(5)}
 
         cancel_calls = {"n": 0}
 
@@ -242,9 +234,7 @@ class TestHybridOCRPagesCancel:
         ocr = _CancelOnFirstCall()
         engine = _engine(ocr=ocr)
         images = {p: _make_tiny_b64_image() for p in range(3)}
-        pages_structured = {
-            p: [([0.1, 0.1, 0.9, 0.2], "")] * 3 for p in range(3)
-        }
+        pages_structured = {p: [([0.1, 0.1, 0.9, 0.2], "")] * 3 for p in range(3)}
 
         with pytest.raises(OCRCancelled):
             await engine._ocr_pages(
@@ -416,12 +406,13 @@ class TestProcessRouteCancel:
             app.include_router(r)
         client = TestClient(app)
 
-        with patch(
-            "omniscribe.api.routers.ocr._execute_ocr_pipeline",
-            side_effect=OCRCancelled("cancelled from test"),
-        ) as mock_execute, patch(
-            "omniscribe.api.routers.ocr._cleanup"
-        ) as mock_cleanup:
+        with (
+            patch(
+                "omniscribe.api.routers.ocr._execute_ocr_pipeline",
+                side_effect=OCRCancelled("cancelled from test"),
+            ) as mock_execute,
+            patch("omniscribe.api.routers.ocr._cleanup") as mock_cleanup,
+        ):
             response = client.post(
                 "/api/process",
                 files={"file": ("doc.pdf", tiny_pdf, "application/pdf")},
@@ -475,12 +466,13 @@ class TestProcessRouteCancel:
             pipeline_stub = MagicMock()
             pipeline_stub.run = _fake_pipeline_run
 
-            with patch.object(
-                ocr_router,
-                "build_pipeline",
-                return_value=(pipeline_stub, MagicMock()),
-            ), patch.object(
-                ocr_router, "verify_backend_model", new=AsyncMock()
+            with (
+                patch.object(
+                    ocr_router,
+                    "build_pipeline",
+                    return_value=(pipeline_stub, MagicMock()),
+                ),
+                patch.object(ocr_router, "verify_backend_model", new=AsyncMock()),
             ):
                 with pytest.raises(OCRCancelled):
                     await ocr_router._run_ocr_pipeline(
