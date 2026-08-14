@@ -1,5 +1,6 @@
 # ruff: noqa: E402
 import logging
+import math
 import os
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
@@ -37,15 +38,31 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def _env_int(name: str, default: int) -> int:
+def _env_int(
+    name: str,
+    default: int,
+    *,
+    minimum: int | None = None,
+    maximum: int | None = None,
+) -> int:
     value = os.getenv(name)
     if value is None:
         return default
     try:
-        return int(value)
+        parsed = int(value)
     except ValueError:
         logger.warning("Ignoring invalid integer environment value for %s", name)
         return default
+    if (minimum is not None and parsed < minimum) or (
+        maximum is not None and parsed > maximum
+    ):
+        logger.warning(
+            "Ignoring out-of-range integer environment value for %s: %s",
+            name,
+            value,
+        )
+        return default
+    return parsed
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -55,15 +72,35 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
-def _env_float(name: str, default: float) -> float:
+def _env_float(
+    name: str,
+    default: float,
+    *,
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> float:
     value = os.getenv(name)
     if value is None:
         return default
     try:
-        return float(value)
+        parsed = float(value)
     except ValueError:
         logger.warning("Ignoring invalid float environment value for %s", name)
         return default
+    # NaN/inf parse fine but would poison downstream validation (e.g. a
+    # NaN quality target makes every block a permanent repair candidate).
+    if (
+        not math.isfinite(parsed)
+        or (minimum is not None and parsed < minimum)
+        or (maximum is not None and parsed > maximum)
+    ):
+        logger.warning(
+            "Ignoring out-of-range float environment value for %s: %s",
+            name,
+            value,
+        )
+        return default
+    return parsed
 
 
 class RuntimeConfigDict(TypedDict, total=False):
@@ -131,8 +168,15 @@ _config: RuntimeConfigDict = {
     "crop_cleanup": _env_bool("OCR_CROP_CLEANUP", False),
     "quality_routing": _env_bool("OCR_QUALITY_ROUTING", False),
     "quality_loop_enabled": _env_bool("OMNISCRIBE_QUALITY_LOOP", True),
-    "quality_target": _env_float("OMNISCRIBE_QUALITY_TARGET", 0.98),
-    "quality_max_retries": _env_int("OMNISCRIBE_QUALITY_MAX_RETRIES", 2),
+    # Bounds mirror ProcessSettings.quality_target / quality_max_retries;
+    # the store fallback bypasses schema validation, so seeds must be
+    # pre-validated or every plain /api/process request would 422.
+    "quality_target": _env_float(
+        "OMNISCRIBE_QUALITY_TARGET", 0.98, minimum=0.5, maximum=1.0
+    ),
+    "quality_max_retries": _env_int(
+        "OMNISCRIBE_QUALITY_MAX_RETRIES", 2, minimum=0, maximum=5
+    ),
     "document_processors": [],
     "transcription_api_base": os.getenv(
         "OMNISCRIBE_TRANSCRIPTION_API_BASE",

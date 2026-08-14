@@ -53,6 +53,12 @@ _RUNTIME_ENV_NAMES = (
 def clean_runtime_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in _RUNTIME_ENV_NAMES:
         monkeypatch.delenv(name, raising=False)
+    # Entry-point modules call ``load_dotenv()`` at import time; a first
+    # import inside a test would re-inject the workspace ``.env`` after the
+    # scrub above, so keep the loader inert for the test's lifetime.
+    import dotenv
+
+    monkeypatch.setattr(dotenv, "load_dotenv", lambda *args, **kwargs: False)
 
 
 def test_runtime_settings_defaults_are_stable(clean_runtime_env: None) -> None:

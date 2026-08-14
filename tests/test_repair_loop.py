@@ -485,3 +485,15 @@ class TestChunkFramesChaptersSchema:
             text_chars_so_far=100,
         )
         assert frame["chapters"] == []
+
+    def test_chunk_complete_frame_passes_chapters_through(self) -> None:
+        chapters = [{"title": "Methods", "start_page": 5, "end_page": 9}]
+        frame = ProgressService.build_chunk_complete_frame(
+            chunk_idx=1,
+            total_chunks=2,
+            page_range="1-25",
+            source_pages=[0, 1],
+            text_chars_so_far=100,
+            chapters=chapters,
+        )
+        assert frame["chapters"] == chapters

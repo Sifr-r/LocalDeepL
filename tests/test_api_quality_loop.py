@@ -229,6 +229,62 @@ class TestConfigEnvSeeds:
             config_mod._config = orig
 
 
+class TestConfigEnvSeedBounds:
+    """Out-of-range env values must fall back to the spec defaults.
+
+    The seeded store always wins over the Pydantic schema defaults for
+    omitted form fields, so an unchecked out-of-range seed would make
+    every plain ``/api/process`` request fail validation with 422.
+    """
+
+    def _seeded(self, monkeypatch, **env: str) -> dict:
+        from omniscribe.api.routers import config as config_mod
+
+        for key in (
+            "OMNISCRIBE_QUALITY_LOOP",
+            "OMNISCRIBE_QUALITY_TARGET",
+            "OMNISCRIBE_QUALITY_MAX_RETRIES",
+        ):
+            monkeypatch.delenv(key, raising=False)
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
+        orig = config_mod._config  # see TestConfigEnvSeeds
+        importlib.reload(config_mod)
+        try:
+            return dict(config_mod._config)
+        finally:
+            config_mod._config = orig
+
+    def test_target_above_range_falls_back_to_default(self, monkeypatch) -> None:
+        seeded = self._seeded(monkeypatch, OMNISCRIBE_QUALITY_TARGET="1.5")
+        assert seeded["quality_target"] == pytest.approx(0.98)
+
+    def test_target_below_range_falls_back_to_default(self, monkeypatch) -> None:
+        seeded = self._seeded(monkeypatch, OMNISCRIBE_QUALITY_TARGET="0.2")
+        assert seeded["quality_target"] == pytest.approx(0.98)
+
+    def test_non_finite_target_falls_back_to_default(self, monkeypatch) -> None:
+        seeded = self._seeded(monkeypatch, OMNISCRIBE_QUALITY_TARGET="nan")
+        assert seeded["quality_target"] == pytest.approx(0.98)
+
+    def test_max_retries_above_range_falls_back_to_default(self, monkeypatch) -> None:
+        seeded = self._seeded(monkeypatch, OMNISCRIBE_QUALITY_MAX_RETRIES="9")
+        assert seeded["quality_max_retries"] == 2
+
+    def test_negative_max_retries_falls_back_to_default(self, monkeypatch) -> None:
+        seeded = self._seeded(monkeypatch, OMNISCRIBE_QUALITY_MAX_RETRIES="-1")
+        assert seeded["quality_max_retries"] == 2
+
+    def test_in_range_env_values_still_apply(self, monkeypatch) -> None:
+        seeded = self._seeded(
+            monkeypatch,
+            OMNISCRIBE_QUALITY_TARGET="0.5",
+            OMNISCRIBE_QUALITY_MAX_RETRIES="5",
+        )
+        assert seeded["quality_target"] == pytest.approx(0.5)
+        assert seeded["quality_max_retries"] == 5
+
+
 # ---------------------------------------------------------------------------
 # Route wiring: form fields -> RepairOptions -> pipeline.run
 # ---------------------------------------------------------------------------
