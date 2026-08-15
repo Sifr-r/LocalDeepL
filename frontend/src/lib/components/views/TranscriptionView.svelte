@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { activeTab, configStore, modelStore, refreshModels, pushToast } from '$lib/stores/appStore';
+  import { activeTab, refreshModels, pushToast } from '$lib/stores/appStore';
   import { fetchApi } from '$lib/api/client';
   import {
     transcriptionResult,
@@ -65,8 +65,9 @@
 
       transcriptionResult.set(res);
       pushToast('success', `Transcription complete: ${res.segments.length} segments extracted`, 4000);
-    } catch (err: any) {
-      pushToast('error', err.message || 'Transcription failed', 4000);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      pushToast('error', message || 'Transcription failed', 4000);
     } finally {
       isTranscribing.set(false);
     }
@@ -249,7 +250,7 @@
             <div>Processing voice audio stream…</div>
           </div>
         {:else if $transcriptionResult && $transcriptionResult.segments.length > 0}
-          {#each $transcriptionResult.segments as segment}
+          {#each $transcriptionResult.segments as segment (segment.id ?? `${segment.start}-${segment.end}-${segment.text}`)}
             {@const segStart = segment.start ?? 0}
             {@const segEnd = segment.end ?? 0}
             {@const isActive = $activeSegmentId === segment.id || ($audioCurrentTime >= segStart && $audioCurrentTime <= segEnd)}

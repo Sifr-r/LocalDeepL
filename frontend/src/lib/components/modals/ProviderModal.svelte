@@ -15,8 +15,8 @@
     error = null;
     try {
       providers = await getProviders();
-    } catch (err: any) {
-      error = err.message || 'Failed to fetch provider presets';
+    } catch (err: unknown) {
+      error = err instanceof Error ? err.message : 'Failed to fetch provider presets';
     } finally {
       loading = false;
     }
@@ -63,7 +63,7 @@
         No provider presets available.
       </div>
     {:else}
-      {#each providers as provider}
+      {#each providers as provider (provider.id)}
         <div class="p-4 surface-inset rounded-md flex items-center justify-between gap-4 group">
           <div class="space-y-1.5 min-w-0 flex-1">
             <div class="flex items-center gap-2 flex-wrap">

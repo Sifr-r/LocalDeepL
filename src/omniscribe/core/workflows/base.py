@@ -17,6 +17,7 @@ if TYPE_CHECKING:
         SpellcheckMode,
     )
     from omniscribe.core.ocr_quality import TrustOrchestrator
+    from omniscribe.core.postprocess import DictionaryPostProcessor
     from omniscribe.core.processors import DocumentProcessor
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,26 @@ async def notify(
 ) -> None:
     if cb is not None:
         await cb(stage, current, total, message)
+
+
+def _spellcheck_page_sync(
+    processor: DictionaryPostProcessor, page_blocks: PageBoxes
+) -> PageBoxes:
+    """Sync helper for :meth:`EngineBase._run_spellcheck`.
+
+    ``DictionaryPostProcessor.correct_text`` is a CPU-bound PyEnchant
+    lookup, so the page-level correction is offloaded to a worker
+    thread via :func:`asyncio.to_thread` in the async wrapper. Kept
+    top-level (rather than nested) so :func:`asyncio.to_thread` can
+    introspect it without holding a closure over ``self``.
+    """
+    corrected: PageBoxes = []
+    for bbox, text in page_blocks:
+        if text:
+            corrected.append((bbox, processor.correct_text(text)))
+        else:
+            corrected.append((bbox, text))
+    return corrected
 
 
 PageBoxes = list[tuple[tuple[float, float, float, float], str]]
@@ -269,18 +290,24 @@ class EngineBase:
     ) -> None:
         """
         Post-processing step that runs spelling auto-correction on each page.
+
+        ``correct_text`` is a CPU-bound dict lookup; running it on the
+        event loop would stall the asyncio thread for the full duration
+        of a 200-page spellcheck pass. Phase 5 fix: offload each page's
+        correction to a worker thread.
         """
         from omniscribe.core.postprocess import DictionaryPostProcessor
 
         processor = DictionaryPostProcessor(lang)
         await processor.ensure_loaded()
-        for p in page_nums:
-            corrected: PageBoxes = []
-            for bbox, text in pages_structured[p]:
-                if text:
-                    corrected.append((bbox, processor.correct_text(text)))
-                else:
-                    corrected.append((bbox, text))
+
+        async def correct_page(p: int) -> PageBoxes:
+            return await asyncio.to_thread(
+                _spellcheck_page_sync, processor, pages_structured[p]
+            )
+
+        corrected_pages = await asyncio.gather(*(correct_page(p) for p in page_nums))
+        for p, corrected in zip(page_nums, corrected_pages, strict=True):
             pages_structured[p] = corrected
 
     async def _build_document_result(
@@ -353,26 +380,39 @@ class EngineBase:
         When the injected writer implements :class:`DocumentResultWriter` the
         full ``DocumentResult`` is passed through losslessly; legacy 4-arg
         callable writers receive the ``to_pages_data()`` conversion instead.
+
+        Phase 4 fix: ``to_pages_data()`` and the per-page text-collection loop
+        now run inside the same ``asyncio.to_thread`` call as the writer.
+        Previously they ran on the event loop before the thread dispatch —
+        for a 1000-page document with ~50 blocks/page that was a 50k-iteration
+        list walk on the asyncio thread that should have stayed out of it.
         """
         self.last_document_result = document_result
-        pages_data = document_result.to_pages_data()
-        page_nums = sorted(pages_data)
-
-        pages_text: dict[int, list[str]] = {}
-        for p in page_nums:
-            pages_text[p] = [text for _, text in pages_data[p] if text.strip()]
-
         await notify(progress, "embed", 0, 1, "Writing output...")
         writer = self.output_writer
-        if isinstance(writer, DocumentResultWriter):
-            await asyncio.to_thread(
-                writer.write_document_result,
-                input_path,
-                output_path,
-                document_result,
-                dpi,
-            )
-        else:
-            await asyncio.to_thread(writer, input_path, output_path, pages_data, dpi)
+
+        def _write_and_collect_text() -> dict[int, list[str]]:
+            if isinstance(writer, DocumentResultWriter):
+                writer.write_document_result(
+                    input_path, output_path, document_result, dpi
+                )
+                # Lossless path: build the text-only view straight from
+                # the IR — no to_pages_data round-trip needed.
+                return {
+                    page.page_index: [
+                        block.text for block in page.blocks if block.text.strip()
+                    ]
+                    for page in document_result.pages
+                }
+            # Legacy writer: needs pages_data anyway, so do the conversion
+            # here in the worker thread and reuse it for the text view.
+            pages_data = document_result.to_pages_data()
+            writer(input_path, output_path, pages_data, dpi)
+            return {
+                p: [text for _, text in blocks if text.strip()]
+                for p, blocks in pages_data.items()
+            }
+
+        pages_text = await asyncio.to_thread(_write_and_collect_text)
         await notify(progress, "embed", 1, 1, "Done.")
         return pages_text

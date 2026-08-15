@@ -17,17 +17,25 @@
     { value: 'off', label: 'Off' }
   ];
 
+  // Mirrors the backend SpellcheckMode enum (dictionary languages).
   const spellcheckModes = [
     { value: 'none', label: 'None' },
-    { value: 'basic', label: 'Basic' },
-    { value: 'llm', label: 'LLM Assisted' }
+    { value: 'en-US', label: 'English (US)' },
+    { value: 'ar', label: 'Arabic' },
+    { value: 'de', label: 'German' },
+    { value: 'es', label: 'Spanish' },
+    { value: 'fr', label: 'French' }
   ];
 
+  // Mirrors the backend DocumentProcessorName enum — invalid names are
+  // rejected by /api/process, so only real processors are offered here.
   const availableProcessors: { value: DocumentProcessorName; label: string }[] = [
-    { value: 'layout', label: 'Layout Analysis' },
-    { value: 'table', label: 'Table Parsing' },
-    { value: 'formula', label: 'Math Formulas' },
-    { value: 'handwriting', label: 'Handwriting' }
+    { value: 'reading_order', label: 'Reading order' },
+    { value: 'quality_analysis', label: 'Quality analysis' },
+    { value: 'structure_analysis', label: 'Structure analysis' },
+    { value: 'section_analysis', label: 'Section analysis' },
+    { value: 'layout_enrichment', label: 'Layout enrichment' },
+    { value: 'table_extraction', label: 'Table extraction' }
   ];
 
   function toggleProcessor(processor: string) {
@@ -86,7 +94,7 @@
   <div>
     <p class="form-label">Document processors</p>
     <div id="doc-processors-list" class="flex flex-wrap gap-2">
-      {#each availableProcessors as proc}
+      {#each availableProcessors as proc (proc.value)}
         {@const active = ($configStore.document_processors || []).includes(proc.value)}
         <button
           type="button"

@@ -30,8 +30,9 @@ def _extract_bearer_token(authorization: str | None) -> str | None:
 def get_access_token(
     token: str | None = Query(default=None),
     authorization: str | None = Header(default=None),
+    x_artifact_token: str | None = Header(default=None, alias="X-Artifact-Token"),
 ) -> str | None:
-    return _extract_bearer_token(authorization) or token
+    return x_artifact_token or token or _extract_bearer_token(authorization)
 
 
 def _path_exists(path: str) -> bool:

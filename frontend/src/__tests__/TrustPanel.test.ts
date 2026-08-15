@@ -3,22 +3,21 @@ import { mount, tick } from 'svelte';
 import type { DocumentViewModel } from '../lib/types/api';
 
 // Hoist a writable documentStore so the panel picks up our test state.
-// `require` (not `import`) is intentional: vi.hoisted runs before module
-// evaluation, so we must defer the import to keep vitest happy.
+// `vi.hoisted` runs before module evaluation so we cannot use ESM
+// `import` here; the `require` form is locally permitted by the lint
+// rule because there is no synchronous ESM alternative.
 const { documentStoreMock } = vi.hoisted(() => {
-  // Cast to any — `require` returns `any` and vitest's type checker
-  // disallows generic calls on untyped functions.
-  const storeMod: any = require('svelte/store');
-  return {
-    documentStoreMock: storeMod.writable({
-      pages: [],
-      textArtifacts: [],
-      bboxes: [],
-      confidenceSummary: { average: 1, min: 1, max: 1 },
-      pageCount: 0,
-      trustSummary: null
-    })
-  };
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const storeMod: typeof import('svelte/store') = require('svelte/store');
+  const documentStoreMock = storeMod.writable<DocumentViewModel>({
+    pages: [],
+    textArtifacts: [],
+    bboxes: [],
+    confidenceSummary: { average: 1, min: 1, max: 1 },
+    pageCount: 0,
+    trustSummary: null
+  });
+  return { documentStoreMock };
 });
 
 vi.mock('../lib/stores/appStore', () => ({

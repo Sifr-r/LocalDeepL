@@ -22,10 +22,14 @@ from omniscribe.api.services.ai import (
 from omniscribe.api.services.ai import (
     translate_text as translate_document_text,
 )
-from omniscribe.api.services.security import SERVER_ERROR_MESSAGE
+from omniscribe.api.services.security import (
+    SAFE_API_BASE_ERROR,
+    SERVER_ERROR_MESSAGE,
+)
 from omniscribe.core.glossary import Glossary
 from omniscribe.core.translation_config import AsyncTranslationUnavailable
 from omniscribe.core.translation_tree import translate_tree
+from omniscribe.utils.security import is_ssrf_target
 
 from .common import _stable_server_error
 from .config import _config
@@ -172,6 +176,8 @@ async def translate_tree_endpoint(req: TreeTranslationRequest) -> dict[str, Any]
     api_base = (
         req.api_base or state.config.api_base if hasattr(state, "config") else None
     )
+    if api_base and await is_ssrf_target(api_base):
+        raise HTTPException(status_code=403, detail=SAFE_API_BASE_ERROR)
     api_key = req.api_key or state.config.api_key if hasattr(state, "config") else None
     model = req.model or (state.config.model if hasattr(state, "config") else None)
 

@@ -22,6 +22,7 @@ from omniscribe.core.pdf.embedder import (
     embed_structured_text,
 )
 from omniscribe.core.pdf.rasterizer import (
+    _DEFAULT_RASTERIZER_WORKERS,
     MAX_SAFE_PIXELS,
     _calculate_safe_dpi,
     _images_from_image_file,
@@ -59,6 +60,7 @@ class PDFHandler:
         pdf_path: str | Path,
         dpi: int = 150,
         max_image_dim: int = 1024,
+        parallelism: int = _DEFAULT_RASTERIZER_WORKERS,
     ) -> dict[int, str]:
         """
         Render every page to a base64-encoded JPEG, capped at `max_image_dim`
@@ -71,7 +73,12 @@ class PDFHandler:
 
         Returns a dict of {page_num: base64_str}.
         """
-        return convert_pdf_to_images(pdf_path, dpi=dpi, max_image_dim=max_image_dim)
+        return convert_pdf_to_images(
+            pdf_path,
+            dpi=dpi,
+            max_image_dim=max_image_dim,
+            parallelism=parallelism,
+        )
 
     def convert(
         self,
@@ -79,6 +86,7 @@ class PDFHandler:
         dpi: int = 200,
         pages: str | None = None,
         max_image_dim: int = 1024,
+        parallelism: int = _DEFAULT_RASTERIZER_WORKERS,
     ) -> dict[int, str]:
         """Backward-compatible eager entry point.
 
@@ -87,7 +95,12 @@ class PDFHandler:
         prefer :meth:`convert_batches` (bounded peak memory) or
         :meth:`convert_generator` (single-page streaming).
         """
-        return convert_pdf_to_images(source, dpi=dpi, max_image_dim=max_image_dim)
+        return convert_pdf_to_images(
+            source,
+            dpi=dpi,
+            max_image_dim=max_image_dim,
+            parallelism=parallelism,
+        )
 
     def convert_generator(
         self,
@@ -95,6 +108,7 @@ class PDFHandler:
         dpi: int = 200,
         pages: str | None = None,
         max_image_dim: int = 1024,
+        parallelism: int = _DEFAULT_RASTERIZER_WORKERS,
     ) -> Iterator[tuple[int, Image.Image, str]]:
         """Stream page images and base64-encoded JPEGs lazily one at a time.
 
@@ -104,7 +118,11 @@ class PDFHandler:
         the file handle when rasterization is done.
         """
         return convert_generator(
-            source, dpi=dpi, pages=pages, max_image_dim=max_image_dim
+            source,
+            dpi=dpi,
+            pages=pages,
+            max_image_dim=max_image_dim,
+            parallelism=parallelism,
         )
 
     def convert_batches(
@@ -115,6 +133,7 @@ class PDFHandler:
         dpi: int = 200,
         pages: str | None = None,
         max_image_dim: int = 1024,
+        parallelism: int = _DEFAULT_RASTERIZER_WORKERS,
     ) -> Iterator[list[tuple[int, Image.Image, str]]]:
         """Stream pages in bounded batches.
 
@@ -130,6 +149,7 @@ class PDFHandler:
             dpi=dpi,
             pages=pages,
             max_image_dim=max_image_dim,
+            parallelism=parallelism,
         )
 
     def write_document_result(
@@ -138,6 +158,7 @@ class PDFHandler:
         output_pdf_path: str,
         document_result: DocumentResult,
         dpi: int = 200,
+        parallelism: int = _DEFAULT_RASTERIZER_WORKERS,
     ) -> None:
         """Rich-writer interface: embed text from a full DocumentResult.
 
@@ -145,7 +166,11 @@ class PDFHandler:
         so the engine can pass the lossless IR directly.
         """
         self.embed_structured_text(
-            input_pdf_path, output_pdf_path, document_result.to_pages_data(), dpi
+            input_pdf_path,
+            output_pdf_path,
+            document_result.to_pages_data(),
+            dpi=dpi,
+            parallelism=parallelism,
         )
 
     def embed_structured_text(
@@ -154,6 +179,7 @@ class PDFHandler:
         output_pdf_path: str | Path | Any,
         pages_data: dict[int, list[tuple[BBox, str]]],
         dpi: int = 200,
+        parallelism: int = _DEFAULT_RASTERIZER_WORKERS,
     ) -> None:
         """
         Build a searchable "sandwich" PDF: rasterize each page as a background
@@ -163,4 +189,10 @@ class PDFHandler:
         as input. Image inputs are converted to a 1-page-per-frame PDF —
         no rasterization-to-PDF-to-rasterization round trip required.
         """
-        embed_structured_text(input_pdf_path, output_pdf_path, pages_data, dpi=dpi)
+        embed_structured_text(
+            input_pdf_path,
+            output_pdf_path,
+            pages_data,
+            dpi=dpi,
+            parallelism=parallelism,
+        )

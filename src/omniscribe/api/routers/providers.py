@@ -22,8 +22,18 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _mask_api_key(key: str | None) -> str:
+    if not key:
+        return ""
+    if len(key) <= 8:
+        return "***"
+    return f"{key[:4]}...{key[-4:]}"
+
+
 def _format_provider_config(p: ProviderConfig) -> dict[str, Any]:
     data = p.model_dump(mode="json")
+    if data.get("api_key"):
+        data["api_key"] = _mask_api_key(data["api_key"])
     data["api_base"] = p.api_url
     data["name"] = p.display_name
     from omniscribe.core.providers import get_provider as get_cat_provider

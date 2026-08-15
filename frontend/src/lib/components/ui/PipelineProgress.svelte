@@ -1,28 +1,33 @@
 <script lang="ts">
+  import { createEventDispatcher } from 'svelte';
   import { jobStore } from '../../stores/appStore';
   import Card from './Card.svelte';
-  import Badge from './Badge.svelte';
+  import Button from './Button.svelte';
 
+  const dispatch = createEventDispatcher<{ cancel: void }>();
+
+  // Mirror the backend stage weights in
+  // omniscribe/api/services/progress.py (_STAGE_WEIGHTS): the overall
+  // percent already encodes the stage windows, so thresholds must match.
   const stages = [
-    { key: 'detection', label: 'Detection' },
-    { key: 'ocr', label: 'OCR' },
-    { key: 'alignment', label: 'Alignment' },
-    { key: 'refinement', label: 'Refinement' },
-    { key: 'post_processing', label: 'Post-processing' },
-    { key: 'embed', label: 'Embed' }
+    { key: 'convert', label: 'Convert', lo: 0, hi: 15 },
+    { key: 'detect', label: 'Detect', lo: 15, hi: 25 },
+    { key: 'ocr', label: 'OCR', lo: 25, hi: 75 },
+    { key: 'refine', label: 'Refine', lo: 75, hi: 90 },
+    { key: 'embed', label: 'Embed', lo: 90, hi: 100 }
   ];
 
   $: currentPercent = $jobStore.percent || 0;
   $: currentStage = $jobStore.stage || 'idle';
+  $: statusMessage = $jobStore.statusMessage || '';
+  $: warnings = $jobStore.warnings || [];
+  $: isCancelling = currentStage === 'cancelling';
 
-  function getStageStatus(stageKey: string, index: number): 'pending' | 'processing' | 'complete' {
-    const stagePercentStep = 100 / stages.length;
-    const stageThreshold = (index + 1) * stagePercentStep;
-
-    if (currentPercent >= stageThreshold || currentStage === 'complete') {
+  function getStageStatus(stage: { key: string; lo: number; hi: number }): 'pending' | 'processing' | 'complete' {
+    if (currentStage === 'complete' || currentPercent >= stage.hi) {
       return 'complete';
     }
-    if (currentPercent > index * stagePercentStep || currentStage.includes(stageKey)) {
+    if (currentStage === stage.key || (currentPercent >= stage.lo && currentPercent < stage.hi && currentPercent > 0)) {
       return 'processing';
     }
     return 'pending';
@@ -48,7 +53,7 @@
     </div>
 
     <!-- Progress bar -->
-    <div class="w-full h-2 rounded-full bg-muted overflow-hidden">
+    <div class="w-full h-2 rounded-full bg-muted overflow-hidden" role="progressbar" aria-valuenow={Math.round(currentPercent)} aria-valuemin="0" aria-valuemax="100">
       <div
         class="h-full bg-brand transition-all duration-300 ease-out"
         style="width: {currentPercent}%;"
@@ -56,9 +61,9 @@
     </div>
 
     <!-- Stage indicators -->
-    <div class="grid grid-cols-6 gap-2 pt-1">
-      {#each stages as stage, idx}
-        {@const status = getStageStatus(stage.key, idx)}
+    <div class="grid grid-cols-5 gap-2 pt-1">
+      {#each stages as stage (stage.key)}
+        {@const status = getStageStatus(stage)}
         <div class="flex flex-col items-center gap-1.5 text-center">
           <div
             class={[
@@ -91,9 +96,46 @@
       {/each}
     </div>
 
-    <!-- Status footer -->
-    <div class="text-center text-xs font-mono text-foreground-muted pt-1">
-      Status: <span class="text-foreground capitalize">{currentStage.replace(/_/g, ' ')}</span>
+    <!-- Live status line from the progress stream -->
+    <div class="text-center text-xs font-mono text-foreground-muted pt-1" aria-live="polite">
+      {#if statusMessage}
+        <span class="text-foreground">{statusMessage}</span>
+      {:else}
+        Stage: <span class="text-foreground capitalize">{currentStage.replace(/_/g, ' ')}</span>
+      {/if}
+    </div>
+
+    <!-- Warnings surfaced by the worker (per-page OCR failures etc.) -->
+    {#if warnings.length > 0}
+      <div class="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 max-h-24 overflow-y-auto">
+        <p class="text-[10px] font-medium uppercase tracking-wider text-warning mb-1">
+          {warnings.length} warning{warnings.length === 1 ? '' : 's'}
+        </p>
+        <ul class="space-y-0.5 text-xs text-foreground-muted font-mono">
+          {#each warnings as warning (warning)}
+            <li class="truncate" title={warning}>{warning}</li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
+    <!-- Cancel affordance -->
+    <div class="flex justify-center pt-1">
+      <Button
+        variant="danger"
+        size="sm"
+        disabled={isCancelling}
+        on:click={() => dispatch('cancel')}
+      >
+        {#if isCancelling}
+          <span>Cancelling…</span>
+        {:else}
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+          <span>Cancel run</span>
+        {/if}
+      </Button>
     </div>
   </div>
 </Card>

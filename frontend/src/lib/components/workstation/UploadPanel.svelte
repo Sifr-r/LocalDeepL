@@ -3,7 +3,7 @@
   import { configStore, toastStore } from '../../stores/appStore';
   import SectionHeader from '../ui/SectionHeader.svelte';
 
-  const dispatch = createEventDispatcher<{ fileSelect: File }>();
+  const dispatch = createEventDispatcher<{ fileSelect: File | null }>();
 
   let selectedFile: File | null = null;
   let isDragging = false;
@@ -46,7 +46,7 @@
 
   function clearFile() {
     selectedFile = null;
-    dispatch('fileSelect', null as any);
+    dispatch('fileSelect', null as File | null);
   }
 </script>
 

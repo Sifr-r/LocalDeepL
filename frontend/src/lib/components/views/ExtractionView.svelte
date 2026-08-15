@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { activeTab, documentStore, configStore, pushToast } from '$lib/stores/appStore';
-  import { fetchApi, fetchFile } from '$lib/api/client';
+  import { fetchApi } from '$lib/api/client';
   import type { ExtractionRequest } from '$lib/types/api';
   import Card from '../ui/Card.svelte';
   import Button from '../ui/Button.svelte';
@@ -14,7 +13,7 @@
   let selectedArtifactId = '';
   let selectedArtifactToken = '';
   let isExtracting = false;
-  let extractedData: Record<string, any> | null = null;
+  let extractedData: Record<string, unknown> | null = null;
 
   $: if ($documentStore.textArtifactId) {
     selectedArtifactId = $documentStore.textArtifactId;
@@ -46,15 +45,16 @@
         api_base: $configStore.api_base,
       };
 
-      const res = await fetchApi<{ extracted_data: any }>('/extract', {
+      const res = await fetchApi<{ extracted_data: Record<string, unknown> }>('/extract', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
 
       extractedData = res.extracted_data;
       pushToast('success', 'Structured data extraction completed!', 3000);
-    } catch (err: any) {
-      pushToast('error', err.message || 'Extraction failed', 4000);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      pushToast('error', message || 'Extraction failed', 4000);
     } finally {
       isExtracting = false;
     }
@@ -78,7 +78,7 @@
       };
 
       pushToast('info', `Generating ${format.toUpperCase()} export...`, 2000);
-      const res = await fetchApi<any>(endpoint, {
+      const res = await fetchApi<unknown>(endpoint, {
         method: 'POST',
         body: JSON.stringify(payload),
       });
@@ -92,8 +92,9 @@
         a.click();
         URL.revokeObjectURL(url);
       }
-    } catch (err: any) {
-      pushToast('error', err.message || 'Export failed', 4000);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      pushToast('error', message || 'Export failed', 4000);
     }
   }
 </script>
@@ -111,7 +112,7 @@
 
     <!-- Template selector -->
     <div class="flex items-center gap-1 surface-inset p-1 rounded-md">
-      {#each templates as tmpl}
+      {#each templates as tmpl (tmpl.value)}
         <button
           type="button"
           on:click={() => selectedTemplate = tmpl.value}

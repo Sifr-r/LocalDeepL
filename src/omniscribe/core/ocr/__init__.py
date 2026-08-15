@@ -31,6 +31,7 @@ from omniscribe.core.ocr.filters import (
     _strip_runaway_repetition,
     _strip_yaml_front_matter,
 )
+from omniscribe.core.ocr.multi_format_client import complete_vlm_prompt
 from omniscribe.core.ocr.processor import OCRProcessor
 from omniscribe.core.ocr.prompts import (
     CORRECTION_CROP_PROMPT,

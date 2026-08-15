@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -21,6 +22,40 @@ from omniscribe.core.ocr.resilience import RETRYABLE_STATUS_CODES, is_transient_
 
 logger = logging.getLogger(__name__)
 
+# A single shared AsyncClient reuses its connection pool across every call,
+# so we stop paying the TCP+TLS handshake on every VLM page. Per-request
+# timeout still flows through ``client.post(..., timeout=...)`` so callers
+# can pick a slow-page budget independently of the pool's default.
+_DEFAULT_CLIENT_TIMEOUT_S = 60.0
+_client_lock = threading.Lock()
+_shared_client: httpx.AsyncClient | None = None
+
+
+def _get_shared_client() -> httpx.AsyncClient:
+    """Return the process-wide :class:`httpx.AsyncClient`, creating it on first use.
+
+    A single client keeps its connection pool warm across the entire run,
+    which is the only reason this exists — a fresh ``AsyncClient`` per call
+    re-handshakes TCP+TLS to LM Studio on every page. Timeout is set on the
+    pool to a safe default; per-request overrides are passed to ``post()``.
+    """
+    global _shared_client
+    if _shared_client is not None:
+        return _shared_client
+    with _client_lock:
+        if _shared_client is None:  # double-checked
+            _shared_client = httpx.AsyncClient(timeout=_DEFAULT_CLIENT_TIMEOUT_S)
+    return _shared_client
+
+
+async def aclose_shared_client() -> None:
+    """Close the shared client (call on FastAPI shutdown to release sockets)."""
+    global _shared_client
+    client = _shared_client
+    _shared_client = None
+    if client is not None:
+        await client.aclose()
+
 
 async def complete_vlm_prompt(
     provider_config: ProviderConfig,
@@ -29,6 +64,7 @@ async def complete_vlm_prompt(
     model: str | None = None,
     temperature: float = 0.0,
     max_tokens: int = 4096,
+    timeout: float | None = None,
 ) -> str:
     """Execute asynchronous LLM completion based on provider configuration format.
 
@@ -39,6 +75,9 @@ async def complete_vlm_prompt(
         model: Model identifier override.
         temperature: Generation temperature (default 0.0).
         max_tokens: Maximum tokens to generate (default 4096).
+        timeout: Per-request timeout in seconds. ``None`` falls back to the
+            shared client's default (60s). Callers that need a longer budget
+            (e.g. ``OMNISCRIBE_VLM_PAGE_TIMEOUT=240``) pass it here.
 
     Returns:
         Generated text completion.
@@ -154,11 +193,17 @@ async def complete_vlm_prompt(
     max_retries = int(os.getenv("OMNISCRIBE_LLM_MAX_RETRIES", "2"))
     retry_base_delay = float(os.getenv("OMNISCRIBE_LLM_RETRY_BASE_DELAY", "1.0"))
 
+    client = _get_shared_client()
+    request_timeout: float = (
+        timeout if timeout is not None else _DEFAULT_CLIENT_TIMEOUT_S
+    )
+
     last_error: Exception | None = None
     for attempt in range(1, max_retries + 2):
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                resp = await client.post(endpoint, json=payload, headers=headers)
+            resp = await client.post(
+                endpoint, json=payload, headers=headers, timeout=request_timeout
+            )
 
             if resp.status_code == 200:
                 data = resp.json()
@@ -233,4 +278,4 @@ async def complete_vlm_prompt(
     raise LLMCallError(f"VLM call failed for provider '{provider_config.id}'")
 
 
-__all__ = ["complete_vlm_prompt"]
+__all__ = ["aclose_shared_client", "complete_vlm_prompt"]

@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Sequence
 from typing import Any
 
 from omniscribe.core.grounded.models import (
@@ -40,6 +41,24 @@ _NON_CONTENT_LABELS = frozenset(
     }
 )
 
+# Accepted bbox/content key aliases — different VLMs use different field
+# names. The first match wins. Keep the canonical (`bbox_2d` / `content`)
+# pair at the top so the common path stays the cheapest.
+_BBOX_KEYS: tuple[str, ...] = (
+    "bbox_2d",
+    "bbox",
+    "box_2d",
+    "box",
+    "bounding_box",
+    "coordinates",
+)
+_CONTENT_KEYS: tuple[str, ...] = (
+    "content",
+    "text",
+    "label_text",
+    "ocr_text",
+)
+
 _JSON_FENCE = re.compile(
     r"```(?:json)?\s*(\[[\s\S]*?\]|\{[\s\S]*?\})\s*```", re.IGNORECASE
 )
@@ -48,6 +67,80 @@ _BARE_ARRAY = re.compile(r"(\[[\s\S]*\])")
 
 def _clamp(v: float) -> float:
     return max(0.0, min(1.0, v))
+
+
+def _extract_bbox(item: dict[str, Any]) -> list[Any] | tuple[Any, ...] | None:
+    """Pull a 4-element bbox sequence out of an item using known aliases.
+
+    Returns the raw 4-sequence (caller normalizes) or ``None`` if no
+    recognized key holds a length-4 list/tuple. The first matching key
+    wins, so canonical ``bbox_2d`` is preferred.
+    """
+    for key in _BBOX_KEYS:
+        if key in item:
+            value = item[key]
+            if isinstance(value, (list, tuple)) and len(value) == 4:
+                return value
+    return None
+
+
+def _normalize_bbox(
+    bbox: Sequence[float], img_w: int, img_h: int
+) -> tuple[float, float, float, float] | None:
+    """Convert a raw 4-tuple of bbox coordinates to normalized 0..1 XYXY.
+
+    Tries three shapes in order of confidence:
+
+    1. **Already normalized** — if all four values are in ``[0, 1]`` the
+       VLM emitted relative coords; pass them through.
+    2. **XYWH** — if ``[x0, y0, w, h]`` interpretation lands inside the
+       image AND the literal XYXY interpretation would put ``x1`` past
+       the image width, treat the last two values as sizes.
+    3. **Pixel XYXY** — divide by image dimensions and clamp.
+
+    Returns ``None`` for invalid input (non-numeric, fully degenerate).
+    """
+    try:
+        x0, y0, x1, y1 = (float(v) for v in bbox)
+    except (TypeError, ValueError):
+        return None
+
+    if min(x0, y0, x1, y1) < 0:
+        return None
+
+    # Already normalized? Skip the divide.
+    if max(x0, y0, x1, y1) <= 1.0:
+        if x1 > x0 and y1 > y0:
+            return _clamp(x0), _clamp(y0), _clamp(x1), _clamp(y1)
+        return None
+
+    if img_w <= 0 or img_h <= 0:
+        return None
+
+    # Canonical pixel XYXY — the Qwen-VL / Qwen2.5-VL / Qwen3-VL shape.
+    # We require both that the read is non-degenerate AND that it lands
+    # inside the image; this is the fast path so keep it first.
+    if x1 > x0 and y1 > y0 and x1 <= img_w + 1 and y1 <= img_h + 1:
+        return (
+            _clamp(x0 / img_w),
+            _clamp(y0 / img_h),
+            _clamp(x1 / img_w),
+            _clamp(y1 / img_h),
+        )
+
+    # XYWH fallback: only fires when the literal XYXY read is invalid
+    # (degenerate, or extends past the image). Interpreting the last
+    # two values as (w, h) sometimes rescues InternVL / GLM-OCR style
+    # responses that emit ``[x, y, w, h]`` instead of ``[x0, y0, x1, y1]``.
+    if x1 > 0 and y1 > 0 and x0 + x1 <= img_w + 1 and y0 + y1 <= img_h + 1:
+        nx0 = x0 / img_w
+        ny0 = y0 / img_h
+        nx1 = (x0 + x1) / img_w
+        ny1 = (y0 + y1) / img_h
+        if nx1 > nx0 and ny1 > ny0:
+            return _clamp(nx0), _clamp(ny0), _clamp(nx1), _clamp(ny1)
+
+    return None
 
 
 def parse_glm_layout_details(
@@ -112,6 +205,18 @@ def _parse_grounded_json(
       1. Bare JSON array (Qwen3-VL)
       2. JSON wrapped in ```json ... ``` fence (Qwen2.5-VL)
       3. JSON with preamble prose before the array
+
+    Per-item tolerance:
+      - bbox key aliases: ``bbox_2d``, ``bbox``, ``box_2d``, ``box``,
+        ``bounding_box``, ``coordinates`` (first match wins).
+      - content key aliases: ``content``, ``text``, ``label_text``,
+        ``ocr_text`` (first match wins).
+      - coordinate spaces: pixel XYXY (canonical), already-normalized
+        0..1, and XYWH ``[x, y, w, h]`` (auto-detected when the literal
+        XYXY read would land outside the image).
+      - dropped items are logged at INFO with reason counts so the
+        common "everything comes back empty" failure mode is easy to
+        spot in server logs.
     """
     raw = text.strip()
     if not raw:
@@ -155,33 +260,65 @@ def _parse_grounded_json(
         return []
 
     blocks: list[GroundedBlock] = []
+    dropped = 0
+    drop_reasons: dict[str, int] = {}
     for item in data:
         if not isinstance(item, dict):
+            dropped += 1
+            drop_reasons["not_dict"] = drop_reasons.get("not_dict", 0) + 1
             continue
-        bbox = item.get("bbox_2d") or item.get("bbox")
-        content = item.get("content") or item.get("text") or ""
-        if not bbox or not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+        bbox = _extract_bbox(item)
+        if bbox is None:
+            dropped += 1
+            drop_reasons["missing_or_bad_bbox"] = (
+                drop_reasons.get("missing_or_bad_bbox", 0) + 1
+            )
+            logger.debug(
+                "grounded parser: page %d dropped item (no 4-element bbox): %r",
+                page_idx,
+                {k: v for k, v in item.items() if k != "content"},
+            )
             continue
-        content = str(content).strip()
+        content = ""
+        for key in _CONTENT_KEYS:
+            if key in item and item[key] is not None:
+                content = str(item[key])
+                break
+        content = content.strip()
         if not content:
+            dropped += 1
+            drop_reasons["empty_content"] = drop_reasons.get("empty_content", 0) + 1
             continue
-        try:
-            x0, y0, x1, y1 = (float(v) for v in bbox)
-        except (TypeError, ValueError):
-            continue
-        if x1 <= x0 or y1 <= y0:
+        norm = _normalize_bbox(bbox, img_w, img_h)
+        if norm is None:
+            dropped += 1
+            drop_reasons["invalid_bbox_coords"] = (
+                drop_reasons.get("invalid_bbox_coords", 0) + 1
+            )
+            logger.debug(
+                "grounded parser: page %d dropped item (bbox %r could not be "
+                "normalized against image %dx%d)",
+                page_idx,
+                bbox,
+                img_w,
+                img_h,
+            )
             continue
         blocks.append(
             GroundedBlock(
-                bbox=[
-                    _clamp(x0 / img_w),
-                    _clamp(y0 / img_h),
-                    _clamp(x1 / img_w),
-                    _clamp(y1 / img_h),
-                ],
+                bbox=[norm[0], norm[1], norm[2], norm[3]],
                 text=content,
                 page_index=page_idx,
             )
+        )
+
+    if dropped and logger.isEnabledFor(logging.INFO):
+        logger.info(
+            "grounded parser: page %d kept %d blocks, dropped %d (%s)",
+            page_idx,
+            len(blocks),
+            dropped,
+            ", ".join(f"{k}={v}" for k, v in sorted(drop_reasons.items())),
         )
     return blocks
 

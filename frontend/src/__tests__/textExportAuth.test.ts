@@ -17,13 +17,14 @@ describe('artifactsApi.getText / getExport auth', () => {
 
     await artifactsApi.getText('id', 'tok-123');
 
-    const [calledUrl, calledInit] = (global.fetch as any).mock.calls[0];
+    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+    const [calledUrl, calledInit] = fetchMock.mock.calls[0] as [string, RequestInit];
 
     // No query string at all — the token is carried by the Authorization header.
     expect(calledUrl).toBe('/api/text/id');
     expect(String(calledUrl)).not.toMatch(/token=/);
 
-    const headers = (calledInit as RequestInit).headers as Record<string, string>;
+    const headers = (calledInit.headers ?? {}) as Record<string, string>;
     expect(headers['Authorization']).toBe('Bearer tok-123');
   });
 
@@ -36,12 +37,13 @@ describe('artifactsApi.getText / getExport auth', () => {
 
     await artifactsApi.getExport('id', 'tok-456');
 
-    const [calledUrl, calledInit] = (global.fetch as any).mock.calls[0];
+    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+    const [calledUrl, calledInit] = fetchMock.mock.calls[0] as [string, RequestInit];
 
     expect(calledUrl).toBe('/api/export/id');
     expect(String(calledUrl)).not.toMatch(/token=/);
 
-    const headers = (calledInit as RequestInit).headers as Record<string, string>;
+    const headers = (calledInit.headers ?? {}) as Record<string, string>;
     expect(headers['Authorization']).toBe('Bearer tok-456');
   });
 
@@ -57,9 +59,10 @@ describe('artifactsApi.getText / getExport auth', () => {
     const { fetchFile } = await import('../lib/api/client');
     await fetchFile('/text/some-id');
 
-    const [calledUrl, calledInit] = (global.fetch as any).mock.calls[0];
+    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+    const [calledUrl, calledInit] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(calledUrl).toBe('/api/text/some-id');
-    const headers = (calledInit as RequestInit).headers as Record<string, string>;
+    const headers = (calledInit.headers ?? {}) as Record<string, string>;
     expect(headers['Authorization']).toBe('Bearer ocr-tok');
   });
 });

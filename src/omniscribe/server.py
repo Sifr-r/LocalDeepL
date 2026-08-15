@@ -102,10 +102,17 @@ def create_app() -> ASGIApplication:
     @asynccontextmanager
     async def lifespan(_app: Any) -> AsyncIterator[None]:
         await state.ocr_job_queue.start()
+        cleanup_task = await _start_artifact_cleanup()
         try:
             yield
         finally:
+            await _stop_artifact_cleanup(cleanup_task)
             await state.ocr_job_queue.stop()
+            # Release the shared httpx client and its connection pool.
+            # Keeps the process from holding an idle keep-alive socket.
+            from omniscribe.core.ocr.multi_format_client import aclose_shared_client
+
+            await aclose_shared_client()
 
     web_app = fastapi.FastAPI(lifespan=lifespan)
     security = SecuritySettings.from_env()

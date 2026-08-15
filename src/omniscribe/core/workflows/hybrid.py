@@ -19,6 +19,7 @@ from omniscribe.core.pdf import PDFHandler
 from omniscribe.core.preprocessing import PagePreprocessingOptions, PagePreprocessor
 from omniscribe.core.processors import DocumentProcessor
 from omniscribe.core.routing import QualityRoutingOptions, QualityRoutingPolicy
+from omniscribe.core.text_recall import WhitespaceRecallBooster
 from omniscribe.core.workflows.base import (
     AnyOutputWriter,
     CancelCheck,
@@ -95,6 +96,7 @@ class HybridEngine(EngineBase):
         page_preprocessor: PagePreprocessor | None = None,
         block_callbacks: BlockCallbackSet | None = None,
         trust_orchestrator: TrustOrchestrator | None = None,
+        recall_booster: WhitespaceRecallBooster | None = None,
     ) -> None:
         # Phase B (review M2) — forward `block_callbacks` to the base
         # so the per-block / per-page event hook reaches `_ocr_pages`.
@@ -111,6 +113,10 @@ class HybridEngine(EngineBase):
         self.ocr_processor = ocr_processor
         self.pdf_handler = pdf_handler
         self.page_preprocessor = page_preprocessor
+        # Whitespace recall (spec 2026-08-14) — merges boxes Surya missed
+        # into the detection output. None keeps the legacy byte-identical
+        # behavior for direct engine users and the existing tests.
+        self.recall_booster = recall_booster
         # Phase 1.2 (per-page decode cache) — populated by `_detect_layout`
         # via `_decode_chunk_bytes` (which forwards into ``_decoded_put``),
         # consumed by `_ocr_per_box` (via the `page_image` parameter it
@@ -422,6 +428,12 @@ class HybridEngine(EngineBase):
             chunk_boxes = await asyncio.to_thread(
                 self.aligner.get_detected_boxes_batch, chunk_bytes
             )
+            if self.recall_booster is not None:
+                chunk_boxes = await self._apply_recall(
+                    chunk_pages=chunk_pages,
+                    images_dict=images_dict,
+                    chunk_boxes=chunk_boxes,
+                )
             batch_boxes.extend(chunk_boxes)
             await notify(
                 progress,
@@ -436,6 +448,52 @@ class HybridEngine(EngineBase):
         }
         await notify(progress, "detect", 1, 1, "Layout detection complete.")
         return pages_structured
+
+    async def _apply_recall(
+        self,
+        *,
+        chunk_pages: Sequence[int],
+        images_dict: dict[int, str],
+        chunk_boxes: list[list[BBox]],
+    ) -> list[list[BBox]]:
+        """Merge whitespace-recall boxes into each page's Surya boxes.
+
+        Best-effort recall improvement: a per-page failure degrades to the
+        original Surya boxes and never fails the job. Images come from the
+        per-page decode cache populated by ``_decode_chunk_bytes`` in the
+        same chunk; the fallback decode covers an LRU eviction.
+        """
+        assert self.recall_booster is not None
+        merged: list[list[BBox]] = []
+        for p_num, boxes in zip(chunk_pages, chunk_boxes, strict=False):
+            try:
+                image = self._decoded_get(p_num)
+                if image is None:
+                    image = await asyncio.to_thread(
+                        _decode_page_image, images_dict[p_num]
+                    )
+                    self._decoded_put(p_num, image)
+                extra = await asyncio.to_thread(
+                    self.recall_booster.supplement, image, boxes
+                )
+            except Exception as e:
+                logger.warning(
+                    "Whitespace recall failed for page %s: %s: %s",
+                    p_num,
+                    type(e).__name__,
+                    e,
+                )
+                merged.append(boxes)
+                continue
+            if extra:
+                logger.debug(
+                    "Whitespace recall added %d box(es) on page %s",
+                    len(extra),
+                    p_num,
+                )
+                boxes = sorted([*boxes, *extra], key=lambda b: (b[1], b[0]))
+            merged.append(boxes)
+        return merged
 
     def _select_dense_pages(
         self,

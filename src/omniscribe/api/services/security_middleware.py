@@ -135,7 +135,12 @@ def _normalize_path(scope: dict[str, Any]) -> str:
 
 def _is_ocr_route(path: str) -> bool:
     """Return True when ``path`` is an OCR route namespace."""
-    if path == "/api/process" or path.startswith("/api/process/"):
+    if (
+        path == "/api/process"
+        or path.startswith("/api/process/")
+        or path == "/process"
+        or path.startswith("/process/")
+    ):
         return True
     return bool(
         path == "/api/models/ocr"

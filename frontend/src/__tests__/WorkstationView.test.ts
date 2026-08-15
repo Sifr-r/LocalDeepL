@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount, tick } from 'svelte';
 import WorkstationView from '../lib/components/workstation/WorkstationView.svelte';
+import type { DocumentViewModel } from '../lib/types/api';
 
 // Hoist the mock handles so the vi.mock factories (which run before module
 // evaluation) can reach them.
@@ -19,31 +20,41 @@ const {
 }));
 
 vi.mock('../lib/stores/appStore', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { writable } = require('svelte/store');
+  const defaultJobState = {
+    activeJobId: null,
+    percent: 0,
+    stage: 'idle',
+    statusMessage: '',
+    warnings: [],
+    chunks: [],
+    failedPages: [],
+    completedPages: [],
+    qualitySummary: null,
+    isProcessing: false
+  };
+  const defaultDocumentModel = {
+    pages: [],
+    textArtifacts: [],
+    textArtifactId: null,
+    textArtifactToken: null,
+    bboxes: [],
+    confidenceSummary: { average: 1, min: 1, max: 1 },
+    pageCount: 0,
+    trustSummary: null
+  };
   return {
     activeTab: writable('workstation'),
     themeStore: writable('dark'),
     authStore: writable({}),
+    defaultJobState,
+    defaultDocumentModel,
     documentStore: writable({
-      pages: [],
-      textArtifacts: [],
-      textArtifactId: null,
-      textArtifactToken: null,
-      bboxes: [],
-      confidenceSummary: { average: 1, min: 1, max: 1 },
-      pageCount: 0,
-      filename: null,
-      jobId: null
+      ...defaultDocumentModel,
+      filename: null
     }),
-    jobStore: writable({
-      activeJobId: null,
-      percent: 0,
-      stage: 'idle',
-      warnings: [],
-      chunks: [],
-      failedPages: [],
-      isProcessing: false
-    }),
+    jobStore: writable({ ...defaultJobState }),
     configStore: writable({
       api_base: 'http://127.0.0.1:11434',
       model: 'llama3:latest',
@@ -71,6 +82,35 @@ vi.mock('../lib/stores/appStore', () => {
 
 vi.mock('../lib/api/endpoints', () => ({
   processOcr: processOcrMock
+}));
+
+// ``pdfjs-dist`` ships an ESM worker bootstrap that tries to dynamically
+// ``import`` the worker chunk from the current page URL. jsdom does not
+// resolve those imports, so unit tests that mount the workstation view
+// (which kicks off ``pdfPreview.loadFile``) would otherwise hit a
+// ``Cannot find module`` error. Stub the API surface the preview store
+// actually uses so the test exercises the wiring without spinning up a
+// real worker.
+vi.mock('pdfjs-dist', () => {
+  const fakePage = {
+    getViewport: () => ({ width: 800, height: 1131 }),
+    render: () => ({ promise: Promise.resolve() }),
+    cleanup: () => undefined
+  };
+  const fakeDoc = {
+    numPages: 1,
+    getPage: async () => fakePage,
+    destroy: async () => undefined
+  };
+  return {
+    GlobalWorkerOptions: { workerSrc: '' },
+    getDocument: () => ({ promise: Promise.resolve(fakeDoc) }),
+    version: 'test-stub'
+  };
+});
+
+vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({
+  default: 'pdf.worker.min.mjs'
 }));
 
 function makeFile(): File {
@@ -114,7 +154,7 @@ describe('WorkstationView', () => {
     }
   });
 
-  it('opens a WS channel, posts to /api/process with channel_id, and hides #process-view on success', async () => {
+  it('opens a WS channel, posts progress_channel + progress_token to /api/process, and hides #process-view on success', async () => {
     const target = document.createElement('div');
     document.body.appendChild(target);
     mount(WorkstationView, { target });
@@ -150,11 +190,14 @@ describe('WorkstationView', () => {
     // 1) websocketStore.connect was called once.
     expect(connectMock).toHaveBeenCalledTimes(1);
 
-    // 2) processOcr was called once with a FormData containing channel_id and the file.
+    // 2) processOcr was called once with a FormData containing the
+    //    progress binding fields the backend authorizes streaming with
+    //    (`progress_channel` + `progress_token`) and the file.
     expect(processOcrMock).toHaveBeenCalledTimes(1);
     const submittedFormData = processOcrMock.mock.calls[0][0] as FormData;
     expect(submittedFormData).toBeInstanceOf(FormData);
-    expect(submittedFormData.get('channel_id')).toBe('chan_test_1');
+    expect(submittedFormData.get('progress_channel')).toBe('chan_test_1');
+    expect(submittedFormData.get('progress_token')).toBe('tok_test_1');
     const fileBlob = submittedFormData.get('file') as Blob;
     expect(fileBlob).toBeInstanceOf(Blob);
     expect((fileBlob as File).name).toBe('test.pdf');
@@ -163,6 +206,9 @@ describe('WorkstationView', () => {
     const processView = document.getElementById('process-view');
     expect(processView).toBeTruthy();
     expect(processView!.classList.contains('hidden')).toBe(true);
+
+    // 4) The progress socket is released once the run settles.
+    expect(disconnectMock).toHaveBeenCalledTimes(1);
   });
 
   it('surfaces a toast and skips the OCR call when the WS channel fails to open', async () => {
@@ -233,8 +279,8 @@ describe('WorkstationView', () => {
     // so we instead rely on the fact that the store is shared across the
     // mocked module (vitest hoists vi.mock and caches module instances).
     const mocked = await import('../lib/stores/appStore');
-    const docs = await new Promise<any>((resolve) => {
-      const unsub = mocked.documentStore.subscribe((v) => {
+    const docs = await new Promise<DocumentViewModel>((resolve) => {
+      const unsub = mocked.documentStore.subscribe((v: DocumentViewModel) => {
         resolve(v);
         unsub();
       });

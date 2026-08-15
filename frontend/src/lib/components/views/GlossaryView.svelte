@@ -1,12 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { SvelteURLSearchParams } from 'svelte/reactivity';
   import { activeTab, pushToast } from '$lib/stores/appStore';
   import {
     glossaryLibrary,
     selectedGlossaryEntries,
     mergedGlossary,
-    glossaryPreview,
-    isGlossaryLoading,
     fetchGlossaryLibrary,
     fetchGlossaryEntries,
     fetchMergedGlossary,
@@ -15,6 +14,7 @@
     deleteGlossaryItem,
   } from '$lib/stores/glossaryStore';
   import { fetchApi } from '$lib/api/client';
+  import type { GlossaryImportJobResponse } from '$lib/types/api';
   import Card from '../ui/Card.svelte';
   import Button from '../ui/Button.svelte';
   import Input from '../ui/Input.svelte';
@@ -70,7 +70,7 @@
         },
       };
 
-      const res = await fetchApi<any>('/glossary/import', {
+      const res = await fetchApi<GlossaryImportJobResponse>('/glossary/import', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
@@ -80,8 +80,9 @@
       resetImportForm();
       await fetchGlossaryLibrary();
       await fetchMergedGlossary();
-    } catch (err: any) {
-      pushToast('error', err.message || 'Import failed', 4000);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      pushToast('error', message || 'Import failed', 4000);
     } finally {
       isSubmittingImport = false;
     }
@@ -95,11 +96,11 @@
 
     isSubmittingImport = true;
     try {
-      const query = new URLSearchParams({ url: importUrl });
+      const query = new SvelteURLSearchParams({ url: importUrl });
       if (importName) query.set('name', importName);
       if (importFormat) query.set('format', importFormat);
 
-      const res = await fetchApi<any>(`/glossary/import/url?${query.toString()}`, {
+      const res = await fetchApi<GlossaryImportJobResponse>(`/glossary/import/url?${query.toString()}`, {
         method: 'POST',
       });
 
@@ -108,8 +109,9 @@
       resetImportForm();
       await fetchGlossaryLibrary();
       await fetchMergedGlossary();
-    } catch (err: any) {
-      pushToast('error', err.message || 'URL import failed', 4000);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      pushToast('error', message || 'URL import failed', 4000);
     } finally {
       isSubmittingImport = false;
     }
@@ -155,7 +157,7 @@
     <div class="flex items-center gap-2 flex-wrap">
       <!-- Sub-view navigation -->
       <div class="flex items-center gap-1 surface-inset p-1 rounded-md">
-        {#each subTabs as tab}
+        {#each subTabs as tab (tab.id)}
           <button
             type="button"
             on:click={() => activeTabMode = tab.id}
@@ -204,7 +206,7 @@
                 </td>
               </tr>
             {:else}
-              {#each $glossaryLibrary as item}
+              {#each $glossaryLibrary as item (item.id)}
                 <tr class="hover:bg-muted/50 transition-colors">
                   <td class="py-2.5 px-4 font-mono text-xs text-foreground-muted">#{item.priority}</td>
                   <td class="py-2.5 px-4 font-semibold text-brand">{item.name}</td>
@@ -268,7 +270,7 @@
               </tr>
             </thead>
             <tbody class="divide-y divide-border">
-              {#each $selectedGlossaryEntries.entries as entry}
+              {#each $selectedGlossaryEntries.entries as entry (`${entry.source}::${entry.target}`)}
                 <tr class="hover:bg-muted/30">
                   <td class="py-2 px-3 text-foreground font-semibold">{entry.source}</td>
                   <td class="py-2 px-3 text-brand">{entry.target}</td>
@@ -296,7 +298,7 @@
 
       <div class="overflow-y-auto flex-1">
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm font-mono">
-          {#each Object.entries($mergedGlossary) as [source, target]}
+          {#each Object.entries($mergedGlossary) as [source, target] (source)}
             <div class="p-2.5 surface-inset rounded-md flex items-center justify-between gap-2">
               <span class="text-foreground font-semibold truncate" title={source}>{source}</span>
               <span class="text-foreground-subtle">→</span>

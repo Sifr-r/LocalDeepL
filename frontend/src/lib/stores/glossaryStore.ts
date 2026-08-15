@@ -1,24 +1,25 @@
 import { writable } from 'svelte/store';
 import type {
+  GlossaryEntry,
   GlossaryFormat,
   GlossaryImportJobResponse,
-  GlossaryImportRequest,
   GlossaryListItem,
   GlossaryPreviewResponse,
-  GlossaryResponse,
 } from '../types/api';
 import { glossaryApi } from '../api/endpoints';
 
 export interface SelectedGlossaryState {
   name?: string;
-  entries: Array<{ source: string; target: string; note?: string; [key: string]: any }>;
+  entries: GlossaryEntry[];
 }
+
+export type { GlossaryEntry };
 
 export const glossaryLibraries = writable<GlossaryListItem[]>([]);
 export const glossaryLibrary = glossaryLibraries;
-export const glossaryEntries = writable<any[]>([]);
+export const glossaryEntries = writable<GlossaryEntry[]>([]);
 export const selectedGlossaryEntries = writable<SelectedGlossaryState>({ name: 'Selected Glossary', entries: [] });
-export const mergedGlossary = writable<any>({});
+export const mergedGlossary = writable<Record<string, string>>({});
 export const glossaryPreview = writable<GlossaryPreviewResponse | null>(null);
 export const importJobStatus = writable<GlossaryImportJobResponse | null>(null);
 export const isGlossaryLoading = writable<boolean>(false);
@@ -72,7 +73,7 @@ export async function loadEntries(id?: string, name?: string): Promise<void> {
   try {
     if (!id) return;
     const res = await glossaryApi.getEntries(id);
-    const list = Array.isArray(res) ? res : (res.entries || []);
+    const list: GlossaryEntry[] = Array.isArray(res) ? res : (res.entries || []);
     glossaryEntries.set(list);
     selectedGlossaryEntries.set({ name: name || `Glossary ${id}`, entries: list });
   } catch (err) {

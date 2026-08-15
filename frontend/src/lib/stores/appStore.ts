@@ -5,6 +5,7 @@ import type {
   ConfigResponse,
   DocumentViewModel,
   JobState,
+  NamespacedModelsResponse,
   Toast,
   ToastLevel,
 } from '../types/api';
@@ -81,9 +82,13 @@ export const defaultJobState: JobState = {
   activeJobId: null,
   percent: 0,
   stage: 'idle',
+  statusMessage: '',
   warnings: [],
   chunks: [],
   failedPages: [],
+  completedPages: [],
+  qualitySummary: null,
+  isProcessing: false,
 };
 export const jobStore = writable<JobState>(defaultJobState);
 
@@ -180,7 +185,7 @@ export async function refreshModels(
   try {
     const ns = namespace === 'general' ? undefined : namespace;
     const url = ns ? `/models/${ns}` : '/models';
-    const res = await fetchApi<any>(url);
+    const res = await fetchApi<NamespacedModelsResponse>(url);
 
     modelStore.update((curr) => {
       const next = { ...curr };
@@ -225,8 +230,6 @@ export async function refreshConfig(): Promise<void> {
   const fresh = await fetchApi<ConfigResponse>('/config');
   configStore.set(fresh);
 }
-
-type NamespaceKey = 'ocr' | 'translation' | 'transcription';
 
 /**
  * PATCH the OCR namespace section of the runtime config.

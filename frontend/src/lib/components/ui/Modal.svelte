@@ -48,6 +48,8 @@
   });
 </script>
 
+<svelte:window on:keydown={(e) => { if (open && e.key === 'Escape') closeModal(); }} />
+
 {#if open}
   <!-- Backdrop -->
   <div

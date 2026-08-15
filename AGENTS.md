@@ -15,21 +15,65 @@ Real OCR requires an OpenAI-compatible VLM endpoint. The default is LM Studio at
 
 ## Validation
 
+**After any code change, run the relevant subset of these checks before claiming completion.**
+
 ```bash
-uv run pytest
-uv run pytest -m "not slow"
-uv run pytest -m slow
-uv run pytest -m live_llm
-uv run pytest tests/test_aligner.py -v
+# Fast gate — run after every material edit:
 uv run ruff check src tests
 uv run ruff format src tests --check
 uv run mypy src
+uv run pytest -m "not slow"
+
+# Full gate — run before merge / PR:
+uv run pytest
+uv run pytest -m slow
+uv run pytest -m live_llm
+uv run pytest tests/test_aligner.py -v
 cd frontend && npm run check && npm test && npm run build
 ```
 
 - `pytest-asyncio` uses auto mode. Write `async def test_...` without decorators.
 - Slow tests load Surya and may download its model on the first run.
 - Markers are `slow` and `live_llm`. Run `live_llm` tests manually with `uv run pytest -m live_llm` against a local LM Studio instance (`http://localhost:1234/v1`).
+- Pre-commit hooks run ruff (check + format) and mypy automatically on every commit. Install with `uv tool run pre-commit install`.
+
+## Core Paths
+
+Source directories are split into **core** (OCR pipeline and API surface) and **peripheral** (tooling, frontend, utilities). Changes to core paths require the full fast gate; peripheral-only changes can skip some checks.
+
+### Core — full fast gate required
+
+| Path | Scope |
+| --- | --- |
+| `src/omniscribe/core/` | OCR engines, alignment, PDF/image handling, document model, workflows, processors, translation, grounded backends, OCR quality trust layer |
+| `src/omniscribe/api/` | FastAPI routers, schemas, services, security middleware, Celery tasks |
+| `src/omniscribe/pipeline.py` | `OCRPipeline` facade |
+| `src/omniscribe/server.py` | FastAPI app entry point |
+| `src/omniscribe/config.py` | Runtime settings |
+
+```bash
+# Required for every core-path change:
+uv run ruff check src tests
+uv run ruff format src tests --check
+uv run mypy src
+uv run pytest -m "not slow"
+```
+
+If the change touches `core/aligner.py`, `core/workflows/`, or `core/ocr/`, also run `uv run pytest tests/test_aligner.py -v`.
+
+### Peripheral — focused validation
+
+| Path | Scope | Validation |
+| --- | --- | --- |
+| `src/omniscribe/utils/` | Shared helpers, SSRF guard | `ruff check src` + `mypy src` |
+| `scripts/` | Developer CLI utilities | `ruff check scripts` + relevant `pytest tests/test_scripts_smoke.py` |
+| `frontend/src/` | Svelte UI | `cd frontend && npm run check && npm test && npm run build` |
+| `tests/` (new tests only) | Test additions | `ruff check tests` + `pytest <new_test_file> -v` |
+| `AGENTS.md`, `README.md`, `CHANGELOG.md` | Documentation | No code validation required |
+
+### Decision rule
+
+If a change touches **any** core path, run the full fast gate. If it is peripheral-only, run only the validation listed for that path above. When in doubt, run the full fast gate.
 
 ## Conventions
 
@@ -142,7 +186,7 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 - **Windows quick-start**: run `install.bat` to install `uv`, sync the web extra, and create Desktop / Start-Menu shortcuts. `start_app.vbs` boots Redis (via Docker) + Celery + uvicorn hidden and opens the browser; it writes a timestamped append log to `start_app.log` next to itself. `stop_app.bat` terminates the uvicorn + Celery processes. `test_ui.py` is the headless Playwright smoke test against `examples/dense.pdf`.
 - **Developer scripts** live in `scripts/`. The most useful for OCR quality work are `scripts/confidence_eval.py` (hybrid + grounded vs the `examples/*.pdf` fixtures) and `scripts/confidence_image.py` (single-image confidence). The rest are debug/inspection/visualization tools.
 - **Docker**: `Dockerfile` builds a `python:3.12-slim` runtime with the `web` and `async-translation` extras. `compose.yaml` runs `api` + `redis` by default; add `--profile async` to also start a Celery worker. Image exposes port 8000; bind `LLM_API_BASE` to `http://host.docker.internal:1234/v1` to talk to a host-side LM Studio.
-- **Pre-commit**: `.pre-commit-config.yaml` runs ruff (check + format) and `uv-lock` on every commit. Enable with `uv tool run pre-commit install` after cloning.
+- **Pre-commit**: `.pre-commit-config.yaml` runs ruff (check + format), mypy, and `uv-lock` on every commit. Enable with `uv tool run pre-commit install` after cloning.
 - **Nightly slow tests**: `.github/workflows/nightly.yml` runs `pytest -m slow` at 03:00 UTC with cached HF Hub snapshots, catching Surya-path regressions the fast tier skips.
 
 ## Known Tech Debt

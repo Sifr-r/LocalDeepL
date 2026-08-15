@@ -3,12 +3,14 @@ import type {
   RuntimeConfig,
   ProviderPreset,
   JobRecordResponse,
-  ProcessSettings,
   TranslationRequest,
-  TranscriptionRequest,
   ExtractionRequest,
+  GlossaryEntry,
+  GlossaryImportJobResponse,
   GlossaryListItem,
   GlossaryFormat,
+  GlossaryPreviewResponse,
+  TranscriptionSegment,
   TrustSummary
 } from '../types/api';
 
@@ -34,7 +36,7 @@ export async function getProviderDetails(id: string): Promise<ProviderPreset> {
 
 export interface ProcessOcrResult {
   /** Parsed response body (JSON when the endpoint returns JSON, otherwise the raw blob). */
-  body: any;
+  body: unknown;
   /** Lower-cased response headers — used to read side-channel metadata like ``X-Document-Trust``. */
   headers: Record<string, string>;
   /** Parsed ``X-Document-Trust`` summary, or ``null`` when the trust layer was off. */
@@ -55,7 +57,7 @@ export interface ProcessOcrResult {
  * ``X-Document-Trust`` and the artifact id/token.
  */
 export async function processOcr(formData: FormData): Promise<ProcessOcrResult> {
-  const { body, headers } = await fetchApiWithHeaders<any>('/process', {
+  const { body, headers } = await fetchApiWithHeaders<unknown>('/process', {
     method: 'POST',
     body: formData
   });
@@ -79,7 +81,7 @@ export async function processOcr(formData: FormData): Promise<ProcessOcrResult> 
   };
 }
 
-export async function getOcrStatus(jobId: string): Promise<any> {
+export async function getOcrStatus(jobId: string): Promise<unknown> {
   return fetchApi(`/process/status/${jobId}`);
 }
 
@@ -87,8 +89,8 @@ export async function exportDocument(payload: {
   text_artifact_id?: string;
   format?: string;
   filename?: string;
-  [key: string]: any;
-}): Promise<any> {
+  [key: string]: unknown;
+}): Promise<unknown> {
   return fetchApi('/export/document', {
     method: 'POST',
     body: JSON.stringify(payload)
@@ -98,8 +100,8 @@ export async function exportDocument(payload: {
 export async function exportDocx(payload: {
   text_artifact_id?: string;
   filename?: string;
-  [key: string]: any;
-}): Promise<any> {
+  [key: string]: unknown;
+}): Promise<unknown> {
   return fetchApi('/export/docx', {
     method: 'POST',
     body: JSON.stringify(payload)
@@ -128,22 +130,22 @@ export const translationApi = {
 
 export const transcriptionApi = {
   transcribe: (formData: FormData) =>
-    fetchApi<{ text: string; segments: any[] }>('/transcribe', { method: 'POST', body: formData })
+    fetchApi<{ text: string; segments: TranscriptionSegment[] }>('/transcribe', { method: 'POST', body: formData })
 };
 
 export const glossaryApi = {
   getLibraries: () => fetchApi<{ libraries: GlossaryListItem[] }>('/glossary/library'),
-  getEntries: (id: string) => fetchApi<{ entries: any[] }>(`/glossary/library/${id}/entries`),
+  getEntries: (id: string) => fetchApi<{ entries: GlossaryEntry[] } | GlossaryEntry[]>(`/glossary/library/${id}/entries`),
   getMerged: () => fetchApi<Record<string, string>>('/glossary/merged'),
-  getPreview: () => fetchApi<any>('/glossary/library/preview'),
+  getPreview: () => fetchApi<GlossaryPreviewResponse>('/glossary/library/preview'),
   toggle: (id: string, enabled: boolean) =>
     fetchApi(`/glossary/library/${id}/enable`, { method: 'POST', body: JSON.stringify({ enabled }) }),
   delete: (id: string) => fetchApi(`/glossary/library/${id}`, { method: 'DELETE' }),
   reorder: (orderedIds: string[]) =>
     fetchApi('/glossary/library/reorder', { method: 'POST', body: JSON.stringify({ ordered_ids: orderedIds }) }),
-  importFile: (formData: FormData) => fetchApi('/glossary/import', { method: 'POST', body: formData }),
+  importFile: (formData: FormData) => fetchApi<GlossaryImportJobResponse>('/glossary/import', { method: 'POST', body: formData }),
   importUrl: (url: string, format: GlossaryFormat, name?: string) =>
-    fetchApi('/glossary/import/url', { method: 'POST', body: JSON.stringify({ url, format, name }) })
+    fetchApi<GlossaryImportJobResponse>('/glossary/import/url', { method: 'POST', body: JSON.stringify({ url, format, name }) })
 };
 
 export const jobsApi = {
@@ -169,6 +171,6 @@ export const artifactsApi = {
 
 export const extractionApi = {
   extract: (payload: ExtractionRequest) =>
-    fetchApi<{ extracted_data: any }>('/extract', { method: 'POST', body: JSON.stringify(payload) })
+    fetchApi<{ extracted_data: unknown }>('/extract', { method: 'POST', body: JSON.stringify(payload) })
 };
 

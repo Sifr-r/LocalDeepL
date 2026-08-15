@@ -490,6 +490,75 @@ class TestPromptedGroundedParser:
             log_grounded_parse_failure("invalid raw json", 1, ValueError("test err"))
         assert "Grounded bbox JSON parsing failed on page 1: test err" in caplog.text
 
+    # --- tolerance added for VLM response-shape variance (Phase 1 fix) ---
+
+    def test_alternate_bbox_keys_accepted(self):
+        # VLMs vary: some use `box`, `box_2d`, `bounding_box`, or
+        # `coordinates` instead of `bbox_2d`. First matching alias wins.
+        for key in ("box", "box_2d", "bounding_box", "coordinates"):
+            raw = f'[{{"{key}": [10, 20, 110, 70], "content": "via {key}"}}]'
+            blocks = _parse_grounded_json(raw, page_idx=0, img_w=200, img_h=200)
+            assert len(blocks) == 1, f"failed for key {key}"
+            assert blocks[0].text == f"via {key}"
+
+    def test_alternate_content_keys_accepted(self):
+        for key in ("text", "label_text", "ocr_text"):
+            raw = f'[{{"bbox_2d":[10,20,110,70],"{key}":"via {key}"}}]'
+            blocks = _parse_grounded_json(raw, page_idx=0, img_w=200, img_h=200)
+            assert len(blocks) == 1
+            assert blocks[0].text == f"via {key}"
+
+    def test_already_normalized_coords_passed_through(self):
+        # If the VLM already emitted 0..1 coords (e.g. an upstream
+        # wrapper normalizes them), don't divide again — that would
+        # collapse every box to a 0×0 dot.
+        raw = (
+            '[{"bbox_2d":[0.05, 0.10, 0.55, 0.35], "content":"line one"},'
+            '{"bbox_2d":[0.05, 0.40, 0.55, 0.65], "content":"line two"}]'
+        )
+        blocks = _parse_grounded_json(raw, page_idx=0, img_w=1024, img_h=1024)
+        assert len(blocks) == 2
+        assert blocks[0].bbox == [0.05, 0.10, 0.55, 0.35]
+        assert blocks[1].bbox == [0.05, 0.40, 0.55, 0.65]
+
+    def test_xywh_auto_detected_when_xyxy_out_of_range(self):
+        # Literal XYXY would put x1 past the image (1500 > 1000), so the
+        # parser falls back to interpreting (x1, y1) as (w, h).
+        raw = '[{"bbox_2d":[100, 200, 300, 150], "content":"xywh block"}]'
+        blocks = _parse_grounded_json(raw, page_idx=0, img_w=1000, img_h=1000)
+        assert len(blocks) == 1
+        # x0=100, y0=200, w=300, h=150 → (100+300)/1000=0.4, (200+150)/1000=0.35
+        assert blocks[0].bbox == pytest.approx([0.1, 0.2, 0.4, 0.35])
+
+    def test_xyxy_in_range_not_treated_as_xywh(self):
+        # x1=400 and y1=300 are both inside the 1000×1000 image, so the
+        # XYWH branch should NOT fire — it should be treated as XYXY.
+        raw = '[{"bbox_2d":[100, 200, 400, 300], "content":"xyxy block"}]'
+        blocks = _parse_grounded_json(raw, page_idx=0, img_w=1000, img_h=1000)
+        assert len(blocks) == 1
+        assert blocks[0].bbox == pytest.approx([0.1, 0.2, 0.4, 0.3])
+
+    def test_drop_summary_logged_at_info_when_items_dropped(self, caplog):
+        # The summary log makes the "all blocks dropped" failure mode
+        # easy to spot in server logs.
+        raw = (
+            '[{"bbox_2d":[0,0,10,10],"content":"keep"},'
+            '{"content":"no-bbox"},'
+            '{"bbox_2d":[0,0,10,10],"content":"  "}]'
+        )
+        with caplog.at_level("INFO", logger="omniscribe.core.grounded.parsers"):
+            _parse_grounded_json(raw, page_idx=7, img_w=10, img_h=10)
+        assert "page 7" in caplog.text
+        assert "missing_or_bad_bbox=1" in caplog.text
+        assert "empty_content=1" in caplog.text
+
+    def test_no_summary_log_when_all_items_kept(self, caplog):
+        raw = '[{"bbox_2d":[0,0,10,10],"content":"a"},{"bbox_2d":[0,10,10,20],"content":"b"}]'
+        with caplog.at_level("INFO", logger="omniscribe.core.grounded.parsers"):
+            _parse_grounded_json(raw, page_idx=0, img_w=10, img_h=20)
+        # Summary should NOT fire when nothing was dropped.
+        assert "kept" not in caplog.text
+
 
 class TestPromptedGroundedEnsureModelLoaded:
     """Pre-flight model verification for the grounded path. Issue #7 was

@@ -28,6 +28,10 @@ class ReadingOrderProcessor:
             page.blocks.sort(key=self._sort_key)
             for index, block in enumerate(page.blocks):
                 block.reading_order = index
+        if document.tree is not None:
+            from omniscribe.core.block_tree import from_document_result
+
+            document.tree = from_document_result(document)
         return document
 
     def _sort_key(self, block: DocumentBlock) -> tuple[int, float, float]:

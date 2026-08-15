@@ -73,6 +73,7 @@ async def call_vlm(
     api_key: str | None = None,
     temperature: float = 0.0,
     max_tokens: int = 4096,
+    timeout: float | None = None,
     provider_config: ProviderConfig | None = None,
 ) -> str:
     """Make an asynchronous VLM call using active ProviderManager configuration or explicit settings."""
@@ -101,6 +102,7 @@ async def call_vlm(
         model=model,
         temperature=temperature,
         max_tokens=max_tokens,
+        timeout=timeout,
     )
 
 
@@ -149,6 +151,7 @@ async def call_llm(
         model=model,
         temperature=temperature,
         max_tokens=max_tokens or 4096,
+        timeout=timeout,
     )
 
 

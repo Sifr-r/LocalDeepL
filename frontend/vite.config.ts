@@ -16,7 +16,12 @@ export default defineConfig({
   // `/// @vitest-environment` annotations.
   test: {
     environment: 'jsdom',
-    include: ['src/**/*.test.ts']
+    include: ['src/**/*.test.ts'],
+    // Polyfill modern DOM primitives (DOMMatrix, DOMPoint, …) that
+    // ``pdfjs-dist`` touches at module load. Without this, importing
+    // the preview store from a unit test throws ReferenceError before
+    // any assertion runs.
+    setupFiles: ['./src/__tests__/setup.ts']
   },
   base: '/static/',
   resolve: {
@@ -53,6 +58,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': 'http://127.0.0.1:8000',
+      '/health': 'http://127.0.0.1:8000',
       '/ws': {
         target: 'ws://127.0.0.1:8000',
         ws: true

@@ -179,6 +179,60 @@ class TestHybridDetectLayout:
 
 
 # ---------------------------------------------------------------------------
+# Whitespace recall (spec 2026-08-14-whitespace-recall-design.md)
+# ---------------------------------------------------------------------------
+
+
+class TestHybridWhitespaceRecall:
+    async def test_detect_layout_merges_recall_boxes_and_resorts(self) -> None:
+        class _FixedBooster:
+            def supplement(self, image, surya_boxes):
+                # Sits ABOVE the Surya box → must sort first (row-major).
+                return [(0.1, 0.02, 0.9, 0.05)]
+
+        aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
+        engine = HybridEngine(
+            aligner=aligner,
+            ocr_processor=_StubOCR(),
+            pdf_handler=_StubPDF(),
+            output_writer=_noop_writer,
+            recall_booster=_FixedBooster(),  # type: ignore[arg-type]
+        )
+        pages = await engine._detect_layout(
+            images_dict={0: _make_tiny_b64_image()}, page_nums=[0], progress=None
+        )
+        boxes = [box for box, _ in pages[0]]
+        assert boxes == [(0.1, 0.02, 0.9, 0.05), [0.1, 0.1, 0.9, 0.2]]
+
+    async def test_detect_layout_unchanged_without_booster(self) -> None:
+        aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
+        engine = _engine(aligner=aligner)
+        assert engine.recall_booster is None
+        pages = await engine._detect_layout(
+            images_dict={0: _make_tiny_b64_image()}, page_nums=[0], progress=None
+        )
+        assert pages == {0: [([0.1, 0.1, 0.9, 0.2], "")]}
+
+    async def test_booster_exception_keeps_surya_boxes(self) -> None:
+        class _ExplodingBooster:
+            def supplement(self, image, surya_boxes):
+                raise RuntimeError("simulated cv2 failure")
+
+        aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
+        engine = HybridEngine(
+            aligner=aligner,
+            ocr_processor=_StubOCR(),
+            pdf_handler=_StubPDF(),
+            output_writer=_noop_writer,
+            recall_booster=_ExplodingBooster(),  # type: ignore[arg-type]
+        )
+        pages = await engine._detect_layout(
+            images_dict={0: _make_tiny_b64_image()}, page_nums=[0], progress=None
+        )
+        assert pages == {0: [([0.1, 0.1, 0.9, 0.2], "")]}
+
+
+# ---------------------------------------------------------------------------
 # §1.2 per-page decode cache
 # ---------------------------------------------------------------------------
 

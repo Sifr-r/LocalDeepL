@@ -5,19 +5,17 @@
 
 export type PipelineMode = 'hybrid' | 'grounded' | 'grounded_native';
 export type DenseMode = 'auto' | 'on' | 'off';
-export type SpellcheckMode = 'none' | 'dict' | 'symspell' | 'llm' | 'basic';
+// Mirrors omniscribe.core.document.SpellcheckMode (dictionary languages).
+export type SpellcheckMode = 'none' | 'ar' | 'en-US' | 'de' | 'es' | 'fr';
 
+// Mirrors omniscribe.api.schemas.requests.DocumentProcessorName.
 export type DocumentProcessorName =
   | 'reading_order'
   | 'quality_analysis'
   | 'structure_analysis'
   | 'section_analysis'
   | 'layout_enrichment'
-  | 'table_extraction'
-  | 'layout'
-  | 'table'
-  | 'formula'
-  | 'handwriting';
+  | 'table_extraction';
 
 export type ExtractionTemplate = 'invoice' | 'resume' | 'academic' | 'custom';
 export type DocumentExportFormat = 'json' | 'markdown' | 'text' | 'docling' | 'mineru';
@@ -198,6 +196,13 @@ export interface GlossaryListItem {
   enabled: boolean;
   priority: number;
   group: string;
+}
+
+export interface GlossaryEntry {
+  source: string;
+  target: string;
+  note?: string;
+  [key: string]: unknown;
 }
 
 export interface GlossaryToggleRequest {
@@ -498,57 +503,119 @@ export interface TextArtifactHandle {
 export type RuntimeConfig = ConfigResponse;
 export type JobRecord = JobRecordResponse;
 
-// WebSocket frames
-export interface OcrProgressFrame {
-  type: 'ocr_progress';
-  channel_id: string;
-  job_id?: string;
+// WebSocket frames — mirror the frame builders in
+// omniscribe/api/services/progress.py (ProgressService.build_*_frame).
+// The legacy progress frame intentionally has NO `type` discriminator:
+// the server routes on shape ({status, percent, stage}) for backward
+// compatibility. Every other frame carries a `type` field.
+export interface ProgressFrame {
+  type?: undefined;
+  status: string;
   percent: number;
   stage: string;
-  warnings?: string[];
-  failed_pages?: number[];
-  chunk_summary?: ChunkSummary[];
+  warning?: boolean;
 }
 
 export interface BlockCompleteFrame {
   type: 'block_complete';
-  channel_id: string;
-  job_id?: string;
-  block_id: string;
-  page: number;
+  page_idx: number;
+  block_idx: number;
   bbox: number[];
+  text: string;
+  kind: string;
+  confidence: number | null;
+}
+
+export interface BlockRetryFrame {
+  type: 'block_retry';
+  page_idx: number;
+  block_idx: number;
+  attempt: number;
   confidence: number;
-  text: string;
+  target: number;
 }
 
-export interface TranslateChunkFrame {
-  type: 'translate_chunk';
-  channel_id: string;
-  job_id?: string;
-  chunk_index: number;
+export interface BlockRevisedFrame {
+  type: 'block_revised';
+  page_idx: number;
+  block_idx: number;
+  attempt: number;
+  bbox: number[];
   text: string;
-  done?: boolean;
+  kind: string;
+  confidence: number | null;
 }
 
-export interface TranscriptionProgressFrame {
-  type: 'transcription_progress';
-  channel_id: string;
+export interface PageCompleteFrame {
+  type: 'page_complete';
+  page_idx: number;
+}
+
+export interface QualitySummaryFrame {
+  type: 'quality_summary';
+  scope: string;
+  target: number;
+  avg_confidence: number;
+  repaired_count: number;
+  below_target_count: number;
+  page_idx?: number;
+}
+
+export interface ChunkInitFrame {
+  type: 'chunk_init';
+  total_chunks: number;
+  chapters: Record<string, unknown>[];
+}
+
+export interface ChunkCompleteFrame {
+  type: 'chunk_complete';
+  chunk_idx: number;
+  total_chunks: number;
+  page_range: string;
+  source_pages: number[];
+  text_chars_so_far: number;
+  overall_percent?: number;
+  chapters: Record<string, unknown>[];
+}
+
+export interface TranslateChunkCompleteFrame {
+  type: 'translate_chunk_complete';
+  chunk_idx: number;
+  source_chars: number;
+  translated_text: string;
+  target_language: string;
+}
+
+export interface CancelledFrame {
+  type: 'cancelled';
+  status: string;
   percent: number;
   stage: string;
 }
 
-export interface CancelFrame {
-  type: 'cancel';
-  channel_id: string;
+export interface GlossaryImportFrame {
+  type: 'glossary_import';
+  status: string;
+  glossary_id: string;
+  name: string;
+  format: string;
+  entry_count: number;
+  warnings: string[];
 }
 
 export type WebSocketEnvelope =
-  | OcrProgressFrame
+  | ProgressFrame
   | BlockCompleteFrame
-  | TranslateChunkFrame
-  | TranscriptionProgressFrame
-  | CancelFrame
-  | { type: string; channel_id?: string; [key: string]: unknown };
+  | BlockRetryFrame
+  | BlockRevisedFrame
+  | PageCompleteFrame
+  | QualitySummaryFrame
+  | ChunkInitFrame
+  | ChunkCompleteFrame
+  | TranslateChunkCompleteFrame
+  | CancelledFrame
+  | GlossaryImportFrame
+  | { type: string; [key: string]: unknown };
 
 export type ToastLevel = 'info' | 'success' | 'warning' | 'error';
 
@@ -568,33 +635,47 @@ export interface AuthTokens {
 }
 
 export interface ChunkSummary {
-  chunk_index: number;
+  chunk_idx: number;
   total_chunks: number;
-  pages: number[];
-  status: string;
+  page_range: string;
+  source_pages: number[];
+  text_chars_so_far: number;
+  overall_percent?: number;
+}
+
+export interface QualitySummary {
+  scope: string;
+  target: number;
+  avg_confidence: number;
+  repaired_count: number;
+  below_target_count: number;
+  page_idx?: number;
 }
 
 export interface JobState {
   activeJobId: string | null;
   percent: number;
   stage: string;
+  statusMessage: string;
   warnings: string[];
   chunks: ChunkSummary[];
   failedPages: number[];
+  completedPages: number[];
+  qualitySummary: QualitySummary | null;
   isProcessing?: boolean;
 }
 
 export interface BBoxItem {
   block_id: string;
   page: number;
+  block: number;
+  /** Normalized [x0, y0, x1, y1] in 0..1 page coordinates. */
   bbox: number[];
-  confidence: number;
+  confidence: number | null;
   text: string;
+  kind?: string;
+  revised?: boolean;
   label?: string;
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
 }
 
 export type BoundingBox = BBoxItem;

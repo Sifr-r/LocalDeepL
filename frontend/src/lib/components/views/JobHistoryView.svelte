@@ -35,8 +35,9 @@
       await fetchApi(`/jobs/${jobId}/cancel`, { method: 'POST' });
       pushToast('info', `Job ${jobId} cancellation requested.`, 3000);
       await loadJobs();
-    } catch (err: any) {
-      pushToast('error', err.message || 'Cancel failed', 4000);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      pushToast('error', message || 'Cancel failed', 4000);
     }
   }
 
@@ -48,8 +49,9 @@
       await fetchApi('/jobs', { method: 'DELETE' });
       jobs = [];
       pushToast('success', 'Job history cleared.', 3000);
-    } catch (err: any) {
-      pushToast('error', err.message || 'Clear failed', 4000);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      pushToast('error', message || 'Clear failed', 4000);
     }
   }
 
@@ -123,7 +125,7 @@
               </td>
             </tr>
           {:else}
-            {#each jobs as job}
+            {#each jobs as job (job.id)}
               <tr class="hover:bg-muted/50 transition-colors">
                 <td class="py-2.5 px-4 font-mono text-xs font-semibold text-brand truncate max-w-[120px]" title={job.id}>
                   {job.id}

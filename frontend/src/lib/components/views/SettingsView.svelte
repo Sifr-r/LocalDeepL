@@ -70,8 +70,9 @@
         await fetchApi('/config/translation/auth', { method: 'POST', body: JSON.stringify({ auth_token: $authStore.translation || null }) });
         pushToast('success', 'Server authentication tokens saved.', 3000);
       }
-    } catch (err: any) {
-      pushToast('error', err.message || 'Save failed', 4000);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      pushToast('error', message || 'Save failed', 4000);
     } finally {
       isSaving = false;
     }
@@ -117,7 +118,7 @@
       { id: 'translation', label: 'Translation namespace' },
       { id: 'transcription', label: 'Transcription namespace' },
       { id: 'auth', label: 'Server auth tokens' }
-    ] as tab}
+    ] as tab (tab.id)}
       <button
         type="button"
         on:click={() => activeNamespace = tab.id as Namespace}
@@ -191,7 +192,7 @@
           <div class="pt-4 border-t border-border space-y-3">
             <p class="form-label">Document processors</p>
             <div class="flex flex-wrap gap-2">
-              {#each availableProcessors as proc}
+              {#each availableProcessors as proc (proc.id)}
                 {@const active = ($configStore.document_processors || []).includes(proc.id)}
                 <button
                   type="button"

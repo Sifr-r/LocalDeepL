@@ -84,16 +84,19 @@ class OCRProcessor:
     # Page-level OCR (full image): up to ~4 minutes, ~6k tokens of output.
     # Dense handwritten pages with tables can easily produce 2-3k tokens
     # of markdown, so 6k leaves headroom without enabling endless loops.
-    # Override via ``OMNISCRIBE_VLM_PAGE_TIMEOUT`` (audit A-11).
+    # Override timeout via ``OMNISCRIBE_VLM_PAGE_TIMEOUT`` (audit A-11);
+    # override the token budget via ``OMNISCRIBE_VLM_PAGE_MAX_TOKENS``
+    # for tail-latency tuning on dense pages (Phase 5).
     PAGE_TIMEOUT_S: float = float(os.getenv("OMNISCRIBE_VLM_PAGE_TIMEOUT", "240.0"))
-    PAGE_MAX_TOKENS: int = 6144
+    PAGE_MAX_TOKENS: int = int(os.getenv("OMNISCRIBE_VLM_PAGE_MAX_TOKENS", "6144"))
 
     # Crop-level OCR (single box): a sentence at most. Capping much
     # tighter prevents a confused model from emitting a whole-page worth
     # of hallucinated text into one bbox during the refine stage.
-    # Override via ``OMNISCRIBE_VLM_CROP_TIMEOUT`` (audit A-11).
+    # Override via ``OMNISCRIBE_VLM_CROP_TIMEOUT`` (audit A-11); token
+    # budget via ``OMNISCRIBE_VLM_CROP_MAX_TOKENS`` (Phase 5).
     CROP_TIMEOUT_S: float = float(os.getenv("OMNISCRIBE_VLM_CROP_TIMEOUT", "60.0"))
-    CROP_MAX_TOKENS: int = 256
+    CROP_MAX_TOKENS: int = int(os.getenv("OMNISCRIBE_VLM_CROP_MAX_TOKENS", "256"))
 
     # Retry policy for transient VLM errors (429, 5xx, connection drops).
     # Exponential backoff: base * 2^attempt, capped at MAX. Env overrides:

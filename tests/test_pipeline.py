@@ -503,3 +503,19 @@ class TestPipelineRepairPassthrough:
         await pipe.run("in.pdf", "out.pdf", repair_options=opts)
 
         assert captured["repair_options"] is opts
+
+
+class TestWhitespaceRecallWiring:
+    def test_pipeline_injects_enabled_booster_by_default(self, monkeypatch):
+        monkeypatch.delenv("OMNISCRIBE_WHITESPACE_RECALL", raising=False)
+        pipe = OCRPipeline(_StubAligner(), _StubOCR(), _StubPDF())
+        booster = pipe._engine.recall_booster
+        assert booster is not None
+        assert booster.options.enabled is True
+
+    def test_pipeline_env_kill_switch_disables_booster(self, monkeypatch):
+        monkeypatch.setenv("OMNISCRIBE_WHITESPACE_RECALL", "off")
+        pipe = OCRPipeline(_StubAligner(), _StubOCR(), _StubPDF())
+        booster = pipe._engine.recall_booster
+        assert booster is not None
+        assert booster.options.enabled is False

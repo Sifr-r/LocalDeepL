@@ -14,6 +14,7 @@ export interface ProgressSocketController {
 
 export interface ConnectProgressSocketOptions {
   onMessage: (msg: WebSocketEnvelope) => void;
+  onOpen?: () => void;
   onError?: (err: Event) => void;
   onClose?: () => void;
   maxRetries?: number;
@@ -72,6 +73,9 @@ export function connectProgressSocket(
 
       socket.onopen = () => {
         retryCount = 0;
+        if (options?.onOpen) {
+          options.onOpen();
+        }
       };
 
       socket.onmessage = (event: MessageEvent) => {

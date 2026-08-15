@@ -6,7 +6,7 @@
  * Throttles execution of a function using requestAnimationFrame.
  * Guarantees that fn is invoked at most once per animation frame with the latest arguments.
  */
-export function rafThrottle<T extends (...args: any[]) => void>(fn: T): T {
+export function rafThrottle<T extends (...args: unknown[]) => void>(fn: T): T {
   let scheduledFrameId: number | null = null;
   let lastArgs: Parameters<T> | null = null;
 

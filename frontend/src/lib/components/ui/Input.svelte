@@ -11,6 +11,13 @@
    * Pass `error` to switch the input to the error state and show
    * the error message instead of the hint.
    */
+  // The DOM ``AutoFill`` enum isn't surfaced by every tsconfig / eslint
+  // globals combo, so we type the autocomplete values locally as a
+  // permissive string. The native input element accepts any
+  // WHATWG-autocomplete token; the browser falls back to ``on`` for
+  // unknown values, so the loose type matches the runtime contract
+  // without enumerating the spec's full template-literal union.
+  type AutoFillValue = string;
   export let id: string = `input-${Math.random().toString(36).slice(2, 9)}`;
   export let type: 'text' | 'password' | 'email' | 'number' | 'search' | 'url' | 'tel' = 'text';
   export let value: string | number = '';
@@ -44,7 +51,7 @@
     {min}
     {max}
     step={step}
-    autocomplete={autocomplete ? (autocomplete as any) : undefined}
+    autocomplete={(autocomplete ? (autocomplete as AutoFillValue) : undefined) as never}
     bind:value
     on:input
     on:change

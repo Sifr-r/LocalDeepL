@@ -24,6 +24,24 @@ export default ts.config(
     }
   },
   {
+    // Underscore-prefixed bindings (e.g. ``_obj``, ``_url``) are
+    // conventional placeholders for intentionally-unused parameters
+    // — the polyfills in ``src/__tests__/setup.ts`` and event stubs
+    // across the components rely on this pattern. Letting the linter
+    // accept them keeps the rule useful for the genuine cases without
+    // producing noise on deliberate no-op implementations.
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_'
+        }
+      ]
+    }
+  },
+  {
     ignores: ['build/', '.svelte-kit/', 'dist/']
   }
 );

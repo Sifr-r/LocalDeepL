@@ -256,3 +256,69 @@ class TestEmit:
         # Expect both embed events with terminal counts.
         assert ("embed", 0, 1) in events
         assert ("embed", 1, 1) in events
+
+    async def test_document_result_writer_path_skips_to_pages_data(self) -> None:
+        """Phase 4 fix: when a ``DocumentResultWriter`` is in use, the
+        lossless IR is passed straight through; ``to_pages_data()`` is
+        not called and ``pages_text`` is built from the IR directly."""
+        from omniscribe.core.workflows.base import DocumentResultWriter
+
+        captured: dict = {}
+        to_pages_calls = {"n": 0}
+
+        class _RichWriter(DocumentResultWriter):
+            def write_document_result(
+                self,
+                input_path: str,
+                output_pdf_path: str,
+                document_result,  # type: ignore[no-untyped-def]
+                dpi: int,
+            ) -> None:
+                captured["called"] = True
+                captured["input"] = input_path
+                captured["output"] = output_pdf_path
+                captured["dpi"] = dpi
+                captured["pages"] = len(document_result.pages)
+
+        real_to_pages = DocumentResult.to_pages_data
+
+        def _spy_to_pages(self):  # type: ignore[no-untyped-def]
+            to_pages_calls["n"] += 1
+            return real_to_pages(self)
+
+        class _WriterEngine(EngineBase):
+            pass
+
+        engine = _WriterEngine(output_writer=_RichWriter())
+        result_doc = DocumentResult.from_pages_data(
+            {
+                0: [
+                    ([0.0, 0.0, 1.0, 0.1], "alpha"),
+                    ([0.0, 0.1, 1.0, 0.2], "  "),  # whitespace-only → filtered
+                ],
+                1: [([0.0, 0.0, 1.0, 0.1], "beta")],
+            }
+        )
+        DocumentResult.to_pages_data = _spy_to_pages  # type: ignore[method-assign]
+        try:
+            pages_text = await engine._emit(
+                input_path="in.pdf",
+                output_path="out.pdf",
+                document_result=result_doc,
+                dpi=200,
+                progress=None,
+            )
+        finally:
+            DocumentResult.to_pages_data = real_to_pages  # type: ignore[method-assign]
+
+        # The rich writer received the lossless IR; to_pages_data is unused.
+        assert captured == {
+            "called": True,
+            "input": "in.pdf",
+            "output": "out.pdf",
+            "dpi": 200,
+            "pages": 2,
+        }
+        assert to_pages_calls["n"] == 0
+        # pages_text built from the IR directly: whitespace-only filtered.
+        assert pages_text == {0: ["alpha"], 1: ["beta"]}

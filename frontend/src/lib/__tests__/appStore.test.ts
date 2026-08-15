@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { get } from 'svelte/store';
-import { activeTab, themeStore, authStore, toastStore, loadAppConfig } from '../stores/appStore';
+import { activeTab, themeStore, authStore, toastStore, pushToast, loadAppConfig } from '../stores/appStore';
 
 describe('appStore', () => {
   beforeEach(() => {
@@ -21,12 +21,9 @@ describe('appStore', () => {
     toastStore.set([]);
     expect(get(toastStore).length).toBe(0);
 
-    const { pushToast } = toastStore as any;
-    if (pushToast) {
-      pushToast('info', 'Test notification', 5000);
-      expect(get(toastStore).length).toBe(1);
-      expect(get(toastStore)[0].message).toBe('Test notification');
-    }
+    pushToast('info', 'Test notification', 5000);
+    expect(get(toastStore).length).toBe(1);
+    expect(get(toastStore)[0].message).toBe('Test notification');
   });
 
   it('hydrates configuration on loadAppConfig', async () => {

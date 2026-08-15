@@ -14,7 +14,6 @@
   let selectedArtifactToken = '';
   let targetLanguage = 'French';
   let promptTemplate = 'Translate the following text accurately while maintaining context and terminology.';
-  let sourceModel = '';
   let targetModel = '';
   let isTranslating = false;
   let translatedOutput = '';
@@ -65,7 +64,7 @@
           model: targetModel || $configStore.translation_model || $configStore.model,
           api_base: $configStore.translation_api_base || $configStore.api_base,
         };
-        const res = await fetchApi<any>('/translate/tree', {
+        const res = await fetchApi<unknown>('/translate/tree', {
           method: 'POST',
           body: JSON.stringify(payload),
         });
@@ -88,8 +87,9 @@
         translatedOutput = res.translated_text;
         pushToast('success', 'Translation complete.', 3000);
       }
-    } catch (err: any) {
-      pushToast('error', err.message || 'Translation failed', 4000);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      pushToast('error', message || 'Translation failed', 4000);
     } finally {
       isTranslating = false;
     }
@@ -119,10 +119,11 @@
       asyncJobId = res.job_id;
       asyncStatus = `Job queued: ${res.job_id}. Polling status...`;
       pushToast('info', `Async job queued: ${res.job_id}`, 3000);
-      pollAsyncStatus(res.job_id);
-    } catch (err: any) {
-      asyncStatus = `Async queue error: ${err.message}`;
-      pushToast('error', err.message || 'Async translation failed', 4000);
+      pollAsyncStatus(asyncJobId);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      asyncStatus = `Async queue error: ${message}`;
+      pushToast('error', message || 'Async translation failed', 4000);
       isTranslating = false;
     }
   }
@@ -130,7 +131,7 @@
   async function pollAsyncStatus(jobId: string) {
     const interval = setInterval(async () => {
       try {
-        const res = await fetchApi<any>(`/translate/status/${jobId}`, { silent: true });
+        const res = await fetchApi<{ state?: string; status?: string; result?: unknown; error?: string }>(`/translate/status/${jobId}`, { silent: true });
         asyncStatus = `Status: ${res.state || res.status}`;
         if (res.state === 'SUCCESS') {
           clearInterval(interval);
@@ -142,7 +143,7 @@
           isTranslating = false;
           pushToast('error', res.error || 'Async job failed', 4000);
         }
-      } catch (err) {
+      } catch {
         clearInterval(interval);
         isTranslating = false;
       }

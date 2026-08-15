@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { activeTab, themeStore, type TabType } from '../../stores/appStore';
+  import { onDestroy, onMount } from 'svelte';
+  import { activeTab, themeStore, websocketStore, type TabType } from '../../stores/appStore';
 
   const tabs: { id: string; label: string; tabKey: TabType }[] = [
     { id: 'app-tab-btn-workstation', label: 'OCR Workstation', tabKey: 'workstation' },
@@ -10,6 +11,46 @@
     { id: 'app-tab-btn-transcription', label: 'Transcription', tabKey: 'transcription' },
     { id: 'app-tab-btn-extraction', label: 'Extraction', tabKey: 'extraction' }
   ];
+
+  // Honest connection status: liveness ping against /health plus the
+  // live WebSocket state while a job is streaming.
+  const HEALTH_POLL_MS = 15000;
+  let backendOnline: boolean | null = null; // null = probing
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function pingHealth() {
+    try {
+      const res = await fetch('/health', { cache: 'no-store' });
+      backendOnline = res.ok;
+    } catch {
+      backendOnline = false;
+    }
+  }
+
+  onMount(() => {
+    void pingHealth();
+    pollTimer = setInterval(pingHealth, HEALTH_POLL_MS);
+  });
+
+  onDestroy(() => {
+    if (pollTimer) clearInterval(pollTimer);
+  });
+
+  type ConnState = 'checking' | 'offline' | 'online' | 'live';
+  $: connState = ($websocketStore.isConnected
+    ? 'live'
+    : backendOnline === null
+    ? 'checking'
+    : backendOnline
+    ? 'online'
+    : 'offline') as ConnState;
+
+  const connLabel: Record<ConnState, string> = {
+    checking: 'Checking…',
+    offline: 'Offline',
+    online: 'Online',
+    live: 'Live'
+  };
 
   function toggleTheme() {
     themeStore.update((t) => (t === 'dark' ? 'light' : 'dark'));
@@ -34,7 +75,7 @@
 
     <!-- Navigation Tabs -->
     <nav class="flex items-center gap-1 overflow-x-auto -mx-1 px-1">
-      {#each tabs as tab}
+      {#each tabs as tab (tab.id)}
         <button
           id={tab.id}
           type="button"
@@ -56,13 +97,32 @@
 
   <!-- Right cluster: status + theme toggle -->
   <div class="flex items-center gap-2 shrink-0">
-    <!-- Connection status -->
-    <div class="hidden sm:inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-muted border border-border text-[11px] font-mono text-foreground-muted">
+    <!-- Connection status (honest: /health probe + live WS state) -->
+    <div
+      class="hidden sm:inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-muted border border-border text-[11px] font-mono text-foreground-muted"
+      title={connState === 'live'
+        ? 'Progress stream connected'
+        : connState === 'online'
+        ? 'Backend reachable'
+        : connState === 'offline'
+        ? 'Backend unreachable'
+        : 'Probing backend…'}
+      role="status"
+      aria-live="polite"
+    >
       <span class="relative flex h-2 w-2">
-        <span class="absolute inline-flex h-full w-full rounded-full bg-success opacity-60 animate-ping"></span>
-        <span class="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
+        {#if connState === 'live'}
+          <span class="absolute inline-flex h-full w-full rounded-full bg-success opacity-60 animate-ping"></span>
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
+        {:else if connState === 'online'}
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
+        {:else if connState === 'offline'}
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-danger"></span>
+        {:else}
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-warning animate-pulse"></span>
+        {/if}
       </span>
-      <span>Connected</span>
+      <span>{connLabel[connState]}</span>
     </div>
 
     <!-- Theme toggle -->

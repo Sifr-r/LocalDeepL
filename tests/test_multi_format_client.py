@@ -52,7 +52,7 @@ def ollama_config() -> ProviderConfig:
 async def test_openai_compatible_dispatch(openai_config: ProviderConfig) -> None:
     expected_resp = {"choices": [{"message": {"content": "Extracted OCR text"}}]}
 
-    async def mock_post(url: str, json: dict, headers: dict):
+    async def mock_post(url: str, json: dict, headers: dict, **kwargs):
         assert "chat/completions" in url
         assert headers["Authorization"] == "Bearer test-sk-key"
         assert json["model"] == "gpt-4o"
@@ -71,7 +71,7 @@ async def test_openai_compatible_dispatch(openai_config: ProviderConfig) -> None
 async def test_anthropic_compatible_dispatch(anthropic_config: ProviderConfig) -> None:
     expected_resp = {"content": [{"type": "text", "text": "Anthropic response text"}]}
 
-    async def mock_post(url: str, json: dict, headers: dict):
+    async def mock_post(url: str, json: dict, headers: dict, **kwargs):
         assert "messages" in url
         assert headers["x-api-key"] == "test-anthropic-key"
         assert headers["anthropic-version"] == "2023-06-01"
@@ -92,7 +92,7 @@ async def test_anthropic_compatible_dispatch(anthropic_config: ProviderConfig) -
 async def test_ollama_compatible_dispatch(ollama_config: ProviderConfig) -> None:
     expected_resp = {"message": {"content": "Ollama extracted text"}}
 
-    async def mock_post(url: str, json: dict, headers: dict):
+    async def mock_post(url: str, json: dict, headers: dict, **kwargs):
         assert "api/chat" in url
         assert json["model"] == "llama3.2-vision"
         assert json["messages"][0]["images"] == ["aW1hZ2VfZGF0YQ=="]
@@ -108,7 +108,7 @@ async def test_ollama_compatible_dispatch(ollama_config: ProviderConfig) -> None
 
 
 async def test_non_200_raises_llm_call_error(openai_config: ProviderConfig) -> None:
-    async def mock_post(url: str, json: dict, headers: dict):
+    async def mock_post(url: str, json: dict, headers: dict, **kwargs):
         return httpx.Response(400, text="Bad Request: Model not found")
 
     with patch("httpx.AsyncClient.post", side_effect=mock_post):
@@ -120,7 +120,7 @@ async def test_non_200_raises_llm_call_error(openai_config: ProviderConfig) -> N
 async def test_call_vlm_wrapper(openai_config: ProviderConfig) -> None:
     expected_resp = {"choices": [{"message": {"content": "VLM wrapper output"}}]}
 
-    async def mock_post(url: str, json: dict, headers: dict):
+    async def mock_post(url: str, json: dict, headers: dict, **kwargs):
         return httpx.Response(200, json=expected_resp)
 
     with patch("httpx.AsyncClient.post", side_effect=mock_post):
@@ -131,7 +131,7 @@ async def test_call_vlm_wrapper(openai_config: ProviderConfig) -> None:
 async def test_call_llm_wrapper_with_messages() -> None:
     expected_resp = {"choices": [{"message": {"content": "LLM wrapper output"}}]}
 
-    async def mock_post(url: str, json: dict, headers: dict):
+    async def mock_post(url: str, json: dict, headers: dict, **kwargs):
         return httpx.Response(200, json=expected_resp)
 
     with patch("httpx.AsyncClient.post", side_effect=mock_post):
@@ -142,3 +142,90 @@ async def test_call_llm_wrapper_with_messages() -> None:
             messages=[{"role": "user", "content": "Translate this sentence"}],
         )
         assert res == "LLM wrapper output"
+
+
+# --- Phase 2: timeout forwarding + shared client (fixes the silent 60s
+# cap that the OCRProcessor's OMNISCRIBE_VLM_PAGE_TIMEOUT used to be
+# overridden by, and removes the per-call TCP+TLS handshake). ---
+
+
+async def test_timeout_forwarded_to_client_post(openai_config: ProviderConfig) -> None:
+    expected_resp = {"choices": [{"message": {"content": "ok"}}]}
+    seen: dict = {}
+
+    async def mock_post(url: str, json: dict, headers: dict, **kwargs):
+        seen["timeout"] = kwargs.get("timeout")
+        return httpx.Response(200, json=expected_resp)
+
+    with patch("httpx.AsyncClient.post", side_effect=mock_post):
+        await complete_vlm_prompt(
+            openai_config,
+            prompt="p",
+            timeout=240.0,
+        )
+    assert seen["timeout"] == 240.0
+
+
+async def test_timeout_defaults_to_pool_default_when_unset(
+    openai_config: ProviderConfig,
+) -> None:
+    expected_resp = {"choices": [{"message": {"content": "ok"}}]}
+    seen: dict = {}
+
+    async def mock_post(url: str, json: dict, headers: dict, **kwargs):
+        seen["timeout"] = kwargs.get("timeout")
+        return httpx.Response(200, json=expected_resp)
+
+    with patch("httpx.AsyncClient.post", side_effect=mock_post):
+        await complete_vlm_prompt(openai_config, prompt="p")
+    # None → falls back to the shared client's default of 60s.
+    assert seen["timeout"] == 60.0
+
+
+async def test_call_llm_forwards_timeout() -> None:
+    expected_resp = {"choices": [{"message": {"content": "ok"}}]}
+    seen: dict = {}
+
+    async def mock_post(url: str, json: dict, headers: dict, **kwargs):
+        seen["timeout"] = kwargs.get("timeout")
+        return httpx.Response(200, json=expected_resp)
+
+    with patch("httpx.AsyncClient.post", side_effect=mock_post):
+        await call_llm(
+            api_base="http://localhost:1234/v1",
+            api_key="key",
+            model="gpt-4o",
+            prompt="x",
+            timeout=123.0,
+        )
+    assert seen["timeout"] == 123.0
+
+
+async def test_shared_client_reused_across_calls() -> None:
+    """Two calls must use the same AsyncClient instance (the whole point
+    of the cache: keep the connection pool warm)."""
+    from omniscribe.core.ocr import multi_format_client
+
+    # Reset the shared client so we observe the lazy-init path.
+    await multi_format_client.aclose_shared_client()
+
+    openai_cfg = ProviderConfig(
+        id="t",
+        display_name="t",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        api_url="http://mock.local/v1",
+        api_key="k",
+        models=["m"],
+    )
+
+    async def ok_post(*args, **kwargs):
+        return httpx.Response(200, json={"choices": [{"message": {"content": "x"}}]})
+
+    with patch("httpx.AsyncClient.post", side_effect=ok_post):
+        c1 = multi_format_client._get_shared_client()
+        await complete_vlm_prompt(openai_cfg, prompt="p")
+        c2 = multi_format_client._get_shared_client()
+        await complete_vlm_prompt(openai_cfg, prompt="p")
+
+    assert c1 is c2, "shared client must be reused across calls"
+    await multi_format_client.aclose_shared_client()

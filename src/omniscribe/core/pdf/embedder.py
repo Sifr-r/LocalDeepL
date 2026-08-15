@@ -9,7 +9,9 @@ and searchable PDF output generation.
 from __future__ import annotations
 
 import io
+import os
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,27 @@ from omniscribe.core.pdf.rasterizer import (
     _calculate_safe_dpi,
     _emit_pymupdf_agpl_notice,
     _is_image_path,
+)
+
+# Module-level font cache. ``fitz.Font("helv")`` loads the built-in
+# Helvetica metrics once per call; doing that once per text box on a
+# 200-page PDF is the kind of micro-cost that adds up to a second.
+_EMBED_FONT: fitz.Font | None = None
+_EMBED_FONT_ASCENDER: float = 1.075
+_EMBED_FONT_DESCENDER: float = -0.299
+
+
+def _get_embed_font() -> fitz.Font:
+    global _EMBED_FONT
+    if _EMBED_FONT is None:
+        _EMBED_FONT = fitz.Font("helv")
+    return _EMBED_FONT
+
+
+# Thread-pool worker count for parallel embed-side page rasterization.
+# Defaults to the same env knob the VLM-side rasterizer uses.
+_EMBED_RASTER_WORKERS = max(
+    1, min(8, int(os.getenv("OMNISCRIBE_RASTERIZER_WORKERS", "4")))
 )
 
 
@@ -127,9 +150,9 @@ def _draw_single_line_text(
     box_width = pdf_rect.width
     box_height = pdf_rect.height
 
-    font = fitz.Font("helv")
-    ascender = getattr(font, "ascender", 1.075)
-    descender = getattr(font, "descender", -0.299)
+    font = _get_embed_font()
+    ascender = getattr(font, "ascender", _EMBED_FONT_ASCENDER)
+    descender = getattr(font, "descender", _EMBED_FONT_DESCENDER)
     extent_em = max(0.01, ascender - descender)
     fontsize = max(3.0, min(72.0, box_height / extent_em))
 
@@ -207,11 +230,22 @@ def _embed_from_image_input(
         new_doc.close()
 
 
+def _rasterize_embed_page(page: fitz.Page, dpi: int) -> tuple[float, float, bytes]:
+    """Rasterize one page for sandwich embed; thread-safe across pages."""
+    width = page.rect.width
+    height = page.rect.height
+    safe_dpi = _calculate_safe_dpi(width, height, dpi)
+    pix = page.get_pixmap(dpi=safe_dpi)
+    img_data = pix.tobytes("jpg", jpg_quality=EMBED_JPEG_QUALITY_PDF)
+    return width, height, img_data
+
+
 def embed_structured_text(
     input_pdf_path: str | Path,
     output_pdf_path: str | Path,
     pages_data: dict[int, list[tuple[BBox, str]]],
     dpi: int = 200,
+    parallelism: int = _EMBED_RASTER_WORKERS,
 ) -> None:
     """
     Build a searchable "sandwich" PDF: rasterize each page as a background
@@ -219,6 +253,11 @@ def embed_structured_text(
 
     Accepts either a PDF or a raw image (JPEG/PNG/TIFF/BMP/WebP/AVIF)
     as input.
+
+    ``parallelism`` fans the per-page rasterization across a small
+    thread pool. PyMuPDF is C-bound and ``Page.get_pixmap`` is
+    thread-safe per-page, so on a 4-core host this is the difference
+    between a sequential and a near-linear parallel pass.
     """
     if _is_image_path(input_pdf_path):
         _embed_from_image_input(input_pdf_path, output_pdf_path, pages_data)
@@ -230,18 +269,32 @@ def embed_structured_text(
     new_doc = fitz.open()
 
     try:
-        for page_num in range(len(doc)):
-            old_page = doc[page_num]
-            width = old_page.rect.width
-            height = old_page.rect.height
+        page_nums = list(range(len(doc)))
+        if not page_nums:
+            new_doc.save(output_pdf_path)
+            return
 
-            safe_dpi = _calculate_safe_dpi(width, height, dpi)
-            pix = old_page.get_pixmap(dpi=safe_dpi)
-            img_data = pix.tobytes("jpg", jpg_quality=EMBED_JPEG_QUALITY_PDF)
+        # Pre-rasterize every page in parallel. ``Page.get_pixmap`` is
+        # thread-safe so we can call it concurrently on different pages
+        # of the same document.
+        if parallelism <= 1 or len(page_nums) == 1:
+            rasterized = [_rasterize_embed_page(doc[pn], dpi) for pn in page_nums]
+        else:
+            workers = min(parallelism, len(page_nums))
+            with ThreadPoolExecutor(
+                max_workers=workers, thread_name_prefix="embed-raster"
+            ) as pool:
+                rasterized = list(
+                    pool.map(lambda pn: _rasterize_embed_page(doc[pn], dpi), page_nums)
+                )
 
+        # Page construction and text insertion run serially — both touch
+        # the single ``new_doc`` and aren't thread-safe.
+        for page_num, (width, height, img_data) in zip(
+            page_nums, rasterized, strict=True
+        ):
             new_page = new_doc.new_page(width=width, height=height)
             new_page.insert_image(new_page.rect, stream=img_data)
-
             for rect_coords, text in pages_data.get(page_num, []):
                 _draw_invisible_text(new_page, rect_coords, text, width, height)
 

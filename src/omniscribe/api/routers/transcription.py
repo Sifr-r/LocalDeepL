@@ -15,8 +15,10 @@ from omniscribe.api.schemas.responses import (
     TranscriptionConfigResponse,
     TranscriptionJobResponse,
 )
+from omniscribe.api.services.security import SAFE_API_BASE_ERROR
 from omniscribe.api.services.transcription import TranscriptionService
 from omniscribe.core.transcription import AudioValidationError, TranscriptionError
+from omniscribe.utils.security import is_ssrf_target
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -41,6 +43,12 @@ async def transcribe_audio(
     """
     file_bytes = await file.read()
 
+    resolved_api_base = str(
+        api_base or _config.get("transcription_api_base", "https://api.openai.com/v1")
+    )
+    if await is_ssrf_target(resolved_api_base):
+        raise HTTPException(status_code=403, detail=SAFE_API_BASE_ERROR)
+
     try:
         res = await _service.transcribe_audio(
             file_bytes=file_bytes,
@@ -48,10 +56,7 @@ async def transcribe_audio(
             content_type=file.content_type,
             engine_type=str(engine or _config.get("transcription_engine", "api")),
             model=str(model or _config.get("transcription_model", "whisper-1")),
-            api_base=str(
-                api_base
-                or _config.get("transcription_api_base", "https://api.openai.com/v1")
-            ),
+            api_base=resolved_api_base,
             api_key=str(api_key or _config.get("transcription_api_key", "")) or None,
             language=str(language or _config.get("transcription_language") or "")
             or None,
@@ -75,6 +80,18 @@ async def get_transcription_models() -> Any:
     api_base = str(_config.get("transcription_api_base", "https://api.openai.com/v1"))
     api_key = str(_config.get("transcription_api_key", "")) or None
 
+    fallback_models = [
+        "whisper-1",
+        "whisper-large-v3",
+        "whisper-medium",
+        "whisper-base",
+        "whisper-small",
+        "whisper-tiny",
+    ]
+
+    if await is_ssrf_target(api_base):
+        return ModelsResponse(models=fallback_models)
+
     try:
         import httpx
 
@@ -93,15 +110,6 @@ async def get_transcription_models() -> Any:
             "Failed to fetch models from transcription api_base %s: %s", api_base, exc
         )
 
-    # Standard fallback models list
-    fallback_models = [
-        "whisper-1",
-        "whisper-large-v3",
-        "whisper-medium",
-        "whisper-base",
-        "whisper-small",
-        "whisper-tiny",
-    ]
     return ModelsResponse(models=fallback_models)
 
 
@@ -133,6 +141,8 @@ async def get_transcription_config() -> Any:
 async def update_transcription_config(body: TranscriptionConfigUpdate) -> Any:
     """Update runtime configuration for voice transcription."""
     if body.api_base is not None:
+        if await is_ssrf_target(body.api_base):
+            raise HTTPException(status_code=403, detail=SAFE_API_BASE_ERROR)
         _config["transcription_api_base"] = body.api_base
     if body.transcription_api_key is not None:
         _config["transcription_api_key"] = body.transcription_api_key

@@ -22,6 +22,7 @@ from omniscribe.core.ocr_quality import TrustOrchestrator
 from omniscribe.core.preprocessing import PagePreprocessingOptions, PagePreprocessor
 from omniscribe.core.processors import DocumentProcessor
 from omniscribe.core.routing import QualityRoutingOptions
+from omniscribe.core.text_recall import WhitespaceRecallBooster, WhitespaceRecallOptions
 from omniscribe.core.workflows import (
     AnyOutputWriter,
     DocumentResultWriter,
@@ -97,6 +98,9 @@ class OCRPipeline:
                 page_preprocessor=page_preprocessor,
                 block_callbacks=block_callbacks,
                 trust_orchestrator=trust_orchestrator,
+                recall_booster=WhitespaceRecallBooster(
+                    WhitespaceRecallOptions.from_env()
+                ),
             )
 
     @property

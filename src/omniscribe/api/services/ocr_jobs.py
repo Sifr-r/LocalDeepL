@@ -141,6 +141,11 @@ class OCRJobQueue:
             float(retention_s) if retention_s is not None else _resolve_retention_s()
         )
 
+    @property
+    def running(self) -> bool:
+        """Return True if the background worker task is active and not finished."""
+        return self._worker is not None and not self._worker.done()
+
     async def start(self) -> None:
         """Spawn the background worker (idempotent)."""
         if self._worker is None or self._worker.done():

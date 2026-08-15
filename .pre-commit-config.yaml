@@ -3,7 +3,8 @@
 # Install once after cloning: `uv tool run pre-commit install`.
 # The `uv lock` hook keeps ``uv.lock`` in sync with ``pyproject.toml``
 # when dependency-affecting files change; the ruff hooks enforce the
-# lint / format gates locally so CI doesn't surprise you.
+# lint / format gates locally so CI doesn't surprise you; the mypy
+# hook catches type errors before they reach review.
 #
 # Ruff is pinned to a recent stable version matching the ``>=0.3.0``
 # dev requirement in ``pyproject.toml``. Bump both in lockstep.
@@ -15,6 +16,14 @@ repos:
       - id: ruff
         args: ["--fix"]
       - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.15.0
+    hooks:
+      - id: mypy
+        args: ["src"]
+        pass_filenames: false
+        additional_dependencies: []
 
   - repo: https://github.com/astral-sh/uv-pre-commit
     rev: 0.8.7
