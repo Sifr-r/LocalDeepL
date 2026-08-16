@@ -84,7 +84,7 @@ nllb = [
 
 # Translation quality scoring (chrF++, BLEU, etc.).
 quality = [
-    "sacrebleu>=2.4.0",
+    "sacrebleu>=2.6.0",
 ]
 
 
