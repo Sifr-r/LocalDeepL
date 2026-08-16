@@ -118,7 +118,19 @@ def _font_preserves_codepoints(font: fitz.Font) -> bool:
             return got == probe
         finally:
             doc.close()
-    except Exception:
+    except (RuntimeError, ValueError, OSError) as exc:
+        # PyMuPDF raises ``RuntimeError`` for font-insert / text-extract
+        # failures (e.g. malformed font buffer, unsupported glyphs);
+        # ``ValueError`` for invalid arguments; ``OSError`` for
+        # underlying file-system errors during the in-memory PDF
+        # round-trip. Returning ``True`` preserves the previous fail-open
+        # behaviour, so an embedded font never blocks output; the warning
+        # is the operator-visible signal that the probe is unreliable.
+        logger.warning(
+            "Embedder font probe failed: %s",
+            exc,
+            exc_info=True,
+        )
         return True
 
 

@@ -484,7 +484,18 @@ class OCRProcessor:
             # Fallback to multiple common languages (or just Arabic/English for this workload)
             draft: str = pytesseract.image_to_string(img, lang="ara+eng")
             return draft.strip()
-        except Exception:
+        except (ImportError, OSError, RuntimeError, ValueError) as exc:
+            # ``ImportError`` covers the soft-dep case where pytesseract or
+            # PIL is not installed in this environment; ``RuntimeError``
+            # covers ``pytesseract.TesseractError`` (TesseractError subclasses
+            # RuntimeError) and any subprocess failure; ``OSError`` covers
+            # PIL file errors and tesseract binary-not-found; ``ValueError``
+            # covers malformed base64 input.
+            logger.warning(
+                "OCR pytesseract fallback failed: %s",
+                exc,
+                exc_info=True,
+            )
             return ""
 
     def _resolve_page_system(
@@ -563,7 +574,16 @@ class OCRProcessor:
             buf = io.BytesIO()
             binary.save(buf, format="PNG")
             return base64.b64encode(buf.getvalue()).decode("utf-8")
-        except Exception:
+        except (ImportError, OSError, ValueError) as exc:
+            # ``ImportError`` covers the case where numpy or PIL is not
+            # installed in this environment; ``OSError`` covers PIL file
+            # errors and array-to-image conversion failures; ``ValueError``
+            # covers malformed base64 input and array-shape mismatches.
+            logger.warning(
+                "OCR adaptive threshold fallback failed: %s",
+                exc,
+                exc_info=True,
+            )
             return image_base64
 
 
