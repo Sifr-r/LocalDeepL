@@ -52,17 +52,20 @@ async def _open_session(base_url: str) -> tuple[str, str]:
 async def _capture(
     channel_id: str, token: str, base_url: str, seconds: float, log_path: Path
 ) -> None:
-    ws_url = f"{base_url.replace('http', 'ws', 1)}/ws/{channel_id}?token={token}"
+    ws_url = f"{base_url.replace('http', 'ws', 1)}/ws/{channel_id}"
     print(f"[{_now_iso()}] connecting to {ws_url}", flush=True)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("w", encoding="utf-8") as log:
         log.write(f"# WebSocket capture started at {_now_iso()}\n")
         log.write(f"# channel_id={channel_id}\n")
-        log.write(f"# token={token}\n")
         log.write(f"# ws_url={ws_url}\n\n")
         log.flush()
         try:
             async with websockets.connect(ws_url) as ws:
+                # The token travels in the first frame, not the URL.
+                await ws.send(
+                    json.dumps({"type": "auth", "session_token": token})
+                )
                 print(f"[{_now_iso()}] connected", flush=True)
                 deadline = asyncio.get_event_loop().time() + seconds
                 frame_index = 0

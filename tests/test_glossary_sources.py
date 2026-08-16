@@ -134,3 +134,61 @@ def test_redact_dsn_masks_credentials() -> None:
     assert "***" in redact_dsn("postgres://user:secret@host/db")
     # Password-like query params also get scrubbed.
     assert "password=***" in redact_dsn("postgres://host/db?password=top")
+
+
+class TestSafeXmlRoot:
+    """Audit P1-8: glossary XML must be parsed through defusedxml.
+
+    These pin the rejection contract that used to be a substring
+    pre-filter (which both false-positived on ordinary content and
+    could be bypassed) and the one false-positive the old filter had.
+    """
+
+    def test_external_entity_reference_is_rejected(self) -> None:
+        from omniscribe.core.glossary_sources._common import safe_xml_root
+
+        payload = (
+            b'<?xml version="1.0"?>'
+            b"<!DOCTYPE martif [<!ENTITY xxe SYSTEM 'file:///c:/windows/win.ini'>]>"
+            b"<martif><term>&xxe;</term></martif>"
+        )
+        with pytest.raises(ValueError, match="not allowed in glossary XML"):
+            safe_xml_root(payload)
+
+    def test_entity_expansion_bomb_is_rejected(self) -> None:
+        from omniscribe.core.glossary_sources._common import safe_xml_root
+
+        payload = (
+            b'<?xml version="1.0"?>'
+            b"<!DOCTYPE lolz ["
+            b'<!ENTITY lol "lol">'
+            b'<!ENTITY lol2 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">'
+            b"]><martif>&lol2;</martif>"
+        )
+        with pytest.raises(ValueError, match="not allowed in glossary XML"):
+            safe_xml_root(payload)
+
+    def test_bare_doctype_is_rejected(self) -> None:
+        from omniscribe.core.glossary_sources._common import safe_xml_root
+
+        payload = b'<?xml version="1.0"?><!DOCTYPE martif><martif/>'
+        with pytest.raises(ValueError, match="not allowed in glossary XML"):
+            safe_xml_root(payload)
+
+    def test_system_word_in_content_is_not_a_false_positive(self) -> None:
+        """The old substring filter rejected any document containing the
+        literal text ``SYSTEM``; defusedxml only inspects declarations."""
+        from omniscribe.core.glossary_sources._common import safe_xml_root
+
+        payload = (
+            b'<?xml version="1.0"?>'
+            b"<martif><term>operating SYSTEM manual</term></martif>"
+        )
+        root = safe_xml_root(payload)
+        assert root.tag == "martif"
+
+    def test_malformed_xml_raises_stable_value_error(self) -> None:
+        from omniscribe.core.glossary_sources._common import safe_xml_root
+
+        with pytest.raises(ValueError, match="Invalid glossary XML"):
+            safe_xml_root(b"<martif><term>")

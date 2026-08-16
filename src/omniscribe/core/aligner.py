@@ -9,6 +9,7 @@ over (LLM lines, detected boxes). Skipping Surya's recognition step is
 
 import io
 import logging
+import threading
 
 from omniscribe.utils import tqdm_patch
 
@@ -21,6 +22,67 @@ from surya.detection import DetectionPredictor  # noqa: E402
 from omniscribe.core.document import BBox  # noqa: E402
 
 logger = logging.getLogger(__name__)
+
+
+# Audit P2-9: ``DetectionPredictor`` loads Surya's model weights (seconds of
+# work plus VRAM). The pipeline factory used to construct a fresh
+# ``HybridAligner`` — and therefore a fresh predictor — on every request.
+# The predictor is now a process-wide singleton, mirroring the
+# circuit-breaker registry pattern in ``core.ocr.resilience``.
+_shared_predictor: DetectionPredictor | None = None
+_shared_predictor_lock = threading.Lock()
+
+
+def get_shared_detection_predictor() -> DetectionPredictor:
+    """Return the process-wide Surya :class:`DetectionPredictor`.
+
+    Lazily constructed on first call; subsequent calls return the same
+    instance so concurrent requests share one loaded model instead of
+    each paying the load cost (and holding a second resident copy in
+    VRAM). Detection calls through :class:`HybridAligner` are serialized
+    on the same lock, which is the right behaviour for a local GPU
+    anyway — two concurrent forward passes would contend for the same
+    device.
+    """
+    global _shared_predictor
+    if _shared_predictor is None:
+        with _shared_predictor_lock:
+            if _shared_predictor is None:
+                _shared_predictor = DetectionPredictor()
+    return _shared_predictor
+
+
+def reset_shared_detection_predictor() -> None:
+    """Drop the shared predictor. Test helper."""
+    global _shared_predictor
+    with _shared_predictor_lock:
+        _shared_predictor = None
+
+
+_shared_aligner: "HybridAligner | None" = None
+_shared_aligner_lock = threading.Lock()
+
+
+def get_shared_hybrid_aligner() -> "HybridAligner":
+    """Return the process-wide shared :class:`HybridAligner`.
+
+    The aligner is stateless apart from the predictor it wraps, so the
+    API-layer pipeline factory reuses one instance across requests
+    instead of constructing (and model-loading) a new one each time.
+    """
+    global _shared_aligner
+    if _shared_aligner is None:
+        with _shared_aligner_lock:
+            if _shared_aligner is None:
+                _shared_aligner = HybridAligner()
+    return _shared_aligner
+
+
+def reset_shared_hybrid_aligner() -> None:
+    """Drop the shared aligner. Test helper."""
+    global _shared_aligner
+    with _shared_aligner_lock:
+        _shared_aligner = None
 
 
 class HybridAligner:
@@ -36,8 +98,16 @@ class HybridAligner:
     attached to the nearest matched box so no text is lost.
     """
 
-    def __init__(self) -> None:
-        self.detection_predictor = DetectionPredictor()
+    def __init__(self, detection_predictor: DetectionPredictor | None = None) -> None:
+        # Default to the process-wide shared predictor (audit P2-9). An
+        # injected predictor gets its own detection lock so it never
+        # contends with the shared one.
+        if detection_predictor is None:
+            self.detection_predictor = get_shared_detection_predictor()
+            self._detection_lock = _shared_predictor_lock
+        else:
+            self.detection_predictor = detection_predictor
+            self._detection_lock = threading.Lock()
 
     def get_detected_boxes_batch(
         self, images_bytes_list: list[bytes]
@@ -52,10 +122,23 @@ class HybridAligner:
         images = [Image.open(io.BytesIO(b)).convert("RGB") for b in images_bytes_list]
         sizes = [img.size for img in images]
 
-        def run_detection() -> list[list[BBox]]:
-            predictions = self.detection_predictor(images)
+        def run_detection() -> list[list[BBox]] | None:
+            # Detection is serialized on the predictor's lock — the shared
+            # predictor (audit P2-9) must never run two forward passes at
+            # once, and a local GPU gains nothing from concurrent passes.
+            with self._detection_lock:
+                predictions = self.detection_predictor(images)
+            try:
+                # Audit P2-9: ``strict=True`` — a short/long Surya batch is
+                # a real contract violation. The old ``strict=False`` zip
+                # silently dropped the tail pages, then raised an
+                # ``IndexError`` far away from here when per-page code
+                # reached past the truncated list and killed the whole job.
+                pairs = list(zip(sizes, predictions, strict=True))
+            except ValueError:
+                return None
             all_boxes: list[list[BBox]] = []
-            for (img_w, img_h), pred in zip(sizes, predictions, strict=False):
+            for (img_w, img_h), pred in pairs:
                 boxes: list[BBox] = []
                 for bbox in pred.bboxes or []:
                     x0, y0, x1, y1 = bbox.bbox
@@ -75,14 +158,35 @@ class HybridAligner:
             return all_boxes
 
         all_boxes = run_detection()
+        if all_boxes is None:
+            # Chunk-level degradation (audit P2-9): a mismatched batch
+            # degrades this detection chunk to no detected boxes rather
+            # than aborting the job. Alignment falls back to a full-page
+            # box per page, so the LLM text still lands in the output.
+            logger.warning(
+                "Surya returned a mismatched prediction count for %d page(s); "
+                "degrading chunk to no detected boxes.",
+                len(images_bytes_list),
+            )
+            return [[] for _ in images_bytes_list]
         # Surya can occasionally return an entirely empty batch immediately
         # after predictor initialization on local backends. Retry only when every
         # page is empty; a real blank page inside a mixed batch must stay blank.
-        for _ in range(3):
+        # Audit P2-9: retries reuse the (now shared) predictor instead of
+        # rebuilding it — rebuilding was loading the model weights up to
+        # three more times for legitimately blank scans.
+        for attempt in range(1, 4):
             if any(all_boxes):
                 break
-            self.detection_predictor = DetectionPredictor()
-            all_boxes = run_detection()
+            logger.warning(
+                "Surya returned an entirely empty batch; retrying detection "
+                "(%d/3) on the same predictor.",
+                attempt,
+            )
+            retried = run_detection()
+            if retried is None:
+                return [[] for _ in images_bytes_list]
+            all_boxes = retried
         return all_boxes
 
     def align_text(

@@ -95,9 +95,13 @@ def _length_plausibility(
     """Return True when the text density looks reasonable for ``bbox``."""
     if bbox is None or page_size is None:
         return True
-    _x0, _y0, x1, y1 = bbox
+    x0, y0, x1, y1 = bbox
     page_w, page_h = page_size
-    pixel_area = max(1.0, x1 * page_w * y1 * page_h)
+    # Audit P2-9: bbox area is ``(x1-x0) * (y1-y0)``, not ``x1 * y1``.
+    # The old formula measured the rectangle from the page origin, so any
+    # box away from (0, 0) inflated the pixel area and flagged legitimate
+    # blocks as implausible.
+    pixel_area = max(1.0, (x1 - x0) * page_w * (y1 - y0) * page_h)
     return len(text.strip()) >= pixel_area * min_chars_per_pixel_sq
 
 

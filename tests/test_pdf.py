@@ -101,6 +101,50 @@ def test_output_preserves_page_count(
         assert len(out) == src_pages
 
 
+def _make_multipage_pdf(path: Path, n_pages: int = 3) -> Path:
+    doc = fitz.open()
+    for _ in range(n_pages):
+        doc.new_page(width=200, height=300)
+    doc.save(str(path))
+    doc.close()
+    return path
+
+
+def test_embed_page_nums_renders_subset_only(pdf_handler: PDFHandler, tmp_path: Path):
+    """Audit P2-9: subset runs must not rasterize the whole document."""
+    input_pdf = str(_make_multipage_pdf(tmp_path / "three.pdf", 3))
+    output_pdf = str(tmp_path / "subset.pdf")
+
+    pages_data = {
+        0: [([0.1, 0.1, 0.9, 0.2], "MARK_FIRST")],
+        2: [([0.1, 0.1, 0.9, 0.2], "MARK_THIRD")],
+    }
+    pdf_handler.embed_structured_text(
+        input_pdf, output_pdf, pages_data, dpi=72, page_nums=[0, 2]
+    )
+
+    with fitz.open(output_pdf) as out:
+        assert len(out) == 2
+        assert "MARK_FIRST" in out[0].get_text("text")
+        assert "MARK_THIRD" in out[1].get_text("text")
+
+
+def test_embed_page_nums_filters_multiframe_image(
+    pdf_handler: PDFHandler, tmp_path: Path
+):
+    input_tiff = _make_multiframe_tiff(tmp_path / "scan.tif", n_frames=3)
+    output_pdf = str(tmp_path / "subset_tiff.pdf")
+
+    pages_data = {1: [([0.1, 0.1, 0.9, 0.2], "MARK_MIDDLE")]}
+    pdf_handler.embed_structured_text(
+        str(input_tiff), output_pdf, pages_data, dpi=72, page_nums=[1]
+    )
+
+    with fitz.open(output_pdf) as out:
+        assert len(out) == 1
+        assert "MARK_MIDDLE" in out[0].get_text("text")
+
+
 # --- raw image inputs (JPEG / PNG / multi-page TIFF) -----------------------
 
 
@@ -224,3 +268,83 @@ def test_avif_input_round_trip(pdf_handler: PDFHandler, tmp_path: Path):
     with fitz.open(output_pdf) as doc:
         assert len(doc) == 1
         assert marker in doc[0].get_text("text")
+
+
+# --- Audit P0-3: Unicode-capable embed font chain --------------------------
+
+
+class TestEmbedUnicodeFontChain:
+    """The searchable layer must survive non-Latin scripts.
+
+    ``helv`` (WinAnsi) silently dropped Arabic/CJK glyphs. These tests
+    pin the font-chain behavior: Latin stays on helv (zero size cost),
+    non-Latin moves to a Unicode chain font, and characters no chain
+    font covers are dropped rather than written as U+0000.
+    """
+
+    def _embed_and_extract(
+        self, pdf_handler: PDFHandler, tmp_path: Path, text: str
+    ) -> tuple[str, fitz.Document]:
+        from PIL import Image
+
+        src = tmp_path / "in.png"
+        Image.new("RGB", (800, 600), "white").save(src)
+        out = tmp_path / "out.pdf"
+        pdf_handler.embed_structured_text(
+            str(src), str(out), {0: [([0.05, 0.2, 0.95, 0.4], text)]}
+        )
+        doc = fitz.open(str(out))
+        return doc[0].get_text("text"), doc
+
+    def test_latin_only_embeds_no_unicode_font(
+        self, pdf_handler: PDFHandler, tmp_path: Path
+    ):
+        text, doc = self._embed_and_extract(pdf_handler, tmp_path, "Hello Latin only")
+        try:
+            assert "Hello Latin only" in text
+            # Pure-Latin runs stay on Base-14 helv; no chain font alias
+            # should be registered on the page.
+            font_names = [f[3] for f in doc[0].get_fonts()]
+            assert not any("omni-embed-uni" in n for n in font_names)
+        finally:
+            doc.close()
+
+    def test_cjk_text_survives_embed_round_trip(
+        self, pdf_handler: PDFHandler, tmp_path: Path, monkeypatch
+    ):
+        from omniscribe.core.pdf import embedder
+
+        monkeypatch.setattr(embedder, "_UNICODE_CHAIN", (fitz.Font("cjk"),))
+        text, doc = self._embed_and_extract(pdf_handler, tmp_path, "中文测试")
+        try:
+            assert "中文测试" in text
+            assert "\x00" not in text
+        finally:
+            doc.close()
+
+    def test_uncovered_chars_dropped_not_null(
+        self, pdf_handler: PDFHandler, tmp_path: Path, monkeypatch
+    ):
+        # The built-in cjk font has no Arabic glyphs; characters it
+        # cannot encode must be omitted — writing them anyway extracts
+        # as U+0000 and pollutes copy/paste.
+        from omniscribe.core.pdf import embedder
+
+        monkeypatch.setattr(embedder, "_UNICODE_CHAIN", (fitz.Font("cjk"),))
+        text, doc = self._embed_and_extract(pdf_handler, tmp_path, "مرحبا")
+        try:
+            assert "\x00" not in text
+            assert not any(0x0600 <= ord(c) <= 0x06FF for c in text)
+        finally:
+            doc.close()
+
+    def test_pick_embed_font_prefers_helv_for_latin(self, monkeypatch):
+        from omniscribe.core.pdf import embedder
+
+        cjk = fitz.Font("cjk")
+        monkeypatch.setattr(embedder, "_UNICODE_CHAIN", (cjk,))
+        alias, font = embedder._pick_embed_font("plain latin")
+        assert alias == "helv"
+        alias, font = embedder._pick_embed_font("中文测试")
+        assert alias.startswith("omni-embed-uni")
+        assert font is cjk

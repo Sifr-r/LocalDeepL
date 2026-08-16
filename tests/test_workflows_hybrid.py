@@ -952,6 +952,61 @@ class TestHybridOCRPages:
         assert warnings[0][0] == 0
         assert isinstance(warnings[0][1], RuntimeError)
 
+    async def test_circuit_open_in_sparse_ocr_raises_bare_error(self) -> None:
+        # Audit P0-1 regression — ``asyncio.TaskGroup`` wraps the
+        # CircuitOpenError raised by perform_ocr in an ExceptionGroup;
+        # _ocr_pages must unwrap it so the breaker signal stays bare
+        # (a group leaked as a generic 500 before the fix).
+        class _BreakerOCR(_StubOCR):
+            async def perform_ocr(self, image_base64, **kwargs):
+                raise CircuitOpenError(failures=5, retry_after=30.0)
+
+        engine = _engine(ocr=_BreakerOCR())
+        images = {0: _make_tiny_b64_image()}
+        pages_structured = {0: [([0.1, 0.1, 0.9, 0.2], "")] * 3}
+
+        with pytest.raises(CircuitOpenError):
+            await engine._ocr_pages(
+                images_dict=images,
+                pages_structured=pages_structured,
+                page_nums=[0],
+                per_box_pages=set(),
+                concurrency=2,
+                self_correction=False,
+                binarize=False,
+                dual_engine=False,
+                progress=None,
+                on_warning=None,
+            )
+
+    async def test_circuit_open_in_dense_ocr_raises_bare_error(self) -> None:
+        # Audit P0-1 regression — the dense path double-wraps: the
+        # per-box TaskGroup groups the error, then process_page's
+        # generic ``except Exception`` would swallow the group and the
+        # job would "succeed" with empty text. The per-box group must
+        # be unwrapped in _ocr_per_box so the bare error propagates.
+        class _BreakerCropOCR(_StubOCR):
+            async def perform_ocr_on_crop(self, image_base64, **kwargs):
+                raise CircuitOpenError(failures=5, retry_after=30.0)
+
+        engine = _engine(ocr=_BreakerCropOCR())
+        images = {0: _make_tiny_b64_image()}
+        pages_structured = {0: [([0.1, 0.1, 0.9, 0.2], "")] * 3}
+
+        with pytest.raises(CircuitOpenError):
+            await engine._ocr_pages(
+                images_dict=images,
+                pages_structured=pages_structured,
+                page_nums=[0],
+                per_box_pages={0},
+                concurrency=2,
+                self_correction=False,
+                binarize=False,
+                dual_engine=False,
+                progress=None,
+                on_warning=None,
+            )
+
 
 # ---------------------------------------------------------------------------
 # _refine_pages
@@ -1001,6 +1056,31 @@ class TestHybridRefinePages:
 
         assert ocr.crop_calls == 3
         assert all(text == "recovered" for _, text in pages_structured[0])
+
+    async def test_circuit_open_in_refine_raises_bare_error(self) -> None:
+        # Audit P0-1 regression — _refine_uncertain runs its own
+        # TaskGroup; the breaker error must be unwrapped to a bare
+        # CircuitOpenError (a leaked group became a generic 500).
+        class _BreakerCropOCR(_StubOCR):
+            async def perform_ocr_on_crop(self, image_base64, **kwargs):
+                raise CircuitOpenError(failures=5, retry_after=30.0)
+
+        engine = _engine(ocr=_BreakerCropOCR())
+        images = {0: _make_tiny_b64_image()}
+        pages_structured = {0: [([0.1, 0.1, 0.9, 0.2], "")] * 3}
+
+        with pytest.raises(CircuitOpenError):
+            await engine._refine_pages(
+                pages_structured=pages_structured,
+                images_dict=images,
+                page_nums=[0],
+                per_box_pages=set(),
+                concurrency=2,
+                self_correction=False,
+                binarize=False,
+                dual_engine=False,
+                progress=None,
+            )
 
     async def test_skips_thin_or_tiny_boxes_via_refinable_gate(self) -> None:
         ocr = _StubOCR(crop_text="x")

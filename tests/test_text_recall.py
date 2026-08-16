@@ -1,4 +1,4 @@
-﻿"""Unit tests for the whitespace recall booster (core/text_recall.py)."""
+"""Unit tests for the whitespace recall booster (core/text_recall.py)."""
 
 from __future__ import annotations
 
@@ -363,14 +363,16 @@ def _photo_edge_page(
 @pytest.mark.parametrize(
     ("post_dilate_height_px", "density", "line_width_px"),
     [
-        (11, 0.30, 600),    # boundary — just over the 10px height floor
-        (14, 0.40, 800),    # mid-range — typical photo edge
-        (18, 0.55, 1000),   # worst case — thick + dense
+        (11, 0.30, 600),  # boundary — just over the 10px height floor
+        (14, 0.40, 800),  # mid-range — typical photo edge
+        (18, 0.55, 1000),  # worst case — thick + dense
     ],
     ids=["boundary_height", "typical_photo_edge", "worst_case_thick_dense"],
 )
 def test_photo_edge_passes_filters_as_known_limitation(
-    post_dilate_height_px: int, density: float, line_width_px: int,
+    post_dilate_height_px: int,
+    density: float,
+    line_width_px: int,
 ) -> None:
     """Document the line-shape photo-edge limitation.
 
@@ -394,4 +396,3 @@ def test_photo_edge_passes_filters_as_known_limitation(
     assert len(extras) == 1
     _x0, y0, _x1, y1 = extras[0]
     assert 0.45 < y0 < 0.55 and 0.45 < y1 < 0.55
-

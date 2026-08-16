@@ -786,6 +786,15 @@ class HybridEngine(EngineBase):
             # inside the group. Unwrap so the route handler's plain
             # ``except OCRCancelled`` catches it as expected.
             raise eg.exceptions[0] from None
+        except* CircuitOpenError as eg:
+            # Audit P0-1 — TaskGroup also wraps CircuitOpenError (a
+            # RuntimeError) in an ExceptionGroup. Without this unwrap the
+            # breaker signal leaks out as a group: the sparse path dies as
+            # a generic 500, and — worse — the dense path's generic
+            # ``except Exception`` in :meth:`process_page` swallows it and
+            # "succeeds" with empty text. Re-raise the bare error so the
+            # run aborts loudly, matching the repair/refine contract.
+            raise eg.exceptions[0] from None
 
     async def _refine_pages(
         self,
@@ -870,6 +879,11 @@ class HybridEngine(EngineBase):
             document_result=document_result,
             dpi=dpi,
             progress=progress,
+            # Audit P2-9: the embed pass rasterizes exactly the pages this
+            # run processed. For full runs this is every source page (no
+            # behaviour change); for subset runs it stops the writer from
+            # re-rasterizing the rest of the document.
+            page_nums=list(page_nums),
         )
 
     async def _ocr_per_box(
@@ -911,14 +925,22 @@ class HybridEngine(EngineBase):
                 return idx, ""
 
         results: dict[int, str] = {}
-        async with asyncio.TaskGroup() as tg:
-            tasks = [
-                tg.create_task(ocr_one(i, bbox))
-                for i, (bbox, _) in enumerate(structured)
-            ]
-            for fut in asyncio.as_completed(tasks):
-                idx, text = await fut
-                results[idx] = text.strip()
+        try:
+            async with asyncio.TaskGroup() as tg:
+                tasks = [
+                    tg.create_task(ocr_one(i, bbox))
+                    for i, (bbox, _) in enumerate(structured)
+                ]
+                for fut in asyncio.as_completed(tasks):
+                    idx, text = await fut
+                    results[idx] = text.strip()
+        except* CircuitOpenError as eg:
+            # Audit P0-1 — ``ocr_one`` re-raises the breaker signal, but
+            # TaskGroup wraps it in an ExceptionGroup. Unwrap here: the
+            # group would otherwise match the dense path's generic
+            # ``except Exception`` in :meth:`process_page` and the page
+            # would "succeed" with empty text instead of aborting the run.
+            raise eg.exceptions[0] from None
         return [(bbox, results.get(i, "")) for i, (bbox, _) in enumerate(structured)]
 
     async def _refine_uncertain(
@@ -1023,6 +1045,10 @@ class HybridEngine(EngineBase):
             # ``asyncio.TaskGroup`` wraps the OCRCancelled in a
             # ``BaseExceptionGroup`` in Python 3.12; unwrap so the
             # route handler's ``except OCRCancelled`` catches it.
+            raise eg.exceptions[0] from None
+        except* CircuitOpenError as eg:
+            # Audit P0-1 — same unwrap as :meth:`_ocr_pages`; keep the
+            # breaker signal bare so the run aborts loudly.
             raise eg.exceptions[0] from None
 
         for p_num, idxs in refined_indices.items():

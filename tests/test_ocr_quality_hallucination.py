@@ -64,6 +64,18 @@ class TestLengthPlausibility:
         )
         assert risk is HallucinationRisk.NONE
 
+    def test_off_origin_bbox_uses_width_height_not_origin_rectangle(self):
+        # Audit P2-9 regression: the density check must measure
+        # ``(x1-x0) * (y1-y0)``, not the rectangle from the page origin.
+        # This box is 10% x 5% of the page but sits at (0.8, 0.8); the
+        # old ``x1 * y1`` formula saw a 76%-of-page area and flagged it.
+        risk = hallucination.evaluate(
+            "Hello world, this is fine.",
+            (0.8, 0.8, 0.9, 0.85),
+            page_size=(1000, 1000),
+        )
+        assert risk is HallucinationRisk.NONE
+
 
 class TestCrossCheck:
     def test_high_divergence_bumps_risk(self):

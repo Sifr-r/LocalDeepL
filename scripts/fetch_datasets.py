@@ -29,6 +29,14 @@ Usage::
 
 Run with ``--dry-run`` to print the planned operations without
 hitting the network.
+
+Exit codes (audit P3-12): ``0`` = fetched (or dry-run), ``77``
+(``EX_NOPERM``) = the fetch is gated behind the license review and no
+data was written, any other non-zero = genuine failure. CI relies on
+the ``0`` vs ``77`` vs anything-else distinction to tell an expected
+skip apart from real breakage — the old ``|| true`` swallowed both.
+The eventual implementation needs ``from datasets import load_dataset``
+(``uv sync --extra datasets``); see the conversion plan above.
 """
 
 from __future__ import annotations
@@ -51,6 +59,11 @@ _LOG = logging.getLogger("scripts.fetch_datasets")
 OCR_QUALITY_REPO = "Aslan-mingye/OCR-Quality"
 KIE_HVQA_REPO = "ByteDance/KIE-HVQA"  # placeholder until license is confirmed
 
+#: Exit code for "the fetch is gated behind the license review" —
+#: sysexits ``EX_NOPERM``. Nightly CI treats this as a clean skip; any
+#: other non-zero exit fails the calibration job.
+EXIT_LICENSE_GATED = 77
+
 
 def _ocr_quality_records() -> list[dict[str, object]]:
     """Download OCR-Quality and convert to ``{raw_confidence, quality_score}``."""
@@ -60,13 +73,6 @@ def _ocr_quality_records() -> list[dict[str, object]]:
     # raw VLM confidences (the dataset only carries the final
     # scores), so the conversion is a placeholder until we get
     # confidences out of the VLM ourselves.
-    try:
-        from datasets import load_dataset  # noqa: F401
-    except ImportError as exc:
-        raise SystemExit(
-            "datasets library not installed; run "
-            "`uv sync --extra datasets` to enable Phase 3 fetches."
-        ) from exc
     raise NotImplementedError(
         "OCR-Quality fetch is gated behind the license review in "
         "docs/superpowers/specs/2026-08-10-ocr-quality-trust-layer-design.md §9. "
@@ -124,11 +130,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     args = parse_args(argv)
-    fetch(args.dataset, dry_run=args.dry_run)
+    try:
+        fetch(args.dataset, dry_run=args.dry_run)
+    except NotImplementedError as exc:
+        _LOG.warning("license-gated, skipping: %s", exc)
+        return EXIT_LICENSE_GATED
     return 0
 
 
-__all__ = ["fetch", "parse_args"]
+__all__ = ["EXIT_LICENSE_GATED", "fetch", "parse_args"]
 
 
 if __name__ == "__main__":

@@ -17,9 +17,12 @@ Process-lifetime boundary
 This module owns two pieces of process-bound state:
 
 - ``manager`` (the module-level :class:`ConnectionManager` singleton)
-  with four internal dicts: ``manager.active`` (channel_id → live
+  with five internal dicts: ``manager.active`` (channel_id → live
   :class:`fastapi.WebSocket`), ``manager._tokens`` (channel_id →
   session_token, used for ``is_authorized`` checks),
+  ``manager._minted`` (channel_id → session_token as issued by
+  ``/api/progress/session``, LRU-capped; the connect-time record that
+  lets the handshake reject tokens the server never minted),
   ``manager._cancel_flags`` (channel_id → :class:`asyncio.Event`,
   flipped by :meth:`ConnectionManager.request_cancel` and read by the
   OCR/translate worker via :meth:`ConnectionManager.is_cancelled`), and
@@ -49,7 +52,10 @@ horizontal scaling."
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import hmac
 import json
+from collections import OrderedDict
 from http import HTTPStatus
 from typing import Any, Protocol, runtime_checkable
 
@@ -69,6 +75,15 @@ _progress_service = state.progress_service
 # the global bearer-auth policy — the cancel endpoint is always
 # session-bound even when the server is open in local dev.
 PROGRESS_SESSION_TOKEN_HEADER = "X-Progress-Token"
+
+# Bound on the minted-channel registry. A session that never connects
+# keeps its entry until evicted by this LRU cap, so the registry stays
+# bounded no matter how many sessions clients mint and abandon.
+_MINTED_CHANNEL_CAP = 1024
+
+# How long the server waits for the first-frame auth message after
+# accepting a progress socket before closing it with 1008.
+_WS_AUTH_TIMEOUT_SECONDS = 10.0
 
 
 @runtime_checkable
@@ -177,10 +192,45 @@ class ConnectionManager:
     def __init__(self) -> None:
         self.active: dict[str, WebSocket] = {}
         self._tokens: dict[str, str] = {}
+        self._minted: OrderedDict[str, str] = OrderedDict()
         self._cancel_flags: dict[str, asyncio.Event] = {}
         # channel_id -> event loop that accepted the socket. ``send``
         # marshals foreign-loop sends back onto this loop (see below).
         self._accept_loops: dict[str, asyncio.AbstractEventLoop] = {}
+
+    def register_minted(self, channel_id: str, session_token: str) -> None:
+        """Record a freshly minted channel/token pair for connect-time checks.
+
+        Without this record the WebSocket handshake would have to trust
+        whatever token the connecting client presents — the connection
+        itself would establish the binding, so any well-formed token
+        would be accepted for any channel.
+        """
+        self._minted.pop(channel_id, None)
+        self._minted[channel_id] = session_token
+        while len(self._minted) > _MINTED_CHANNEL_CAP:
+            self._minted.popitem(last=False)
+
+    def verify_minted(self, channel_id: str, session_token: str) -> bool:
+        """Constant-time compare of the presented token against the minted pair.
+
+        Rejects channels the server never minted (or whose minted entry
+        was evicted) and channels that already have a live socket, so a
+        second client cannot take over an active channel's stream.
+        """
+        expected = self._minted.get(channel_id)
+        if expected is None or channel_id in self.active:
+            return False
+        return hmac.compare_digest(expected, session_token)
+
+    def register_channel(
+        self, websocket: WebSocket, channel_id: str, session_token: str
+    ) -> None:
+        """Track an accepted, verified channel socket."""
+        self.active[channel_id] = websocket
+        self._tokens[channel_id] = session_token
+        self._cancel_flags[channel_id] = asyncio.Event()
+        self._accept_loops[channel_id] = asyncio.get_running_loop()
 
     async def connect(
         self, websocket: WebSocket, channel_id: str, session_token: str
@@ -188,10 +238,7 @@ class ConnectionManager:
         channel_id = _progress_service.validate_channel_id(channel_id)
         session_token = _progress_service.validate_session_token(session_token)
         await websocket.accept()
-        self.active[channel_id] = websocket
-        self._tokens[channel_id] = session_token
-        self._cancel_flags[channel_id] = asyncio.Event()
-        self._accept_loops[channel_id] = asyncio.get_running_loop()
+        self.register_channel(websocket, channel_id, session_token)
 
     def disconnect(self, channel_id: str) -> None:
         self.active.pop(channel_id, None)
@@ -452,6 +499,13 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+async def _close_with_code(websocket: WebSocket, code: int) -> None:
+    """Best-effort close: a client that raced us with its own disconnect
+    makes the close handshake fail, which must not mask the rejection."""
+    with contextlib.suppress(Exception):
+        await websocket.close(code=code)
+
+
 @router.post("/api/progress/session")
 async def create_progress_session(body: dict | None = None):
     """Issue an opaque websocket progress channel and binding token."""
@@ -463,6 +517,7 @@ async def create_progress_session(body: dict | None = None):
             status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
             content={"error": "Invalid progress session parameters."},
         )
+    manager.register_minted(channel.channel_id, channel.session_token)
     return {
         "channel_id": channel.channel_id,
         "session_token": channel.session_token,
@@ -510,18 +565,49 @@ async def cancel_channel(
 
 
 @router.websocket("/ws/{channel_id}")
-async def websocket_endpoint(websocket: WebSocket, channel_id: str, token: str = ""):
+async def websocket_endpoint(websocket: WebSocket, channel_id: str):
     """Accept a token-bound WebSocket connection for real-time progress updates.
 
-    The server reads inbound ``{"type": "cancel"}`` messages and sets the
-    cancel flag for the channel. The OCR/translate worker checks this flag
-    between blocks/chunks and aborts the run cleanly.
+    The session token travels in the first inbound frame —
+    ``{"type": "auth", "session_token": ...}`` — not in the URL query
+    string: query-string secrets end up in server access logs, proxy
+    logs, and browser history. The presented token is compared in
+    constant time against the pair minted by ``/api/progress/session``;
+    channels the server never minted (and channels that already hold a
+    live socket) are closed with 1008 before any progress frame is
+    emitted.
+
+    After authentication the server reads inbound ``{"type": "cancel"}``
+    messages and sets the cancel flag for the channel. The OCR/translate
+    worker checks this flag between blocks/chunks and aborts the run
+    cleanly.
     """
     try:
-        await manager.connect(websocket, channel_id, token)
+        channel_id = _progress_service.validate_channel_id(channel_id)
     except (TypeError, ValueError):
-        await websocket.close(code=1008)
+        await _close_with_code(websocket, 1008)
         return
+    await websocket.accept()
+    try:
+        raw = await asyncio.wait_for(
+            websocket.receive_text(), timeout=_WS_AUTH_TIMEOUT_SECONDS
+        )
+        msg = json.loads(raw)
+        if not isinstance(msg, dict) or msg.get("type") != "auth":
+            raise ValueError("first frame must be an auth frame")
+        raw_token = msg.get("session_token")
+        if not isinstance(raw_token, str):
+            raise ValueError("auth frame missing a session_token")
+        session_token = _progress_service.validate_session_token(raw_token)
+    except Exception:
+        # Malformed channel/token, missing or non-auth first frame,
+        # disconnect, or auth timeout — close without registering.
+        await _close_with_code(websocket, 1008)
+        return
+    if not manager.verify_minted(channel_id, session_token):
+        await _close_with_code(websocket, 1008)
+        return
+    manager.register_channel(websocket, channel_id, session_token)
     try:
         while True:
             try:
@@ -529,8 +615,6 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str, token: str =
             except WebSocketDisconnect:
                 break
             try:
-                import json
-
                 msg = json.loads(raw)
             except Exception:
                 continue

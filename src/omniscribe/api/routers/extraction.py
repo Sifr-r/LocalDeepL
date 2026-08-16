@@ -5,8 +5,10 @@ New endpoints added in the upgrade:
 - ``POST /api/export/html`` -> HTML with semantic markup
 - ``POST /api/export/blocktree`` -> block-tree JSON
 
-The existing ``/api/export/document`` and ``/api/export/docx`` routes are
-preserved for backward compatibility.
+``POST /api/export/document`` and ``POST /api/export/docx`` live in
+:mod:`omniscribe.api.routers.artifacts` (registered first, so a duplicate
+here would only shadow into dead code and duplicate the OpenAPI operation
+ID).
 """
 
 from __future__ import annotations
@@ -23,7 +25,6 @@ from omniscribe.api.routers.common import _stable_server_error
 from omniscribe.api.routers.config import _config
 from omniscribe.api.schemas.requests import (
     ExportBlockTreeRequest,
-    ExportDocxRequest,
     ExportHtmlRequest,
     ExtractionRequest,
 )
@@ -70,21 +71,6 @@ async def _load_tree_from_artifact(artifact_id: str, token: str) -> Any:
         return from_pages_data(pages_data)
     except Exception as exc:
         raise HTTPException(status_code=404, detail="text artifact not found") from exc
-
-
-@router.post("/api/export/docx")
-async def export_docx(req: ExportDocxRequest) -> Response:
-    """Generate a .docx from the supplied markdown text. Backward-compatible."""
-    from omniscribe.core.docx_writer import convert_markdown_to_docx
-
-    stream = convert_markdown_to_docx(req.text or "")
-    return Response(
-        content=stream.getvalue(),
-        media_type=(
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        ),
-        headers={"Content-Disposition": "attachment; filename=document.docx"},
-    )
 
 
 @router.post("/api/export/docx-tree")

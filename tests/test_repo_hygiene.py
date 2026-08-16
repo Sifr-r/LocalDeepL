@@ -101,12 +101,16 @@ def test_compose_yaml_defines_api_redis_and_async_profile_worker():
         "worker must be opt-in via `profiles: [async]`"
     )
 
-    # Default profile must include api + redis.
-    api_profiles = services["api"].get("profiles", ["default"])
-    redis_profiles = services["redis"].get("profiles", [])
-    assert "default" in api_profiles, "api should be on the default profile"
-    assert "default" in redis_profiles, (
-        "redis must be on the default profile so api's depends_on resolves"
+    # api + redis must start on a plain `docker compose up`. Compose has
+    # no implicit default profile, so a `profiles:` key would *exclude*
+    # the service — the always-on pair must carry no profiles at all.
+    # (Audit P0-4: `profiles: ["default"]` made `compose up` start nothing.)
+    assert "profiles" not in services["api"], (
+        "api must carry no `profiles:` key so a plain `compose up` starts it"
+    )
+    assert "profiles" not in services["redis"], (
+        "redis must carry no `profiles:` key so api's depends_on resolves "
+        "on a plain `compose up`"
     )
 
     # Worker command must use the --pool=solo flag the README documents.
@@ -138,6 +142,35 @@ def test_nightly_workflow_targets_slow_tests_with_hf_cache():
     assert "schedule:" in workflow, "nightly workflow must be cron-triggered"
     assert "workflow_dispatch" in workflow, (
         "manual dispatch should be available for ad-hoc runs"
+    )
+
+
+def test_celery_and_uvicorn_targets_match_installed_package_path():
+    """Launcher entry points must use the ``omniscribe.*`` module path.
+
+    ``start_app.vbs`` historically started the worker with
+    ``-A src.omniscribe.api.celery_app`` while ``compose.yaml`` used
+    ``-A omniscribe.api.tasks``. The ``src.*`` form resolves via a PEP 420
+    namespace copy, so tasks registered on the installed ``omniscribe.*``
+    module copy were invisible to the worker (audit DevOps High #6).
+    Keep every launcher on the same installed-package path.
+    """
+    vbs = _read(ROOT / "start_app.vbs")
+    compose = yaml.safe_load(_read(ROOT / "compose.yaml"))
+
+    assert "celery -A omniscribe.api.tasks" in vbs, (
+        "start_app.vbs must start the Celery worker with the "
+        "installed-package module path `omniscribe.api.tasks`"
+    )
+    assert "src.omniscribe" not in vbs, (
+        "start_app.vbs must not reference `src.omniscribe.*` — the "
+        "namespace copy registers tasks in a second module instance"
+    )
+
+    worker_cmd = compose["services"]["worker"]["command"]
+    assert "omniscribe.api.tasks" in worker_cmd, (
+        "compose worker must keep using `-A omniscribe.api.tasks` so "
+        "both launchers agree on the Celery app module"
     )
 
 

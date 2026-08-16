@@ -20,7 +20,9 @@ from omniscribe.core.pdf.embedder import (
 from omniscribe.core.pdf.rasterizer import (
     _DEFAULT_RASTERIZER_WORKERS,
     _calculate_safe_dpi,
+    _check_page_cap,
     _effective_dpi,
+    _max_page_cap,
     _rasterize_one_page,
     convert_batches,
     convert_generator,
@@ -188,3 +190,52 @@ def test_default_rasterizer_workers_is_positive():
     # Sanity on the env-derived default so a bad env var never breaks
     # the import path or yields a pool of size 0.
     assert _DEFAULT_RASTERIZER_WORKERS >= 1
+
+
+# --- Audit P2-9: hard page-count cap ------------------------------------
+
+
+class TestPageCap:
+    """``OMNISCRIBE_MAX_PAGES`` bounds the pages a run rasterizes."""
+
+    def test_default_cap_is_500(self, monkeypatch):
+        monkeypatch.delenv("OMNISCRIBE_MAX_PAGES", raising=False)
+        assert _max_page_cap() == 500
+
+    def test_zero_and_garbage_disable_cap(self, monkeypatch):
+        monkeypatch.setenv("OMNISCRIBE_MAX_PAGES", "0")
+        assert _max_page_cap() == 0
+        monkeypatch.setenv("OMNISCRIBE_MAX_PAGES", "not-a-number")
+        assert _max_page_cap() == 0
+
+    def test_check_raises_over_cap(self, monkeypatch):
+        monkeypatch.setenv("OMNISCRIBE_MAX_PAGES", "10")
+        with pytest.raises(ValueError, match="exceeds the configured maximum"):
+            _check_page_cap(11)
+        _check_page_cap(10)  # at the cap is fine
+
+    def test_convert_pdf_to_images_enforces_cap(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("OMNISCRIBE_MAX_PAGES", "2")
+        pdf_bytes = _make_test_pdf(num_pages=3)
+        path = tmp_path / "big.pdf"
+        path.write_bytes(pdf_bytes)
+        with pytest.raises(ValueError, match="exceeds the configured maximum"):
+            convert_pdf_to_images(str(path), dpi=72)
+
+    def test_page_range_selection_under_cap_still_allowed(self, monkeypatch, tmp_path):
+        # Cap applies after page-range selection: 2 pages of a 3-page
+        # document stays under a cap of 2.
+        monkeypatch.setenv("OMNISCRIBE_MAX_PAGES", "2")
+        pdf_bytes = _make_test_pdf(num_pages=3)
+        path = tmp_path / "subset.pdf"
+        path.write_bytes(pdf_bytes)
+        out = list(convert_generator(str(path), dpi=72, pages="1-2"))
+        assert [p[0] for p in out] == [0, 1]
+
+    def test_cap_disabled_allows_large_documents(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("OMNISCRIBE_MAX_PAGES", "0")
+        pdf_bytes = _make_test_pdf(num_pages=3)
+        path = tmp_path / "uncapped.pdf"
+        path.write_bytes(pdf_bytes)
+        images = convert_pdf_to_images(str(path), dpi=72)
+        assert len(images) == 3

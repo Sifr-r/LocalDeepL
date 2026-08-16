@@ -44,6 +44,7 @@ class DocumentResultWriter(Protocol):
         output_path: str,
         document_result: DocumentResult,
         dpi: int,
+        page_nums: Sequence[int] | None = None,
     ) -> None: ...
 
 
@@ -182,17 +183,23 @@ class EngineBase:
         from omniscribe.core.document import DocumentResult
         from omniscribe.core.image_utils import decode_base64_image
 
-        scored_pages: list[DocumentPage] = []
-        for page in document_result.pages:
+        orchestrator = self.trust_orchestrator
+
+        def _score_page(page: DocumentPage, page_b64: str | None) -> DocumentPage:
+            # Audit P2-9: the orchestrator does CPU-heavy pixel work (the
+            # watermark scan is pure Python over every pixel) — running it
+            # on the event loop stalled every other in-flight page. The
+            # whole per-page score now runs on a worker thread; the
+            # orchestrator is invoked fail-open exactly as before.
             page_image: Image.Image | None = None
-            if trust_images_dict and page.page_index in trust_images_dict:
+            if page_b64 is not None:
                 try:
-                    page_image = decode_base64_image(trust_images_dict[page.page_index])
+                    page_image = decode_base64_image(page_b64)
                 except Exception:
                     page_image = None
 
             try:
-                new_blocks = self.trust_orchestrator(
+                new_blocks = orchestrator(
                     list(page.blocks),
                     page_image,
                     model_id=model_id,
@@ -205,7 +212,14 @@ class EngineBase:
                     exc,
                 )
                 new_blocks = list(page.blocks)
-            scored_pages.append(dataclasses.replace(page, blocks=list(new_blocks)))
+            return dataclasses.replace(page, blocks=list(new_blocks))
+
+        scored_pages: list[DocumentPage] = []
+        for page in document_result.pages:
+            page_b64: str | None = None
+            if trust_images_dict and page.page_index in trust_images_dict:
+                page_b64 = trust_images_dict[page.page_index]
+            scored_pages.append(await asyncio.to_thread(_score_page, page, page_b64))
 
         return DocumentResult(
             pages=scored_pages,
@@ -370,6 +384,7 @@ class EngineBase:
         document_result: DocumentResult,
         dpi: int,
         progress: ProgressCallback | None,
+        page_nums: Sequence[int] | None = None,
     ) -> dict[int, list[str]]:
         """Write the final PDF and return the ``{page: [lines]}`` view.
 
@@ -380,6 +395,11 @@ class EngineBase:
         When the injected writer implements :class:`DocumentResultWriter` the
         full ``DocumentResult`` is passed through losslessly; legacy 4-arg
         callable writers receive the ``to_pages_data()`` conversion instead.
+
+        ``page_nums`` (audit P2-9) is forwarded to rich writers so subset
+        runs embed only the processed pages instead of re-rasterizing the
+        whole source document. Legacy callable writers keep their 4-arg
+        contract and ignore it.
 
         Phase 4 fix: ``to_pages_data()`` and the per-page text-collection loop
         now run inside the same ``asyncio.to_thread`` call as the writer.
@@ -394,7 +414,7 @@ class EngineBase:
         def _write_and_collect_text() -> dict[int, list[str]]:
             if isinstance(writer, DocumentResultWriter):
                 writer.write_document_result(
-                    input_path, output_path, document_result, dpi
+                    input_path, output_path, document_result, dpi, page_nums=page_nums
                 )
                 # Lossless path: build the text-only view straight from
                 # the IR — no to_pages_data round-trip needed.

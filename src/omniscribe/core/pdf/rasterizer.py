@@ -100,6 +100,39 @@ def _is_image_path(path: str | Path) -> bool:
     return Path(path).suffix.lower() in IMAGE_EXTENSIONS
 
 
+def _max_page_cap() -> int:
+    """Hard total page-count cap per run (audit P2-9).
+
+    Chunk size was already bounded (500) but document size was not — an
+    unbounded document can hold the worker for hours and exhaust memory
+    in the eager paths. Reads ``OMNISCRIBE_MAX_PAGES`` at call time
+    (default 500); a non-positive or unparseable value disables the cap.
+    """
+    raw = os.getenv("OMNISCRIBE_MAX_PAGES", "500")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, value)
+
+
+def _check_page_cap(page_count: int) -> None:
+    """Raise ``ValueError`` when ``page_count`` exceeds the configured cap.
+
+    Applied to the number of pages a run will actually rasterize (after
+    any page-range selection), so a 3-page selection of a huge document
+    stays allowed while full-document runs of huge documents fail fast
+    with a stable, user-actionable message.
+    """
+    cap = _max_page_cap()
+    if cap and page_count > cap:
+        raise ValueError(
+            f"Document requires rasterizing {page_count} page(s), which "
+            f"exceeds the configured maximum of {cap}. Narrow the page "
+            f"range or raise OMNISCRIBE_MAX_PAGES."
+        )
+
+
 def _calculate_safe_dpi(width: float, height: float, requested_dpi: int) -> int:
     """Cap DPI to prevent PyMuPDF OOM on massive pages (e.g. blueprints)."""
     page_area = width * height
@@ -198,6 +231,9 @@ def _generator_from_image_source(
         selected_pages: set[int] | None = None
         if pages:
             selected_pages = set(_parse_page_range_local(pages, total_pages))
+        _check_page_cap(
+            len(selected_pages) if selected_pages is not None else total_pages
+        )
 
         for page_num, frame in enumerate(frames):
             if selected_pages is not None and page_num not in selected_pages:
@@ -260,6 +296,9 @@ def _generator_from_pdf_source(
             page_nums = sorted(selected_pages)
         else:
             page_nums = list(range(total_pages))
+
+        # Audit P2-9: hard page-count cap, checked before any raster work.
+        _check_page_cap(len(page_nums))
 
         if not page_nums:
             return
@@ -461,6 +500,8 @@ def convert_pdf_to_images(
     doc = fitz.open(pdf_path)
     try:
         page_nums = list(range(len(doc)))
+        # Audit P2-9: same hard page-count cap as the streaming paths.
+        _check_page_cap(len(page_nums))
         if parallelism <= 1 or len(page_nums) <= 1:
             for page_num in page_nums:
                 _, _, b64 = _rasterize_one_page(doc, page_num, dpi, max_image_dim)

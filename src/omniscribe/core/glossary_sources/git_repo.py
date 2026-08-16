@@ -156,20 +156,32 @@ def _archive_member(archive: bytes, path: str) -> bytes:
     raise ValueError("Git glossary archive did not contain the requested file.")
 
 
+def _is_md_separator(line: str) -> bool:
+    return line.startswith("|") and set(line) <= {"|", "-", ":", " "}
+
+
 def _parse_text(text: str) -> Glossary:
     glossary = Glossary.from_paired_lines(text)
     if glossary.entries:
         return glossary
+    lines = text.splitlines()
     entries = []
-    for raw_line in text.splitlines():
+    for index, raw_line in enumerate(lines):
         line = raw_line.strip()
-        if (
-            not line
-            or line.startswith("#")
-            or (line.startswith("|") and set(line) <= {"|", "-", ":", " "})
-        ):
+        if not line or line.startswith("#") or _is_md_separator(line):
             continue
         if "|" in line:
+            # A pipe row directly above a separator row is the markdown
+            # table header ("| Source | Target |") — not a glossary pair.
+            for follow_up in lines[index + 1 :]:
+                follow_up = follow_up.strip()
+                if not follow_up:
+                    continue
+                if _is_md_separator(follow_up):
+                    line = ""
+                break
+            if not line:
+                continue
             columns = [part.strip() for part in line.strip("|").split("|")]
             if len(columns) >= 2:
                 item = entry_dict(columns[0], columns[1])

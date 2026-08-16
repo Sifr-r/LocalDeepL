@@ -273,12 +273,14 @@ class TestEmit:
                 output_pdf_path: str,
                 document_result,  # type: ignore[no-untyped-def]
                 dpi: int,
+                page_nums=None,
             ) -> None:
                 captured["called"] = True
                 captured["input"] = input_path
                 captured["output"] = output_pdf_path
                 captured["dpi"] = dpi
                 captured["pages"] = len(document_result.pages)
+                captured["page_nums"] = page_nums
 
         real_to_pages = DocumentResult.to_pages_data
 
@@ -318,6 +320,7 @@ class TestEmit:
             "output": "out.pdf",
             "dpi": 200,
             "pages": 2,
+            "page_nums": None,
         }
         assert to_pages_calls["n"] == 0
         # pages_text built from the IR directly: whitespace-only filtered.

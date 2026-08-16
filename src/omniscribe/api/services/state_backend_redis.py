@@ -81,7 +81,7 @@ class RedisTextArtifactStore(TextArtifactStore):
             "token": token,
             "path": str(artifact_path),
         }
-        self._redis.setex(key, int(self._ttl_seconds), json.dumps(payload))
+        self._redis.set(key, json.dumps(payload), ex=int(self._ttl_seconds))
 
         # Enforce max entries by keeping a list of recent IDs?
         # A full LRU is hard in plain Redis without sorted sets.

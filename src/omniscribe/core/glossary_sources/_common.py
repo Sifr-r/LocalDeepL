@@ -9,6 +9,9 @@ import xml.etree.ElementTree as ElementTree
 from collections import Counter
 from typing import Any
 
+from defusedxml import ElementTree as _DefusedElementTree
+from defusedxml.common import DefusedXmlException
+
 from .encoding import decode_bytes
 from .summary import GlossaryImportSummary
 
@@ -142,11 +145,22 @@ def validate_identifier(value: str, field_name: str) -> str:
 
 
 def safe_xml_root(data: bytes) -> ElementTree.Element:
-    """Parse XML while rejecting DTD/entity declarations and external hints."""
-    upper = data[:1_000_000].upper()
-    if b"<!DOCTYPE" in upper or b"<!ENTITY" in upper or b"SYSTEM" in upper:
-        raise ValueError("DTD and external entities are not allowed in glossary XML.")
+    """Parse XML while rejecting DTDs, entity declarations, and external refs.
+
+    defusedxml drives the parse so the rejection happens at the expat
+    level (audit P1-8), not via a substring pre-filter — the previous
+    ``SYSTEM`` / ``<!DOCTYPE`` scan false-positived on ordinary
+    glossary text content and could be bypassed by declarations past
+    the scanned prefix.
+    """
     try:
-        return ElementTree.fromstring(data)
+        root: ElementTree.Element = _DefusedElementTree.fromstring(
+            data, forbid_dtd=True
+        )
+        return root
+    except DefusedXmlException as exc:
+        raise ValueError(
+            "DTD and external entities are not allowed in glossary XML."
+        ) from exc
     except ElementTree.ParseError as exc:
         raise ValueError(f"Invalid glossary XML: {exc}") from exc

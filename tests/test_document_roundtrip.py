@@ -88,7 +88,9 @@ class _RichWriter:
     def embed_structured_text(self, input_path, output_path, pages_data, dpi=200):
         raise AssertionError("legacy path should not be called for rich writers")
 
-    def write_document_result(self, input_path, output_path, document_result, dpi=200):
+    def write_document_result(
+        self, input_path, output_path, document_result, dpi=200, page_nums=None
+    ):
         self.received = document_result
 
 

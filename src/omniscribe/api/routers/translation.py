@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from http import HTTPStatus
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
@@ -173,13 +173,18 @@ async def translate_tree_endpoint(req: TreeTranslationRequest) -> dict[str, Any]
     if req.glossary:
         glossary = Glossary.from_dict({"entries": req.glossary})
 
-    api_base = (
-        req.api_base or state.config.api_base if hasattr(state, "config") else None
-    )
+    # Precedence note: the previous form
+    # ``req.api_base or state.config.api_base if hasattr(state, "config") else None``
+    # parsed as ``(a or b) if cond else None`` and ``state.config`` is never
+    # set, so request-level overrides and the SSRF guard were both dead
+    # code. Resolve through the runtime config store like the model
+    # discovery routes do.
+    config = cast(dict[str, Any], _config)
+    api_base = req.api_base or config.get("translation_api_base") or config["api_base"]
     if api_base and await is_ssrf_target(api_base):
         raise HTTPException(status_code=403, detail=SAFE_API_BASE_ERROR)
-    api_key = req.api_key or state.config.api_key if hasattr(state, "config") else None
-    model = req.model or (state.config.model if hasattr(state, "config") else None)
+    api_key = req.api_key or config.get("translation_api_key") or config["api_key"]
+    model = req.model or config.get("translation_model") or config.get("model")
 
     from omniscribe.core.llm_client import call_llm
     from omniscribe.core.llm_temperatures import TEMPERATURE_TRANSLATION_TREE

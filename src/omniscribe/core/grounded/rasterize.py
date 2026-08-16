@@ -37,6 +37,7 @@ def _rasterize_to_jpeg_pages(
         VLM_JPEG_QUALITY_GROUNDED,
         _is_image_path,
     )
+    from omniscribe.core.pdf.rasterizer import _check_page_cap
 
     page_imgs: list[tuple[str, int, int]] = []
 
@@ -51,11 +52,15 @@ def _rasterize_to_jpeg_pages(
 
     if _is_image_path(path):
         with Image.open(path) as src:
+            # Audit P2-9: same hard page-count cap as the hybrid rasterizer.
+            _check_page_cap(getattr(src, "n_frames", 1))
             for frame in ImageSequence.Iterator(src):
                 _emit(frame.copy())
     else:
         doc = fitz.open(path)
         try:
+            # Audit P2-9: same hard page-count cap as the hybrid rasterizer.
+            _check_page_cap(len(doc))
             for page in doc:
                 pix = page.get_pixmap(dpi=dpi)
                 # Performance: avoid JPEG encode/decode before _emit writes the

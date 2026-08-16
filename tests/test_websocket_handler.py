@@ -8,12 +8,12 @@ Two contracts pinned here:
   * ``BearerAuthMiddleware`` is transparent to ``ws://`` traffic -
     enabling ``OMNISCRIBE_AUTH_TOKEN`` does not break UI clients.
 
-Negative handshake tests live in ``test_api_safety.py`` as
-``test_progress_session_uses_token_bound_websocket_channels``: that
-test asserts the manager's per-channel token binding, which is the
-real security boundary for WS. The WS HTTP upgrade itself does not
-authenticate (the manager accepts then compares on ``send_progress``)
-- these tests document that behaviour rather than fight it.
+Negative handshake tests live in ``test_api_safety.py``
+(``test_progress_session_uses_token_bound_websocket_channels`` and
+``test_ws_handshake_rejects_wrong_unminted_and_silent_tokens``): the
+session token is presented in the first inbound frame and compared
+against the pair minted by ``/api/progress/session`` — that binding is
+the real security boundary for WS.
 """
 
 from __future__ import annotations

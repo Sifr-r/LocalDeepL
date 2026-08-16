@@ -108,10 +108,14 @@ def main() -> int:
         return 1
 
     session = json.loads(body)
-    websocket_url = (
-        f"{WS_BASE_URL}/ws/{session['channel_id']}?token={session['session_token']}"
-    )
+    websocket_url = f"{WS_BASE_URL}/ws/{session['channel_id']}"
     with connect(websocket_url, open_timeout=10) as websocket:
+        # The token travels in the first frame, not the URL.
+        websocket.send(
+            json.dumps(
+                {"type": "auth", "session_token": session["session_token"]}
+            )
+        )
         websocket.send(json.dumps({"type": "cancel"}))
     print(f"{'WS /ws/{{channel_id}}':<40} {'OK':<10} handshake + cancel frame")
     if failures:

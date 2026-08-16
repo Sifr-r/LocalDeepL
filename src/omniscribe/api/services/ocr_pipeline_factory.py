@@ -21,7 +21,6 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from omniscribe import (
-    HybridAligner,
     OCRPipeline,
     OCRProcessor,
     PDFHandler,
@@ -29,6 +28,7 @@ from omniscribe import (
     build_document_processors,
 )
 from omniscribe.api.schemas import ProcessSettings
+from omniscribe.core.aligner import get_shared_hybrid_aligner
 from omniscribe.core.callbacks import BlockCallbackSet
 from omniscribe.core.ocr.resilience import get_default_circuit_breaker_registry
 from omniscribe.core.ocr_quality import build_trust_orchestrator
@@ -210,7 +210,11 @@ def build_pipeline(
             circuit_breaker_registry=get_default_circuit_breaker_registry(),
         )
         pipeline = OCRPipeline(
-            aligner=HybridAligner(),
+            # Audit P2-9: the aligner (and the Surya predictor it wraps)
+            # is a process-wide singleton. Constructing a fresh
+            # ``HybridAligner`` here reloaded the model weights on every
+            # ``/api/process`` request.
+            aligner=get_shared_hybrid_aligner(),
             ocr_processor=backend,
             pdf_handler=PDFHandler(),
             document_processors=processors,

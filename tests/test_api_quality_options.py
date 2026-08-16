@@ -217,7 +217,9 @@ class TestPipelineFactoryTrustWiring:
         # factory's namespace is the only place the swap takes effect.
         from omniscribe.api.services import ocr_pipeline_factory
 
-        monkeypatch.setattr(ocr_pipeline_factory, "HybridAligner", lambda: object())
+        monkeypatch.setattr(
+            ocr_pipeline_factory, "get_shared_hybrid_aligner", lambda: object()
+        )
         monkeypatch.setattr(ocr_pipeline_factory, "OCRProcessor", lambda **kw: object())
         monkeypatch.setattr(ocr_pipeline_factory, "PDFHandler", _StubPdfHandler)
 
@@ -235,7 +237,9 @@ class TestPipelineFactoryTrustWiring:
     def test_enabled_submodule_means_orchestrator_injected(self, monkeypatch):
         from omniscribe.api.services import ocr_pipeline_factory
 
-        monkeypatch.setattr(ocr_pipeline_factory, "HybridAligner", lambda: object())
+        monkeypatch.setattr(
+            ocr_pipeline_factory, "get_shared_hybrid_aligner", lambda: object()
+        )
         monkeypatch.setattr(ocr_pipeline_factory, "OCRProcessor", lambda **kw: object())
         monkeypatch.setattr(ocr_pipeline_factory, "PDFHandler", _StubPdfHandler)
 

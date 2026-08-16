@@ -9,7 +9,11 @@ Covers the three properties that matter for correctness:
 
 from __future__ import annotations
 
+import io
+import types
+
 import pytest
+from PIL import Image
 
 from omniscribe.core.aligner import (
     _SKIP_BOX_COST,
@@ -418,3 +422,83 @@ class TestReadingOrderSort:
             assert max(xs) - min(xs) < 0.1, f"column band leaked at {start}"
         # Across runs, x must be increasing (left → right).
         assert x_centers[0] < x_centers[3] < x_centers[6]
+
+
+# --- Audit P2-9: shared predictor singleton + batch resilience -------------
+
+
+def _png_bytes(size: tuple[int, int] = (100, 80)) -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", size, "white").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _pred_with_boxes() -> object:
+    return types.SimpleNamespace(
+        bboxes=[types.SimpleNamespace(bbox=[10.0, 10.0, 50.0, 40.0])]
+    )
+
+
+class _StubPredictor:
+    """Callable stand-in for Surya's DetectionPredictor."""
+
+    def __init__(self, results_per_call: list[object]) -> None:
+        self.results_per_call = list(results_per_call)
+        self.calls = 0
+
+    def __call__(self, images):
+        idx = min(self.calls, len(self.results_per_call) - 1)
+        self.calls += 1
+        return self.results_per_call[idx]
+
+
+class TestSharedPredictorSingleton:
+    def test_shared_predictor_and_aligner_are_reused(self, monkeypatch):
+        from omniscribe.core import aligner as aligner_mod
+
+        aligner_mod.reset_shared_detection_predictor()
+        aligner_mod.reset_shared_hybrid_aligner()
+        monkeypatch.setattr(aligner_mod, "DetectionPredictor", lambda: object())
+        try:
+            p1 = aligner_mod.get_shared_detection_predictor()
+            p2 = aligner_mod.get_shared_detection_predictor()
+            assert p1 is p2
+
+            a1 = aligner_mod.get_shared_hybrid_aligner()
+            a2 = aligner_mod.get_shared_hybrid_aligner()
+            assert a1 is a2
+            assert a1.detection_predictor is p1
+
+            # A default-constructed aligner joins the same singleton.
+            assert HybridAligner().detection_predictor is p1
+        finally:
+            aligner_mod.reset_shared_detection_predictor()
+            aligner_mod.reset_shared_hybrid_aligner()
+
+
+class TestDetectionBatchResilience:
+    def test_mismatched_batch_degrades_to_empty_pages(self):
+        # One prediction for two pages: the strict zip must fire and the
+        # chunk must degrade to no detected boxes instead of raising.
+        pred = _StubPredictor([[object()]])
+        aligner = HybridAligner(detection_predictor=pred)
+        result = aligner.get_detected_boxes_batch([_png_bytes(), _png_bytes((90, 120))])
+        assert result == [[], []]
+        assert pred.calls == 1
+
+    def test_all_empty_batch_retries_without_rebuilding_predictor(self):
+        # First call: every page empty. The retry loop must re-run
+        # detection on the SAME predictor (no model rebuild) and pick up
+        # the boxes the second pass finds.
+        pred = _StubPredictor(
+            [
+                [types.SimpleNamespace(bboxes=[])],
+                [_pred_with_boxes()],
+            ]
+        )
+        aligner = HybridAligner(detection_predictor=pred)
+        result = aligner.get_detected_boxes_batch([_png_bytes()])
+        assert aligner.detection_predictor is pred
+        assert pred.calls == 2
+        assert len(result) == 1 and len(result[0]) == 1
+        assert all(0.0 <= v <= 1.0 for v in result[0][0])

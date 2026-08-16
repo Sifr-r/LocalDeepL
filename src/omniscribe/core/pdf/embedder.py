@@ -9,6 +9,7 @@ and searchable PDF output generation.
 from __future__ import annotations
 
 import io
+import logging
 import os
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -27,6 +28,8 @@ from omniscribe.core.pdf.rasterizer import (
     _is_image_path,
 )
 
+logger = logging.getLogger(__name__)
+
 # Module-level font cache. ``fitz.Font("helv")`` loads the built-in
 # Helvetica metrics once per call; doing that once per text box on a
 # 200-page PDF is the kind of micro-cost that adds up to a second.
@@ -34,12 +37,222 @@ _EMBED_FONT: fitz.Font | None = None
 _EMBED_FONT_ASCENDER: float = 1.075
 _EMBED_FONT_DESCENDER: float = -0.299
 
+# Audit P0-3 — ``helv`` (WinAnsi) cannot encode Arabic/CJK, so the
+# searchable layer was empty for exactly the scripts this product
+# targets. Each text run is drawn with the first font in a chain that
+# covers all of its non-space characters:
+#
+#   1. ``OMNISCRIBE_EMBED_FONT_PATH`` — explicit TTF/OTF override.
+#   2. Bundled fonts in ``omniscribe/resources/fonts/`` — drop a font
+#      such as Noto Naskh Arabic there for full Arabic coverage.
+#   3. OS font candidates (Tahoma/Segoe UI on Windows, Noto/DejaVu on
+#      Linux) — broad coverage including Arabic/Hebrew.
+#   4. PyMuPDF's bundled Droid Sans Fallback ("cjk") — always available;
+#      covers CJK/Cyrillic/Greek/Latin but not Arabic/Hebrew.
+#
+# The chain is tried in order per run, so on a Windows host Tahoma
+# serves Arabic/Cyrillic runs and the built-in ``cjk`` serves CJK runs
+# in the same document. Characters no chain font covers are dropped
+# (logged once) rather than written as .notdef, which extracts back as
+# U+0000 and pollutes copy/paste.
+_UNICODE_CHAIN: tuple[fitz.Font, ...] | None = None
+_UNICODE_GLYPH_MISS_LOGGED: bool = False
+
+_BUNDLED_FONT_DIR = (
+    Path(__file__).resolve().parent.parent.parent / "resources" / "fonts"
+)
+_SYSTEM_FONT_CANDIDATES: tuple[str, ...] = (
+    # Windows — Tahoma and Segoe UI both ship Arabic + Hebrew + Latin.
+    r"C:\Windows\Fonts\tahoma.ttf",
+    r"C:\Windows\Fonts\segoeui.ttf",
+    # Common Linux distro locations for broad-coverage Noto / DejaVu.
+    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+    "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+)
+
 
 def _get_embed_font() -> fitz.Font:
     global _EMBED_FONT
     if _EMBED_FONT is None:
         _EMBED_FONT = fitz.Font("helv")
     return _EMBED_FONT
+
+
+def _load_font_file(path: Path) -> fitz.Font | None:
+    try:
+        return fitz.Font(fontfile=str(path))
+    except Exception:
+        logger.warning("Embed font not loadable, skipping: %s", path)
+        return None
+
+
+# Codepoints used to probe whether a font's ToUnicode round-trips:
+# Arabic meem and Hebrew alef — the scripts OS fonts most often remap
+# to presentation-form codepoints (U+FE70+) that break copy/paste.
+_PROBE_CODEPOINTS: tuple[int, ...] = (0x0645, 0x05D0)
+
+
+def _font_preserves_codepoints(font: fitz.Font) -> bool:
+    """Detect fonts whose cmap remaps logical RTL codepoints.
+
+    Some OS fonts (notably Tahoma) carry the Arabic presentation-form
+    block, and PyMuPDF's ToUnicode mapping then extracts U+FExx instead
+    of the logical characters — the text layer is present but searches
+    and copy/paste get the wrong codepoints. One tiny in-memory PDF
+    round-trip per font candidate tells them apart.
+    """
+    buffer = getattr(font, "buffer", None)
+    if buffer is None:
+        return True
+    probe = "".join(chr(cp) for cp in _PROBE_CODEPOINTS if font.has_glyph(cp))
+    if not probe:
+        return True  # font has no probe glyphs — nothing to remap
+    try:
+        doc = fitz.open()
+        try:
+            page = doc.new_page(width=100, height=20)
+            page.insert_font(fontname="probe", fontbuffer=buffer)
+            page.insert_text((2, 15), probe, fontname="probe", render_mode=3)
+            got: str = page.get_text().strip().replace("\xa0", "")
+            return got == probe
+        finally:
+            doc.close()
+    except Exception:
+        return True
+
+
+def _resolve_unicode_chain() -> tuple[fitz.Font, ...]:
+    """Collect every loadable Unicode-capable font, best first.
+
+    Codepoint-preserving fonts rank ahead of remapping ones so a host
+    whose only Arabic font remaps (e.g. Tahoma) doesn't silently turn
+    the text layer into presentation forms; the remappers stay at the
+    end as partial-coverage fallbacks.
+    """
+    candidates: list[fitz.Font] = []
+
+    env_path = os.getenv("OMNISCRIBE_EMBED_FONT_PATH", "").strip()
+    if env_path:
+        font = _load_font_file(Path(env_path).expanduser())
+        if font is not None:
+            logger.info("Embed font from OMNISCRIBE_EMBED_FONT_PATH: %s", env_path)
+            candidates.append(font)
+
+    if _BUNDLED_FONT_DIR.is_dir():
+        for candidate in sorted(_BUNDLED_FONT_DIR.iterdir()):
+            if candidate.suffix.lower() in {".ttf", ".otf"}:
+                font = _load_font_file(candidate)
+                if font is not None:
+                    logger.info("Embed font from bundled resources: %s", candidate.name)
+                    candidates.append(font)
+
+    for sys_path in _SYSTEM_FONT_CANDIDATES:
+        path = Path(sys_path)
+        if path.is_file():
+            font = _load_font_file(path)
+            if font is not None:
+                logger.info("Embed font from system path: %s", sys_path)
+                candidates.append(font)
+                break  # one OS font is enough; keep the chain lean
+
+    try:
+        candidates.append(fitz.Font("cjk"))  # bundled Droid Sans Fallback
+    except Exception:
+        logger.warning(
+            "PyMuPDF built-in 'cjk' font unavailable; embed falls back to helv"
+        )
+
+    preserving = [f for f in candidates if _font_preserves_codepoints(f)]
+    remapping = [f for f in candidates if f not in preserving]
+    if remapping:
+        logger.info(
+            "Embed font chain: %d codepoint-preserving font(s), %d remapping "
+            "font(s) demoted to fallback",
+            len(preserving),
+            len(remapping),
+        )
+    return tuple(preserving + remapping)
+
+
+def _get_unicode_chain() -> tuple[fitz.Font, ...]:
+    global _UNICODE_CHAIN
+    if _UNICODE_CHAIN is None:
+        _UNICODE_CHAIN = _resolve_unicode_chain()
+    return _UNICODE_CHAIN
+
+
+def _unicode_font_alias(font: fitz.Font) -> str:
+    return f"omni-embed-uni-{id(font)}"
+
+
+def _font_covers(font: fitz.Font, text: str) -> bool:
+    return all(font.has_glyph(ord(c)) for c in text if not c.isspace())
+
+
+def _pick_embed_font(text: str) -> tuple[str, fitz.Font]:
+    """Choose the font alias + metrics font for one text run.
+
+    Pure-Latin text stays on the Base-14 ``helv`` (no font embedded, no
+    output-size cost). Anything helv cannot encode moves to the first
+    chain font that covers it, which is registered on the page under a
+    per-font alias before drawing.
+    """
+    helv = _get_embed_font()
+    if _font_covers(helv, text):
+        return "helv", helv
+    for font in _get_unicode_chain():
+        if _font_covers(font, text):
+            return _unicode_font_alias(font), font
+    # No chain font covers the whole run — fall back to the first
+    # Unicode font (partial coverage beats none) or helv if the chain
+    # is empty; uncovered characters are filtered out below.
+    chain = _get_unicode_chain()
+    if chain:
+        return _unicode_font_alias(chain[0]), chain[0]
+    return "helv", helv
+
+
+def _ensure_font_registered(page: fitz.Page, alias: str, font: fitz.Font) -> None:
+    """Register the Unicode font on the page once (idempotent)."""
+    if alias == "helv":
+        return
+    registered: set[str] = getattr(page, "_omni_registered_fonts", None) or set()
+    if alias in registered:
+        return
+    page.insert_font(fontname=alias, fontbuffer=font.buffer)
+    registered.add(alias)
+    page._omni_registered_fonts = registered
+
+
+def _filter_uncovered_chars(text: str, font: fitz.Font) -> str:
+    """Drop characters the chosen font cannot encode.
+
+    Writing them anyway would extract as U+0000 (``.notdef`` glyph) and
+    corrupt copy/paste. Spaces are always kept so word boundaries
+    survive. Logs one warning per process with the offending codepoints.
+    """
+    global _UNICODE_GLYPH_MISS_LOGGED
+    kept: list[str] = []
+    missed: list[int] = []
+    for c in text:
+        if c.isspace() or font.has_glyph(ord(c)):
+            kept.append(c)
+        else:
+            missed.append(ord(c))
+    if missed and not _UNICODE_GLYPH_MISS_LOGGED:
+        _UNICODE_GLYPH_MISS_LOGGED = True
+        sample = ", ".join(f"U+{cp:04X}" for cp in missed[:8])
+        logger.warning(
+            "Embed font '%s' lacks glyphs for %d character(s) (e.g. %s); "
+            "they are omitted from the searchable layer. Set "
+            "OMNISCRIBE_EMBED_FONT_PATH or drop a covering font into "
+            "resources/fonts/ to include them.",
+            font.name,
+            len(missed),
+            sample,
+        )
+    return "".join(kept)
 
 
 # Thread-pool worker count for parallel embed-side page rasterization.
@@ -61,12 +274,17 @@ def _handle_fullpage_fallback(
         nx0 <= 0.001 and ny0 <= 0.001 and nx1 >= 0.999 and ny1 >= 0.999 and "\n" in text
     )
     if is_full_page_fallback:
+        fontname, font = _pick_embed_font(text)
+        text = _filter_uncovered_chars(text, font)
+        if not text.strip():
+            return True
+        _ensure_font_registered(page, fontname, font)
         fallback_rect = fitz.Rect(10, 10, page_width - 10, page_height - 10)
         page.insert_textbox(
             fallback_rect,
             text,
             fontsize=6,
-            fontname="helv",
+            fontname=fontname,
             render_mode=3,
             color=(0, 0, 0),
             align=0,
@@ -150,7 +368,12 @@ def _draw_single_line_text(
     box_width = pdf_rect.width
     box_height = pdf_rect.height
 
-    font = _get_embed_font()
+    fontname, font = _pick_embed_font(text)
+    text = _filter_uncovered_chars(text, font)
+    if not text.strip():
+        return
+    _ensure_font_registered(page, fontname, font)
+
     ascender = getattr(font, "ascender", _EMBED_FONT_ASCENDER)
     descender = getattr(font, "descender", _EMBED_FONT_DESCENDER)
     extent_em = max(0.01, ascender - descender)
@@ -168,7 +391,7 @@ def _draw_single_line_text(
         baseline,
         text,
         fontsize=fontsize,
-        fontname="helv",
+        fontname=fontname,
         render_mode=3,
         color=(0, 0, 0),
         morph=morph,
@@ -207,12 +430,20 @@ def _embed_from_image_input(
     image_path: str | Path,
     output_pdf_path: str | Path,
     pages_data: dict[int, list[tuple[BBox, str]]] | dict[Any, Any],
+    page_nums: Sequence[int] | None = None,
 ) -> None:
-    """Build a sandwich PDF directly from an image (single- or multi-frame)."""
+    """Build a sandwich PDF directly from an image (single- or multi-frame).
+
+    ``page_nums`` restricts the output to the listed frame indices
+    (audit P2-9); ``None`` keeps every frame.
+    """
+    selected = set(page_nums) if page_nums is not None else None
     new_doc = fitz.open()
     try:
         with Image.open(image_path) as src:
             for page_num, frame in enumerate(ImageSequence.Iterator(src)):
+                if selected is not None and page_num not in selected:
+                    continue
                 img = frame.convert("RGB")
                 width, height = float(img.width), float(img.height)
 
@@ -246,6 +477,7 @@ def embed_structured_text(
     pages_data: dict[int, list[tuple[BBox, str]]],
     dpi: int = 200,
     parallelism: int = _EMBED_RASTER_WORKERS,
+    page_nums: Sequence[int] | None = None,
 ) -> None:
     """
     Build a searchable "sandwich" PDF: rasterize each page as a background
@@ -258,9 +490,17 @@ def embed_structured_text(
     thread pool. PyMuPDF is C-bound and ``Page.get_pixmap`` is
     thread-safe per-page, so on a 4-core host this is the difference
     between a sequential and a near-linear parallel pass.
+
+    ``page_nums`` (audit P2-9) restricts the output to the given source
+    page indices, in the given order. ``None`` (the default) rasterizes
+    the whole document — the pre-P2 behaviour. Subset runs (``pages="1-3"``
+    on a 100-page PDF) pass the processed pages here so the embed pass
+    no longer re-rasterizes pages that were never OCR'd.
     """
     if _is_image_path(input_pdf_path):
-        _embed_from_image_input(input_pdf_path, output_pdf_path, pages_data)
+        _embed_from_image_input(
+            input_pdf_path, output_pdf_path, pages_data, page_nums=page_nums
+        )
         return
 
     _emit_pymupdf_agpl_notice()
@@ -269,7 +509,10 @@ def embed_structured_text(
     new_doc = fitz.open()
 
     try:
-        page_nums = list(range(len(doc)))
+        if page_nums is not None:
+            page_nums = [pn for pn in page_nums if 0 <= pn < len(doc)]
+        else:
+            page_nums = list(range(len(doc)))
         if not page_nums:
             new_doc.save(output_pdf_path)
             return

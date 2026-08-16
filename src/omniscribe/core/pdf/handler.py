@@ -7,7 +7,7 @@ conversion to images and searchable sandwich PDF embedding.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -159,11 +159,16 @@ class PDFHandler:
         document_result: DocumentResult,
         dpi: int = 200,
         parallelism: int = _DEFAULT_RASTERIZER_WORKERS,
+        page_nums: Sequence[int] | None = None,
     ) -> None:
         """Rich-writer interface: embed text from a full DocumentResult.
 
         Implements :class:`~omniscribe.core.workflows.base.DocumentResultWriter`
         so the engine can pass the lossless IR directly.
+
+        ``page_nums`` (audit P2-9) restricts the sandwich output to the
+        processed pages — subset runs no longer re-rasterize the rest of
+        the source document.
         """
         self.embed_structured_text(
             input_pdf_path,
@@ -171,6 +176,7 @@ class PDFHandler:
             document_result.to_pages_data(),
             dpi=dpi,
             parallelism=parallelism,
+            page_nums=page_nums,
         )
 
     def embed_structured_text(
@@ -180,6 +186,7 @@ class PDFHandler:
         pages_data: dict[int, list[tuple[BBox, str]]],
         dpi: int = 200,
         parallelism: int = _DEFAULT_RASTERIZER_WORKERS,
+        page_nums: Sequence[int] | None = None,
     ) -> None:
         """
         Build a searchable "sandwich" PDF: rasterize each page as a background
@@ -195,4 +202,5 @@ class PDFHandler:
             pages_data,
             dpi=dpi,
             parallelism=parallelism,
+            page_nums=page_nums,
         )

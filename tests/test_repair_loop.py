@@ -386,6 +386,31 @@ class TestPromptedGroundedOCRCrop:
         with pytest.raises(ValueError, match="out of range"):
             await backend.ocr_crop("dummy.pdf", -1, (0.2, 0.2, 0.8, 0.4))
 
+    async def test_raster_cache_shared_across_crop_calls(self, monkeypatch) -> None:
+        """Audit P2-9: repair crops must reuse the main-pass rasterization."""
+        from omniscribe.core.grounded import prompted as prompted_mod
+
+        backend = prompted_mod.PromptedGroundedOCR(
+            api_base="http://repair-test.local/v1", model="repair-model"
+        )
+        calls: list[str] = []
+
+        def counting_raster(path, dim, dpi):
+            calls.append(path)
+            return [(_tiny_jpeg_b64(), 100, 100)]
+
+        monkeypatch.setattr(prompted_mod, "_rasterize_to_jpeg_pages", counting_raster)
+
+        async def fake_call_llm(**kwargs):
+            return "  recovered line  "
+
+        monkeypatch.setattr(prompted_mod, "call_llm", fake_call_llm)
+
+        await backend.ocr_crop("dummy.pdf", 0, (0.2, 0.2, 0.8, 0.4))
+        await backend.ocr_crop("dummy.pdf", 0, (0.1, 0.1, 0.5, 0.5))
+
+        assert len(calls) == 1, "second crop re-rasterized the document"
+
 
 class TestCropNormalizedGeometry:
     def test_padding_and_size(self) -> None:

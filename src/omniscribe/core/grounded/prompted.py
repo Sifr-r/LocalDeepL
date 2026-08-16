@@ -228,6 +228,42 @@ class PromptedGroundedOCR:
         self.circuit_breaker = get_default_circuit_breaker_registry().get_or_create(
             self.api_base, self.model
         )
+        # Audit P2-9: per-instance page-image cache. ``ocr_crop`` (quality
+        # repair on the grounded path) used to re-rasterize the whole
+        # document for every repaired block; ``ocr_document`` already paid
+        # for the same rasterization seconds earlier. The cache is keyed by
+        # path + file stat + raster settings (stat best-effort so test
+        # doubles can pass dummy paths), and the backend instance is
+        # constructed per request, so the cache lives exactly as long as
+        # one run.
+        self._raster_cache: dict[
+            tuple[str, int, int, int, int], list[tuple[str, int, int]]
+        ] = {}
+
+    async def _get_page_images(self, input_path: str) -> list[tuple[str, int, int]]:
+        """Rasterize ``input_path`` once per (path, stat, settings) tuple.
+
+        Shared by :meth:`ocr_document` and :meth:`ocr_crop` so the repair
+        loop reuses the main-pass rasterization instead of re-opening the
+        PDF per below-target block.
+        """
+        try:
+            st = os.stat(input_path)
+            stat_key = (int(st.st_mtime_ns), int(st.st_size))
+        except OSError:
+            stat_key = (-1, -1)
+        key = (input_path, stat_key[0], stat_key[1], self.max_image_dim, self.dpi)
+        cached = self._raster_cache.get(key)
+        if cached is not None:
+            return cached
+        page_imgs = await asyncio.to_thread(
+            _rasterize_to_jpeg_pages,
+            input_path,
+            self.max_image_dim,
+            self.dpi,
+        )
+        self._raster_cache[key] = page_imgs
+        return page_imgs
 
     async def ensure_model_loaded(self) -> None:
         """Pre-flight check that ``self.model`` is loaded on the server.
@@ -258,16 +294,11 @@ class PromptedGroundedOCR:
         NOT part of the :class:`GroundedOCRBackend` protocol, so adding
         it changes no existing backend contract.
 
-        P1 trade-off: the document is rasterized per call. Repair calls
-        are rare (only below-target blocks), so this is acceptable until
-        a page-image cache exists.
+        Audit P2-9: page images come from the per-instance raster cache
+        populated by :meth:`ocr_document`, so repair no longer
+        re-rasterizes the full PDF per repaired block.
         """
-        page_imgs = await asyncio.to_thread(
-            _rasterize_to_jpeg_pages,
-            input_path,
-            self.max_image_dim,
-            self.dpi,
-        )
+        page_imgs = await self._get_page_images(input_path)
         if page_index < 0 or page_index >= len(page_imgs):
             raise ValueError(
                 f"page_index {page_index} out of range "
@@ -353,13 +384,10 @@ class PromptedGroundedOCR:
     ) -> GroundedResponse:
         # 1. Rasterize every page, remembering dimensions.
         # Offloaded to a worker thread — fitz.open / get_pixmap are blocking
-        # CPU+IO work that would otherwise stall the event loop.
-        page_imgs = await asyncio.to_thread(
-            _rasterize_to_jpeg_pages,
-            pdf_path,
-            self.max_image_dim,
-            self.dpi,
-        )
+        # CPU+IO work that would otherwise stall the event loop. The result
+        # is cached on the instance (audit P2-9) so the repair loop's
+        # ``ocr_crop`` reuses it.
+        page_imgs = await self._get_page_images(pdf_path)
 
         # 2. Call the VLM per page, streaming progress and isolating failures
         # so one bad page doesn't tank a multi-page document.

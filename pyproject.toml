@@ -35,6 +35,7 @@ dependencies = [
     "redis>=5.0.0",
     "chromadb>=0.5.0",
     "numpy<2.3.0",
+    "defusedxml>=0.7.1",  # XLIFF/TBX/TMX glossary parsing without XXE/DTD
 ]
 
 [project.optional-dependencies]
@@ -89,15 +90,15 @@ transcription = [
 ]
 
 # Glossary multi-source import: optional XLSX, SQL pair-table, git archive
-# fetchers, safe XML parsers (XLIFF/TBX/TMX), and encoding auto-detection.
+# fetchers, XML format support (XLIFF/TBX/TMX), and encoding auto-detection.
 # Every parser tolerates the dep being missing by raising
 # `FormatNotAvailableError` from `core.glossary_sources.parse`, which the
-# router maps to HTTP 503 with an install hint.
+# router maps to HTTP 503 with an install hint. (defusedxml moved to the
+# base deps in audit P1-8: XXE/DTD rejection must not be optional.)
 glossary = [
     "openpyxl>=3.1.0",        # XLSX support (CSV/TSV use stdlib)
     "sqlalchemy>=2.0.0",       # SQL pair-table reader
     "gitpython>=3.1.0",        # Git glossary file fetcher
-    "defusedxml>=0.7.1",       # Safe XML parsing for XLIFF/TBX/TMX
     "chardet>=5.2.0",          # Encoding detection fallback
 ]
 
@@ -143,6 +144,7 @@ dev = [
     "pip-audit>=2.10.1",
     "cyclonedx-bom>=7.3.1",
     "rich>=13.0.0",
+    "fakeredis>=2.0",  # in-memory Redis for state_backend_redis tests
 ]
 
 [tool.uv]
