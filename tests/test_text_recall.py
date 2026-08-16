@@ -359,3 +359,39 @@ def _photo_edge_page(
 
     return Image.fromarray(arr)
 
+
+@pytest.mark.parametrize(
+    ("post_dilate_height_px", "density", "line_width_px"),
+    [
+        (11, 0.30, 600),    # boundary — just over the 10px height floor
+        (14, 0.40, 800),    # mid-range — typical photo edge
+        (18, 0.55, 1000),   # worst case — thick + dense
+    ],
+    ids=["boundary_height", "typical_photo_edge", "worst_case_thick_dense"],
+)
+def test_photo_edge_passes_filters_as_known_limitation(
+    post_dilate_height_px: int, density: float, line_width_px: int,
+) -> None:
+    """Document the line-shape photo-edge limitation.
+
+    A horizontal line that satisfies the booster's height, density,
+    aspect, and area filters (see ``src/omniscribe/core/text_recall.py:65-71``)
+    is emitted as a recall box. The shape described here is a line-shaped
+    photo edge or figure border that survives every filter. This test pins
+    the current behavior: exactly 1 box is emitted for each parameter case.
+
+    Do not change the asserted box count without (1) revising the T9 spec
+    at ``docs/superpowers/specs/2026-08-16-t9-limitation-pin-photo-edge-design.md``
+    and (2) re-measuring the junk-box impact on ``examples/*.pdf`` (see
+    TODOS.md T9 and the T7 harness in ``scripts/``).
+    """
+    img = _photo_edge_page(
+        line_height_px=post_dilate_height_px,
+        line_width_px=line_width_px,
+        density=density,
+    )
+    extras = WhitespaceRecallBooster().supplement(img, [])
+    assert len(extras) == 1
+    _x0, y0, _x1, y1 = extras[0]
+    assert 0.45 < y0 < 0.55 and 0.45 < y1 < 0.55
+
