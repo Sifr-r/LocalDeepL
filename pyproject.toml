@@ -34,9 +34,9 @@ dependencies = [
     "requests>=2.31",
     "pyspellchecker>=0.8.1",
     "python-docx>=1.1.0",
-    "redis>=5.0.0",
+    "redis>=8.1.0",
     "chromadb>=0.5.0",
-    "numpy>=1.24.0,<2.3.0",
+    "numpy>=2.4.6,<2.5.0",
     "defusedxml>=0.7.1",  # XLIFF/TBX/TMX glossary parsing without XXE/DTD
 ]
 
@@ -44,7 +44,7 @@ dependencies = [
 web = [
     "fastapi>=0.124.4",
     "uvicorn>=0.38.0",
-    "websockets>=10.0,<14.0",
+    "websockets>=17.0.1,<18.0",
     "python-multipart>=0.0.20",
 ]
 preprocessing = [
@@ -84,7 +84,7 @@ nllb = [
 
 # Translation quality scoring (chrF++, BLEU, etc.).
 quality = [
-    "sacrebleu>=2.4.0",
+    "sacrebleu>=2.6.0",
 ]
 
 
@@ -141,7 +141,7 @@ include = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
-    "ruff>=0.3.0",
+    "ruff>=0.16.2",
     "mypy>=1.9.0",
     "pyyaml>=6.0",
     "hypothesis>=6.100.0",
