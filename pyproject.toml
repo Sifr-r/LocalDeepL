@@ -44,7 +44,7 @@ dependencies = [
 web = [
     "fastapi>=0.124.4",
     "uvicorn>=0.38.0",
-    "websockets>=10.0,<14.0",
+    "websockets>=17.0.1,<18.0",
     "python-multipart>=0.0.20",
 ]
 preprocessing = [
