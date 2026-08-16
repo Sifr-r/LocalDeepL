@@ -32,6 +32,8 @@
       {id}
       {disabled}
       aria-label={label ? undefined : ariaLabel || undefined}
+      aria-describedby={error ? `${id}-error` : hint ? `${id}-hint` : undefined}
+      aria-invalid={error ? 'true' : undefined}
       bind:value
       on:change
       on:blur
@@ -65,8 +67,8 @@
     </svg>
   </div>
   {#if error}
-    <p class="mt-1 text-xs text-danger">{error}</p>
+    <p id={`${id}-error`} class="mt-1 text-xs text-danger">{error}</p>
   {:else if hint}
-    <p class="mt-1 text-xs text-foreground-muted">{hint}</p>
+    <p id={`${id}-hint`} class="mt-1 text-xs text-foreground-muted">{hint}</p>
   {/if}
 </div>
