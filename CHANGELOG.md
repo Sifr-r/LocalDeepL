@@ -408,6 +408,25 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   the system role. The list is intentionally narrow — see the
   helper's docstring for the "extend cautiously" rationale.
 
+### Security
+
+- **scripts/ingest_lexicon.py is now XXE-safe** — the script
+  parses external GitHub-hosted TEI XML with `defusedxml.ElementTree`
+  instead of the stdlib `xml.etree.ElementTree`. The previous parser
+  silently accepted `<!DOCTYPE>` declarations and external entity
+  references, allowing XXE-driven local file read, SSRF, or
+  billion-laughs DoS via a malicious payload. The parse step is
+  extracted into `_parse_xml()` and unit-tested for plain XML,
+  external-entity XXE, and billion-laughs rejection.
+
+- **Redis password is now CSPRNG-generated** — `start_app.vbs`
+  generates the password via a PowerShell one-liner using
+  `[System.Security.Cryptography.RandomNumberGenerator]` instead of
+  the previous VBScript `Randomize` + `Rnd()` LCG. The consumer-side
+  `--requirepass` plumbing added in a77b77a is unchanged; only the
+  entropy source moved. A hygiene test asserts the VBS no longer
+  references `Rnd` / `Randomize` and now references the CSPRNG type.
+
 ### Changed
 
 - `_extract_prompt_and_image` now returns a 2-tuple
