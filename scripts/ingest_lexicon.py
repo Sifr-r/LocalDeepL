@@ -1,7 +1,8 @@
 import argparse
 import os
 import sys
-import xml.etree.ElementTree as ET
+# NB: do NOT import xml.etree.ElementTree here; it is not XXE-safe.
+# Use scripts.ingest_lexicon._parse_xml for any external XML.
 
 import requests
 
@@ -11,6 +12,19 @@ if sys.stdout.encoding.lower() != "utf-8":
 
 import chromadb
 from chromadb.utils import embedding_functions
+
+
+def _parse_xml(content: str):
+    """Parse an XML string with XXE/DTD protection.
+
+    The previous implementation used xml.etree.ElementTree.fromstring,
+    which silently accepts <!DOCTYPE> declarations and external entity
+    references. A malicious payload could trigger local file read,
+    SSRF, or billion-laughs DoS. defusedxml.ElementTree.fromstring
+    rejects these at the expat level before expansion.
+    """
+    import defusedxml.ElementTree as DET
+    return DET.fromstring(content)
 
 
 def get_chroma_collection(db_path="./chroma_db"):
@@ -39,8 +53,8 @@ def fetch_xml_files(api_url):
 def parse_tei_xml(xml_content):
     entries = []
     try:
-        root = ET.fromstring(xml_content)
-    except ET.ParseError as e:
+        root = _parse_xml(xml_content)
+    except Exception as e:
         print(f"Parse error: {e}")
         return []
 
