@@ -46,20 +46,31 @@ def test_is_ssrf_target_defaults():
 
             mock_getaddrinfo.side_effect = side_effect
 
-            assert asyncio.run(is_ssrf_target("http://localhost:1234/v1")) is True
-            assert asyncio.run(is_ssrf_target("http://127.0.0.1/v1")) is True
-            assert asyncio.run(is_ssrf_target("http://192.168.1.1/v1")) is True
-            assert asyncio.run(is_ssrf_target("http://10.0.0.1/v1")) is True
-            assert asyncio.run(is_ssrf_target("http://127.0.0.1.nip.io/v1")) is True
+            assert (
+                asyncio.run(is_ssrf_target("http://localhost:1234/v1")).allowed is False
+            )
+            assert asyncio.run(is_ssrf_target("http://127.0.0.1/v1")).allowed is False
+            assert asyncio.run(is_ssrf_target("http://192.168.1.1/v1")).allowed is False
+            assert asyncio.run(is_ssrf_target("http://10.0.0.1/v1")).allowed is False
+            assert (
+                asyncio.run(is_ssrf_target("http://127.0.0.1.nip.io/v1")).allowed
+                is False
+            )
             # Public resources should pass cleanly
-            assert asyncio.run(is_ssrf_target("http://api.openai.com/v1")) is False
+            assert (
+                asyncio.run(is_ssrf_target("http://api.openai.com/v1")).allowed is True
+            )
+            assert (
+                asyncio.run(is_ssrf_target("http://api.openai.com/v1")).resolved_ip
+                == "104.18.3.161"
+            )
 
 
 def test_is_ssrf_target_allowed():
     # If ALLOW_SSRF_LOCAL is explicitly set to true
     with patch.dict(os.environ, {"ALLOW_SSRF_LOCAL": "true"}):
-        assert asyncio.run(is_ssrf_target("http://localhost:1234/v1")) is False
-        assert asyncio.run(is_ssrf_target("http://127.0.0.1/v1")) is False
+        assert asyncio.run(is_ssrf_target("http://localhost:1234/v1")).allowed is True
+        assert asyncio.run(is_ssrf_target("http://127.0.0.1/v1")).allowed is True
 
 
 def test_translation_chunking_preserves_size():

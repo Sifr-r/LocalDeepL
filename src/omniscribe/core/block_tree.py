@@ -113,6 +113,13 @@ class BlockNode:
     section_hierarchy: list[str] = field(default_factory=list)
     spans: list[Span] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    # In-memory cross-reference to the parent FigureNode. Lives here
+    # only so `html_writer` (which iterates `PageTree.children`, not
+    # `DocumentTree.figures`) can inline the image without a second
+    # pass. Not serialized in `to_dict`; the canonical bytes are
+    # carried by `FigureNode.image_bytes` and round-trip through its
+    # base64-encoded `image_bytes_b64` key.
+    image_bytes: bytes | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -470,7 +477,12 @@ def from_document_result(document: DocumentResult) -> DocumentTree:
                     caption=block.text,
                 )
                 tree.figures.append(fig_node)
-                # Keep a BlockNode in the page children too, just mark it as figure
+                # Keep a BlockNode in the page children too, just mark
+                # it as figure. `image_bytes` is a real field on
+                # BlockNode now (added so html_writer can inline the
+                # figure from a page-children walk without a second
+                # pass over DocumentTree.figures); we mirror the
+                # FigureNode's bytes here.
                 node = BlockNode(
                     block_type=BlockType.FIGURE,
                     bbox=block.bbox,
@@ -478,13 +490,8 @@ def from_document_result(document: DocumentResult) -> DocumentTree:
                     page_idx=page.page_index,
                     confidence=block.confidence,
                     metadata=dict(block.metadata),
+                    image_bytes=fig_node.image_bytes,
                 )
-                # For html_writer compatibility — BlockNode doesn't
-                # declare `image_bytes` (it lives on FigureNode), but
-                # html_writer reads it off the block too. This is a
-                # deliberate cross-reference; suppressing the
-                # attr-defined check here is the right call.
-                node.image_bytes = fig_node.image_bytes  # type: ignore[attr-defined]
                 tree_page.children.append(node)
                 continue
 

@@ -95,7 +95,7 @@ async def update_active_provider(body: ActiveProviderUpdate) -> JSONResponse:
 @router.post("/api/providers")
 async def create_or_update_provider(body: ProviderCreateRequest) -> JSONResponse:
     """Create or update a provider configuration."""
-    if await is_ssrf_target(body.api_url):
+    if not (await is_ssrf_target(body.api_url)).allowed:
         return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
 
     mgr = get_provider_manager()
@@ -125,7 +125,7 @@ async def list_provider_models(provider_id: str) -> JSONResponse:
             status_code=404, detail=f"Provider '{provider_id}' not found"
         )
 
-    if provider.api_url and await is_ssrf_target(provider.api_url):
+    if provider.api_url and not (await is_ssrf_target(provider.api_url)).allowed:
         return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
 
     models = await mgr.async_list_provider_models(provider_id)

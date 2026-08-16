@@ -13,7 +13,13 @@
 # ``nvidia/cuda:...runtime-cudnn*`` and install ``torch`` matching the
 # CUDA major version. Out of scope for this template.
 
-FROM python:3.12-slim AS runtime-base
+# Pinned: 2026-08-16 to a verified Docker Hub OCI image-index digest for
+# library/python:3.12-slim. Lookup performed against
+# registry-1.docker.io/v2/library/python/manifests/3.12-slim
+# (Content-Type: application/vnd.oci.image.index.v1+json,
+#  self-digest re-lookup consistent). Satisfies the digest-pinning
+# requirement in SECURITY.md (M7).
+FROM python:3.12-slim@sha256:dd29372629eeba2dd003fd9e9d35a5b8236c44727875a0364254b5127af88e65 AS runtime-base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -51,6 +57,12 @@ RUN groupadd --system app && useradd --system --gid app --uid 1001 app \
 USER app
 
 EXPOSE 8000
+
+# Surface the uv-managed venv bin directory on PATH so the bare
+# ``omniscribe-server`` / ``celery`` entrypoints resolve at runtime
+# (uv installs to /app/.venv per UV_PROJECT_ENVIRONMENT above, but
+# does not add it to PATH for us).
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Default: bind on all interfaces so the container is reachable from
 # the host on non-loopback adapters. Use ``--host 127.0.0.1`` when

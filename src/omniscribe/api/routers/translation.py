@@ -181,7 +181,7 @@ async def translate_tree_endpoint(req: TreeTranslationRequest) -> dict[str, Any]
     # discovery routes do.
     config = cast(dict[str, Any], _config)
     api_base = req.api_base or config.get("translation_api_base") or config["api_base"]
-    if api_base and await is_ssrf_target(api_base):
+    if api_base and not (await is_ssrf_target(api_base)).allowed:
         raise HTTPException(status_code=403, detail=SAFE_API_BASE_ERROR)
     api_key = req.api_key or config.get("translation_api_key") or config["api_key"]
     model = req.model or config.get("translation_model") or config.get("model")

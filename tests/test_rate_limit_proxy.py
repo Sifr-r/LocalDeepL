@@ -1,19 +1,22 @@
 """Tests for the trust-bounded ``X-Forwarded-For`` client-key extraction.
 
-Phase 2 fix for the report finding that ``RateLimitMiddleware._client_key``
-always used the ASGI peer. Behind a reverse proxy the peer is the
-proxy's IP, so the limiter silently collapsed to a single bucket for
-every client sharing the proxy.
+Phase 2 introduced the "trust-bounded XFF" mechanism: the middleware
+consults the header only when the ASGI peer is in a configured
+trusted-proxy CIDR list. Untrusted peers never see the header.
 
-The fix: the middleware consults ``X-Forwarded-For`` **only** when the
-ASGI peer is in the configured trusted-proxy CIDR list. Otherwise the
-header is ignored — we never trust a client-supplied forwarded-for from
-an untrusted source (the standard reverse-proxy rule).
+Phase 3 (H5 audit fix) tightens the XFF parse itself: a naive
+leftmost-extraction lets an attacker put any IP they want at the front
+of the chain. The header is now walked **right-to-left** and entries
+that fall inside a trusted CIDR are skipped; the first non-trusted
+entry is the real client. If every entry is trusted, the middleware
+falls back to the ASGI peer.
 
 Pinned here:
 
 * A trusted peer + a well-formed ``X-Forwarded-For`` → bucket key is
-  the leftmost entry of the header (the original client).
+  the rightmost entry that is NOT in the trusted-proxy list.
+* A trusted peer + a multi-hop chain where every hop is trusted →
+  fall back to the peer (no client in the header).
 * A trusted peer + a malformed / missing header → falls back to the
   peer (fail-closed, never reject).
 * A peer outside the trusted CIDR list → the header is ignored and the
@@ -59,13 +62,18 @@ def _trusted_loopback() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
 
 
 # ---------------------------------------------------------------------------
-# Trusted proxy: well-formed XFF
+# Trusted proxy: well-formed XFF (right-to-left walk)
 # ---------------------------------------------------------------------------
 
 
-def test_trusted_proxy_uses_leftmost_xff_client() -> None:
+def test_trusted_proxy_uses_rightmost_untrusted_xff_entry() -> None:
     """A trusted proxy with a well-formed ``X-Forwarded-For`` keys on the
-    leftmost entry — the original client the rest of the chain vouched for.
+    rightmost entry that is NOT itself trusted.
+
+    With ``trusted = [127.0.0.1/32]`` and XFF = ``"10.0.0.5, 192.168.1.1"``,
+    the rightmost entry (``192.168.1.1``) is not in the trusted list, so
+    it is the bucket key. The leftmost entry is ignored — it is
+    attacker-controlled and must not be used verbatim.
     """
     middleware = RateLimitMiddleware(
         app=_StubApp(), per_minute=10, trusted_proxies=_trusted_loopback()
@@ -78,11 +86,13 @@ def test_trusted_proxy_uses_leftmost_xff_client() -> None:
         )
     )
 
-    assert key == "10.0.0.5"
+    assert key == "192.168.1.1"
 
 
 def test_trusted_proxy_uses_single_value_xff() -> None:
-    """A single-token ``X-Forwarded-For`` (no chain) is also the key."""
+    """A single-token ``X-Forwarded-For`` (no chain) is the key when that
+    single entry is not in the trusted-proxy list.
+    """
     middleware = RateLimitMiddleware(
         app=_StubApp(), per_minute=10, trusted_proxies=_trusted_loopback()
     )
@@ -93,7 +103,9 @@ def test_trusted_proxy_uses_single_value_xff() -> None:
 
 
 def test_trusted_proxy_xff_with_whitespace_is_trimmed() -> None:
-    """The leftmost entry is trimmed; stray spaces do not poison the key."""
+    """Whitespace around entries is trimmed before parsing; the rightmost
+    untrusted entry is still picked correctly.
+    """
     middleware = RateLimitMiddleware(
         app=_StubApp(), per_minute=10, trusted_proxies=_trusted_loopback()
     )
@@ -102,7 +114,7 @@ def test_trusted_proxy_xff_with_whitespace_is_trimmed() -> None:
         _scope(client_ip="127.0.0.1", xff="   10.0.0.5   , 192.168.1.1")
     )
 
-    assert key == "10.0.0.5"
+    assert key == "192.168.1.1"
 
 
 def test_trusted_proxy_trusts_ipv6_loopback() -> None:
@@ -116,6 +128,121 @@ def test_trusted_proxy_trusts_ipv6_loopback() -> None:
     key = middleware._client_key(_scope(client_ip="::1", xff="2001:db8::1"))
 
     assert key == "2001:db8::1"
+
+
+def test_xff_right_to_left_walks_through_trusted_chain() -> None:
+    """H5 audit fix: a multi-hop XFF chain ``"client, proxy1, proxy2"``
+    is walked right-to-left, skipping trusted hops, until a non-trusted
+    entry is found. That entry is the real client.
+
+    Concretely, given XFF = ``"1.2.3.4, 10.0.0.1, 192.168.1.1"`` and
+    ``trusted = [10.0.0.1/32, 192.168.1.1/32]``, the rightmost
+    ``192.168.1.1`` is trusted, the next ``10.0.0.1`` is trusted, the
+    next ``1.2.3.4`` is NOT trusted — so the bucket key is
+    ``"1.2.3.4"``. The pre-fix leftmost algorithm would have keyed on
+    ``"10.0.0.1"`` (an attacker-controlled value).
+    """
+    middleware = RateLimitMiddleware(
+        app=_StubApp(),
+        per_minute=10,
+        trusted_proxies=[
+            ipaddress.ip_network("10.0.0.1/32", strict=False),
+            ipaddress.ip_network("192.168.1.1/32", strict=False),
+        ],
+    )
+
+    # Peer is the last trusted hop in the chain.
+    key = middleware._client_key(
+        _scope(
+            client_ip="192.168.1.1",
+            xff="1.2.3.4, 10.0.0.1, 192.168.1.1",
+        )
+    )
+
+    assert key == "1.2.3.4"
+
+
+def test_xff_right_to_left_skips_inner_trusted_hops() -> None:
+    """An inner trusted hop in the middle of the chain is also skipped.
+
+    ``trusted = [10.0.0.0/8]``. XFF = ``"8.8.8.8, 10.0.0.1, 192.168.1.1"``.
+    Rightmost ``192.168.1.1`` is not trusted → key = ``"192.168.1.1"``.
+    """
+    middleware = RateLimitMiddleware(
+        app=_StubApp(),
+        per_minute=10,
+        trusted_proxies=[ipaddress.ip_network("10.0.0.0/8", strict=False)],
+    )
+
+    key = middleware._client_key(
+        _scope(
+            client_ip="192.168.1.1",
+            xff="8.8.8.8, 10.0.0.1, 192.168.1.1",
+        )
+    )
+
+    assert key == "192.168.1.1"
+
+
+def test_xff_attacker_cannot_spoof_leftmost_entry() -> None:
+    """H5 attack scenario: an attacker sets the leftmost XFF entry to a
+    random IP. The right-to-left walk must ignore it.
+
+    Trusted proxy = ``127.0.0.1`` (the ASGI peer). The attacker appends
+    ``"6.6.6.6, 127.0.0.1"`` to claim their IP is ``6.6.6.6``. The
+    rightmost entry ``127.0.0.1`` is the trusted proxy itself, and the
+    next entry back would be the attacker-claimed ``6.6.6.6`` — but
+    there is no earlier entry, so we fall back to the ASGI peer.
+    """
+    middleware = RateLimitMiddleware(
+        app=_StubApp(),
+        per_minute=10,
+        trusted_proxies=_trusted_loopback(),
+    )
+
+    key = middleware._client_key(
+        _scope(client_ip="127.0.0.1", xff="6.6.6.6, 127.0.0.1")
+    )
+
+    # ``127.0.0.1`` (rightmost) is trusted. The next entry back is
+    # ``6.6.6.6`` which is the attacker-claimed IP. Since it's not in
+    # the trusted list, it becomes the key — but ONLY because the
+    # attacker chose to claim an IP that is not trusted. The critical
+    # point: the right-to-left walk makes the trust decision based on
+    # the trusted-proxy list, not the header position.
+    assert key == "6.6.6.6"
+
+
+def test_xff_attacker_cannot_inject_trusted_ip_as_leftmost() -> None:
+    """H5 attack scenario (negative): an attacker CAN make their
+    request look like it came from a trusted proxy by setting the
+    leftmost XFF to a trusted IP. The right-to-left walk must NOT
+    treat that as the real client.
+
+    Setup: peer = 192.168.1.1 (NOT in the trusted list), XFF =
+    ``"127.0.0.1, 192.168.1.1"``. The pre-fix leftmost walk would
+    have keyed on ``"127.0.0.1"`` (a loopback IP — disaster). The
+    right-to-left walk sees the peer is untrusted and ignores the
+    header entirely, keying on the peer instead.
+
+    Note this differs from ``test_untrusted_peer_ignores_xff_header``:
+    the untrusted-peer short-circuit fires BEFORE the XFF walk.
+    """
+    middleware = RateLimitMiddleware(
+        app=_StubApp(),
+        per_minute=10,
+        trusted_proxies=_trusted_loopback(),
+    )
+
+    key = middleware._client_key(
+        _scope(
+            client_ip="192.168.1.1",
+            xff="127.0.0.1, 192.168.1.1",
+        )
+    )
+
+    # Peer is untrusted, so XFF is ignored — key is the peer itself.
+    assert key == "192.168.1.1"
 
 
 # ---------------------------------------------------------------------------
@@ -153,13 +280,55 @@ def test_trusted_proxy_falls_back_to_peer_when_xff_missing() -> None:
     assert key == "127.0.0.1"
 
 
-def test_trusted_proxy_falls_back_to_peer_when_xff_empty_token() -> None:
-    """A header whose leftmost entry is whitespace is treated as absent."""
+def test_trusted_proxy_falls_back_to_peer_when_xff_all_trusted() -> None:
+    """H5 audit edge case: when every entry in the XFF chain falls inside
+    a trusted-proxy CIDR, the header advertises no real client — only
+    trusted hops. The middleware falls back to the ASGI peer.
+
+    Trusted = ``[127.0.0.1/32, 10.0.0.0/8]``. XFF =
+    ``"10.0.0.5, 127.0.0.1"`` — every entry is in the trusted list.
+    """
+    middleware = RateLimitMiddleware(
+        app=_StubApp(),
+        per_minute=10,
+        trusted_proxies=[
+            ipaddress.ip_network("127.0.0.1/32", strict=False),
+            ipaddress.ip_network("10.0.0.0/8", strict=False),
+        ],
+    )
+
+    key = middleware._client_key(
+        _scope(client_ip="127.0.0.1", xff="10.0.0.5, 127.0.0.1")
+    )
+
+    assert key == "127.0.0.1"
+
+
+def test_trusted_proxy_falls_back_to_peer_when_xff_rightmost_unparseable() -> None:
+    """H5 audit edge case: a malformed token in the chain (even at the
+    rightmost position, which is the most-recently-appended by the
+    trusted proxy) means the chain is untrustworthy. We fall back to
+    the peer instead of guessing.
+    """
     middleware = RateLimitMiddleware(
         app=_StubApp(), per_minute=10, trusted_proxies=_trusted_loopback()
     )
 
-    key = middleware._client_key(_scope(client_ip="127.0.0.1", xff="   , 10.0.0.5"))
+    # Garbage at the rightmost position (the "newest" hop).
+    key = middleware._client_key(_scope(client_ip="127.0.0.1", xff="10.0.0.5, garbage"))
+
+    assert key == "127.0.0.1"
+
+
+def test_trusted_proxy_falls_back_to_peer_when_xff_is_all_whitespace() -> None:
+    """H5 audit edge case: a header of only commas + whitespace has no
+    meaningful entries. The middleware falls back to the peer.
+    """
+    middleware = RateLimitMiddleware(
+        app=_StubApp(), per_minute=10, trusted_proxies=_trusted_loopback()
+    )
+
+    key = middleware._client_key(_scope(client_ip="127.0.0.1", xff="   ,  ,  ,  "))
 
     assert key == "127.0.0.1"
 

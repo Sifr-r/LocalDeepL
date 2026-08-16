@@ -20,6 +20,7 @@ from omniscribe.api.services.artifacts import (
     _validate_artifact_id,
     _validate_token,
 )
+from omniscribe.api.services.config_store import RedisConfigStore
 from omniscribe.api.services.jobs import (
     JobHistory,
     JobRecord,
@@ -218,6 +219,8 @@ class RedisJobHistory(JobHistory):
 class RedisStateBackend:
     """Redis-backed StateBackend implementation."""
 
+    config_store: RedisConfigStore
+
     def __init__(
         self,
         redis_url: str,
@@ -245,3 +248,7 @@ class RedisStateBackend:
         self.progress_service = ProgressService()
         self.glossary_library = GlossaryLibrary(artifact_dir=self.artifact_dir)
         self.ocr_job_queue = OCRJobQueue()
+        # Duck-typed config-store attribute (see
+        # ``services/state_backend.py`` module docstring). Not part of
+        # the :class:`StateBackend` Protocol.
+        self.config_store = RedisConfigStore(redis_url)

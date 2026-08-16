@@ -14,7 +14,7 @@
    * The footer slot replaces the default bottom border; pass anything
    * you want — usually a flex row of Buttons right-aligned.
    */
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher, tick } from 'svelte';
   import Button from './Button.svelte';
 
   export let open: boolean = false;
@@ -26,6 +26,13 @@
 
   let dialogEl: HTMLDivElement;
   let titleId = `modal-title-${Math.random().toString(36).slice(2, 9)}`;
+  // Initialise to the opposite of `open` so a `Modal` mounted with
+  // `open={true}` still fires the open-path on its first reactive tick
+  // (otherwise the initial value already matches and the transition
+  // guard would skip focus management).
+  let prevOpen = !open;
+  // Element that had focus before the modal opened — restored on close.
+  let prevActiveElement: HTMLElement | null = null;
 
   $: maxWidthClass = {
     sm: 'max-w-sm',
@@ -34,21 +41,118 @@
     xl: 'max-w-xl'
   }[maxWidth];
 
+  /**
+   * Returns the focusable descendants of `root` in DOM order, skipping
+   * disabled controls, hidden inputs, and elements with a negative
+   * tabindex (which includes the dialog root itself).
+   *
+   * No further visibility filter: the CSS selector above already
+   * excludes disabled/hidden controls, and a strict `offsetParent`
+   * check would break in jsdom (which does not compute layout) and
+   * in any environment where the dialog is rendered without the
+   * surrounding CSS module.
+   */
+  function getFocusable(root: HTMLElement): HTMLElement[] {
+    const selector =
+      'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]),' +
+      ' select:not([disabled]), textarea:not([disabled]),' +
+      ' [tabindex]:not([tabindex="-1"])';
+    return Array.from(root.querySelectorAll<HTMLElement>(selector));
+  }
+
+  function focusFirst() {
+    if (!dialogEl) return;
+    const focusables = getFocusable(dialogEl);
+    if (focusables.length > 0) {
+      focusables[0].focus();
+    } else {
+      dialogEl.focus();
+    }
+  }
+
   function closeModal() {
+    // Idempotent so the window capture-phase Escape handler and the
+    // backdrop's bubble-phase handler can't both dispatch `close` for
+    // a single keypress.
+    if (!open) return;
     open = false;
     dispatch('close');
+  }
+
+  function handleWindowKeydown(e: KeyboardEvent) {
+    if (!open) return;
+    if (e.key === 'Escape') {
+      closeModal();
+      return;
+    }
+    if (e.key !== 'Tab' || !dialogEl) return;
+    const focusables = getFocusable(dialogEl);
+    if (focusables.length === 0) {
+      // No focusable descendants — keep focus pinned to the dialog root.
+      e.preventDefault();
+      dialogEl.focus();
+      return;
+    }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+    const focusInside = active !== null && dialogEl.contains(active);
+    if (e.shiftKey) {
+      if (!focusInside || active === first) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (!focusInside || active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
   }
 
   function handleBackdropKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') closeModal();
   }
 
-  onMount(() => {
-    // Future enhancement: trap focus inside the dialog while open
-  });
+  // Open/close transition: capture the trigger on open, restore focus on close.
+  // Uses the prevOpen guard so this only fires on actual transitions, not on
+  // every reactive tick.
+  $: {
+    if (open !== prevOpen) {
+      if (open) {
+        if (typeof document !== 'undefined') {
+          const active = document.activeElement as HTMLElement | null;
+          // eslint-disable-next-line no-useless-assignment -- reactive block re-reads `prevActiveElement` on close.
+          prevActiveElement =
+            active && active !== document.body && typeof active.focus === 'function'
+              ? active
+              : null;
+        }
+        tick().then(focusFirst);
+      } else if (typeof document !== 'undefined' && prevActiveElement) {
+        const el = prevActiveElement;
+        // eslint-disable-next-line no-useless-assignment -- reactive block re-reads `prevActiveElement` on next transition.
+        prevActiveElement = null;
+        // Defer to the next frame so the dialog has unmounted before we
+        // hand focus back to the trigger.
+        tick().then(() => {
+          if (typeof el.focus === 'function') el.focus();
+        });
+      }
+      // eslint-disable-next-line no-useless-assignment -- reactive block re-reads `prevOpen` as a transition guard.
+      prevOpen = open;
+    }
+  }
 </script>
 
-<svelte:window on:keydown={(e) => { if (open && e.key === 'Escape') closeModal(); }} />
+<!--
+  Capture phase so the dialog's `on:keydown|stopPropagation` (which is
+  declared in the bubble phase) cannot prevent this listener from seeing
+  Tab/Shift+Tab pressed inside the dialog. Capture runs before any
+  element's bubble-phase handler, so we always get a chance to trap the
+  focus before the default browser focus shift happens.
+-->
+<svelte:window on:keydown|capture={handleWindowKeydown} />
 
 {#if open}
   <!-- Backdrop -->

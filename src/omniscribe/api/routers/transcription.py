@@ -5,10 +5,16 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
 
 from omniscribe.api.routers.common import _stable_server_error
-from omniscribe.api.routers.config import _config, _mask_api_key
+from omniscribe.api.routers.config import (
+    _CONFIG_BACKEND_INCOMPATIBLE_MESSAGE,
+    _ConfigBackendIncompatible,
+    _load_config_from_store,
+    _mask_api_key,
+    _persist_config,
+)
 from omniscribe.api.schemas.requests import TranscriptionConfigUpdate
 from omniscribe.api.schemas.responses import (
     ModelsResponse,
@@ -42,11 +48,12 @@ async def transcribe_audio(
     Accepts audio formats (.mp3, .wav, .m4a, .flac, .ogg, .webm, etc.) up to configured upload cap.
     """
     file_bytes = await file.read()
+    config = _load_config_from_store()
 
     resolved_api_base = str(
-        api_base or _config.get("transcription_api_base", "https://api.openai.com/v1")
+        api_base or config.get("transcription_api_base", "https://api.openai.com/v1")
     )
-    if await is_ssrf_target(resolved_api_base):
+    if not (await is_ssrf_target(resolved_api_base)).allowed:
         raise HTTPException(status_code=403, detail=SAFE_API_BASE_ERROR)
 
     try:
@@ -54,13 +61,13 @@ async def transcribe_audio(
             file_bytes=file_bytes,
             filename=file.filename or "audio.wav",
             content_type=file.content_type,
-            engine_type=str(engine or _config.get("transcription_engine", "api")),
-            model=str(model or _config.get("transcription_model", "whisper-1")),
+            engine_type=str(engine or config.get("transcription_engine", "api")),
+            model=str(model or config.get("transcription_model", "whisper-1")),
             api_base=resolved_api_base,
-            api_key=str(api_key or _config.get("transcription_api_key", "")) or None,
-            language=str(language or _config.get("transcription_language") or "")
+            api_key=str(api_key or config.get("transcription_api_key", "")) or None,
+            language=str(language or config.get("transcription_language") or "")
             or None,
-            prompt=str(prompt or _config.get("transcription_prompt") or "") or None,
+            prompt=str(prompt or config.get("transcription_prompt") or "") or None,
             temperature=temperature,
             channel_id=channel_id,
         )
@@ -77,8 +84,9 @@ async def transcribe_audio(
 @router.get("/api/models/transcription", response_model=ModelsResponse)
 async def get_transcription_models() -> Any:
     """Discover available audio transcription models from the configured backend endpoint."""
-    api_base = str(_config.get("transcription_api_base", "https://api.openai.com/v1"))
-    api_key = str(_config.get("transcription_api_key", "")) or None
+    config = _load_config_from_store()
+    api_base = str(config.get("transcription_api_base", "https://api.openai.com/v1"))
+    api_key = str(config.get("transcription_api_key", "")) or None
 
     fallback_models = [
         "whisper-1",
@@ -89,7 +97,7 @@ async def get_transcription_models() -> Any:
         "whisper-tiny",
     ]
 
-    if await is_ssrf_target(api_base):
+    if not (await is_ssrf_target(api_base)).allowed:
         return ModelsResponse(models=fallback_models)
 
     try:
@@ -115,48 +123,72 @@ async def get_transcription_models() -> Any:
 
 @router.get("/api/config/transcription", response_model=TranscriptionConfigResponse)
 async def get_transcription_config() -> Any:
-    """Get the current voice transcription runtime configuration."""
+    """Get the current voice transcription runtime configuration.
+
+    Reads go through the StateBackend's config_store (see
+    :func:`omniscribe.api.routers.config._load_config_from_store`) so
+    a value written by another worker is visible here in a multi-worker
+    deployment.
+    """
     from omniscribe.api.services.security_config import SecuritySettings
 
     sec = SecuritySettings.from_env()
+    config = _load_config_from_store()
 
     return TranscriptionConfigResponse(
         transcription_api_base=str(
-            _config.get("transcription_api_base", "https://api.openai.com/v1")
+            config.get("transcription_api_base", "https://api.openai.com/v1")
         ),
         transcription_api_key=_mask_api_key(
-            str(_config.get("transcription_api_key", ""))
+            str(config.get("transcription_api_key", ""))
         )
         or "",
-        transcription_model=str(_config.get("transcription_model", "whisper-1")),
-        transcription_engine=str(_config.get("transcription_engine", "api")),
+        transcription_model=str(config.get("transcription_model", "whisper-1")),
+        transcription_engine=str(config.get("transcription_engine", "api")),
         transcription_auth_token=_mask_api_key(sec.transcription_auth_token),
-        language=str(_config.get("transcription_language", "")) or None,
-        prompt=str(_config.get("transcription_prompt", "")) or None,
-        temperature=float(_config.get("transcription_temperature", 0.0)),
+        language=str(config.get("transcription_language", "")) or None,
+        prompt=str(config.get("transcription_prompt", "")) or None,
+        temperature=float(config.get("transcription_temperature", 0.0)),
     )
 
 
 @router.post("/api/config/transcription", response_model=TranscriptionConfigResponse)
-async def update_transcription_config(body: TranscriptionConfigUpdate) -> Any:
-    """Update runtime configuration for voice transcription."""
+async def update_transcription_config(
+    body: TranscriptionConfigUpdate, response: Response
+) -> Any:
+    """Update runtime configuration for voice transcription.
+
+    Writes go through the StateBackend's config_store (see
+    :func:`omniscribe.api.routers.config._persist_config`) so every
+    worker sees the new value in a multi-worker deployment. When the
+    active backend is the default in-memory one, the request is
+    refused with a 503 + a remediation message.
+    """
+    if body.api_base is not None and not (await is_ssrf_target(body.api_base)).allowed:
+        raise HTTPException(status_code=403, detail=SAFE_API_BASE_ERROR)
+    updates: dict[str, Any] = {}
     if body.api_base is not None:
-        if await is_ssrf_target(body.api_base):
-            raise HTTPException(status_code=403, detail=SAFE_API_BASE_ERROR)
-        _config["transcription_api_base"] = body.api_base
+        updates["transcription_api_base"] = body.api_base
     if body.transcription_api_key is not None:
-        _config["transcription_api_key"] = body.transcription_api_key
+        updates["transcription_api_key"] = body.transcription_api_key
     elif body.api_key is not None:
-        _config["transcription_api_key"] = body.api_key
+        updates["transcription_api_key"] = body.api_key
     if body.model is not None:
-        _config["transcription_model"] = body.model
+        updates["transcription_model"] = body.model
     if body.engine is not None:
-        _config["transcription_engine"] = body.engine.value
+        updates["transcription_engine"] = body.engine.value
     if body.language is not None:
-        _config["transcription_language"] = body.language
+        updates["transcription_language"] = body.language
     if body.prompt is not None:
-        _config["transcription_prompt"] = body.prompt
+        updates["transcription_prompt"] = body.prompt
     if body.temperature is not None:
-        _config["transcription_temperature"] = body.temperature
+        updates["transcription_temperature"] = body.temperature
+    if updates:
+        try:
+            _persist_config(updates)
+        except _ConfigBackendIncompatible:
+            raise HTTPException(
+                status_code=503, detail=_CONFIG_BACKEND_INCOMPATIBLE_MESSAGE
+            ) from None
 
     return await get_transcription_config()

@@ -151,7 +151,7 @@
   }
 </script>
 
-<section id="view-translation" hidden={$activeTab !== 'translation'} class="flex-1 flex flex-col min-h-0 p-6 space-y-6">
+<section id="view-translation" data-view="translation" hidden={$activeTab !== 'translation'} class="flex-1 flex flex-col min-h-0 p-6 space-y-6">
   <!-- Header -->
   <header class="flex flex-col lg:flex-row lg:items-end justify-between border-b border-border pb-4 gap-3">
     <div class="space-y-1.5 min-w-0">

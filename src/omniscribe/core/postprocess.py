@@ -10,12 +10,16 @@ Levenshtein distance 1 edit space for exceptional performance.
 """
 
 import asyncio
+import contextlib
 import functools
 import gzip
 import json
 import logging
 import os
 import re
+import tempfile
+import threading
+import time
 import unicodedata
 from importlib import resources, util
 from typing import TYPE_CHECKING, Any
@@ -28,6 +32,26 @@ logger = logging.getLogger("pdf_ocr.postprocess")
 
 # Lock to prevent concurrent dictionary compilation across pages
 _compile_lock = asyncio.Lock()
+
+# Per-target-path threading locks for the synchronous ``_compile_wordlist``.
+# The ``asyncio`` lock above serializes the async wrapper, but the underlying
+# ``_compile_wordlist`` runs on a worker thread (via ``asyncio.to_thread``)
+# and can still race with itself in the same process when two cold-cache
+# ``ensure_loaded`` calls overlap. On Windows, ``os.replace`` against an
+# actively-renamed target raises ``PermissionError`` even with retries, so
+# we serialize the rename step per output path.
+_compile_target_locks: dict[str, threading.Lock] = {}
+_compile_target_locks_guard = threading.Lock()
+
+
+def _get_target_lock(target_path: str) -> threading.Lock:
+    """Return a process-wide ``threading.Lock`` unique to ``target_path``."""
+    with _compile_target_locks_guard:
+        lock = _compile_target_locks.get(target_path)
+        if lock is None:
+            lock = threading.Lock()
+            _compile_target_locks[target_path] = lock
+        return lock
 
 
 @functools.lru_cache(maxsize=8)
@@ -320,9 +344,15 @@ class DictionaryPostProcessor:
         """
         Reads a raw Tesseract wordlist, cleans non-spacing Unicode marks,
         lowercases all words, removes duplicates, and saves it as a gzipped JSON dictionary.
+
+        Writes the gzipped payload to a temp file in the same directory and
+        atomically renames it to ``output_path`` (``os.replace``) so concurrent
+        workers can never observe a partially-written or corrupt ``.json.gz``
+        cache file. The temp file is cleaned up on any failure.
         """
+        temp_path: str | None = None
         try:
-            words_dict = {}
+            words_dict: dict[str, int] = {}
             with open(wordlist_path, encoding="utf-8", errors="ignore") as f:
                 for line in f:
                     word = line.strip()
@@ -337,9 +367,48 @@ class DictionaryPostProcessor:
                         # We save the original word (with diacritics) lowercased with flat frequency of 1
                         words_dict[word.lower()] = 1
 
-            # Save as gzipped JSON
-            with gzip.open(output_path, "wt", encoding="utf-8") as f:
-                json.dump(words_dict, f)
+            # Atomic write: gzipped JSON → temp file → os.replace → final path.
+            # Same directory so os.replace stays a same-filesystem rename.
+            target_dir = os.path.dirname(output_path) or "."
+            fd, temp_path = tempfile.mkstemp(
+                prefix=".wordlist-", suffix=".json.gz", dir=target_dir
+            )
+            try:
+                with os.fdopen(fd, "wb") as raw:
+                    with gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as gz:
+                        gz.write(json.dumps(words_dict).encode("utf-8"))
+                    try:
+                        raw.flush()
+                        os.fsync(raw.fileno())
+                    except (AttributeError, OSError):
+                        # fsync is best-effort; not all filesystems / platforms
+                        # guarantee it (e.g. some FUSE / Windows edge cases).
+                        pass
+                # Serialize the rename against concurrent compiles of the
+                # same target within this process. On Windows, ``os.replace``
+                # against an actively-renamed target can raise
+                # ``PermissionError`` even with retries because the kernel
+                # briefly grants exclusive access to the winner.
+                target_lock = _get_target_lock(output_path)
+                with target_lock:
+                    # Brief retry to ride out any residual handle teardown
+                    # from a concurrent reader closing its handle.
+                    last_err: OSError | None = None
+                    for attempt in range(6):
+                        try:
+                            os.replace(temp_path, output_path)
+                            last_err = None
+                            break
+                        except OSError as exc:
+                            last_err = exc
+                            time.sleep(min(0.05, 0.001 * (2**attempt)))
+                    if last_err is not None:
+                        raise last_err
+                temp_path = None  # renamed; don't unlink
+            finally:
+                if temp_path is not None:
+                    with contextlib.suppress(OSError):
+                        os.unlink(temp_path)
             return True
         except Exception as e:
             logger.error(f"Error compiling wordlist {wordlist_path}: {e}")

@@ -1,7 +1,8 @@
 import asyncio
 import os
+import re
 
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, expect
 
 
 async def run():
@@ -10,23 +11,40 @@ async def run():
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page(viewport={"width": 1920, "height": 1080})
 
-        # Go to local server
+        # Go to local server. The legacy fixed `wait_for_timeout(2000)` masked a
+        # race: the file input is rendered by Svelte after the bundle parses
+        # and the SPA hydrates, so wait on the actual element instead of a
+        # blind sleep. `wait_for_load_state("networkidle")` covers the
+        # initial /api/* config fetches the Svelte app fires on mount.
         await page.goto("http://localhost:8000")
-        await page.wait_for_timeout(2000)
+        await page.wait_for_load_state("networkidle")
+        await expect(page.locator("input#file-input")).to_be_visible()
 
         # Upload a test document
         file_path = os.path.join("examples", "dense.pdf")
         if os.path.exists(file_path):
-            await page.set_input_files("input#file-input", file_path)
+            await page.locator("input#file-input").set_input_files(file_path)
 
-            await page.wait_for_timeout(1000)
-            await page.click("button#start-btn")
+            # The start button is disabled until the file-select handler
+            # dispatches its event; wait on that transition instead of
+            # a fixed 1s sleep.
+            await expect(page.locator("button#start-btn")).to_be_enabled()
+            await page.locator("button#start-btn").click()
             print("Started OCR, waiting for it to finish...")
-            await page.wait_for_function(
-                'document.getElementById("process-view").classList.contains("hidden")',
-                timeout=180000,
+
+            # Same condition as the old `wait_for_function` (process view
+            # gains the `hidden` class once OCR finishes), but expressed as
+            # a Playwright locator assertion so the engine polls with its
+            # own auto-wait and the 180s budget applies uniformly.
+            await expect(page.locator("#process-view")).to_have_class(
+                re.compile(r"\bhidden\b"),
+                timeout=180_000,
             )
-            await page.wait_for_timeout(1000)
+            # Let any post-completion fetches (download link, summary) settle
+            # before screenshotting. `networkidle` is the right primitive
+            # here: the old fixed 1s sleep was approximating the same wait
+            # against non-deterministic fetch timing.
+            await page.wait_for_load_state("networkidle")
         else:
             print("dense.pdf not found, just taking empty screenshot.")
 

@@ -24,7 +24,7 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { loadAppConfig, themeStore } from '$lib/stores/appStore';
+  import { activeTab, loadAppConfig, themeStore } from '$lib/stores/appStore';
   import TabRibbon from '$lib/components/ui/TabRibbon.svelte';
   import ToastContainer from '$lib/components/ui/ToastContainer.svelte';
   import WorkstationView from '$lib/components/workstation/WorkstationView.svelte';
@@ -59,15 +59,23 @@
   <!-- Top App Navigation Ribbon (Preserves app-tab-btn-* IDs) -->
   <TabRibbon />
 
-  <!-- Main View Area (Preserves view-* IDs; each view gates itself on activeTab) -->
+  <!-- Main View Area (Preserves view-* IDs; only the active view is mounted) -->
   <main class="flex-1 flex flex-col min-h-0 relative z-10 overflow-y-auto">
-    <WorkstationView />
-    <TranslationView />
-    <GlossaryView />
-    <SettingsView />
-    <JobHistoryView />
-    <TranscriptionView />
-    <ExtractionView />
+    {#if $activeTab === 'workstation'}
+      <WorkstationView />
+    {:else if $activeTab === 'translation'}
+      <TranslationView />
+    {:else if $activeTab === 'glossary'}
+      <GlossaryView />
+    {:else if $activeTab === 'settings'}
+      <SettingsView />
+    {:else if $activeTab === 'jobs'}
+      <JobHistoryView />
+    {:else if $activeTab === 'transcription'}
+      <TranscriptionView />
+    {:else if $activeTab === 'extraction'}
+      <ExtractionView />
+    {/if}
   </main>
 
   <!-- Modals & Overlay Containers -->

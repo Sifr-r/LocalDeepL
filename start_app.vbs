@@ -10,6 +10,14 @@ objShell.CurrentDirectory = scriptDir
 
 ' --- Logging (append; safe across reboots) ---
 Const ForAppending = 8
+
+' --- Polling loop bounds (M3 audit): cap each unbounded Do-While loop so a
+'     hung external process (docker.exe, uv.exe) cannot stall the launcher.
+'     Defaults: 300 attempts * 100ms = 30s wall-clock per check. Tune via
+'     the two Consts below; success-path behaviour is byte-identical. ---
+Const MAX_POLL_ATTEMPTS = 300
+Const POLL_INTERVAL_MS = 100
+
 Dim logFile : Set logFile = objFSO.OpenTextFile(scriptDir & "\start_app.log", ForAppending, True)
 
 Sub LogMsg(s)
@@ -22,7 +30,16 @@ LogMsg "===== start_app.vbs launched (cwd=" & scriptDir & ") ====="
 Function IsDockerAvailable()
     On Error Resume Next
     Dim exec : Set exec = objShell.Exec("docker info")
-    Do While exec.Status = 0 : WScript.Sleep 100 : Loop
+    Dim attempts : attempts = 0
+    Do While exec.Status = 0
+        WScript.Sleep POLL_INTERVAL_MS
+        attempts = attempts + 1
+        If attempts >= MAX_POLL_ATTEMPTS Then
+            LogMsg "FATAL: 'docker info' did not exit within " & (MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS / 1000) & "s; aborting launcher"
+            logFile.Close
+            WScript.Quit 1
+        End If
+    Loop
     IsDockerAvailable = (exec.ExitCode = 0)
     On Error Goto 0
 End Function
@@ -30,7 +47,16 @@ End Function
 Function ContainerExists(name)
     On Error Resume Next
     Dim exec : Set exec = objShell.Exec("docker inspect " & name)
-    Do While exec.Status = 0 : WScript.Sleep 100 : Loop
+    Dim attempts : attempts = 0
+    Do While exec.Status = 0
+        WScript.Sleep POLL_INTERVAL_MS
+        attempts = attempts + 1
+        If attempts >= MAX_POLL_ATTEMPTS Then
+            LogMsg "FATAL: 'docker inspect " & name & "' did not exit within " & (MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS / 1000) & "s; aborting launcher"
+            logFile.Close
+            WScript.Quit 1
+        End If
+    Loop
     ContainerExists = (exec.ExitCode = 0)
     On Error Goto 0
 End Function
@@ -63,7 +89,20 @@ End Function
 '     to the user PATH; needs a fresh logon to propagate). ---
 On Error Resume Next
 Dim uvCheck : Set uvCheck = objShell.Exec("uv --version")
-Do While uvCheck.Status = 0 : WScript.Sleep 100 : Loop
+Dim uvAttempts : uvAttempts = 0
+Do While uvCheck.Status = 0
+    WScript.Sleep POLL_INTERVAL_MS
+    uvAttempts = uvAttempts + 1
+    If uvAttempts >= MAX_POLL_ATTEMPTS Then
+        LogMsg "FATAL: 'uv --version' did not exit within " & (MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS / 1000) & "s; aborting launcher (uv hung?)"
+        logFile.Close
+        MsgBox "uv --version did not respond within " & (MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS / 1000) & " seconds." & vbCrLf & vbCrLf & _
+               "This usually means uv is installed but hung, or the executable is blocked by antivirus." & vbCrLf & _
+               "Try opening a new Command Prompt and running 'uv --version' manually to diagnose.", _
+               vbCritical, "OmniScribe"
+        WScript.Quit 1
+    End If
+Loop
 If uvCheck.ExitCode <> 0 Then
     LogMsg "FATAL: uv is not on PATH; aborting before launching services"
     logFile.Close
@@ -99,7 +138,7 @@ If dockerUp Then
     ' so tasks registered on the `omniscribe.*` copy were invisible to the
     ' worker (audit DevOps High #6, drift half).
     LogMsg "Starting Celery worker"
-    objShell.Run "cmd.exe /c set ""REDIS_URL=" & redisUrl & "" && uv run --extra web celery -A omniscribe.api.tasks worker --loglevel=info -P solo", 0, False
+    objShell.Run "cmd.exe /c set ""REDIS_URL=" & redisUrl & """" & " && uv run --extra web celery -A omniscribe.api.tasks worker --loglevel=info -P solo", 0, False
 Else
     LogMsg "Docker is not available; skipping Redis and Celery. Async translation will be disabled."
 End If
@@ -109,7 +148,7 @@ End If
 ' the API process imports one module copy, not a `src.*` namespace twin.
 LogMsg "Starting uvicorn on :8000"
 If dockerUp Then
-    objShell.Run "cmd.exe /c set ""REDIS_URL=" & redisUrl & "" && uv run --extra web uvicorn omniscribe.server:app --port 8000", 0, False
+    objShell.Run "cmd.exe /c set ""REDIS_URL=" & redisUrl & """" & " && uv run --extra web uvicorn omniscribe.server:app --port 8000", 0, False
 Else
     objShell.Run "cmd.exe /c uv run --extra web uvicorn omniscribe.server:app --port 8000", 0, False
 End If

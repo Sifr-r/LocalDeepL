@@ -108,7 +108,7 @@ async def resolve_ai_settings(
     """
 
     resolved_api_base = _resolve_setting("api_base", api_base, config, namespace)
-    if await is_ssrf_target(resolved_api_base):
+    if not (await is_ssrf_target(resolved_api_base)).allowed:
         raise BlockedAPIBaseError
 
     resolved_api_key = _resolve_setting("api_key", api_key, config, namespace)

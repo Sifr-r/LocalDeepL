@@ -67,7 +67,7 @@
   }
 </script>
 
-<section id="view-jobs" hidden={$activeTab !== 'jobs'} class="flex-1 flex flex-col min-h-0 p-6 space-y-6">
+<section id="view-jobs" data-view="jobs" hidden={$activeTab !== 'jobs'} class="flex-1 flex flex-col min-h-0 p-6 space-y-6">
   <!-- Header -->
   <header class="flex flex-col sm:flex-row sm:items-end justify-between border-b border-border pb-4 gap-3">
     <div class="space-y-1.5">

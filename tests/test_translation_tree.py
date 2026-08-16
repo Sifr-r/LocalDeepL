@@ -1,0 +1,211 @@
+"""Tests for :mod:`omniscribe.core.translation_tree`."""
+
+from __future__ import annotations
+
+import asyncio
+
+from omniscribe.core.block_tree import (
+    BlockNode,
+    BlockType,
+    DocumentTree,
+    PageTree,
+)
+from omniscribe.core.entity_memory import EntityMemory
+from omniscribe.core.glossary import Glossary, GlossaryEntry
+from omniscribe.core.translation_tree import (
+    build_context_block,
+    translate_tree,
+)
+
+
+def test_build_context_block_orders_sections():
+    g = Glossary(entries=[GlossaryEntry(source="X", target="Y")])
+    m = EntityMemory()
+    m.add_text("Steve Jobs")
+    block = build_context_block(g, m, "the quick brown fox")
+    # All three sections appear
+    assert "GLOSSARY" in block
+    assert "PROPER NOUNS" in block
+    assert "PREVIOUS CONTEXT" in block
+    # Glossary comes first
+    assert block.index("GLOSSARY") < block.index("PROPER NOUNS")
+    assert block.index("PROPER NOUNS") < block.index("PREVIOUS CONTEXT")
+
+
+def test_translate_tree_skips_header_footer_number():
+    tree = DocumentTree(
+        pages=[
+            PageTree(
+                page_idx=0,
+                children=[
+                    BlockNode(
+                        block_type=BlockType.PAGE_HEADER,
+                        bbox=[0, 0, 1, 0.05],
+                        text="HEADER",
+                        page_idx=0,
+                    ),
+                    BlockNode(
+                        block_type=BlockType.PARAGRAPH,
+                        bbox=[0, 0.1, 1, 0.2],
+                        text="body",
+                        page_idx=0,
+                    ),
+                    BlockNode(
+                        block_type=BlockType.PAGE_FOOTER,
+                        bbox=[0, 0.95, 1, 1],
+                        text="FOOTER",
+                        page_idx=0,
+                    ),
+                    BlockNode(
+                        block_type=BlockType.PAGE_NUMBER,
+                        bbox=[0.4, 0.5, 0.6, 0.6],
+                        text="42",
+                        page_idx=0,
+                    ),
+                ],
+            )
+        ]
+    )
+
+    async def translator(prompt: str, lang: str) -> str:
+        return "t"
+
+    asyncio.run(
+        translate_tree(
+            tree,
+            target_language="French",
+            translator=translator,
+        )
+    )
+    # Headers/footers/page-numbers are unchanged
+    assert tree.pages[0].children[0].text == "HEADER"
+    assert tree.pages[0].children[2].text == "FOOTER"
+    assert tree.pages[0].children[3].text == "42"
+    # The body paragraph was translated
+    assert tree.pages[0].children[1].text == "t"
+
+
+def test_translate_tree_writes_back_and_preserves_structure():
+    tree = DocumentTree(
+        pages=[
+            PageTree(
+                page_idx=0,
+                children=[
+                    BlockNode(
+                        block_type=BlockType.SECTION_HEADER,
+                        bbox=[0, 0, 1, 0.1],
+                        text="Hello",
+                        page_idx=0,
+                        level=1,
+                    ),
+                    BlockNode(
+                        block_type=BlockType.PARAGRAPH,
+                        bbox=[0, 0.1, 1, 0.2],
+                        text="World",
+                        page_idx=0,
+                    ),
+                    BlockNode(
+                        block_type=BlockType.PAGE_HEADER,
+                        bbox=[0, 0.95, 1, 1],
+                        text="pg 1",
+                        page_idx=0,
+                    ),
+                ],
+            )
+        ]
+    )
+
+    async def translator(prompt: str, lang: str) -> str:
+        return f"[{lang}] {prompt.split('SOURCE:')[-1].strip().splitlines()[0]}"
+
+    asyncio.run(
+        translate_tree(
+            tree,
+            target_language="French",
+            translator=translator,
+        )
+    )
+    # The section header and paragraph were translated
+    assert tree.pages[0].children[0].text.startswith("[French] Hello")
+    assert tree.pages[0].children[1].text.startswith("[French] World")
+    # The page header was skipped
+    assert tree.pages[0].children[2].text == "pg 1"
+    # Translation metadata recorded
+    assert "translation" in tree.pages[0].children[0].metadata
+
+
+def test_translate_tree_sliding_window_propagates():
+    tree = DocumentTree(
+        pages=[
+            PageTree(
+                page_idx=0,
+                children=[
+                    BlockNode(
+                        block_type=BlockType.PARAGRAPH,
+                        bbox=[0, 0, 1, 0.1],
+                        text="alpha bravo charlie",
+                        page_idx=0,
+                    ),
+                    BlockNode(
+                        block_type=BlockType.PARAGRAPH,
+                        bbox=[0, 0.1, 1, 0.2],
+                        text="delta echo foxtrot",
+                        page_idx=0,
+                    ),
+                ],
+            )
+        ]
+    )
+    seen: list[str] = []
+
+    async def translator(prompt: str, lang: str) -> str:
+        seen.append(prompt)
+        # Echo back a long string so the sliding window picks it up
+        return ("ok " * 50).strip()
+
+    asyncio.run(
+        translate_tree(
+            tree,
+            target_language="Spanish",
+            translator=translator,
+            sliding_window_words=10,
+        )
+    )
+    # The second prompt should contain the PREVIOUS CONTEXT section
+    assert "PREVIOUS CONTEXT" in seen[1]
+
+
+def test_translate_tree_dual_translate_chooses_secondary_when_closer():
+    tree = DocumentTree(
+        pages=[
+            PageTree(
+                page_idx=0,
+                children=[
+                    BlockNode(
+                        block_type=BlockType.PARAGRAPH,
+                        bbox=[0, 0, 1, 0.1],
+                        text="hi",  # very short source
+                        page_idx=0,
+                    )
+                ],
+            )
+        ]
+    )
+
+    async def primary(prompt: str, lang: str) -> str:
+        return "this is a much longer and hallucinated translation that drops nothing"
+
+    async def secondary(prompt: str, lang: str) -> str:
+        return "hi-traduit"  # very close in length to "hi"
+
+    asyncio.run(
+        translate_tree(
+            tree,
+            target_language="French",
+            translator=primary,
+            second_translator=secondary,
+            dual_translate=True,
+        )
+    )
+    # The shorter, closer-length secondary should win
+    assert tree.pages[0].children[0].text == "hi-traduit"

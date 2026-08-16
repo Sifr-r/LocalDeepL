@@ -17,6 +17,7 @@ from omniscribe.api.schemas import (
     OcrConfigUpdate,
     TranslationConfigUpdate,
 )
+from omniscribe.api.services.config_store import ConfigStore
 from omniscribe.api.services.security import SAFE_API_BASE_ERROR, SERVER_ERROR_MESSAGE
 from omniscribe.api.services.security_config import (
     ABSOLUTE_MAX_UPLOAD_MB,
@@ -196,6 +197,109 @@ _config: RuntimeConfigDict = {
 
 
 # ---------------------------------------------------------------------------
+# Cross-worker persistence helpers (issue H1)
+# ---------------------------------------------------------------------------
+#
+# The legacy ``_config`` dict is process-local. In a multi-worker
+# uvicorn deployment, every worker keeps its own copy and a POST
+# /api/config only mutates the receiving worker's copy — the other
+# workers serve stale config until restart.
+#
+# The fix is to round-trip the dict through the StateBackend's
+# ``config_store`` (a duck-typed attribute on every backend impl).
+# When the active backend is cross-worker visible (Redis or SQLite),
+# updates are written to the store and every worker sees the new
+# value on its next read. When the active backend is the default
+# in-memory one, the POST is refused with a 503 + a clear remediation
+# message so operators do not see a silently-broken deployment
+# (``is_cross_worker_visible()`` returns False; the helpers below
+# raise :class:`_ConfigBackendIncompatible` which the route handler
+# converts to the 503 response).
+#
+# The legacy module-level ``_config`` dict remains in place for two
+# reasons:
+#
+# 1. Backward compat with code that already imports it (e.g.
+#    ``extraction.py``, ``ocr.py``, ``translation.py``,
+#    ``transcription.py``). It is kept in sync on every read and
+#    every write so those consumers always see the latest values
+#    within the current process.
+# 2. It is the canonical source of the env-derived seed values; the
+#    store is lazily seeded from it on the first read so a freshly
+#    constructed backend (which starts empty) still serves the
+#    operator's environment-tuned defaults until the first POST.
+
+
+class _ConfigBackendIncompatible(Exception):
+    """Raised when the active config store cannot propagate updates.
+
+    The route handler catches this and returns 503 with
+    :data:`_CONFIG_BACKEND_INCOMPATIBLE_MESSAGE` so operators see a
+    clear remediation hint instead of a silently-per-worker update.
+    """
+
+
+_CONFIG_BACKEND_INCOMPATIBLE_MESSAGE = (
+    "Config updates require a persistent state backend so all "
+    "uvicorn workers see the same value. Set "
+    "OMNISCRIBE_STATE_BACKEND=redis or =sqlite, then restart the server."
+)
+
+
+def _get_config_store() -> ConfigStore:
+    """Return the active StateBackend's config store (lazy import).
+
+    The lazy import avoids a circular import at module load
+    (``routers.state`` and ``routers.config`` are both routers that
+    may be imported by ``server.create_app`` in either order).
+    """
+    from omniscribe.api.routers import state as router_state
+
+    return router_state.backend.config_store  # type: ignore[attr-defined, no-any-return]
+
+
+def _load_config_from_store() -> dict[str, Any]:
+    """Refresh the local module dict from the config store.
+
+    The store is the source of truth for cross-worker visibility. On
+    the first read, the env-derived seed values in ``_config`` are
+    written into the store so a freshly constructed backend serves
+    the operator's environment defaults. Subsequent reads are
+    straight ``get_snapshot()`` round-trips.
+    """
+    store = _get_config_store()
+    snapshot = store.get_snapshot()
+    if not snapshot:
+        seed = cast(dict[str, Any], _config)
+        if seed:
+            store.update(seed)
+            snapshot = dict(seed)
+    cache = cast(dict[str, Any], _config)
+    cache.clear()
+    cache.update(snapshot)
+    return cache
+
+
+def _persist_config(updates: dict[str, Any]) -> None:
+    """Write ``updates`` to the config store and refresh the local cache.
+
+    Raises :class:`_ConfigBackendIncompatible` when the active store
+    is not cross-worker visible. The route handler converts the
+    exception to a 503 response (see
+    :func:`update_config`). On success, the local ``_config`` dict is
+    merged with ``updates`` so code that already holds a reference
+    (e.g. ``extraction.py``, ``ocr.py``) sees the new value without
+    a second round-trip.
+    """
+    store = _get_config_store()
+    if not store.is_cross_worker_visible():
+        raise _ConfigBackendIncompatible(_CONFIG_BACKEND_INCOMPATIBLE_MESSAGE)
+    store.update(updates)
+    cache = cast(dict[str, Any], _config)
+    cache.update(updates)
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -229,8 +333,13 @@ class _SSRFRejected(Exception):
 
 
 async def _is_ssrf(value: str) -> bool:
-    """Async shim so the in-memory patch path can mock the SSRF check."""
-    return await is_ssrf_target(value)
+    """Async shim so the in-memory patch path can mock the SSRF check.
+
+    Returns True when :func:`is_ssrf_target` flags the URL as
+    blocked. Wraps the structured :class:`SSRFCheckResult` into a
+    bool for the in-route ``if await _is_ssrf(val):`` callers.
+    """
+    return not (await is_ssrf_target(value)).allowed
 
 
 # ---------------------------------------------------------------------------
@@ -245,8 +354,12 @@ def get_translation_settings() -> TranslationSettings:
     when both are set; the namespaced values persist the operator's
     intentional split without being silently clobbered by a legacy
     POST.
+
+    Reads go through the config store (see
+    :func:`_load_config_from_store`) so a value written by another
+    worker is visible here in a multi-worker deployment.
     """
-    config = cast(dict[str, Any], _config)
+    config = _load_config_from_store()
     merged = dict(config)
     for key in ("api_base", "api_key", "model"):
         namespaced = config.get(f"translation_{key}")
@@ -261,10 +374,14 @@ def get_ocr_settings() -> "AIRequestSettings":
     Namespaced ``ocr_*`` keys win over the legacy ``api_*`` keys when
     both are set. Imported lazily to avoid a circular import
     ``api.services.ai -> api.routers.config`` at module load time.
+
+    Reads go through the config store (see
+    :func:`_load_config_from_store`) so a value written by another
+    worker is visible here in a multi-worker deployment.
     """
     from omniscribe.api.services.ai import AIRequestSettings
 
-    config = cast(dict[str, Any], _config)
+    config = _load_config_from_store()
     merged = dict(config)
     for key in ("api_base", "api_key", "model"):
         namespaced = config.get(f"ocr_{key}")
@@ -283,8 +400,13 @@ def get_ocr_settings() -> "AIRequestSettings":
 
 
 def _build_legacy_view() -> dict[str, Any]:
-    """Return the legacy config payload with API key masked + upload cap surfaced."""
-    payload = cast(dict[str, Any], _config).copy()
+    """Return the legacy config payload with API key masked + upload cap surfaced.
+
+    Reads go through the config store so a value written by another
+    worker is visible here in a multi-worker deployment.
+    """
+    config = _load_config_from_store()
+    payload = dict(config)
     payload["api_key"] = _mask_api_key(payload.get("api_key"))
     settings = SecuritySettings.from_env()
     payload["max_upload_bytes"] = settings.max_upload_bytes
@@ -321,15 +443,31 @@ async def update_config(body: ConfigUpdate):
     per-namespace ``ocr_*`` / ``translation_*`` keys are intentionally
     untouched so a legacy POST does not silently clobber a deliberate
     split.
+
+    The update is written through the StateBackend's config_store so
+    every uvicorn worker sees the new value (issue H1). When the
+    active backend is the default in-memory one, the request is
+    refused with a 503 + a remediation message so operators do not
+    see a silently per-worker update.
     """
     values = body.model_dump(exclude_unset=True)
-    config = cast(dict[str, Any], _config)
+    if "api_base" in values and not (await is_ssrf_target(values["api_base"])).allowed:
+        return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
+    # Drop masked-placeholders before persisting — keeping them would
+    # overwrite a real key with the "ab..wxyz" preview the GET endpoints
+    # return.
+    updates: dict[str, Any] = {}
     for key, val in values.items():
         if key == "api_key" and isinstance(val, str) and _is_masked_placeholder(val):
             continue
-        if key == "api_base" and await is_ssrf_target(val):
-            return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
-        config[key] = val.value if hasattr(val, "value") else val
+        updates[key] = val.value if hasattr(val, "value") else val
+    try:
+        _persist_config(updates)
+    except _ConfigBackendIncompatible as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": str(exc)},
+        )
     return JSONResponse(content=_build_legacy_view())
 
 
@@ -338,39 +476,44 @@ async def update_config(body: ConfigUpdate):
 # ---------------------------------------------------------------------------
 
 
-async def _apply_ocr_update(body: OcrConfigUpdate) -> dict[str, Any]:
-    """Persist the OCR namespace update, ignoring masked-placeholders.
+async def _build_ocr_update(body: OcrConfigUpdate) -> dict[str, Any]:
+    """Validate the OCR-namespace update and return the values to persist.
 
-    Returns the resulting namespace mapping. Raises ``_SSRFRejected``
-    when ``ocr_api_base`` fails SSRF validation so the route handler
-    can convert it to a 403 response.
+    Returns the subset of ``body`` keys that should land in the store
+    (masked-placeholders and SSRF-rejected bases are dropped). Raises
+    :class:`_SSRFRejected` when ``ocr_api_base`` fails SSRF validation
+    so the route handler can convert it to a 403 response.
     """
     values = body.model_dump(exclude_unset=True)
-    config = cast(dict[str, Any], _config)
+    updates: dict[str, Any] = {}
     for key, val in values.items():
         if key == "ocr_api_key" and _is_masked_placeholder(val):
             continue
         if key == "ocr_api_base" and isinstance(val, str) and await _is_ssrf(val):
             raise _SSRFRejected
-        config[key] = val
-    return {k: config.get(k) for k in body.stored_keys}
+        updates[key] = val
+    return updates
 
 
-def _apply_translation_update(body: TranslationConfigUpdate) -> dict[str, Any]:
-    """Persist the translation namespace update, ignoring masked placeholders."""
+def _build_translation_update(body: TranslationConfigUpdate) -> dict[str, Any]:
+    """Validate the translation-namespace update and return the values to persist.
+
+    Masked-placeholders are dropped so a re-post of the GET view does
+    not clobber the real key.
+    """
     values = body.model_dump(exclude_unset=True)
-    config = cast(dict[str, Any], _config)
+    updates: dict[str, Any] = {}
     for key, val in values.items():
         if key == "translation_api_key" and _is_masked_placeholder(val):
             continue
-        config[key] = val
-    return {k: config.get(k) for k in body.stored_keys}
+        updates[key] = val
+    return updates
 
 
 @router.get("/api/config/ocr")
 async def get_ocr_namespace_config():
     """Return the OCR-namespace view with the API key masked."""
-    config = cast(dict[str, Any], _config)
+    config = _load_config_from_store()
     return JSONResponse(
         content={
             "ocr_api_base": config.get("ocr_api_base"),
@@ -383,12 +526,24 @@ async def get_ocr_namespace_config():
 
 @router.post("/api/config/ocr")
 async def update_ocr_namespace_config(body: OcrConfigUpdate):
-    """Persist the OCR-namespace update and return the masked view."""
+    """Persist the OCR-namespace update and return the masked view.
+
+    Writes through the StateBackend's config_store so every worker
+    sees the new value (issue H1). When the active backend is the
+    default in-memory one, the request is refused with a 503.
+    """
     try:
-        await _apply_ocr_update(body)
+        updates = await _build_ocr_update(body)
     except _SSRFRejected:
         return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
-    config = cast(dict[str, Any], _config)
+    try:
+        _persist_config(updates)
+    except _ConfigBackendIncompatible as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": str(exc)},
+        )
+    config = _load_config_from_store()
     return JSONResponse(
         content={
             "ocr_api_base": config.get("ocr_api_base"),
@@ -402,7 +557,7 @@ async def update_ocr_namespace_config(body: OcrConfigUpdate):
 @router.get("/api/config/translation")
 async def get_translation_namespace_config():
     """Return the translation-namespace view with the API key masked."""
-    config = cast(dict[str, Any], _config)
+    config = _load_config_from_store()
     return JSONResponse(
         content={
             "translation_api_base": config.get("translation_api_base"),
@@ -417,9 +572,21 @@ async def get_translation_namespace_config():
 
 @router.post("/api/config/translation")
 async def update_translation_namespace_config(body: TranslationConfigUpdate):
-    """Persist the translation-namespace update and return the masked view."""
-    _apply_translation_update(body)
-    config = cast(dict[str, Any], _config)
+    """Persist the translation-namespace update and return the masked view.
+
+    Writes through the StateBackend's config_store so every worker
+    sees the new value (issue H1). When the active backend is the
+    default in-memory one, the request is refused with a 503.
+    """
+    updates = _build_translation_update(body)
+    try:
+        _persist_config(updates)
+    except _ConfigBackendIncompatible as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": str(exc)},
+        )
+    config = _load_config_from_store()
     return JSONResponse(
         content={
             "translation_api_base": config.get("translation_api_base"),
@@ -439,17 +606,37 @@ async def update_translation_namespace_config(body: TranslationConfigUpdate):
 
 @router.post("/api/config/ocr/auth")
 async def update_ocr_auth_token(body: AuthTokenUpdate):
-    """Persist the per-namespace OCR auth token. ``None`` clears it."""
-    config = cast(dict[str, Any], _config)
-    config["ocr_auth_token"] = body.auth_token
+    """Persist the per-namespace OCR auth token. ``None`` clears it.
+
+    Writes through the StateBackend's config_store so every worker
+    sees the new value (issue H1). When the active backend is the
+    default in-memory one, the request is refused with a 503.
+    """
+    try:
+        _persist_config({"ocr_auth_token": body.auth_token})
+    except _ConfigBackendIncompatible as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": str(exc)},
+        )
     return JSONResponse(content={"ocr_auth_token": body.auth_token})
 
 
 @router.post("/api/config/translation/auth")
 async def update_translation_auth_token(body: AuthTokenUpdate):
-    """Persist the per-namespace translation auth token. ``None`` clears it."""
-    config = cast(dict[str, Any], _config)
-    config["translation_auth_token"] = body.auth_token
+    """Persist the per-namespace translation auth token. ``None`` clears it.
+
+    Writes through the StateBackend's config_store so every worker
+    sees the new value (issue H1). When the active backend is the
+    default in-memory one, the request is refused with a 503.
+    """
+    try:
+        _persist_config({"translation_auth_token": body.auth_token})
+    except _ConfigBackendIncompatible as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": str(exc)},
+        )
     return JSONResponse(content={"translation_auth_token": body.auth_token})
 
 
@@ -465,17 +652,18 @@ async def list_models():
 
     mgr = get_provider_manager()
     active_provider = mgr.get_active_provider()
+    config = _load_config_from_store()
 
-    custom_base = _config.get("api_base")
+    custom_base = config.get("api_base")
     if custom_base and custom_base != active_provider.api_url:
-        if await is_ssrf_target(custom_base):
+        if not (await is_ssrf_target(custom_base)).allowed:
             return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
         try:
             from openai import AsyncOpenAI
 
             client = AsyncOpenAI(
                 base_url=custom_base,
-                api_key=_config.get("api_key") or "lm-studio",
+                api_key=config.get("api_key") or "lm-studio",
             )
             response = await client.models.list()
             model_ids = [m.id for m in response.data] if response.data else []
@@ -484,7 +672,10 @@ async def list_models():
             logger.exception("Model discovery failed")
             return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
 
-    if active_provider.api_url and await is_ssrf_target(active_provider.api_url):
+    if (
+        active_provider.api_url
+        and not (await is_ssrf_target(active_provider.api_url)).allowed
+    ):
         return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
 
     try:
@@ -501,12 +692,16 @@ async def list_ocr_models():
     from omniscribe.api.services.provider_manager import get_provider_manager
 
     mgr = get_provider_manager()
-    config = cast(dict[str, Any], _config)
+    config = _load_config_from_store()
     ocr_provider_id = config.get("ocr_provider")
 
     if ocr_provider_id and mgr.get_provider(ocr_provider_id):
         provider = mgr.get_provider(ocr_provider_id)
-        if provider and provider.api_url and await is_ssrf_target(provider.api_url):
+        if (
+            provider
+            and provider.api_url
+            and not (await is_ssrf_target(provider.api_url)).allowed
+        ):
             return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
         try:
             models = await mgr.async_list_provider_models(ocr_provider_id)
@@ -517,7 +712,7 @@ async def list_ocr_models():
 
     api_base = config.get("ocr_api_base") or config["api_base"]
     api_key = config.get("ocr_api_key") or config["api_key"]
-    if await is_ssrf_target(api_base):
+    if not (await is_ssrf_target(api_base)).allowed:
         return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
     try:
         from openai import AsyncOpenAI
@@ -537,12 +732,16 @@ async def list_translation_models():
     from omniscribe.api.services.provider_manager import get_provider_manager
 
     mgr = get_provider_manager()
-    config = cast(dict[str, Any], _config)
+    config = _load_config_from_store()
     trans_provider_id = config.get("translation_provider")
 
     if trans_provider_id and mgr.get_provider(trans_provider_id):
         provider = mgr.get_provider(trans_provider_id)
-        if provider and provider.api_url and await is_ssrf_target(provider.api_url):
+        if (
+            provider
+            and provider.api_url
+            and not (await is_ssrf_target(provider.api_url)).allowed
+        ):
             return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
         try:
             models = await mgr.async_list_provider_models(trans_provider_id)
@@ -553,7 +752,7 @@ async def list_translation_models():
 
     api_base = config.get("translation_api_base") or config["api_base"]
     api_key = config.get("translation_api_key") or config["api_key"]
-    if await is_ssrf_target(api_base):
+    if not (await is_ssrf_target(api_base)).allowed:
         return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
     try:
         from openai import AsyncOpenAI

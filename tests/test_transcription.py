@@ -120,6 +120,39 @@ def _create_test_app() -> FastAPI:
     return app
 
 
+@pytest.fixture
+def _cross_worker_config_store():
+    """Install a cross-worker-visible in-memory config store for tests
+    that exercise the transcription /api/config routes.
+
+    The default :class:`LocalStateBackend` ships with a per-process
+    in-memory config store, which the config router now refuses with
+    a 503 (issue H1). Transcription tests that POST to
+    ``/api/config/transcription`` need the cross-worker path active;
+    this fixture flips the test-only flag on the store, then restores
+    the original on teardown.
+    """
+    from omniscribe.api.routers import state as router_state
+    from omniscribe.api.services.config_store import InMemoryConfigStore
+
+    original = router_state.backend.config_store
+    store = InMemoryConfigStore(initial=dict(config._config))
+    store._cross_worker_visible = True
+    router_state.backend.config_store = store
+    try:
+        yield store
+    finally:
+        router_state.backend.config_store = original
+        config._config.clear()
+        config._config.update(
+            {
+                "api_base": "https://api.openai.com/v1",
+                "api_key": "lm-studio",
+                "model": "openai/gpt-oss-20b",
+            }
+        )
+
+
 def test_transcribe_endpoint_success():
     app = _create_test_app()
     client = TestClient(app)
@@ -152,7 +185,7 @@ def test_transcribe_endpoint_success():
     assert "text_artifact_token" in data
 
 
-def test_transcription_config_endpoints():
+def test_transcription_config_endpoints(_cross_worker_config_store):
     app = _create_test_app()
     client = TestClient(app)
 
@@ -174,7 +207,7 @@ def test_transcription_config_endpoints():
     assert "..." in updated["transcription_api_key"]
 
 
-def test_config_response_redacts_api_key():
+def test_config_response_redacts_api_key(_cross_worker_config_store):
     """Ensure POST /api/config/transcription masks the API key in response."""
     app = _create_test_app()
     client = TestClient(app)

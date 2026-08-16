@@ -13,7 +13,18 @@ import threading
 
 from omniscribe.utils import tqdm_patch
 
-# Silence Surya's progress bars for clean server output.
+# --- tqdm progress-bar suppression ----------------------------------------
+# Surya 0.17.x binds to `tqdm` at import time, so this monkey-patch MUST
+# run before `from surya.detection import DetectionPredictor` below — once
+# Surya has captured its `tqdm` reference the patch is too late and the
+# server log gets spammed with progress bars.
+#
+# This is the same constraint that bans moving the call into a lazy
+# initializer: the surya import on the next line is unconditional, and
+# `tqdm_patch.apply()` is the only thing that stops Surya's noisy bars.
+#
+# AGENTS.md: "Keep `tqdm_patch.apply()` before `from surya.detection
+# import DetectionPredictor` in `core/aligner.py`." Do not move.
 tqdm_patch.apply()
 
 from PIL import Image  # noqa: E402

@@ -20,13 +20,13 @@ see ``docs/superpowers/plans/2026-08-14-whitespace-recall.md`` and
 from __future__ import annotations
 
 import logging
-import os
 import statistics
 from dataclasses import dataclass
 
 from PIL import Image
 
 from omniscribe.core.document import BBox
+from omniscribe.utils.env import env_str
 
 logger = logging.getLogger(__name__)
 
@@ -99,11 +99,14 @@ class WhitespaceRecallOptions:
     def from_env(cls) -> WhitespaceRecallOptions:
         """Seed from ``OMNISCRIBE_WHITESPACE_RECALL`` (default on).
 
-        Only explicit disable values (``0``/``false``/``no``/``off``,
-        case-insensitive) turn the pass off; unset or unrecognized values
-        keep it enabled.
+        Only explicit disable values (``0``/``false``/``no``/``off``/
+        ``n``/``disabled``, case-insensitive) turn the pass off; unset
+        or unrecognized values keep it enabled.
+
+        The env read goes through :func:`omniscribe.utils.env.env_str`
+        (audit H3) so this module no longer imports ``os``.
         """
-        raw = os.environ.get(_ENV_RECALL, "").strip().lower()
+        raw = (env_str(_ENV_RECALL) or "").strip().lower()
         return cls(enabled=raw not in _DISABLE_VALUES)
 
 

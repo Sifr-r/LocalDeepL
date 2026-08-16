@@ -11,6 +11,7 @@ from omniscribe.api.schemas.requests import (
     TranslationRequest,
 )
 from omniscribe.api.services import ai
+from omniscribe.utils.security import SSRFCheckResult
 
 
 def _config() -> dict[str, object]:
@@ -39,7 +40,9 @@ async def test_translate_uses_request_settings_and_builds_prompt():
     with (
         patch(
             "omniscribe.api.services.ai.is_ssrf_target",
-            new=AsyncMock(return_value=False),
+            new=AsyncMock(
+                return_value=SSRFCheckResult(allowed=True, resolved_ip="203.0.113.1")
+            ),
         ),
         patch("omniscribe.api.services.ai.call_llm", capture_completion),
     ):
@@ -71,7 +74,9 @@ async def test_extract_uses_template_prompt_and_config_defaults():
     with (
         patch(
             "omniscribe.api.services.ai.is_ssrf_target",
-            new=AsyncMock(return_value=False),
+            new=AsyncMock(
+                return_value=SSRFCheckResult(allowed=True, resolved_ip="203.0.113.1")
+            ),
         ),
         patch("omniscribe.api.services.ai.call_llm", capture_completion),
     ):
@@ -101,7 +106,9 @@ async def test_extract_invalid_json_returns_empty_object():
     with (
         patch(
             "omniscribe.api.services.ai.is_ssrf_target",
-            new=AsyncMock(return_value=False),
+            new=AsyncMock(
+                return_value=SSRFCheckResult(allowed=True, resolved_ip="203.0.113.1")
+            ),
         ),
         patch("omniscribe.api.services.ai.call_llm", bad_completion),
     ):
@@ -126,7 +133,11 @@ async def test_ssrf_blocking_is_distinct_and_skips_provider_call():
     with (
         patch(
             "omniscribe.api.services.ai.is_ssrf_target",
-            new=AsyncMock(return_value=True),
+            new=AsyncMock(
+                return_value=SSRFCheckResult(
+                    allowed=False, resolved_ip=None, reason="mock-blocked"
+                )
+            ),
         ),
         patch("omniscribe.api.services.ai.call_llm", unexpected_completion),
         pytest.raises(ai.BlockedAPIBaseError) as exc_info,
@@ -151,7 +162,9 @@ async def test_provider_failure_wraps_without_public_detail_leak():
     with (
         patch(
             "omniscribe.api.services.ai.is_ssrf_target",
-            new=AsyncMock(return_value=False),
+            new=AsyncMock(
+                return_value=SSRFCheckResult(allowed=True, resolved_ip="203.0.113.1")
+            ),
         ),
         patch("omniscribe.api.services.ai.call_llm", fail_completion),
         pytest.raises(ai.AIProviderError) as exc_info,
@@ -187,7 +200,9 @@ async def test_extract_custom_prompt_is_sanitized_for_boundary_markers():
     with (
         patch(
             "omniscribe.api.services.ai.is_ssrf_target",
-            new=AsyncMock(return_value=False),
+            new=AsyncMock(
+                return_value=SSRFCheckResult(allowed=True, resolved_ip="203.0.113.1")
+            ),
         ),
         patch("omniscribe.api.services.ai.call_llm", capture_completion),
     ):

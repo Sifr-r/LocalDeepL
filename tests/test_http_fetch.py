@@ -1,13 +1,20 @@
-"""Coverage gap: ``api.services.http_fetch.fetch_url_bytes``.
+"""Coverage for :mod:`omniscribe.api.services.http_fetch`.
 
 The fetcher is used by the glossary import URL endpoint (lazy import).
-Both legs — httpx happy path and urllib fallback — should be covered
-so we don't lose the SSRF-safe defaults on a future refactor.
+The new contract is:
 
-Both branches run a real localhost HTTP server, no network, no
-production dependency. ``urllib`` path is exercised by patching the
-``httpx`` import inside ``fetch_url_bytes`` (the function calls it
-lazily so the patch is enough).
+1. The URL (and every 3xx ``Location`` hop) is validated against
+   :func:`omniscribe.utils.security.is_ssrf_target` before the
+   connection is opened.
+2. The TCP connection is pinned to the IP the SSRF guard resolved —
+   a DNS rebinding attack that flips the record between check and
+   connect cannot redirect the request.
+3. Only ``httpx`` is used; the previous ``urllib`` fallback was
+   removed because it followed redirects and accepted ``file://``
+   natively.
+
+Every test in this file uses real loopback HTTP servers — no network,
+no production dependency.
 """
 
 from __future__ import annotations
@@ -22,15 +29,32 @@ import httpx
 import pytest
 
 from omniscribe.api.services import http_fetch
+from omniscribe.api.services.http_fetch import SSRFBlockedError
+from omniscribe.utils.security import SSRFCheckResult
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+# Most tests need ALLOW_SSRF_LOCAL=true because they spin up real
+# loopback servers. Tests that explicitly verify the guard *blocks* a
+# loopback / link-local target (the redirect-to-metadata-IP test)
+# override the env back to "false" so the guard actually blocks it.
+@pytest.fixture(autouse=True)
+def _allow_ssrf_local(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default to ``ALLOW_SSRF_LOCAL=true`` for loopback test servers.
+
+    Tests that need the production-like "block everything local"
+    behaviour override the env to ``"false"`` with their own
+    ``monkeypatch.setenv`` call, which takes precedence for that test.
+    """
+    monkeypatch.setenv("ALLOW_SSRF_LOCAL", "true")
 
 
 @pytest.fixture
 def localhost_url() -> Iterator[str]:
-    """Spin a temporary HTTP server on a random port serving a known body.
-
-    Binds to ``localhost`` only — the SSRF guard permits this by
-    default, so we don't need to bypass any safety knob for the test.
-    """
+    """Spin a temporary HTTP server on a random port serving a known body."""
     body = b"hello url fetch"
 
     class _Handler(http.server.BaseHTTPRequestHandler):
@@ -54,85 +78,15 @@ def localhost_url() -> Iterator[str]:
             thread.join(timeout=2)
 
 
+# ---------------------------------------------------------------------------
+# Happy-path coverage of the httpx branch
+# ---------------------------------------------------------------------------
+
+
 async def test_fetch_url_bytes_via_httpx_happy_path(localhost_url: str) -> None:
-    """The httpx branch returns the body verbatim when the import is present."""
+    """The httpx branch returns the body verbatim."""
     body = await http_fetch.fetch_url_bytes(localhost_url)
     assert body == b"hello url fetch"
-
-
-def _patch_httpx_import_to_fail() -> mock._patch:
-    """Return a ``mock.patch`` that makes any ``import httpx`` raise.
-
-    Builtin ``__import__`` is patched so the lookup inside
-    ``fetch_url_bytes`` fails. The real importer is restored when the
-    context manager exits.
-    """
-    import builtins as _builtins
-
-    real_import = _builtins.__import__
-
-    def fake_import(name, *args, **kwargs):  # type: ignore[no-untyped-def]
-        if name == "httpx":
-            raise ImportError("forced fallback for test")
-        return real_import(name, *args, **kwargs)
-
-    return mock.patch("builtins.__import__", side_effect=fake_import)
-
-
-async def test_fetch_url_bytes_falls_back_to_urllib(localhost_url: str) -> None:
-    """Forcing ``import httpx`` to fail routes through the urllib branch.
-
-    ``fetch_url_bytes`` calls ``import httpx`` lazily inside a ``try``
-    block; we patch the builtin importer so that lookup raises and the
-    function falls through to ``_fetch_via_urllib``. We also patch
-    ``_fetch_via_urllib`` with an ``AsyncMock`` so we don't hit the
-    real localhost server twice.
-    """
-    with _patch_httpx_import_to_fail():
-        with mock.patch.object(
-            http_fetch,
-            "_fetch_via_urllib",
-            new=mock.AsyncMock(return_value=b"via-urllib"),
-        ):
-            body = await http_fetch.fetch_url_bytes(localhost_url)
-    assert body == b"via-urllib"
-
-
-async def test_fetch_url_bytes_propagates_urllib_failure(localhost_url: str) -> None:
-    """The fallback re-raises so the caller can map it to a 502."""
-
-    async def _boom(*_args, **_kwargs):
-        raise RuntimeError("boom")
-
-    with _patch_httpx_import_to_fail():
-        with mock.patch.object(http_fetch, "_fetch_via_urllib", new=_boom):
-            with pytest.raises(RuntimeError, match="boom"):
-                await http_fetch.fetch_url_bytes(localhost_url)
-
-
-async def test_fetch_url_bytes_falls_back_when_httpx_raises(localhost_url: str) -> None:
-    """httpx runtime errors (timeout, connection reset) fall through to urllib.
-
-    The outer ``except Exception`` in ``fetch_url_bytes`` is the resilience
-    gate: when httpx is installed but the request fails (network blip,
-    5xx that escapes raise_for_status, etc.) the function still returns
-    the body via the urllib fallback. Patches the inner httpx.AsyncClient
-    to raise without disabling the import path.
-    """
-    with mock.patch.object(
-        http_fetch,
-        "_fetch_via_urllib",
-        new=mock.AsyncMock(return_value=b"via-urllib-after-httpx-error"),
-    ):
-        # httpx is importable (we don't patch __import__) but the client raises
-        # a transient network error; ``fetch_url_bytes`` must catch it and
-        # route to the urllib fallback.
-        with mock.patch(
-            "httpx.AsyncClient",
-            side_effect=ConnectionError("simulated network reset"),
-        ):
-            body = await http_fetch.fetch_url_bytes(localhost_url)
-    assert body == b"via-urllib-after-httpx-error"
 
 
 async def test_fetch_url_bytes_returns_empty_for_empty_body(localhost_url: str) -> None:
@@ -142,8 +96,13 @@ async def test_fetch_url_bytes_returns_empty_for_empty_body(localhost_url: str) 
     response carries no payload. Patches the whole ``AsyncClient``
     constructor so the test doesn't depend on a real empty-body server.
     """
-    empty_response = mock.Mock(content=b"", aclose=mock.AsyncMock())
+    empty_response = mock.Mock(
+        content=b"",
+        is_redirect=False,
+        aclose=mock.AsyncMock(),
+    )
     empty_response.raise_for_status = mock.Mock(return_value=None)
+    empty_response.headers = {}
     fake_client = mock.Mock()
     fake_client.get = mock.AsyncMock(return_value=empty_response)
     fake_client.aclose = mock.AsyncMock(return_value=None)
@@ -153,21 +112,12 @@ async def test_fetch_url_bytes_returns_empty_for_empty_body(localhost_url: str) 
 
 
 # ---------------------------------------------------------------------------
-# T2 / M2 audit gap: urllib redirect handler must re-validate the Location.
+# SSRF C1: redirect to a blocked target is rejected (no metadata endpoint walk)
 # ---------------------------------------------------------------------------
 
 
-def _make_redirect_handler_with_status(
-    *,
-    follow_target: str | None,
-    final_body: bytes = b"final",
-) -> type:
-    """Build an HTTP handler that 302-redirects to ``follow_target`` (if set)
-    and otherwise returns ``final_body`` directly.
-
-    Returned as a class so the test can spin a real ``http.server`` off it,
-    the same pattern as the ``localhost_url`` fixture.
-    """
+def _make_redirect_handler(*, follow_target: str | None) -> type:
+    """Build an HTTP handler that 302-redirects to ``follow_target`` if set."""
 
     class _RedirectingHandler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):  # http.server demands this exact method name
@@ -178,7 +128,7 @@ def _make_redirect_handler_with_status(
                 self.end_headers()
                 return
             self.send_response(200)
-            body = final_body
+            body = b"unreachable"
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -189,101 +139,199 @@ def _make_redirect_handler_with_status(
     return _RedirectingHandler
 
 
+def _start_server(
+    handler_cls: type,
+) -> tuple[socketserver.TCPServer, int, threading.Thread]:
+    srv = socketserver.TCPServer(("127.0.0.1", 0), handler_cls)
+    port = srv.server_address[1]
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    return srv, port, thread
+
+
 @pytest.fixture
-def redirect_url() -> Iterator[str]:
+def redirect_to_metadata_ip() -> Iterator[str]:
     """Spin a server that replies 302 → ``http://169.254.169.254/``."""
-    cls = _make_redirect_handler_with_status(follow_target="http://169.254.169.254/")
-    with socketserver.TCPServer(("127.0.0.1", 0), cls) as srv:
-        port = srv.server_address[1]
-        thread = threading.Thread(target=srv.serve_forever, daemon=True)
-        thread.start()
-        try:
-            yield f"http://127.0.0.1:{port}/redirect"
-        finally:
-            srv.shutdown()
-            thread.join(timeout=2)
+    cls = _make_redirect_handler(follow_target="http://169.254.169.254/")
+    srv, port, thread = _start_server(cls)
+    try:
+        yield f"http://127.0.0.1:{port}/redirect"
+    finally:
+        srv.shutdown()
+        thread.join(timeout=2)
 
 
 @pytest.fixture
-def localhost_url_with_path() -> Iterator[str]:
-    """Spin a server that returns ``b'final'`` for any path (no redirect)."""
-    cls = _make_redirect_handler_with_status(follow_target=None)
-    with socketserver.TCPServer(("127.0.0.1", 0), cls) as srv:
-        port = srv.server_address[1]
-        thread = threading.Thread(target=srv.serve_forever, daemon=True)
-        thread.start()
-        try:
-            yield f"http://127.0.0.1:{port}/anything"
-        finally:
-            srv.shutdown()
-            thread.join(timeout=2)
+def redirect_to_file_scheme() -> Iterator[str]:
+    """Spin a server that replies 302 → ``file:///etc/passwd``."""
+    cls = _make_redirect_handler(follow_target="file:///etc/passwd")
+    srv, port, thread = _start_server(cls)
+    try:
+        yield f"http://127.0.0.1:{port}/redirect"
+    finally:
+        srv.shutdown()
+        thread.join(timeout=2)
 
 
-async def test_urllib_redirect_to_ssrf_target_is_blocked(redirect_url: str) -> None:
-    """A 302 → ``http://169.254.169.254/`` must NOT be followed by urllib.
+async def test_redirect_to_metadata_ip_is_blocked(
+    redirect_to_metadata_ip: str,
+) -> None:
+    """A 302 → ``http://169.254.169.254/`` must raise :class:`SSRFBlockedError`.
 
-    T2 / M2 audit gap: the stdlib ``urllib.request.urlopen`` happily
-    follows 3xx redirects with no SSRF awareness. The custom
-    ``HTTPRedirectHandler`` subclass in :mod:`http_fetch` re-runs the
-    same ``is_ssrf_target`` check the caller used on the original URL
-    against every ``Location`` hop. This regression test pins that
-    contract: the metadata endpoint must never receive the request.
+    Regression for the T2 / M2 audit gap: the previous code relied on a
+    urllib fallback that followed 3xx natively and accepted ``file://``
+    schemes. Both reach this router today and are validated before
+    connect.
+
+    Mocks the SSRF guard to allow the original localhost hop (so the
+    server can return the redirect) and block the IMDS IP — the
+    production-like posture where IMDS is unreachable regardless of
+    whether local development is enabled.
     """
-    # The fixture's URL is ``/redirect`` which returns a 302 pointing at
-    # the AWS metadata endpoint. We force the urllib branch by patching
-    # ``httpx.AsyncClient`` to raise — mirroring the existing fallback
-    # test — so the opener built inside ``_fetch_via_urllib`` is the one
-    # that runs.
+    localhost = redirect_to_metadata_ip.split("/redirect")[0]  # http://127.0.0.1:port
+    imds_url = "http://169.254.169.254/"
+
+    def _fake_ssrf(url: str) -> SSRFCheckResult:
+        if url == imds_url:
+            return SSRFCheckResult(False, None, "literal-blocked-ip")
+        # Anything else: allow and pin to the literal host.
+        # We don't actually need the IP for the localhost server (the
+        # URL parser already produced the right host:port) but the
+        # contract requires a non-None resolved_ip when allowed=True.
+        from urllib.parse import urlparse
+
+        host = urlparse(url).hostname or "127.0.0.1"
+        return SSRFCheckResult(True, host)
+
     with mock.patch(
-        "httpx.AsyncClient",
-        side_effect=ConnectionError("force urllib fallback"),
+        "omniscribe.api.services.http_fetch.is_ssrf_target",
+        new=mock.AsyncMock(side_effect=_fake_ssrf),
     ):
-        with pytest.raises(Exception) as excinfo:
-            await http_fetch.fetch_url_bytes(redirect_url)
-    # ``URLError`` (or ``HTTPError``) wraps the redirect-handler refusal;
-    # we don't pin the exact class — only that the fetch failed and did
-    # NOT return a body that came from the metadata endpoint.
-    msg = str(excinfo.value)
-    assert "169.254.169.254" not in msg or "Redirect" in msg or "redirect" in msg, (
-        f"unexpected exception — urllib walked the SSRF redirect: {msg!r}"
-    )
-    # The body must NOT be the metadata endpoint's payload. We use an
-    # empty body sentinel: if the redirect was followed, the test would
-    # raise a connection-refused error from the metadata endpoint, not
-    # the urllib-handler refusal. The fact that we got an exception at
-    # all is the regression guard.
+        with pytest.raises(SSRFBlockedError) as excinfo:
+            await http_fetch.fetch_url_bytes(redirect_to_metadata_ip)
+
+    # The blocking reason should name the failure mode (literal-blocked-ip
+    # is the catch-all for the IMDS IP — both is_blocked_ip and the
+    # metadata-endpoint shortcut would match it; the former wins
+    # because we hit the literal-IP branch first).
+    assert "169.254.169.254" not in (excinfo.value.reason or "")
+    assert excinfo.value.url == imds_url
+    # The localhost server must not be implicated in the failure.
+    assert localhost not in excinfo.value.url
 
 
-async def test_urllib_redirect_handler_accepts_safe_target(
-    localhost_url_with_path: str, monkeypatch: pytest.MonkeyPatch
+async def test_redirect_to_file_scheme_is_blocked(redirect_to_file_scheme: str) -> None:
+    """A 302 → ``file:///etc/passwd`` must raise :class:`SSRFBlockedError`.
+
+    The SSRF guard rejects any non-http(s) scheme up front, so the
+    fetcher must surface that as ``SSRFBlockedError`` rather than
+    silently following the redirect into the local filesystem.
+    """
+    with pytest.raises(SSRFBlockedError) as excinfo:
+        await http_fetch.fetch_url_bytes(redirect_to_file_scheme)
+    assert excinfo.value.url == "file:///etc/passwd"
+    assert excinfo.value.reason == "unsupported-scheme"
+
+
+# ---------------------------------------------------------------------------
+# SSRF C2: TOCTOU defense — the transport connects to the validated IP
+# ---------------------------------------------------------------------------
+
+
+async def test_redirect_to_safe_loopback_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A 302 → 127.0.0.1 must still be followed (negative control).
 
-    Confirms the SSRF-aware redirect handler isn't an outright
-    refusal: a redirect to another localhost URL still works, so the
-    contract is "validate the target" rather than "reject all 3xx".
-    Loopback targets are gated on ``ALLOW_SSRF_LOCAL``; the default is
-    off, so we set it explicitly for this test.
+    Confirms the SSRF-aware redirect handler isn't an outright refusal:
+    a redirect to another loopback URL still works when
+    ``ALLOW_SSRF_LOCAL`` is on. Pins the contract as "validate the
+    target" rather than "reject all 3xx".
     """
     monkeypatch.setenv("ALLOW_SSRF_LOCAL", "true")
-    # Spin a second server that 302-redirects to the first.
-    cls = _make_redirect_handler_with_status(
-        follow_target=localhost_url_with_path,
-        final_body=b"unreachable",
+
+    # Final body server
+    final_cls = _make_redirect_handler(follow_target=None)
+
+    class _FinalHandler(final_cls):  # type: ignore[misc, valid-type]
+        def do_GET(self):  # type: ignore[override]
+            self.send_response(200)
+            body = b"final"
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    final_srv = socketserver.TCPServer(("127.0.0.1", 0), _FinalHandler)
+    final_port = final_srv.server_address[1]
+    final_thread = threading.Thread(target=final_srv.serve_forever, daemon=True)
+    final_thread.start()
+
+    # Redirecting server
+    redirect_cls = _make_redirect_handler(
+        follow_target=f"http://127.0.0.1:{final_port}/anything"
     )
-    with socketserver.TCPServer(("127.0.0.1", 0), cls) as srv:
-        port = srv.server_address[1]
-        thread = threading.Thread(target=srv.serve_forever, daemon=True)
-        thread.start()
-        try:
-            redirecting_url = f"http://127.0.0.1:{port}/redirect"
-            with mock.patch(
-                "httpx.AsyncClient",
-                side_effect=ConnectionError("force urllib fallback"),
-            ):
-                body = await http_fetch.fetch_url_bytes(redirecting_url)
-        finally:
-            srv.shutdown()
-            thread.join(timeout=2)
-    # First server's handler returns b"final" on any non-/redirect path.
+    redirect_srv = socketserver.TCPServer(("127.0.0.1", 0), redirect_cls)
+    redirect_port = redirect_srv.server_address[1]
+    redirect_thread = threading.Thread(target=redirect_srv.serve_forever, daemon=True)
+    redirect_thread.start()
+
+    try:
+        body = await http_fetch.fetch_url_bytes(
+            f"http://127.0.0.1:{redirect_port}/redirect"
+        )
+    finally:
+        redirect_srv.shutdown()
+        redirect_thread.join(timeout=2)
+        final_srv.shutdown()
+        final_thread.join(timeout=2)
     assert body == b"final"
+
+
+async def test_toctou_dns_rebinding_is_neutralised_by_ip_pinning() -> None:
+    """TOCTOU defense: the transport must connect to the IP the SSRF
+    guard resolved, not a different one supplied at connect time.
+
+    Simulates the rebinding attack: at check time the SSRF guard
+    returns a public IP (1.2.3.4); at connect time the attacker has
+    flipped DNS so the URL would resolve to 127.0.0.1. The fetcher
+    must use the validated IP — if it re-resolved, the connection
+    would go to the attacker's target.
+    """
+    # The validated IP — what the SSRF guard would return.
+    validated_ip = "203.0.113.1"
+    # The rebinding target — what naive DNS would return at connect time.
+    rebinding_target = "127.0.0.1"
+
+    # We assert the transport opens the socket to validated_ip, NOT
+    # to the rebinding target. asyncio.open_connection is patched to
+    # record its ``host`` argument. OSError (the parent of
+    # ConnectionError) is the synthetic failure we throw to skip the
+    # real network roundtrip; the transport wraps it in
+    # ``httpx.ConnectError`` before propagating.
+    with mock.patch(
+        "omniscribe.api.services.http_fetch.asyncio.open_connection",
+        new=mock.AsyncMock(side_effect=ConnectionError("forced")),
+    ) as connect_mock:
+        # is_ssrf_target returns the validated IP. The fetcher should
+        # use that to build the transport.
+        with mock.patch(
+            "omniscribe.api.services.http_fetch.is_ssrf_target",
+            new=mock.AsyncMock(
+                return_value=SSRFCheckResult(allowed=True, resolved_ip=validated_ip)
+            ),
+        ):
+            with pytest.raises(httpx.ConnectError):
+                await http_fetch.fetch_url_bytes("http://attacker.example/path")
+
+    # The transport's open_connection call must use the validated IP.
+    assert connect_mock.await_count >= 1
+    for call in connect_mock.await_args_list:
+        # open_connection(host=..., port=..., ssl=..., server_hostname=...)
+        kwargs = call.kwargs
+        args = call.args
+        host = kwargs.get("host", args[0] if args else None)
+        assert host == validated_ip, (
+            f"open_connection got host={host!r} (rebinding target was "
+            f"{rebinding_target!r}); transport must use the validated IP"
+        )
+        assert host != rebinding_target

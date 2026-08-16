@@ -3,16 +3,22 @@ import { loadJson, saveJson } from '../utils/persistence';
 import type {
   AuthTokens,
   ConfigResponse,
-  DocumentViewModel,
-  JobState,
   NamespacedModelsResponse,
   Toast,
   ToastLevel,
 } from '../types/api';
 import { fetchApi } from '../api/client';
 import { websocketStore } from './websocketStore';
+// documentStore / jobStore used to be defined inline here. Extracting
+// them into their own leaf modules (documentStore.ts, jobStore.ts) breaks
+// the appStore ↔ websocketStore import cycle (audit M5). The public API
+// is preserved via re-exports below.
+import { documentStore, defaultDocumentModel } from './documentStore';
+import { jobStore, defaultJobState } from './jobStore';
 
 export { websocketStore };
+export { documentStore, defaultDocumentModel } from './documentStore';
+export { jobStore, defaultJobState } from './jobStore';
 
 export type ActiveTab =
   | 'workstation'
@@ -43,9 +49,48 @@ export const themeStore = writable<ThemeMode>(initialTheme);
 themeStore.subscribe((val) => saveJson(STORAGE_KEYS.THEME, val));
 
 // 3. authStore
-const initialAuth = loadJson<AuthTokens>(STORAGE_KEYS.AUTH, {});
+// Audit L6 fix: bearer tokens were persisted in `localStorage`, which is
+// XSS-reachable across sessions. The token is now hydrated from and
+// persisted to `sessionStorage` instead — same tab survives a reload, but
+// the token is gone when the tab is closed. A long-lived XSS payload
+// that activates on the next session has nothing to grab. Same-tab XSS
+// can still read it during the session (same as `localStorage` once
+// executed); eliminating that residual risk requires httpOnly cookies
+// (Option C in the audit), which needs a server change and is tracked
+// separately. `persistence.ts` is intentionally untouched — its helpers
+// remain the right choice for non-sensitive UI prefs (`activeTab`,
+// `themeStore`).
+function loadAuth(): AuthTokens {
+  if (typeof window === 'undefined') return {};
+  // One-time migration: drop any pre-fix token that may still be sitting
+  // in `localStorage` from an earlier build so it doesn't linger on disk.
+  try {
+    window.localStorage.removeItem(STORAGE_KEYS.AUTH);
+  } catch {
+    // best-effort; if removal fails (e.g. private-mode quota), the new
+    // code path simply doesn't read from `localStorage` anyway.
+  }
+  try {
+    const raw = window.sessionStorage.getItem(STORAGE_KEYS.AUTH);
+    if (!raw) return {};
+    return JSON.parse(raw) as AuthTokens;
+  } catch {
+    return {};
+  }
+}
+
+function saveAuth(value: AuthTokens): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(STORAGE_KEYS.AUTH, JSON.stringify(value));
+  } catch (err) {
+    console.warn(`Failed to save ${STORAGE_KEYS.AUTH} to sessionStorage:`, err);
+  }
+}
+
+const initialAuth = loadAuth();
 export const authStore = writable<AuthTokens>(initialAuth);
-authStore.subscribe((val) => saveJson(STORAGE_KEYS.AUTH, val));
+authStore.subscribe((val) => saveAuth(val));
 
 // 4. configStore
 export const defaultConfig: ConfigResponse = {
@@ -78,35 +123,10 @@ export const defaultConfig: ConfigResponse = {
 };
 export const configStore = writable<ConfigResponse>(defaultConfig);
 
-// 5. jobStore
-export const defaultJobState: JobState = {
-  activeJobId: null,
-  percent: 0,
-  stage: 'idle',
-  statusMessage: '',
-  warnings: [],
-  chunks: [],
-  failedPages: [],
-  completedPages: [],
-  qualitySummary: null,
-  isProcessing: false,
-};
-export const jobStore = writable<JobState>(defaultJobState);
-
-// 6. documentStore
-export const defaultDocumentModel: DocumentViewModel = {
-  pages: [],
-  textArtifacts: [],
-  textArtifactId: null,
-  textArtifactToken: null,
-  bboxes: [],
-  // Audit P2-10: null (not { average: 1.0 }) so the metadata panel shows
-  // "—" before any result exists instead of a fake "Overall confidence 100%".
-  confidenceSummary: null,
-  pageCount: 0,
-  trustSummary: null,
-};
-export const documentStore = writable<DocumentViewModel>(defaultDocumentModel);
+// 5. jobStore and 6. documentStore were moved to their own modules
+// (./jobStore.ts and ./documentStore.ts) to break the appStore ↔
+// websocketStore import cycle. They are re-exported above so the
+// existing `from '../stores/appStore'` public API is unchanged.
 
 // 7. toastStore
 function createToastStore() {
@@ -278,7 +298,8 @@ export async function updateTranscriptionNamespace(
 
 /**
  * Update a per-service auth token. Persists through the existing
- * `authStore` subscription, which writes to `localStorage`.
+ * `authStore` subscription, which writes to `sessionStorage` (audit
+ * L6 fix — `localStorage` is XSS-reachable across sessions).
  * Plan §3 — `configStore.setPerServiceAuthToken()`.
  */
 export function setPerServiceAuthToken(

@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
+from omniscribe.config import load_settings
 from omniscribe.core.llm_client import call_llm
 from omniscribe.core.llm_temperatures import TEMPERATURE_OCR
 from omniscribe.core.ocr.client import (
@@ -64,11 +65,20 @@ from omniscribe.core.ocr.resilience import (
     CircuitBreakerRegistry,
     is_transient_error,
 )
+from omniscribe.utils.env import env_int
 
 if TYPE_CHECKING:
     from omniscribe.core.trocr_engine import TrOCREngine
 
 load_dotenv()
+
+# Resolve the audit H3 knobs once at import time: prefer the validated
+# ``RuntimeSettings`` values for the four fields it owns (page / crop
+# timeouts, max retries, retry base delay), and fall back to the
+# canonical env-int helper for the two token budgets that don't have a
+# settings field yet. Re-running the module (e.g. from the timeout-env
+# test fixture) re-evaluates these against the current process env.
+_settings = load_settings()
 
 logger = logging.getLogger(__name__)
 
@@ -89,25 +99,25 @@ class OCRProcessor:
     # of markdown, so 6k leaves headroom without enabling endless loops.
     # Override timeout via ``OMNISCRIBE_VLM_PAGE_TIMEOUT`` (audit A-11);
     # override the token budget via ``OMNISCRIBE_VLM_PAGE_MAX_TOKENS``
-    # for tail-latency tuning on dense pages (Phase 5).
-    PAGE_TIMEOUT_S: float = float(os.getenv("OMNISCRIBE_VLM_PAGE_TIMEOUT", "240.0"))
-    PAGE_MAX_TOKENS: int = int(os.getenv("OMNISCRIBE_VLM_PAGE_MAX_TOKENS", "6144"))
+    # for tail-latency tuning on dense pages (Phase 5). Both flow
+    # through :mod:`omniscribe.config` / :mod:`omniscribe.utils.env`
+    # (audit H3) — no direct ``os.getenv`` in this module.
+    PAGE_TIMEOUT_S: float = _settings.vlm_page_timeout
+    PAGE_MAX_TOKENS: int = env_int("OMNISCRIBE_VLM_PAGE_MAX_TOKENS", 6144)
 
     # Crop-level OCR (single box): a sentence at most. Capping much
     # tighter prevents a confused model from emitting a whole-page worth
     # of hallucinated text into one bbox during the refine stage.
     # Override via ``OMNISCRIBE_VLM_CROP_TIMEOUT`` (audit A-11); token
     # budget via ``OMNISCRIBE_VLM_CROP_MAX_TOKENS`` (Phase 5).
-    CROP_TIMEOUT_S: float = float(os.getenv("OMNISCRIBE_VLM_CROP_TIMEOUT", "60.0"))
-    CROP_MAX_TOKENS: int = int(os.getenv("OMNISCRIBE_VLM_CROP_MAX_TOKENS", "256"))
+    CROP_TIMEOUT_S: float = _settings.vlm_crop_timeout
+    CROP_MAX_TOKENS: int = env_int("OMNISCRIBE_VLM_CROP_MAX_TOKENS", 256)
 
     # Retry policy for transient VLM errors (429, 5xx, connection drops).
     # Exponential backoff: base * 2^attempt, capped at MAX. Env overrides:
     # OMNISCRIBE_LLM_MAX_RETRIES, OMNISCRIBE_LLM_RETRY_BASE_DELAY.
-    MAX_RETRIES: int = int(os.getenv("OMNISCRIBE_LLM_MAX_RETRIES", "2"))
-    RETRY_BASE_DELAY_S: float = float(
-        os.getenv("OMNISCRIBE_LLM_RETRY_BASE_DELAY", "1.0")
-    )
+    MAX_RETRIES: int = _settings.llm_max_retries
+    RETRY_BASE_DELAY_S: float = _settings.llm_retry_base_delay
     RETRY_MAX_DELAY_S: float = 8.0
 
     def __init__(

@@ -338,6 +338,13 @@ class MaxUploadSizeMiddleware:
     def __init__(self, app, max_bytes: int) -> None:
         self.app = app
         self.max_bytes = max_bytes
+        # Per-request rejection state. ``_rejected`` is set the moment the
+        # chunked-byte counter crosses the cap (or by the Content-Length
+        # fast path); ``_sent_rejection`` flips once the middleware has
+        # actually emitted its 413 envelope so subsequent downstream
+        # ``send`` calls can be dropped without further inspection.
+        self._rejected: bool = False
+        self._sent_rejection: bool = False
 
     @staticmethod
     def _envelope(max_bytes: int) -> dict[str, str]:
@@ -357,6 +364,12 @@ class MaxUploadSizeMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+
+        # Reset per-request rejection state. The middleware is
+        # instantiated once per app boot, so concurrent requests on the
+        # same instance MUST not bleed state into each other.
+        self._rejected = False
+        self._sent_rejection = False
 
         # Fast path: Content-Length known. Reject up front without
         # reading any body so the server never pays the buffering cost.
@@ -400,6 +413,11 @@ class MaxUploadSizeMiddleware:
             if running_total > max_bytes:
                 guard["envelope"] = self._envelope(max_bytes)
                 guard["status"] = 413
+                # Mark the request rejected up front so the send wrapper
+                # knows to drop every subsequent downstream event (the
+                # inner app will still try to emit its own start + body
+                # even though we've truncated its body stream).
+                self._rejected = True
                 # Truncate this chunk so downstream reads stop.
                 return {
                     "type": "http.request",
@@ -409,12 +427,26 @@ class MaxUploadSizeMiddleware:
             return msg
 
         async def _guarded_send(event):
-            if (
-                event.get("type") == "http.response.start"
-                and guard.get("status") == 413
-            ):
+            # Once we've emitted the 413 envelope, every further
+            # downstream send call must be dropped silently. The ASGI
+            # spec only allows one ``http.response.start`` per request;
+            # forwarding the inner app's body event after our own body
+            # is a duplicate-completion bug that crashes uvicorn and
+            # can be abused for HTTP request smuggling.
+            if self._sent_rejection:
+                return
+            # While the request is rejected, any non-``start`` event
+            # the inner app tries to send is dropped on the floor. The
+            # middleware will synthesize its own 413 start + body the
+            # first time it sees a start event; the inner app's own
+            # body event would otherwise follow our body and produce a
+            # second response completion.
+            if self._rejected and event.get("type") != "http.response.start":
+                return
+            if event.get("type") == "http.response.start" and self._rejected:
                 envelope = guard.get("envelope") or self._envelope(max_bytes)
                 envelope_body = json.dumps(envelope).encode("utf-8")
+                self._sent_rejection = True
                 event = {
                     **event,
                     "status": 413,
@@ -475,18 +507,49 @@ class RateLimitMiddleware:
             list(trusted_proxies) if trusted_proxies else []
         )
 
-    @staticmethod
-    def _extract_xff(scope) -> str | None:
-        """Return the leftmost ``X-Forwarded-For`` entry, trimmed, or None."""
+    def _extract_xff(self, scope) -> str | None:
+        """Return the rightmost *untrusted* ``X-Forwarded-For`` entry, or ``None``.
+
+        ``X-Forwarded-For`` is a comma-separated chain where each proxy
+        appends the IP it received the connection from. The rightmost
+        entry is the most-recently appended (added by the proxy we just
+        received the request from); the leftmost is the original client.
+
+        An attacker controls the leftmost end of the chain — they can put
+        anything they want there. The standard "right-to-left trust"
+        pattern walks the chain from the right and skips entries that
+        fall inside the configured trusted-proxy CIDR list. The first
+        entry that is NOT in that list is the real client IP. If every
+        entry is trusted (or the chain is empty / unparseable) we return
+        ``None`` so the caller falls back to the ASGI peer — never
+        forwarding the raw header value into the bucket key.
+        """
         for name, value in scope.get("headers", ()) or ():
-            if name.lower() == RateLimitMiddleware._XFF_HEADER:
+            if name.lower() == self._XFF_HEADER:
                 try:
                     raw = value.decode("latin-1").strip()
                 except (UnicodeDecodeError, AttributeError):
                     return None
                 if not raw:
                     return None
-                return raw.split(",", 1)[0].strip() or None
+                parts: list[str] = raw.split(",")
+                entries: list[str] = [item.strip() for item in parts if item.strip()]
+                if not entries:
+                    return None
+                for entry in reversed(entries):
+                    try:
+                        ip = ipaddress.ip_address(entry)
+                    except ValueError:
+                        # A malformed token anywhere in the chain means
+                        # the chain is untrustworthy; fall back to the
+                        # peer rather than guessing.
+                        return None
+                    if not any(ip in network for network in self._trusted_proxies):
+                        return entry
+                # Every entry in the chain is a trusted hop — there is
+                # no original client in the header. Fall back to the
+                # ASGI peer.
+                return None
         return None
 
     def _client_key(self, scope) -> str:

@@ -87,14 +87,19 @@ def parse_git_glossary(
 
 
 def _ssrf_blocked(url: str) -> bool:
-    """Call the async SSRF validator from this synchronous parser safely."""
+    """Call the async SSRF validator from this synchronous parser safely.
+
+    Returns True when the URL is blocked by the SSRF guard. Wraps
+    the structured :class:`SSRFCheckResult` into a bool for the
+    synchronous parser call sites.
+    """
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(is_ssrf_target(url))
+        return not (asyncio.run(is_ssrf_target(url))).allowed
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(asyncio.run, is_ssrf_target(url))
-        return bool(future.result())
+        return not future.result().allowed
 
 
 def _validate_path(path: str) -> str:

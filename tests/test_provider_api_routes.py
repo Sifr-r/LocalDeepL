@@ -7,6 +7,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from omniscribe.server import create_app
+from omniscribe.utils.security import SSRFCheckResult
 
 
 def test_get_providers_route():
@@ -75,7 +76,10 @@ def test_create_or_update_provider_route():
         "api_key": "secret-key",
         "models": ["model-a", "model-b"],
     }
-    with patch("omniscribe.api.routers.providers.is_ssrf_target", return_value=False):
+    with patch(
+        "omniscribe.api.routers.providers.is_ssrf_target",
+        return_value=SSRFCheckResult(allowed=True, resolved_ip="203.0.113.1"),
+    ):
         res = client.post("/api/providers", json=payload)
         assert res.status_code == 200
         data = res.json()
@@ -83,7 +87,12 @@ def test_create_or_update_provider_route():
         assert data["api_url"] == "http://localhost:8080/v1"
 
     # SSRF rejection test
-    with patch("omniscribe.api.routers.providers.is_ssrf_target", return_value=True):
+    with patch(
+        "omniscribe.api.routers.providers.is_ssrf_target",
+        return_value=SSRFCheckResult(
+            allowed=False, resolved_ip=None, reason="mock-blocked"
+        ),
+    ):
         res_ssrf = client.post("/api/providers", json=payload)
         assert res_ssrf.status_code == 403
         assert "error" in res_ssrf.json()
@@ -98,7 +107,10 @@ def test_delete_provider_route():
         "display_name": "Temp Provider",
         "api_url": "http://localhost:8080/v1",
     }
-    with patch("omniscribe.api.routers.providers.is_ssrf_target", return_value=False):
+    with patch(
+        "omniscribe.api.routers.providers.is_ssrf_target",
+        return_value=SSRFCheckResult(allowed=True, resolved_ip="203.0.113.1"),
+    ):
         client.post("/api/providers", json=payload)
 
         # Delete it
@@ -120,7 +132,8 @@ def test_get_provider_models_route():
         return_value=["model-1", "model-2"],
     ):
         with patch(
-            "omniscribe.api.routers.providers.is_ssrf_target", return_value=False
+            "omniscribe.api.routers.providers.is_ssrf_target",
+            return_value=SSRFCheckResult(allowed=True, resolved_ip="203.0.113.1"),
         ):
             res = client.get("/api/providers/openai/models")
             assert res.status_code == 200

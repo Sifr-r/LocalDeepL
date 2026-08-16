@@ -97,11 +97,12 @@ def _has_running_loop() -> bool:
     return True
 
 
-def _sync_ssrf(url: str) -> bool:
+def _sync_ssrf_blocked(url: str) -> bool:
     from concurrent.futures import ThreadPoolExecutor
 
     with ThreadPoolExecutor(max_workers=1) as pool:
-        return bool(pool.submit(asyncio.run, is_ssrf_target(url)).result())
+        result = pool.submit(asyncio.run, is_ssrf_target(url)).result()
+    return not result.allowed
 
 
 def _validate_ssrf(url: str) -> None:
@@ -110,7 +111,9 @@ def _validate_ssrf(url: str) -> None:
             status_code=HTTPStatus.BAD_REQUEST, detail="URL is required."
         )
     blocked = (
-        _sync_ssrf(url) if not _has_running_loop() else asyncio.run(is_ssrf_target(url))
+        _sync_ssrf_blocked(url)
+        if not _has_running_loop()
+        else not (asyncio.run(is_ssrf_target(url))).allowed
     )
     if blocked:
         raise HTTPException(

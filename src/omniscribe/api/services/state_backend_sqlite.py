@@ -82,6 +82,7 @@ from omniscribe.api.services.artifacts import (
     _validate_artifact_id,
     _validate_token,
 )
+from omniscribe.api.services.config_store import SQLiteConfigStore
 from omniscribe.api.services.jobs import (
     JobHistory,
     JobRecord,
@@ -453,6 +454,10 @@ class SQLiteStateBackend:
     progress_service: ProgressService
     glossary_library: GlossaryLibrary
     ocr_job_queue: OCRJobQueue
+    # Duck-typed config-store attribute (see
+    # ``services/state_backend.py`` module docstring). Not part of the
+    # :class:`StateBackend` Protocol.
+    config_store: SQLiteConfigStore
 
     def __init__(
         self,
@@ -494,6 +499,7 @@ class SQLiteStateBackend:
         self.progress_service = ProgressService()
         self.glossary_library = GlossaryLibrary(artifact_dir=resolved)
         self.ocr_job_queue = OCRJobQueue()
+        self.config_store = SQLiteConfigStore(self.db_path)
 
     @property
     def artifact_dir(self) -> Path:

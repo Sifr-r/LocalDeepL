@@ -36,12 +36,14 @@ import tempfile
 from pathlib import Path
 
 from omniscribe.api.services.artifacts import TextArtifactStore  # noqa: F401
+from omniscribe.api.services.config_store import ConfigStore
 from omniscribe.api.services.jobs import JobHistory  # noqa: F401
 from omniscribe.api.services.progress import ProgressService  # noqa: F401
 from omniscribe.api.services.state_backend import (  # noqa: F401
     LocalStateBackend,
     build_state_backend,
 )
+from omniscribe.config import load_settings
 from omniscribe.core.glossary_library import GlossaryLibrary
 
 _artifact_dir = (
@@ -50,8 +52,12 @@ _artifact_dir = (
 
 # Backend instance is the single source of truth; the legacy aliases
 # below resolve through it so a runtime swap keeps both access paths
-# in sync.
-backend = LocalStateBackend.from_env()
+# in sync. The factory honours ``OMNISCRIBE_STATE_BACKEND`` — default
+# ``"memory"`` keeps the historical :class:`LocalStateBackend`, while
+# ``"sqlite"`` and ``"redis"`` route to the persistent backends. The
+# factory is fail-fast on unknown values, so an operator typo crashes
+# at import time rather than silently running with the wrong backend.
+backend = build_state_backend(load_settings())
 
 text_artifacts = backend.text_artifacts
 metadata_artifacts = backend.metadata_artifacts
@@ -59,6 +65,10 @@ export_artifacts = backend.export_artifacts
 job_history = backend.job_history
 progress_service = backend.progress_service
 ocr_job_queue = backend.ocr_job_queue
+# Duck-typed config_store on every StateBackend implementation; expose
+# the same instance here so call sites that already use ``state.X``
+# can do ``state.config_store`` without reaching through ``backend``.
+config_store: ConfigStore = backend.config_store  # type: ignore[attr-defined]
 # GlossaryLibrary carries a non-default artifact_dir; keep the original
 # instance so the on-disk glossary index is preserved across swaps.
 glossary_library = GlossaryLibrary(artifact_dir=_artifact_dir)

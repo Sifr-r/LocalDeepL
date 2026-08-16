@@ -451,3 +451,181 @@ def test_middleware_passes_chunked_under_cap():
     assert status == 200, f"expected pass-through 200, got {status}: {body}"
     assert body is None, f"inner app's empty 200 body should not be JSON: {body}"
     assert inner_called is True
+
+
+# ---------------------------------------------------------------------------
+# C3 audit gap: ASGI protocol contract on chunked overflow
+# ---------------------------------------------------------------------------
+
+
+async def _drive_middleware_capture_all(
+    max_bytes: int, body_chunks: list[bytes]
+) -> tuple[list[dict[str, Any]], bool]:
+    """Drive ``MaxUploadSizeMiddleware`` and record EVERY event forwarded
+    to the ASGI ``send`` callable.
+
+    Returns ``(events, inner_called)``:
+
+    * ``events`` is the raw list of ASGI send-event dicts in the order
+      they were forwarded to the underlying server. Used to assert the
+      ASGI protocol contract (exactly one start, at most one body).
+    * ``inner_called`` records whether the inner app ran (sanity).
+    """
+    from omniscribe.api.services.security_middleware import MaxUploadSizeMiddleware
+
+    inner_called = {"called": False}
+
+    async def _inner(scope, receive, send):
+        # Drain the (possibly truncated) body so the middleware's
+        # wrapped receive actually runs against every chunk.
+        while True:
+            msg = await receive()
+            if msg.get("type") != "http.request":
+                break
+            if not msg.get("more_body", False):
+                break
+        # The inner app emits its own 200 + body. The middleware must
+        # suppress BOTH of these on the rejected path; only the
+        # middleware's 413 envelope should reach the underlying server.
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [
+                    (b"content-type", b"text/plain"),
+                    (b"content-length", b"13"),
+                ],
+            }
+        )
+        await send(
+            {
+                "type": "http.response.body",
+                "body": b"hello, world!",
+                "more_body": False,
+            }
+        )
+        inner_called["called"] = True
+
+    middleware = MaxUploadSizeMiddleware(_inner, max_bytes=max_bytes)
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "headers": [],  # no Content-Length => chunked transfer
+        "client": ("127.0.0.1", 1234),
+    }
+
+    events: list[dict[str, Any]] = []
+    chunk_iter = iter(body_chunks)
+
+    async def _chunked_receive():
+        try:
+            chunk = next(chunk_iter)
+        except StopIteration:
+            return {"type": "http.request", "body": b"", "more_body": False}
+        return {"type": "http.request", "body": chunk, "more_body": True}
+
+    async def _capture_send(msg):
+        events.append(msg)
+
+    await middleware(scope, _chunked_receive, _capture_send)
+    return events, inner_called["called"]
+
+
+def test_middleware_chunked_overflow_emits_exactly_one_start_and_body():
+    """C3 audit fix: a chunked overflow must NOT produce a duplicate
+    ``http.response.start`` / ``http.response.body`` pair from the inner
+    app after the middleware's 413 envelope.
+
+    ASGI only allows one ``http.response.start`` per request. The pre-fix
+    middleware emitted its 413 envelope and then forwarded the inner
+    app's own 200 start + body, which is a duplicate-completion bug that
+    crashes uvicorn and is a known request-smuggling primitive.
+    """
+    cap = 1024
+
+    async def _drive():
+        return await _drive_middleware_capture_all(
+            cap,
+            [b"x" * (cap * 2)],  # 2 KB body, 1 KB cap
+        )
+
+    events, inner_called = asyncio.run(_drive())
+
+    # Sanity: the inner app actually ran (otherwise the test is a no-op).
+    assert inner_called is True, "inner app must run for the test to be meaningful"
+
+    starts = [e for e in events if e.get("type") == "http.response.start"]
+    bodies = [e for e in events if e.get("type") == "http.response.body"]
+
+    # ASGI contract: exactly one start, at most one body, status 413.
+    assert len(starts) == 1, (
+        f"expected exactly one http.response.start, got {len(starts)}: {events}"
+    )
+    assert starts[0]["status"] == 413, (
+        f"the one start event must be the 413 envelope, got {starts[0]['status']}"
+    )
+    assert len(bodies) == 1, (
+        f"expected exactly one http.response.body, got {len(bodies)}: {events}"
+    )
+    decoded = json.loads(bodies[0]["body"].decode("utf-8"))
+    assert decoded["error"] == "Upload exceeds maximum size"
+
+    # The inner app's "hello, world!" body must not have leaked through.
+    raw_bodies = [b["body"] for b in bodies]
+    assert b"hello, world!" not in raw_bodies, (
+        "inner app's body must be suppressed after the 413 envelope"
+    )
+
+
+def test_middleware_chunked_overflow_with_multiple_downstream_body_events():
+    """C3 audit fix: even if the inner app emits several body events
+    (e.g. streaming response), every one of them is suppressed.
+
+    This pins the contract that ``self._sent_rejection`` (or the
+    ``self._rejected and not start`` branch) catches every non-start
+    event from the inner app, not just the first.
+    """
+    cap = 1024
+
+    async def _drive():
+        return await _drive_middleware_capture_all(
+            cap,
+            [b"x" * (cap * 3)],  # 3 KB body, 1 KB cap
+        )
+
+    events, _inner_called = asyncio.run(_drive())
+
+    starts = [e for e in events if e.get("type") == "http.response.start"]
+    bodies = [e for e in events if e.get("type") == "http.response.body"]
+
+    assert len(starts) == 1
+    assert starts[0]["status"] == 413
+    # At most one body — the 413 envelope. No second body from the
+    # inner app, ever.
+    assert len(bodies) <= 1, (
+        f"expected at most one body (the 413 envelope), got {len(bodies)}: "
+        f"{[b['body'][:40] for b in bodies]}"
+    )
+
+
+def test_middleware_pass_through_emits_exactly_one_start_and_body():
+    """Negative control: the suppression logic does NOT fire on a normal
+    (under-cap) chunked request. The inner app's single 200 start and
+    body must both reach the server.
+    """
+    cap = 4 * 1024
+    chunks = [b"x" * 256 for _ in range(8)]  # 2 KB total, 4 KB cap
+
+    async def _drive():
+        return await _drive_middleware_capture_all(cap, chunks)
+
+    events, inner_called = asyncio.run(_drive())
+
+    assert inner_called is True
+    starts = [e for e in events if e.get("type") == "http.response.start"]
+    bodies = [e for e in events if e.get("type") == "http.response.body"]
+
+    assert len(starts) == 1
+    assert starts[0]["status"] == 200
+    assert len(bodies) == 1
+    assert bodies[0]["body"] == b"hello, world!"

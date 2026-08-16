@@ -166,11 +166,28 @@ def load_ground_truth(
 
     Blocks are normalized to `[x0, y0, x1, y1]` in 0..1 space. Non-text
     blocks (label == "image") are skipped. Axis order is auto-detected.
+
+    The on-disk JSON may be:
+      * ``{"data": {"layout": [...], "data_info": ...}}`` (Z.AI / GLM-OCR wrapper)
+      * ``{"layout": [...], "data_info": ...}`` (already unwrapped)
+      * ``[ {...block...}, ... ]`` (raw layout array — list fixtures are
+        normalized as ``{"layout": <list>}``)
     """
     with open(fixture_path) as f:
         data = json.load(f)
 
-    d = data.get("data", data)
+    # JSON load returns Any; constrain to dict[str, Any] for downstream use.
+    d: dict
+    if isinstance(data, list):
+        # Raw layout array: no data_info.pages → the existing
+        # "missing data_info.pages" guard will fire if a caller forgot it.
+        d = {"layout": data}
+    elif isinstance(data, dict):
+        d = data.get("data", data)
+    else:
+        raise TypeError(
+            f"{fixture_path}: expected JSON object or array, got {type(data).__name__}"
+        )
     raw_layout = d.get("layout", [])
     raw_items = [
         b for b in raw_layout if b.get("block_label") not in NON_CONTENT_LABELS

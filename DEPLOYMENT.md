@@ -89,7 +89,7 @@ services:
     environment:
       OMNISCRIBE_AUTH_TOKEN: "${OMNISCRIBE_AUTH_TOKEN:?required}"
       ALLOW_SSRF_LOCAL: "false"
-      OMNISCRIBE_MAX_UPLOAD_MB: "1024"
+      OMNISCRIBE_MAX_UPLOAD_MB: "10240"
       OMNISCRIBE_RATE_LIMIT_PER_MIN: "30"
       LLM_API_BASE: "${OMNISCRIBE_LLM_API_BASE:-http://host.docker.internal:1234/v1}"
     healthcheck:

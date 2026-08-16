@@ -13,7 +13,13 @@ import type {
 } from '../types/api';
 import { connectProgressSocket, openProgressSession, type ProgressSocketController } from '../api/websocket';
 import { fetchApi } from '../api/client';
-import { documentStore, jobStore } from './appStore';
+// Import directly from the leaf modules instead of from `./appStore`.
+// Previously the import went through `appStore`, which itself re-exported
+// `websocketStore` — that created a cycle (appStore → websocketStore →
+// appStore) and let bundler module-eval order leak `undefined` references
+// into the first frame. See audit M5.
+import { documentStore } from './documentStore';
+import { jobStore } from './jobStore';
 
 export interface WebSocketStoreState {
   channelId: string | null;

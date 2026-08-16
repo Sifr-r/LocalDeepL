@@ -93,6 +93,19 @@ vi.mock('../lib/api/endpoints', () => ({
   getOcrResult: getOcrResultMock
 }));
 
+// The extracted service imports `websocketStore` from its leaf module
+// rather than the appStore re-export. Mirror the same fake so the
+// service-layer calls are stubbed the same way the component-layer
+// ones were before the refactor.
+vi.mock('../lib/stores/websocketStore', () => ({
+  websocketStore: {
+    connect: connectMock,
+    disconnect: disconnectMock,
+    requestCancel: requestCancelMock,
+    subscribe: () => () => {}
+  }
+}));
+
 // ``pdfjs-dist`` ships an ESM worker bootstrap that tries to dynamically
 // ``import`` the worker chunk from the current page URL. jsdom does not
 // resolve those imports, so unit tests that mount the workstation view

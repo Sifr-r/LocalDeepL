@@ -33,7 +33,12 @@ services:
       # Password matches the redis service below (audit P1-6).
       REDIS_URL: redis://:${REDIS_PASSWORD:-omniscribe-local-dev}@redis:6379/0
       # Recommended security defaults. See README "Security" section.
-      OMNISCRIBE_MAX_UPLOAD_MB: "100"
+      # 10240 MB (10 GB) matches ``SecuritySettings.DEFAULT_MAX_UPLOAD_MB``
+      # in ``src/omniscribe/api/services/security_config.py`` and the
+      # ``.env.example`` shipped with the repo. The size cap is enforced
+      # by ``MaxUploadSizeMiddleware``; raise this for LAN/public hosts
+      # only after sizing disk + memory to honour it.
+      OMNISCRIBE_MAX_UPLOAD_MB: "10240"
       OMNISCRIBE_RATE_LIMIT_PER_MIN: "60"
       # Uncomment and regenerate a strong secret to enable auth.
       # OMNISCRIBE_AUTH_TOKEN: change-me-in-prod
@@ -42,6 +47,18 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    # Liveness probe: ``/health`` is the cheap, no-I/O endpoint
+    # (see ``src/omniscribe/api/routers/health.py``) — it only confirms
+    # that the FastAPI process is up. ``curl`` is already in the image
+    # (the Dockerfile installs it for the uv bootstrap), so the probe
+    # needs no extra apt layer. Interval/timeout/retries/start_period
+    # follow the audit's recommended defaults.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
 
   worker:

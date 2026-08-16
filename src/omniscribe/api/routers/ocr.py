@@ -481,7 +481,7 @@ async def process_pdf(
     except ValidationError as exc:
         return _validation_error_response(exc)
 
-    if await is_ssrf_target(settings.api_base):
+    if not (await is_ssrf_target(settings.api_base)).allowed:
         return api_error_response(HTTPStatus.FORBIDDEN, SAFE_API_BASE_ERROR)
 
     try:
@@ -705,7 +705,7 @@ async def process_pdf_async(
     except ValidationError as exc:
         return _validation_error_response(exc)
 
-    if await is_ssrf_target(settings.api_base):
+    if not (await is_ssrf_target(settings.api_base)).allowed:
         return api_error_response(HTTPStatus.FORBIDDEN, SAFE_API_BASE_ERROR)
 
     try:

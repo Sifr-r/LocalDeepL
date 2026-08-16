@@ -125,22 +125,39 @@ def test_ssrf_fails_closed_and_requires_explicit_local_allowance():
     with patch.dict(os.environ, {}, clear=True):
         with patch("omniscribe.utils.security.socket.getaddrinfo") as getaddrinfo:
             getaddrinfo.side_effect = _public_dns
-            assert asyncio.run(is_ssrf_target("http://api.openai.com/v1")) is False
-            assert asyncio.run(is_ssrf_target("localhost:1234/v1")) is True
-            assert asyncio.run(is_ssrf_target("ftp://api.openai.com/v1")) is True
-            assert asyncio.run(is_ssrf_target(None)) is True
+            assert (
+                asyncio.run(is_ssrf_target("http://api.openai.com/v1")).allowed is True
+            )
+            assert (
+                asyncio.run(is_ssrf_target("http://api.openai.com/v1")).resolved_ip
+                == "104.18.3.161"
+            )
+            assert asyncio.run(is_ssrf_target("localhost:1234/v1")).allowed is False
+            assert (
+                asyncio.run(is_ssrf_target("ftp://api.openai.com/v1")).allowed is False
+            )
+            assert asyncio.run(is_ssrf_target(None)).allowed is False
 
     with patch.dict(os.environ, {}, clear=True):
         with patch("omniscribe.utils.security.socket.getaddrinfo") as getaddrinfo:
             getaddrinfo.side_effect = socket.gaierror(-2, "Name or service not known")
             assert (
-                asyncio.run(is_ssrf_target("http://does-not-resolve.example/v1"))
-                is True
+                asyncio.run(
+                    is_ssrf_target("http://does-not-resolve.example/v1")
+                ).allowed
+                is False
             )
 
     with patch.dict(os.environ, {"ALLOW_SSRF_LOCAL": "true"}, clear=True):
-        assert asyncio.run(is_ssrf_target("http://127.0.0.1:1234/v1")) is False
-        assert asyncio.run(is_ssrf_target("http://metadata.google.internal/v1")) is True
+        assert asyncio.run(is_ssrf_target("http://127.0.0.1:1234/v1")).allowed is True
+        assert (
+            asyncio.run(is_ssrf_target("http://127.0.0.1:1234/v1")).resolved_ip
+            == "127.0.0.1"
+        )
+        assert (
+            asyncio.run(is_ssrf_target("http://metadata.google.internal/v1")).allowed
+            is False
+        )
 
 
 def test_config_update_rejects_string_booleans_and_local_api_base():

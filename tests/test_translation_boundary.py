@@ -163,3 +163,34 @@ async def test_translate_node_preserves_error_prefix_on_call_llm_failure(monkeyp
     translated = result["translated_chunk"]
     assert translated.startswith("[Translation Error")
     assert "upstream gone" in translated
+
+
+async def test_translate_node_includes_glossary_and_memory(monkeypatch):
+    """When the new optional state fields are populated, they must end up in the prompt."""
+    from omniscribe.core import translation as translation_mod
+
+    captured: dict[str, object] = {}
+
+    async def fake_call_llm(**kwargs):
+        captured["messages"] = kwargs.get("messages")
+        return "translated"
+
+    monkeypatch.setattr(translation_mod, "call_llm", fake_call_llm)
+
+    state = {
+        "source_chunk": "Bonjour le monde",
+        "target_language": "English",
+        "glossary_prompt_block": "GLOSSARY: Bonjour = Hello",
+        "entity_memory_prompt_block": "NAMES: Paris",
+        "sliding_window": "previously translated text",
+    }
+    out = await translation_mod.translate_node(state)
+    assert out["translated_chunk"] == "translated", out
+    messages = captured.get("messages")
+    assert isinstance(messages, list) and messages and isinstance(messages[0], dict)
+    prompt = messages[0]["content"]
+    assert "GLOSSARY: Bonjour = Hello" in prompt
+    assert "NAMES: Paris" in prompt
+    assert "PREVIOUS CONTEXT" in prompt
+    assert "previously translated text" in prompt
+    assert "SOURCE TEXT" in prompt

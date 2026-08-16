@@ -43,27 +43,16 @@ def render_html(tree: DocumentTree) -> str:
         if i > 0:
             out.append("<!-- PageBreak -->")
         out.append(_render_page(page))
-    # Render tables that live on the tree (not embedded in a page) at the end.
+    # Tables live on the tree (``tree.tables``) rather than on a page's
+    # children — the table-extraction processor builds ``TableNode``s and
+    # filters the cell blocks back out of ``page.children``, so this loop is
+    # the only place a ``<table>`` is emitted. The corresponding figure and
+    # equation elements are rendered via the page-walk above (``_render_block``
+    # branches on ``block_type == "figure" | "equation"``); rendering them
+    # again from ``tree.figures`` / ``tree.equations`` would duplicate the
+    # markup, so those post-walks were removed.
     for table in tree.tables:
         out.append(_render_table(table))
-    # Render equations that live on the tree at the end.
-    for eq in tree.equations:
-        out.append(
-            f'<span data-block-id="{eq.block_id}">'
-            f"<code>{html.escape(eq.latex)}</code></span>"
-        )
-    # Render figures that live on the tree at the end.
-    for fig in tree.figures:
-        img_html = ""
-        image_bytes = getattr(fig, "image_bytes", None)
-        if image_bytes:
-            b64 = base64.b64encode(image_bytes).decode("ascii")
-            img_html = f'<img src="data:image/png;base64,{b64}" alt="">'
-        out.append(
-            f'<figure data-block-id="{fig.block_id}">'
-            f"{img_html}<figcaption>{html.escape(fig.caption or '')}</figcaption>"
-            f"</figure>"
-        )
     out.append("</body></html>")
     return "\n".join(out)
 

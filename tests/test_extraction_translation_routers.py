@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Coverage push for the extraction and translation router surface (audit P3-11).
 
 Targets the routes that were at ~38% line coverage in the audit:
@@ -13,24 +15,32 @@ swapped onto ``state`` (restored after each test), so no real OCR run
 is needed.
 """
 
-from __future__ import annotations
+import json  # noqa: E402  (after module docstring; from __future__ first)
+from pathlib import Path  # noqa: E402
+from unittest.mock import AsyncMock, patch  # noqa: E402
 
-import json
-from pathlib import Path
-from unittest.mock import AsyncMock, patch
+import pytest  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
-import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
-from omniscribe.api.routers import artifacts, config, extraction, state, translation
-from omniscribe.api.services.artifacts import TextArtifactStore
-from omniscribe.api.services.security import SAFE_API_BASE_ERROR, SERVER_ERROR_MESSAGE
-from omniscribe.api.services.tree_artifact import write_tree_atomic
-from omniscribe.core.block_tree import from_pages_data
-from omniscribe.core.glossary import Glossary
-from omniscribe.core.nllb_engine import NLLBResult
-from omniscribe.core.translation_config import AsyncTranslationUnavailable
+from omniscribe.api.routers import (  # noqa: E402
+    artifacts,
+    config,
+    extraction,
+    state,
+    translation,
+)
+from omniscribe.api.services.artifacts import TextArtifactStore  # noqa: E402
+from omniscribe.api.services.security import (  # noqa: E402
+    SAFE_API_BASE_ERROR,
+    SERVER_ERROR_MESSAGE,
+)
+from omniscribe.api.services.tree_artifact import write_tree_atomic  # noqa: E402
+from omniscribe.core.block_tree import from_pages_data  # noqa: E402
+from omniscribe.core.glossary import Glossary  # noqa: E402
+from omniscribe.core.nllb_engine import NLLBResult  # noqa: E402
+from omniscribe.core.translation_config import AsyncTranslationUnavailable  # noqa: E402
+from omniscribe.utils.security import SSRFCheckResult  # noqa: E402
 
 _DOCX_MEDIA_TYPE = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -256,7 +266,9 @@ def test_translate_tree_translates_artifact_blocks(artifact_store):
     with (
         patch(
             "omniscribe.api.routers.translation.is_ssrf_target",
-            new=AsyncMock(return_value=False),
+            new=AsyncMock(
+                return_value=SSRFCheckResult(allowed=True, resolved_ip="203.0.113.1")
+            ),
         ),
         patch("omniscribe.core.llm_client.call_llm", fake_call_llm),
     ):
@@ -297,7 +309,11 @@ def test_translate_tree_blocks_unsafe_request_api_base(artifact_store):
     client = _client()
     with patch(
         "omniscribe.api.routers.translation.is_ssrf_target",
-        new=AsyncMock(return_value=True),
+        new=AsyncMock(
+            return_value=SSRFCheckResult(
+                allowed=False, resolved_ip=None, reason="mock-blocked"
+            )
+        ),
     ):
         response = client.post("/api/translate/tree", json=request)
 

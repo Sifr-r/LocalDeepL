@@ -6,6 +6,18 @@ and service consumes (artifacts, jobs, progress math, glossary library).
 the de-facto state since v0; future work can plug in a Redis-backed or
 file-backed implementation without rewriting every call site.
 
+Config persistence
+------------------
+
+Each backend also owns a ``config_store`` attribute (duck-typed, not
+listed on the Protocol) so the :mod:`~omniscribe.api.routers.config`
+POST handler can persist runtime-config updates in a way that all
+uvicorn workers see. The :class:`LocalStateBackend` uses the
+in-memory variant (per-process); :class:`RedisStateBackend` and
+:class:`SQLiteStateBackend` use the cross-worker-visible variants. The
+Protocol's seven-attribute surface is preserved — ``config_store`` is
+an extra, not a replacement.
+
 To swap in a new backend:
 
 1. Implement a class that exposes the same seven attributes.
@@ -54,6 +66,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from omniscribe.api.services.artifacts import TextArtifactStore
+from omniscribe.api.services.config_store import InMemoryConfigStore
 from omniscribe.api.services.jobs import JobHistory
 from omniscribe.api.services.ocr_jobs import OCRJobQueue
 from omniscribe.api.services.progress import ProgressService
@@ -98,6 +111,9 @@ class LocalStateBackend:
     progress_service: ProgressService
     glossary_library: GlossaryLibrary
     ocr_job_queue: OCRJobQueue
+    # Duck-typed config-store attribute (see module docstring).
+    # Not part of the :class:`StateBackend` Protocol.
+    config_store: InMemoryConfigStore
 
     def __init__(
         self,
@@ -110,6 +126,7 @@ class LocalStateBackend:
         progress_service: ProgressService | None = None,
         glossary_library: GlossaryLibrary | None = None,
         ocr_job_queue: OCRJobQueue | None = None,
+        config_store: InMemoryConfigStore | None = None,
     ) -> None:
         if artifact_dir is not None:
             resolved = Path(artifact_dir).expanduser().resolve()
@@ -130,6 +147,7 @@ class LocalStateBackend:
             artifact_dir=resolved
         )
         self.ocr_job_queue = ocr_job_queue or OCRJobQueue()
+        self.config_store = config_store or InMemoryConfigStore()
 
     @classmethod
     def from_env(cls) -> LocalStateBackend:

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
   import UploadPanel from './UploadPanel.svelte';
   import ProcessSettings from './ProcessSettings.svelte';
   import PageCanvas from './PageCanvas.svelte';
@@ -14,29 +15,21 @@
     defaultJobState,
     documentStore,
     jobStore,
-    toastStore,
-    websocketStore
+    toastStore
   } from '../../stores/appStore';
   import { pdfPreview } from '../../stores/pdfPreview';
-  import { processOcr, processOcrAsync, getOcrStatus, getOcrResult } from '../../api/endpoints';
-  import { isFetchError } from '../../api/client';
-  import type { OcrJobStatusResponse, PageResult } from '../../types/api';
-
-  // Legacy JSON responses still carry ``pages`` / ``confidence`` in the
-  // body. The modern OCR endpoint returns a PDF blob instead, so the
-  // helpers fall back to ``undefined`` (and the document store keeps
-  // its prior values).
-  function extractPages(body: unknown): PageResult[] | undefined {
-    if (!body || typeof body !== 'object') return undefined;
-    const candidate = (body as { pages?: unknown }).pages;
-    if (!Array.isArray(candidate)) return undefined;
-    return candidate as PageResult[];
-  }
-  function extractConfidence(body: unknown): number | undefined {
-    if (!body || typeof body !== 'object') return undefined;
-    const value = (body as { confidence?: unknown }).confidence;
-    return typeof value === 'number' ? value : undefined;
-  }
+  import {
+    applyAsyncResult,
+    applySyncResult,
+    buildInitialJobState,
+    buildOcrFormData,
+    classifyOcrFailure,
+    closeProgressChannel,
+    openProgressChannel,
+    requestProgressCancel,
+    submitAsyncOcr,
+    submitSyncOcr
+  } from '../../services/workstationService';
 
   let selectedFile: File | null = null;
   let processViewEl: HTMLDivElement;
@@ -59,101 +52,15 @@
   }
 
   function handleCancel() {
-    void websocketStore.requestCancel();
-  }
-
-  /** Build the FormData that both the sync and async endpoints consume. */
-  function buildOcrFormData(channelId: string, sessionToken: string): FormData {
-    const cfg = $configStore;
-    const formData = new FormData();
-    formData.append('file', selectedFile as File);
-    formData.append('progress_channel', channelId);
-    formData.append('progress_token', sessionToken);
-    if (cfg.pipeline_mode) formData.append('pipeline_mode', cfg.pipeline_mode);
-    if (cfg.dense_mode) formData.append('dense_mode', cfg.dense_mode);
-    if (cfg.spellcheck) formData.append('spellcheck', cfg.spellcheck);
-    if (cfg.document_processors?.length) {
-      formData.append('document_processors', cfg.document_processors.join(','));
-    }
-    // The individual preprocessing toggles only take effect when the
-    // master flag is on — derive it so the UI toggles are honest.
-    const preprocessFields = [
-      'orientation_detection',
-      'deskew',
-      'denoise',
-      'normalize_contrast',
-      'crop_cleanup'
-    ] as const;
-    const anyPreprocess = preprocessFields.some((f) => Boolean(cfg[f]));
-    formData.append('preprocess_pages', String(cfg.preprocess_pages || anyPreprocess));
-    for (const field of preprocessFields) {
-      formData.append(field, String(Boolean(cfg[field])));
-    }
-    return formData;
-  }
-
-  /** Poll ``/api/process/status/{jobId}`` until the job is terminal. */
-  async function pollUntilTerminal(jobId: string): Promise<OcrJobStatusResponse> {
-    // Two-second cadence: long enough to avoid hot-spinning the queue
-    // worker, short enough that the progress bar feels live. 1000 polls
-    // = ~33 minutes, well under the 24h record retention.
-    const intervalMs = 2000;
-    const maxAttempts = 1000;
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const status = await getOcrStatus(jobId);
-      if (status.status === 'complete' || status.status === 'error') {
-        return status;
-      }
-      await new Promise((r) => setTimeout(r, intervalMs));
-    }
-    throw new Error(`OCR job ${jobId} did not complete within ${(maxAttempts * intervalMs) / 1000}s`);
+    void requestProgressCancel();
   }
 
   /**
-   * Async-mode submission: POST to ``/api/process/async``, poll for
-   * the terminal state, then download the result PDF and feed it to
-   * the same preview/document-store pipeline the sync path uses.
+   * Thin shell: every API/WS/FormData concern lives in
+   * ``services/workstationService.ts``. This function orchestrates the
+   * run by calling the service and applying the returned patches to
+   * the Svelte stores that drive the UI.
    */
-  async function runAsyncSubmission(channelId: string, sessionToken: string) {
-    const formData = buildOcrFormData(channelId, sessionToken);
-    const queued = await processOcrAsync(formData);
-    jobStore.update((s) => ({
-      ...s,
-      stage: 'queued',
-      percent: 5,
-      statusMessage: `Queued: ${queued.job_id}. Polling for completion…`
-    }));
-    const status = await pollUntilTerminal(queued.job_id);
-    if (status.status !== 'complete' || !status.text_artifact_id || !status.text_artifact_token) {
-      throw new Error(status.error || 'Async OCR job did not complete');
-    }
-    const blob = await getOcrResult(status.job_id, status.text_artifact_token);
-    const baseName = (selectedFile?.name ?? 'document').replace(/\.[^.]+$/, '');
-    try {
-      await pdfPreview.loadResponse(blob, `${baseName}.ocr.pdf`);
-    } catch (err) {
-      console.warn('Failed to bind async OCR PDF response', err);
-    }
-    jobStore.update((s) => ({
-      ...s,
-      activeJobId: status.text_artifact_id ?? s.activeJobId,
-      percent: 100,
-      stage: 'complete',
-      statusMessage: 'Done',
-      isProcessing: false
-    }));
-    documentStore.update((d) => ({
-      ...d,
-      filename: selectedFile ? selectedFile.name : d.filename,
-      textArtifact: status.text_artifact_id
-        ? { id: status.text_artifact_id, token: status.text_artifact_token ?? '' }
-        : null,
-      textArtifactId: status.text_artifact_id ?? d.textArtifactId,
-      textArtifactToken: status.text_artifact_token ?? d.textArtifactToken
-    }));
-    toastStore.pushToast('success', 'Document processing complete!');
-  }
-
   async function startProcessing() {
     if (isProcessing) return;
     if (!selectedFile) {
@@ -165,12 +72,9 @@
     // frames. The backend only authorizes streaming when BOTH the channel id
     // and its session token are presented (`progress_channel` +
     // `progress_token` form fields) and the WS handshake has completed.
-    let channelId: string;
-    let sessionToken: string;
+    let session: { channelId: string; sessionToken: string };
     try {
-      const session = await websocketStore.connect();
-      channelId = session.channelId;
-      sessionToken = session.sessionToken;
+      session = await openProgressChannel();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       toastStore.pushToast('error', `Progress channel failed: ${message}`);
@@ -179,87 +83,74 @@
 
     // 2) Reset per-run state so streamed frames land on a clean slate.
     const useAsync = Boolean($configStore.use_async);
-    jobStore.set({
-      ...defaultJobState,
-      isProcessing: true,
-      percent: 2,
-      stage: useAsync ? 'queued' : 'init',
-      statusMessage: useAsync ? 'Uploading document…' : 'Uploading document…'
+    jobStore.set({ ...defaultJobState, ...buildInitialJobState({ useAsync }) });
+    documentStore.update((d) => ({ ...defaultDocumentModel, filename: d.filename }));
+
+    const formData = buildOcrFormData({
+      file: selectedFile,
+      config: $configStore,
+      channelId: session.channelId,
+      sessionToken: session.sessionToken
     });
-    documentStore.update((d) => ({
-      ...defaultDocumentModel,
-      filename: d.filename
-    }));
 
     try {
       if (useAsync) {
-        await runAsyncSubmission(channelId, sessionToken);
+        const { status, resultBlob } = await submitAsyncOcr(formData);
+        // ``/api/process/async`` returns the searchable OCR PDF as the
+        // result blob. Hand it to the PDF.js preview so the canvas
+        // paints the structured result and the export modal can offer
+        // it as a real download.
+        const baseName = (selectedFile?.name ?? 'document').replace(/\.[^.]+$/, '');
+        try {
+          await pdfPreview.loadResponse(resultBlob, `${baseName}.ocr.pdf`);
+        } catch (err) {
+          console.warn('Failed to bind async OCR PDF response', err);
+        }
+        const { documentPatch, jobPatch } = applyAsyncResult({
+          status,
+          file: selectedFile,
+          prevDocument: $documentStore,
+          prevJob: $jobStore
+        });
+        documentStore.update((d) => ({ ...d, ...documentPatch }));
+        jobStore.update((s) => ({ ...s, ...jobPatch }));
+        toastStore.pushToast('success', 'Document processing complete!');
         return;
       }
-      const result = await processOcr(buildOcrFormData(channelId, sessionToken));
 
+      const result = await submitSyncOcr(formData);
       if (result && result.textArtifactId) {
-        jobStore.update((s) => ({
-          ...s,
-          activeJobId: result.textArtifactId,
-          percent: 100,
-          stage: 'complete',
-          statusMessage: 'Done',
-          isProcessing: false
-        }));
-
-        // ``/api/process`` returns a binary PDF (the searchable OCR
-        // output) as the response body. Hand it to the PDF.js preview
-        // store so the canvas paints the structured result and the
-        // export modal can offer it as a real download instead of a stub.
-        if (result.body instanceof Blob && result.body.size > 0) {
-          const baseName = selectedFile?.name?.replace(/\.[^.]+$/, '') || 'document';
+        const applied = applySyncResult({
+          result,
+          file: selectedFile,
+          prev: $documentStore
+        });
+        if (applied.shouldBindPreview && applied.previewFileName && result.body instanceof Blob) {
           try {
-            await pdfPreview.loadResponse(result.body, `${baseName}.ocr.pdf`);
+            await pdfPreview.loadResponse(result.body, applied.previewFileName);
           } catch (err) {
             console.warn('Failed to bind OCR PDF response', err);
           }
         }
-
-        documentStore.update((d) => ({
-          ...d,
-          filename: selectedFile ? selectedFile.name : d.filename,
-          // Legacy JSON paths may still include a ``pages`` array; the
-          // modern OCR endpoint returns a PDF blob instead and we let
-          // the streamed WebSocket frames populate pageCount.
-          pages: extractPages(result.body) ?? d.pages,
-          textArtifact: result.textArtifactId
-            ? { id: result.textArtifactId, token: result.textArtifactToken ?? '' }
-            : null,
-          textArtifactId: result.textArtifactId,
-          textArtifactToken: result.textArtifactToken,
-          confidence: extractConfidence(result.body) ?? d.confidence,
-          // Phase 2.18 — surface trust summary in the document store so
-          // the TrustPanel can render it. ``null`` when the trust layer
-          // was off (X-Document-Trust header absent).
-          trustSummary: result.trustSummary
-        }));
-
+        jobStore.update((s) => ({ ...s, ...applied.jobPatch }));
+        documentStore.update((d) => ({ ...d, ...applied.documentPatch }));
         toastStore.pushToast('success', 'Document processing complete!');
       } else {
         jobStore.update((s) => ({ ...s, isProcessing: false }));
       }
     } catch (err: unknown) {
-      if (isFetchError(err) && err.status === 503) {
-        const body = (err.data ?? {}) as { cancelled?: boolean };
-        if (body.cancelled) {
-          jobStore.update((s) => ({
-            ...s,
-            isProcessing: false,
-            stage: 'cancelled',
-            percent: 0,
-            statusMessage: 'Cancelled'
-          }));
-          toastStore.pushToast('info', 'Processing cancelled.');
-          return;
-        }
+      const { cancelled, message } = classifyOcrFailure(err);
+      if (cancelled) {
+        jobStore.update((s) => ({
+          ...s,
+          isProcessing: false,
+          stage: 'cancelled',
+          percent: 0,
+          statusMessage: 'Cancelled'
+        }));
+        toastStore.pushToast('info', 'Processing cancelled.');
+        return;
       }
-      const message = err instanceof Error ? err.message : 'Processing failed';
       jobStore.update((s) => ({
         ...s,
         isProcessing: false,
@@ -268,13 +159,14 @@
       }));
       toastStore.pushToast('error', `Processing failed: ${message}`);
     } finally {
-      websocketStore.disconnect();
+      closeProgressChannel();
     }
   }
 </script>
 
 <section
   id="view-workstation"
+  data-view="workstation"
   hidden={$activeTab !== 'workstation'}
   class="w-full min-h-[calc(100vh-56px)] p-6 relative flex flex-col"
 >

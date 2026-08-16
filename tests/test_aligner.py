@@ -9,7 +9,9 @@ Covers the three properties that matter for correctness:
 
 from __future__ import annotations
 
+import ast
 import io
+import pathlib
 import types
 
 import pytest
@@ -502,3 +504,84 @@ class TestDetectionBatchResilience:
         assert pred.calls == 2
         assert len(result) == 1 and len(result[0]) == 1
         assert all(0.0 <= v <= 1.0 for v in result[0][0])
+
+
+# --- Audit L5: tqdm_patch.apply() must run before the surya import --------
+
+
+class TestTqdmPatchImportOrder:
+    """Regression tests for the import-time ordering constraint documented
+    in AGENTS.md and the audit L5 finding.
+
+    Surya 0.17.x captures ``tqdm`` at import time. If the monkey-patch
+    runs *after* the surya import, the server log gets spammed with
+    progress bars — see the comment block above ``tqdm_patch.apply()`` in
+    ``core/aligner.py``. The constraint is also spelled out in AGENTS.md
+    ("Keep ``tqdm_patch.apply()`` before ``from surya.detection import
+    DetectionPredictor`` in ``core/aligner.py``").
+    """
+
+    def test_tqdm_silenced_after_aligner_import(self) -> None:
+        """Importing ``omniscribe.core.aligner`` must apply the tqdm patch.
+
+        If the test_aligner.py module is loaded (it is, otherwise we
+        couldn't be running), then ``omniscribe.core.aligner`` is too —
+        so ``tqdm.tqdm`` should now be the SilentTqdm class. If a future
+        refactor moves the call into a lazy initializer that doesn't run
+        at import, this assertion will catch it.
+        """
+        import tqdm as _tqdm
+
+        from omniscribe.utils.tqdm_patch import SilentTqdm
+
+        # Reload-tolerance: even if some other test re-ran apply() with a
+        # newer SilentTqdm class object, the identity contract still
+        # requires it to come from the same module.
+        assert _tqdm.tqdm is SilentTqdm, (
+            "tqdm_patch.apply() did not run during aligner import; "
+            "Surya will spam progress bars. See the comment block above "
+            "tqdm_patch.apply() in core/aligner.py."
+        )
+
+    def test_apply_precedes_surya_import_in_source(self) -> None:
+        """AST-level guard: ``tqdm_patch.apply()`` must appear in the
+        aligner source *before* ``from surya.detection import ...``.
+
+        Catches accidental reordering during a refactor — the AGENTS.md
+        constraint is "byte-for-byte" so the literal line numbers are
+        what the contract checks. Source-relative path keeps the test
+        portable across repo layouts.
+        """
+        src_path = (
+            pathlib.Path(__file__).resolve().parents[1]
+            / "src"
+            / "omniscribe"
+            / "core"
+            / "aligner.py"
+        )
+        tree = ast.parse(src_path.read_text(encoding="utf-8"))
+
+        apply_line: int | None = None
+        surya_line: int | None = None
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == "surya.detection":
+                surya_line = node.lineno
+            if (
+                isinstance(node, ast.Expr)
+                and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Attribute)
+                and node.value.func.attr == "apply"
+                and isinstance(node.value.func.value, ast.Name)
+                and node.value.func.value.id == "tqdm_patch"
+            ):
+                apply_line = node.lineno
+
+        assert apply_line is not None, "tqdm_patch.apply() call not found in aligner.py"
+        assert surya_line is not None, (
+            "from surya.detection import not found in aligner.py"
+        )
+        assert apply_line < surya_line, (
+            f"AGENTS.md constraint violated: tqdm_patch.apply() "
+            f"(line {apply_line}) must precede surya import "
+            f"(line {surya_line}) in core/aligner.py"
+        )

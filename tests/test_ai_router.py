@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from omniscribe.api.routers import config, extraction, translation
 from omniscribe.api.services.security import SAFE_API_BASE_ERROR
+from omniscribe.utils.security import SSRFCheckResult
 
 
 def _api_client() -> TestClient:
@@ -26,7 +27,9 @@ def test_translate_provider_error_response_is_stable():
     with (
         patch(
             "omniscribe.api.services.ai.is_ssrf_target",
-            new=AsyncMock(return_value=False),
+            new=AsyncMock(
+                return_value=SSRFCheckResult(allowed=True, resolved_ip="203.0.113.1")
+            ),
         ),
         patch("omniscribe.api.services.ai.call_llm", fail_completion),
     ):
@@ -55,7 +58,9 @@ def test_extract_invalid_json_returns_empty_object():
     with (
         patch(
             "omniscribe.api.services.ai.is_ssrf_target",
-            new=AsyncMock(return_value=False),
+            new=AsyncMock(
+                return_value=SSRFCheckResult(allowed=True, resolved_ip="203.0.113.1")
+            ),
         ),
         patch("omniscribe.api.services.ai.call_llm", invalid_json_completion),
     ):

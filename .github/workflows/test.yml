@@ -89,3 +89,194 @@ jobs:
         with:
           name: sbom-py${{ matrix.python }}.json
           path: sbom.json
+
+  # Audit M2: build the production Dockerfile and scan the resulting image
+  # for HIGH/CRITICAL CVEs. Findings surface in the GitHub Security tab
+  # via the SARIF upload (the "trivy" category), so the team can triage
+  # container CVEs alongside the Dependabot and Semgrep alerts that
+  # `security.yml` already produces. No paid scanner: this is Trivy OSS
+  # against the public GHSA / NVD feeds, no API key required.
+  #
+  # Independent of `fast` -- Docker build + image scan is slow and would
+  # otherwise lengthen the pytest matrix. Runs in parallel; both jobs
+  # must pass for the workflow to be green.
+  container-scan:
+    name: container scan (trivy OSS)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # ``security-events: write`` is required so the SARIF upload
+      # actually lands in the Security tab; without it the upload
+      # silently no-ops. Same pattern as the Semgrep job in
+      # `security.yml`.
+      security-events: write
+    steps:
+      # Action refs are SHA-pinned (audit P3-12); bump with
+      # `gh api repos/<owner>/<repo>/git/ref/tags/<tag>`.
+      # NOTE: docker/* and aquasecurity/trivy-action below use tag refs
+      # because the SHAs for those repos were not yet pinned in this
+      # repo. Pin them with the same `gh api .../git/ref/tags/<tag>`
+      # lookup before this workflow ships -- tag refs are a moving
+      # supply-chain target.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (load into local daemon for scanning)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          # `load: true` puts the built image into the runner's local
+          # Docker daemon so the follow-up `trivy image` step can scan
+          # it. `push: false` keeps the image off any registry -- this
+          # is a CI scan, not a publish.
+          load: true
+          push: false
+          tags: omniscribe:scan
+          # GHA build cache (audit P2-4: cache layers across runs to
+          # keep build + scan under a couple of minutes once warm).
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy vulnerability scanner (HIGH,CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: omniscribe:scan
+          format: sarif
+          output: trivy-results.sarif
+          # Fail the build on any unfixed HIGH/CRITICAL -- a vuln with
+          # no upstream patch can still be acceptable if the vector is
+          # unreachable, but that's a per-CVE decision best made in a
+          # Security-tab triage, not silently ignored in CI.
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          # GITHUB_TOKEN is auto-injected; using it raises the GHSA
+          # rate limit so the public-feed path doesn't 429 on PR
+          # bursts. Not a "secret" in the audit's sense (audit M2
+          # forbids paid scanner keys, not the runner's own token).
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Trivy SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@f3712979fa5f215279b101dd0a2e3bdfb4353324 # v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
+
+  # Audit L9: hardens the Playwright E2E (`test_ui.py`) and gives it a
+  # first-class CI seat. The script was previously run by hand against a
+  # local `start_app.vbs` boot; this job makes that same path reproducible
+  # on a `ubuntu-latest` runner with a headless Chromium and a built
+  # frontend bundle.
+  #
+  # Parallel (not `needs: fast`) -- the e2e is an integration smoke
+  # against a running server + live LLM, not a regression gate; chaining
+  # it behind the pytest matrix would double PR latency for no signal
+  # and would block unrelated work on a flaky OCR roundtrip. Mirrors
+  # the `container-scan` decision above.
+  #
+  # Trigger: `workflow_dispatch` only. The smoke exercises the full
+  # OCR path (Surya detect + VLM OCR + DP align + embed), which needs
+  # an OpenAI-compatible endpoint with a real model loaded -- neither
+  # of which lives on a default GHA runner. The job is therefore
+  # opt-in: a maintainer dispatches it manually (or wires it to a
+  # self-hosted runner with LM Studio on `localhost:1234/v1`). It does
+  # not affect the required PR status checks.
+  e2e:
+    name: e2e (playwright, headless chromium)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Action refs are SHA-pinned (audit P3-12); bump with
+      # `gh api repos/<owner>/<repo>/git/ref/tags/<tag>`.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+        with:
+          enable-cache: true
+          # 3.12 matches the nightly matrix -- the slow tier is the
+        # closest existing precedent for a long-running e2e.
+        python-version: "3.12"
+
+      - name: Sync deps (web extra)
+        run: uv sync --extra web
+
+      - name: Build frontend
+        # vite writes to `src/omniscribe/static/` per the
+        # `frontend/vite.config.ts` `outDir` setting; that is the
+        # directory the FastAPI app mounts as the SPA bundle.
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Install Playwright + Chromium
+        # `uv run --with playwright` keeps the dep out of pyproject
+        # until a dev actually wires it into a local env; matches
+        # the audit's suggested invocation. `--with-deps` resolves
+        # the system libraries Chromium needs on Ubuntu (libnss3,
+        # libxkbcommon, fonts, ...).
+        run: uv run --with playwright playwright install --with-deps chromium
+
+      - name: Start omniscribe-server
+        # Background server for the Playwright run. `nohup` +
+        # `&` detaches the process from the step so the next
+        # command can poll the readiness probe; the redirect
+        # captures the startup log so a connection-refused
+        # error is debuggable from the Actions run page.
+        run: |
+          nohup uv run omniscribe-server --port 8000 > server.log 2>&1 &
+          echo $! > server.pid
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/health > /dev/null; then
+              echo "Server ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Server failed to become healthy within 60s"
+          cat server.log
+          exit 1
+
+      - name: Run Playwright smoke (test_ui.py)
+        # SCREENSHOT_PATH points at the workspace; the next step
+        # uploads it as an artifact regardless of pass/fail so
+        # the maintainer can eyeball the UI state after a manual
+        # dispatch. The 180s budget in `test_ui.py` is the
+        # OCR-completion timeout and intentionally exceeds the
+        # default step timeout.
+        run: uv run --with playwright python test_ui.py
+
+      - name: Upload screenshot + server log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: e2e-screenshot
+          path: |
+            screenshot.png
+            server.log
+          if-no-files-found: ignore
+
+      - name: Stop omniscribe-server
+        if: always()
+        # Clean up the detached server even when the test
+        # step above failed; the workflow runner otherwise
+        # SIGKILLs the whole process tree on job exit, but
+        # stopping here keeps the Actions log tidy and
+        # avoids a misleading "Connection refused" trailing
+        # line in the next manual run on the same runner.
+        run: |
+          if [ -f server.pid ]; then
+            kill "$(cat server.pid)" 2>/dev/null || true
+            rm -f server.pid
+          fi

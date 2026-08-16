@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -141,6 +142,75 @@ class TestLoadGroundTruth:
             blocks, _ = load_ground_truth(FIXTURES / fixture)
             labels = {b.label for b in blocks}
             assert not labels & {"image", "empty_line", "signature_line", "list_marker"}
+
+    def test_list_shaped_fixture_loads(self, tmp_path: Path):
+        """A bare layout array (list at the top level) must not crash.
+
+        The list is normalized as ``{"layout": <list>}`` internally, so a
+        list fixture without ``data_info.pages`` raises the same clear
+        ValueError as a dict missing it — i.e. normalization is the
+        loader's job, not the caller's. A list at the top level cannot
+        carry page dimensions; callers who have page info must use a
+        dict wrapper.
+        """
+        layout = [
+            {
+                "block_content": "hello",
+                "bbox": [10, 20, 110, 40],
+                "block_label": "text",
+                "page_index": 0,
+            }
+        ]
+        path = tmp_path / "list_only.json"
+        path.write_text(json.dumps(layout))
+        with pytest.raises(ValueError, match=r"missing data_info\.pages"):
+            load_ground_truth(path)
+
+    def test_dict_shaped_fixture_byte_identical(self, tmp_path: Path):
+        """The dict case must produce the same blocks as a pre-fix call
+        would have, byte-for-byte — i.e. the guard did not regress the
+        happy path."""
+        payload = {
+            "data": {
+                "layout": [
+                    {
+                        "block_content": "title",
+                        "bbox": [100, 50, 900, 100],
+                        "block_label": "text",
+                        "page_index": 0,
+                    }
+                ],
+                "data_info": {"pages": [{"width": 1000, "height": 1000}]},
+            }
+        }
+        path = tmp_path / "dict.json"
+        path.write_text(json.dumps(payload))
+        blocks, (fw, fh) = load_ground_truth(path)
+        assert (fw, fh) == (1000, 1000)
+        assert len(blocks) == 1
+        assert blocks[0].text == "title"
+        # Normalized: x0=0.1, y0=0.05, x1=0.9, y1=0.1
+        assert blocks[0].bbox == (0.1, 0.05, 0.9, 0.1)
+        assert blocks[0].page_index == 0
+        assert blocks[0].label == "text"
+
+    def test_invalid_shape_raises_typeerror(self, tmp_path: Path):
+        """A scalar (string, number, null) at the top level must raise
+        with a clear error message — not crash with AttributeError."""
+        path = tmp_path / "string.json"
+        path.write_text(json.dumps("not a fixture"))
+        with pytest.raises(TypeError, match="expected JSON object or array"):
+            load_ground_truth(path)
+
+        path_num = tmp_path / "number.json"
+        path_num.write_text(json.dumps(42))
+        with pytest.raises(TypeError, match="expected JSON object or array"):
+            load_ground_truth(path_num)
+
+        path_null = tmp_path / "null.json"
+        path_null.write_text(json.dumps(None))
+        with pytest.raises(TypeError, match="expected JSON object or array"):
+            load_ground_truth(path_null)
 
 
 class TestComputeReport:
