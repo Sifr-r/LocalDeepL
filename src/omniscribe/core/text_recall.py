@@ -7,6 +7,14 @@ merges the remaining ink into line blobs via horizontal dilation, and
 returns conservative candidate boxes for regions Surya did not detect.
 ``HybridEngine._detect_layout`` merges them into the detected boxes before
 dense selection, OCR, and DP alignment.
+
+Known limitation (premise-gate P2, 2026-08): the pass discovers
+line-shaped ink blobs; it cannot distinguish text from text-like
+noise (photo edges, figure borders, thin form rules), and it merges
+stacked lines when the inter-line gap is smaller than the dilation
+kernel height. Conservative filters trade recall for precision here;
+see ``docs/superpowers/plans/2026-08-14-whitespace-recall.md`` and
+``.autoplan/phase1-ceo-report.md`` (gate addendum G2/G4).
 """
 
 from __future__ import annotations
@@ -23,7 +31,8 @@ from omniscribe.core.document import BBox
 logger = logging.getLogger(__name__)
 
 _ENV_RECALL = "OMNISCRIBE_WHITESPACE_RECALL"
-_DISABLE_VALUES = {"0", "false", "no", "off"}
+# ``n`` / ``disabled`` accepted alongside the usual falsy spellings (eng S2).
+_DISABLE_VALUES = {"0", "false", "no", "off", "n", "disabled"}
 
 # Horizontal dilation kernel sizing (ratios of page dimensions, clamped).
 # The kernel must bridge inter-character gaps without fusing stacked lines.
@@ -34,21 +43,52 @@ _KERNEL_H_RANGE = (3, 11)
 
 # Conservative candidate filters.
 _MIN_ASPECT_RATIO = 2.0
+# T7 retune attempt (2026-08-15) lowered this floor 0.10 -> 0.06 to admit
+# the digital.pdf faculty-name block (density 0.08); measured cost was +15
+# junk boxes corpus-wide vs +1 recovery, so the floor stays at 0.10. The
+# faculty block remains unrecovered: documented limitation, not worth the
+# precision trade (see scripts/measure_recall_delta.py).
 _MIN_INK_DENSITY = 0.10
 _MAX_INK_DENSITY = 0.75
 _MIN_HEIGHT_FRACTION = 0.45
 _FALLBACK_MIN_HEIGHT = 0.006
+# Merged-blob guard: horizontal dilation bridges inter-line gaps smaller
+# than the kernel height, so stacked lines and diagram regions fuse into
+# one tall component. T7 measured this as the dominant junk class on the
+# examples corpus (extras 3-10x the median line height). Real text lines
+# sit near the median Surya height; cap candidates at 2.5x that median.
+# Sensitivity measured on the harness: 5.0 admits +3 extras (+2 junk) and
+# recovers nothing extra, so 2.5 stays.
+_MAX_HEIGHT_FRACTION = 2.5
+_FALLBACK_MAX_HEIGHT = 0.06
 _MAX_AREA_FRACTION = 0.25
 # Post-dilation hairline rules land at ~3-8 px while real text lines render
 # at ~10 px or more at every supported rasterization size, so an absolute
-# pixel floor rejects rules that survive the density check.
+# pixel floor rejects rules that survive the density check. T7 measured
+# that form-blank underscore segments render at ~6 px and cannot be
+# separated from hairline rules on pixel statistics alone; they stay
+# excluded (documented limitation, see TODOS.md).
 _MIN_COMPONENT_HEIGHT_PX = 10
+# Otsu-invert models whitespace as background. When the foreground fraction
+# is this large the model has inverted (dark-mode / inverted scan page) and
+# every filter assumption breaks, so the page is skipped wholesale.
+_MAX_FOREGROUND_FRACTION = 0.5
+# Junk-blast-radius bound: at most this many recall boxes per page, keeping
+# the rest by ink density (most text-like first). Measured worst case on
+# the examples corpus was 6 extras/page; the cap protects pathological
+# layouts and bounds n_boxes inflation toward dense_threshold.
+_MAX_RECALL_BOXES_PER_PAGE = 10
 
 # Dedup against Surya boxes. Containment catches a candidate that is mostly
 # inside an existing box (a partial duplicate); IoU catches a candidate that
 # nearly coincides with one even if neither fully contains the other.
 _MAX_CONTAINMENT = 0.5
 _MAX_IOU = 0.3
+# Straddle guard: a candidate intersecting >= 2 Surya boxes this much (as a
+# fraction of its own area) spans a gutter or stacked detected lines; it is
+# rejected outright (never split) — a wide cross-column box would feed
+# garbled two-column text to per-box OCR.
+_STRADDLE_MIN_OVERLAP = 0.15
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +118,16 @@ class WhitespaceRecallBooster:
     def __init__(self, options: WhitespaceRecallOptions | None = None) -> None:
         self.options = options or WhitespaceRecallOptions()
         self._cv2_warned = False
+        # Run-level observability counter (plan task T2): components seen by
+        # ``connectedComponentsWithStats`` minus boxes finally returned, so
+        # ``HybridEngine`` can report how much the filters dropped at INFO
+        # without re-running the pass. Cumulative across ``supplement`` calls.
+        self.candidates_dropped = 0
+
+    @property
+    def enabled(self) -> bool:
+        """Kill-switch state — ``HybridEngine`` skips the pass when off (T6)."""
+        return self.options.enabled
 
     def supplement(self, image: Image.Image, surya_boxes: list[BBox]) -> list[BBox]:
         """Return new text-line boxes not already covered by ``surya_boxes``.
@@ -106,6 +156,9 @@ class WhitespaceRecallBooster:
         h, w = gray.shape
         # Invert so ink is foreground and whitespace is masked away.
         _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        if cv2.countNonZero(binary) / binary.size > _MAX_FOREGROUND_FRACTION:
+            # Inverted/dark page: the whitespace model no longer holds.
+            return []
 
         kw = _clamp(w // _DILATION_WIDTH_DIVISOR, _KERNEL_W_RANGE)
         kh = _clamp(h // _DILATION_HEIGHT_DIVISOR, _KERNEL_H_RANGE)
@@ -119,12 +172,17 @@ class WhitespaceRecallBooster:
             return []
 
         if surya_boxes:
-            median_h = statistics.median(b[3] - b[1] for b in surya_boxes)
+            # Degenerate zero-height boxes would drag the median (and thus
+            # the height floor) to zero, disabling the check entirely.
+            heights = [b[3] - b[1] for b in surya_boxes if b[3] - b[1] > 0]
+            median_h = statistics.median(heights) if heights else _FALLBACK_MIN_HEIGHT
             min_height = _MIN_HEIGHT_FRACTION * median_h
+            max_height = _MAX_HEIGHT_FRACTION * median_h
         else:
             min_height = _FALLBACK_MIN_HEIGHT
+            max_height = _FALLBACK_MAX_HEIGHT
 
-        candidates: list[BBox] = []
+        candidates: list[tuple[BBox, float]] = []
         for i in range(1, count):
             x, y, bw, bh = (int(v) for v in stats[i, :4])
             if bh < _MIN_COMPONENT_HEIGHT_PX:
@@ -134,7 +192,7 @@ class WhitespaceRecallBooster:
             nw, nh = nx1 - nx0, ny1 - ny0
             if nw < _MIN_ASPECT_RATIO * nh:
                 continue
-            if nh < min_height or nw * nh > _MAX_AREA_FRACTION:
+            if nh < min_height or nh > max_height or nw * nh > _MAX_AREA_FRACTION:
                 continue
             # Ink density on the PRE-dilation mask: dilated blobs are nearly
             # solid, real glyph lines sit ~0.2-0.6, solid rules ~1.0.
@@ -142,9 +200,22 @@ class WhitespaceRecallBooster:
             density = cv2.countNonZero(rect) / max(1, bw * bh)
             if not _MIN_INK_DENSITY <= density <= _MAX_INK_DENSITY:
                 continue
-            candidates.append((nx0, ny0, nx1, ny1))
+            candidates.append(((nx0, ny0, nx1, ny1), density))
 
-        return [c for c in candidates if not _overlaps_surya(c, surya_boxes)]
+        kept = [
+            (box, density)
+            for box, density in candidates
+            if not _overlaps_surya(box, surya_boxes)
+            and not _straddles_surya(box, surya_boxes)
+        ]
+        if len(kept) > _MAX_RECALL_BOXES_PER_PAGE:
+            # Most text-like (highest ink density) candidates win the cap.
+            kept.sort(key=lambda item: item[1], reverse=True)
+            kept = kept[:_MAX_RECALL_BOXES_PER_PAGE]
+        # Every non-background component that did not become a returned box
+        # was dropped by the filter family (T2 run-summary counter).
+        self.candidates_dropped += (count - 1) - len(kept)
+        return [box for box, _density in kept]
 
 
 def _clamp(value: int, bounds: tuple[int, int]) -> int:
@@ -167,4 +238,27 @@ def _overlaps_surya(candidate: BBox, surya_boxes: list[BBox]) -> bool:
         b_area = max(1e-9, (bx1 - bx0) * (by1 - by0))
         if inter / (c_area + b_area - inter) >= _MAX_IOU:
             return True
+    return False
+
+
+def _straddles_surya(candidate: BBox, surya_boxes: list[BBox]) -> bool:
+    """True when the candidate spans >= 2 Surya boxes (gutter/stacked lines).
+
+    Such a box merges text from separate detected regions; rejecting it
+    outright is fail-safe — splitting at ink gaps would need a second
+    analysis pass for marginal gain (revisit if T7 harness data shows
+    split candidates recovering real lines).
+    """
+    cx0, cy0, cx1, cy1 = candidate
+    c_area = max(1e-9, (cx1 - cx0) * (cy1 - cy0))
+    overlapped = 0
+    for bx0, by0, bx1, by1 in surya_boxes:
+        ix0, iy0 = max(cx0, bx0), max(cy0, by0)
+        ix1, iy1 = min(cx1, bx1), min(cy1, by1)
+        if ix1 <= ix0 or iy1 <= iy0:
+            continue
+        if (ix1 - ix0) * (iy1 - iy0) / c_area >= _STRADDLE_MIN_OVERLAP:
+            overlapped += 1
+            if overlapped >= 2:
+                return True
     return False
