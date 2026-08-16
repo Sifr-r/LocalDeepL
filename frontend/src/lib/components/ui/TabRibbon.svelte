@@ -74,11 +74,35 @@
     </a>
 
     <!-- Navigation Tabs -->
-    <nav class="flex items-center gap-1 overflow-x-auto -mx-1 px-1">
+    <!-- WAI-ARIA tab pattern: the container is a `tablist`, each
+         button is a `tab`. Roving `tabindex` (active=0, others=-1)
+         gives keyboard users a single tab stop that follows the
+         selected tab. The `aria-label` is a stable human-readable
+         name for assistive tech; the design language is screen
+         reader-agnostic.
+
+         The svelte-check `a11y_no_noninteractive_element_to_interactive_role`
+         warning fires because `<nav>` is implicitly a navigation
+         landmark while `tablist` is an interactive composite role.
+         The two roles serve different assistive-tech audiences: the
+         landmark shortcut (`nav` → "skip to navigation") and the
+         tablist keyboard model. We keep both: the surrounding
+         `<header>` already advertises the section, and `aria-label`
+         on the tablist gives the tab list its own name. Suppressing
+         the warning here is intentional and minimal. -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+    <nav
+      class="flex items-center gap-1 overflow-x-auto -mx-1 px-1"
+      role="tablist"
+      aria-label="Primary"
+    >
       {#each tabs as tab (tab.id)}
         <button
           id={tab.id}
           type="button"
+          role="tab"
+          aria-selected={$activeTab === tab.tabKey ? 'true' : 'false'}
+          tabindex={$activeTab === tab.tabKey ? 0 : -1}
           class={[
             'h-8 px-3 rounded-md text-xs font-medium font-body whitespace-nowrap',
             'transition-colors duration-150',
