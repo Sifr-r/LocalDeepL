@@ -121,7 +121,10 @@ def test_evaluate_node_normal_input_fails_correctly():
 
 def test_celery_task_raises_value_error_on_missing_artifact():
     # Task should raise ValueError if artifact cannot be loaded
-    with patch.object(process_translation_task, "update_state"):
+    # `create=True` because Celery binds `update_state` only at task
+    # execution time, not at import. Without it, the post-venv-refresh
+    # celery 5.x raises AttributeError on the patch.
+    with patch.object(process_translation_task, "update_state", create=True):
         with pytest.raises(ValueError) as exc_info:
             process_translation_task.run("missing_doc", "token123", "French", [])
         assert "Could not load artifact" in str(exc_info.value)
