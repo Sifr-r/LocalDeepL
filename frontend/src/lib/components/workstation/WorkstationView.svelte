@@ -18,9 +18,9 @@
     websocketStore
   } from '../../stores/appStore';
   import { pdfPreview } from '../../stores/pdfPreview';
-  import { processOcr } from '../../api/endpoints';
+  import { processOcr, processOcrAsync, getOcrStatus, getOcrResult } from '../../api/endpoints';
   import { isFetchError } from '../../api/client';
-  import type { PageResult } from '../../types/api';
+  import type { OcrJobStatusResponse, PageResult } from '../../types/api';
 
   // Legacy JSON responses still carry ``pages`` / ``confidence`` in the
   // body. The modern OCR endpoint returns a PDF blob instead, so the
@@ -62,6 +62,98 @@
     void websocketStore.requestCancel();
   }
 
+  /** Build the FormData that both the sync and async endpoints consume. */
+  function buildOcrFormData(channelId: string, sessionToken: string): FormData {
+    const cfg = $configStore;
+    const formData = new FormData();
+    formData.append('file', selectedFile as File);
+    formData.append('progress_channel', channelId);
+    formData.append('progress_token', sessionToken);
+    if (cfg.pipeline_mode) formData.append('pipeline_mode', cfg.pipeline_mode);
+    if (cfg.dense_mode) formData.append('dense_mode', cfg.dense_mode);
+    if (cfg.spellcheck) formData.append('spellcheck', cfg.spellcheck);
+    if (cfg.document_processors?.length) {
+      formData.append('document_processors', cfg.document_processors.join(','));
+    }
+    // The individual preprocessing toggles only take effect when the
+    // master flag is on — derive it so the UI toggles are honest.
+    const preprocessFields = [
+      'orientation_detection',
+      'deskew',
+      'denoise',
+      'normalize_contrast',
+      'crop_cleanup'
+    ] as const;
+    const anyPreprocess = preprocessFields.some((f) => Boolean(cfg[f]));
+    formData.append('preprocess_pages', String(cfg.preprocess_pages || anyPreprocess));
+    for (const field of preprocessFields) {
+      formData.append(field, String(Boolean(cfg[field])));
+    }
+    return formData;
+  }
+
+  /** Poll ``/api/process/status/{jobId}`` until the job is terminal. */
+  async function pollUntilTerminal(jobId: string): Promise<OcrJobStatusResponse> {
+    // Two-second cadence: long enough to avoid hot-spinning the queue
+    // worker, short enough that the progress bar feels live. 1000 polls
+    // = ~33 minutes, well under the 24h record retention.
+    const intervalMs = 2000;
+    const maxAttempts = 1000;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const status = await getOcrStatus(jobId);
+      if (status.status === 'complete' || status.status === 'error') {
+        return status;
+      }
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    throw new Error(`OCR job ${jobId} did not complete within ${(maxAttempts * intervalMs) / 1000}s`);
+  }
+
+  /**
+   * Async-mode submission: POST to ``/api/process/async``, poll for
+   * the terminal state, then download the result PDF and feed it to
+   * the same preview/document-store pipeline the sync path uses.
+   */
+  async function runAsyncSubmission(channelId: string, sessionToken: string) {
+    const formData = buildOcrFormData(channelId, sessionToken);
+    const queued = await processOcrAsync(formData);
+    jobStore.update((s) => ({
+      ...s,
+      stage: 'queued',
+      percent: 5,
+      statusMessage: `Queued: ${queued.job_id}. Polling for completion…`
+    }));
+    const status = await pollUntilTerminal(queued.job_id);
+    if (status.status !== 'complete' || !status.text_artifact_id || !status.text_artifact_token) {
+      throw new Error(status.error || 'Async OCR job did not complete');
+    }
+    const blob = await getOcrResult(status.job_id, status.text_artifact_token);
+    const baseName = (selectedFile?.name ?? 'document').replace(/\.[^.]+$/, '');
+    try {
+      await pdfPreview.loadResponse(blob, `${baseName}.ocr.pdf`);
+    } catch (err) {
+      console.warn('Failed to bind async OCR PDF response', err);
+    }
+    jobStore.update((s) => ({
+      ...s,
+      activeJobId: status.text_artifact_id ?? s.activeJobId,
+      percent: 100,
+      stage: 'complete',
+      statusMessage: 'Done',
+      isProcessing: false
+    }));
+    documentStore.update((d) => ({
+      ...d,
+      filename: selectedFile ? selectedFile.name : d.filename,
+      textArtifact: status.text_artifact_id
+        ? { id: status.text_artifact_id, token: status.text_artifact_token ?? '' }
+        : null,
+      textArtifactId: status.text_artifact_id ?? d.textArtifactId,
+      textArtifactToken: status.text_artifact_token ?? d.textArtifactToken
+    }));
+    toastStore.pushToast('success', 'Document processing complete!');
+  }
+
   async function startProcessing() {
     if (isProcessing) return;
     if (!selectedFile) {
@@ -86,12 +178,13 @@
     }
 
     // 2) Reset per-run state so streamed frames land on a clean slate.
+    const useAsync = Boolean($configStore.use_async);
     jobStore.set({
       ...defaultJobState,
       isProcessing: true,
       percent: 2,
-      stage: 'init',
-      statusMessage: 'Uploading document…'
+      stage: useAsync ? 'queued' : 'init',
+      statusMessage: useAsync ? 'Uploading document…' : 'Uploading document…'
     });
     documentStore.update((d) => ({
       ...defaultDocumentModel,
@@ -99,33 +192,11 @@
     }));
 
     try {
-      const cfg = $configStore;
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('progress_channel', channelId);
-      formData.append('progress_token', sessionToken);
-      if (cfg.pipeline_mode) formData.append('pipeline_mode', cfg.pipeline_mode);
-      if (cfg.dense_mode) formData.append('dense_mode', cfg.dense_mode);
-      if (cfg.spellcheck) formData.append('spellcheck', cfg.spellcheck);
-      if (cfg.document_processors?.length) {
-        formData.append('document_processors', cfg.document_processors.join(','));
+      if (useAsync) {
+        await runAsyncSubmission(channelId, sessionToken);
+        return;
       }
-      // The individual preprocessing toggles only take effect when the
-      // master flag is on — derive it so the UI toggles are honest.
-      const preprocessFields = [
-        'orientation_detection',
-        'deskew',
-        'denoise',
-        'normalize_contrast',
-        'crop_cleanup'
-      ] as const;
-      const anyPreprocess = preprocessFields.some((f) => Boolean(cfg[f]));
-      formData.append('preprocess_pages', String(cfg.preprocess_pages || anyPreprocess));
-      for (const field of preprocessFields) {
-        formData.append(field, String(Boolean(cfg[field])));
-      }
-
-      const result = await processOcr(formData);
+      const result = await processOcr(buildOcrFormData(channelId, sessionToken));
 
       if (result && result.textArtifactId) {
         jobStore.update((s) => ({

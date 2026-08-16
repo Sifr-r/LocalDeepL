@@ -182,13 +182,16 @@ async def translate_tree_endpoint(req: TreeTranslationRequest) -> dict[str, Any]
     model = req.model or (state.config.model if hasattr(state, "config") else None)
 
     from omniscribe.core.llm_client import call_llm
+    from omniscribe.core.llm_temperatures import TEMPERATURE_TRANSLATION_TREE
+    from omniscribe.core.translation import TRANSLATION_SYSTEM_MESSAGE
 
     async def _llm_translate(prompt: str, lang: str) -> str:
         return await call_llm(
             model=model or "allenai/olmocr-2-7b",
             api_base=api_base or "http://localhost:1234/v1",
             api_key=api_key or "lm-studio",
-            temperature=0.2,
+            temperature=TEMPERATURE_TRANSLATION_TREE,
+            system_prompt=TRANSLATION_SYSTEM_MESSAGE,
             messages=[{"role": "user", "content": prompt}],
         )
 

@@ -34,11 +34,15 @@ from omniscribe.core.grounded.models import (
 from omniscribe.core.grounded.parsers import _parse_grounded_json
 from omniscribe.core.grounded.rasterize import _rasterize_to_jpeg_pages
 from omniscribe.core.llm_client import call_llm
+from omniscribe.core.llm_temperatures import TEMPERATURE_GROUNDED
 from omniscribe.core.ocr import (
     ModelNotLoadedError,
     _format_model_not_loaded,
     _list_loaded_model_ids,
     _model_in_loaded,
+)
+from omniscribe.core.ocr.prompts import (
+    model_supports_system_role as _model_supports_system_role,
 )
 from omniscribe.core.ocr.resilience import (
     get_default_circuit_breaker_registry,
@@ -46,6 +50,9 @@ from omniscribe.core.ocr.resilience import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Bumped when the user-facing prompt body changes.
+PROMPT_VERSION = "2026-08-15.v1"
 
 DEFAULT_GROUNDING_PROMPT = (
     "You are an exhaustive OCR engine. Output a JSON array covering EVERY "
@@ -77,15 +84,34 @@ DEFAULT_GROUNDING_PROMPT = (
     "enough to contain two lines, you have joined two lines — split it "
     "into two elements.\n"
     "\n"
+    "For multi-column layouts, read each column top-to-bottom before "
+    "moving to the next column; never interleave lines across columns.\n"
+    "\n"
+    "If the page contains no readable text, emit an empty JSON array []. "
+    "Do not synthesize a single placeholder element.\n"
+    "\n"
     "Do not skip small labels. Do not summarize. Do not paraphrase. "
     "No markdown fences, no prose — only the raw JSON array."
 )
 
+# Companion system message. Prepended so the role identity sits in the
+# system role and the user turn can stay focused on the line-segmentation
+# rules above. Same "don't invent, emit empty array on blank pages" guard
+# lives here as a belt-and-suspenders reinforcement.
+GROUNDED_OCR_SYSTEM_MESSAGE = (
+    "You are an exhaustive OCR engine. "
+    "Your output is a JSON array of every visual line of text on the page, "
+    "with tight bounding boxes. "
+    "Never join two visual lines into one element. "
+    "If the page has no readable text, emit [] — do not invent."
+)
+
 CROP_OCR_PROMPT = (
     "You are a precise OCR engine. Transcribe EVERY line of text visible "
-    "in this cropped image, preserving line breaks. Do not paraphrase, "
-    "summarize, or add commentary. Output the text only — no JSON, no "
-    "markdown fences, no leading or trailing prose."
+    "in this cropped image, preserving line breaks. If the crop is blank "
+    "or contains no readable text, return an empty string. Do not "
+    "paraphrase, summarize, or add commentary. Output the text only — "
+    "no JSON, no markdown fences, no leading or trailing prose."
 )
 
 
@@ -273,9 +299,14 @@ class PromptedGroundedOCR:
                     model=self.model,
                     api_base=self.api_base,
                     api_key=self.api_key,
-                    temperature=0.0,
+                    temperature=TEMPERATURE_GROUNDED,
                     max_tokens=self.max_tokens,
                     timeout=self.timeout_s,
+                    system_prompt=(
+                        GROUNDED_OCR_SYSTEM_MESSAGE
+                        if _model_supports_system_role(self.model)
+                        else None
+                    ),
                     messages=[
                         {
                             "role": "user",
@@ -397,4 +428,10 @@ class PromptedGroundedOCR:
         )
 
 
-__all__ = ["CROP_OCR_PROMPT", "DEFAULT_GROUNDING_PROMPT", "PromptedGroundedOCR"]
+__all__ = [
+    "CROP_OCR_PROMPT",
+    "DEFAULT_GROUNDING_PROMPT",
+    "GROUNDED_OCR_SYSTEM_MESSAGE",
+    "PROMPT_VERSION",
+    "PromptedGroundedOCR",
+]

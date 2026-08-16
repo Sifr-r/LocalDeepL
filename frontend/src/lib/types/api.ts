@@ -318,6 +318,15 @@ export interface ConfigResponse {
   crop_cleanup: boolean;
   quality_routing: boolean;
   document_processors: string[];
+  /**
+   * UI-only flag: when true, the workstation submits to
+   * ``POST /api/process/async`` and polls for the result PDF,
+   * instead of the synchronous ``POST /api/process`` flow that
+   * blocks the response until OCR finishes. Persisted in
+   * ``configStore`` (local) but not in the server config — it's
+   * a deployment preference, not a runtime knob.
+   */
+  use_async?: boolean;
   ocr_model?: string;
   ocr_api_base?: string;
   ocr_api_key?: string;
@@ -502,6 +511,27 @@ export interface TextArtifactHandle {
 
 export type RuntimeConfig = ConfigResponse;
 export type JobRecord = JobRecordResponse;
+
+/**
+ * Per-job status returned by ``GET /api/process/status/{job_id}``.
+ * Mirrors the fields exposed by :class:`OCRJobRecord.to_dict` on the
+ * server. The status string union is the same as
+ * :class:`OCRJobStatus` (StrEnum) on the server.
+ */
+export interface OcrJobStatusResponse {
+  job_id: string;
+  filename: string;
+  status: 'pending' | 'processing' | 'complete' | 'error';
+  created_at: number;
+  started_at?: number | null;
+  completed_at?: number | null;
+  duration_s?: number | null;
+  error?: string;
+  text_artifact_id?: string;
+  text_artifact_token?: string;
+  text_artifact_url?: string;
+  failed_pages?: number[];
+}
 
 // WebSocket frames — mirror the frame builders in
 // omniscribe/api/services/progress.py (ProgressService.build_*_frame).

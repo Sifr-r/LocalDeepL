@@ -10,10 +10,12 @@ DEV_SCRIPT = ROOT / "scripts" / "dev.py"
 REQUIRED_TARGETS = {
     "help",
     "setup",
+    "build-frontend",
     "run",
     "test",
     "lint",
     "typecheck",
+    "audit",
     "clean",
     "doctor",
 }
@@ -36,7 +38,7 @@ def test_makefile_documents_every_command() -> None:
     documented = {
         match.group(1)
         for match in re.finditer(
-            r"^([a-z]+):[^\n]*##\s+\S.+$", makefile_text, re.MULTILINE
+            r"^([a-z][a-z-]*):[^\n]*##\s+\S.+$", makefile_text, re.MULTILINE
         )
     }
     assert documented == REQUIRED_TARGETS

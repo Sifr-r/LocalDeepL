@@ -22,13 +22,13 @@ OmniScribe turns scanned PDFs and images into searchable, selectable PDFs using 
 ```bash
 git clone https://github.com/Sifr-r/OmniScribe.git
 cd OmniScribe
-uv sync --extra web
+uv sync --extra web --extra preprocessing
 ```
 
 For asynchronous translation:
 
 ```bash
-uv sync --extra web --extra async-translation
+uv sync --extra web --extra preprocessing --extra async-translation
 ```
 
 If you also want the translation lexicon (ChromaDB-backed RAG for
@@ -37,7 +37,7 @@ extra alone does **not** install ChromaDB or sentence-transformers,
 so it stays light (no torch / no multi-GB ML stack):
 
 ```bash
-uv sync --extra web --extra async-translation --extra memory
+uv sync --extra web --extra preprocessing --extra async-translation --extra memory
 ```
 
 Real OCR requires an OpenAI-compatible VLM endpoint. The local-development default is LM Studio at `http://localhost:1234/v1`.

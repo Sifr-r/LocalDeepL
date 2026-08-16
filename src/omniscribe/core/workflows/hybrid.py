@@ -19,6 +19,7 @@ from omniscribe.core.pdf import PDFHandler
 from omniscribe.core.preprocessing import PagePreprocessingOptions, PagePreprocessor
 from omniscribe.core.processors import DocumentProcessor
 from omniscribe.core.routing import QualityRoutingOptions, QualityRoutingPolicy
+from omniscribe.core.text_layer_recall import PdfTextLayerRecall
 from omniscribe.core.text_recall import WhitespaceRecallBooster
 from omniscribe.core.workflows.base import (
     AnyOutputWriter,
@@ -55,6 +56,11 @@ logger = logging.getLogger(__name__)
 
 # Phase 3 finding 2.3 — bound the per-page decoded-image LRU to keep
 # long-document runs from holding a PIL.Image per page for the whole run.
+# Invariant (CQ-4): must stay >= DETECT_CHUNK_SIZE (workflows.utils). The
+# cache is populated per chunk by ``_decode_chunk_bytes`` and consumed by
+# ``_apply_recall`` / ``_ocr_per_box`` within the same chunk; a smaller cap
+# would evict in-flight pages and silently degrade to the fallback decode
+# (still correct, slower).
 _DECODED_CACHE_MAX_ENTRIES = 16
 
 
@@ -97,6 +103,7 @@ class HybridEngine(EngineBase):
         block_callbacks: BlockCallbackSet | None = None,
         trust_orchestrator: TrustOrchestrator | None = None,
         recall_booster: WhitespaceRecallBooster | None = None,
+        text_layer_recall: PdfTextLayerRecall | None = None,
     ) -> None:
         # Phase B (review M2) — forward `block_callbacks` to the base
         # so the per-block / per-page event hook reaches `_ocr_pages`.
@@ -117,6 +124,10 @@ class HybridEngine(EngineBase):
         # into the detection output. None keeps the legacy byte-identical
         # behavior for direct engine users and the existing tests.
         self.recall_booster = recall_booster
+        # Text-layer recall (TODOS.md CEO-voice item) — second box source:
+        # lines recovered from a digital PDF's embedded text layer, merged
+        # after the whitespace booster so dedup sees both sources' extras.
+        self.text_layer_recall = text_layer_recall
         # Phase 1.2 (per-page decode cache) — populated by `_detect_layout`
         # via `_decode_chunk_bytes` (which forwards into ``_decoded_put``),
         # consumed by `_ocr_per_box` (via the `page_image` parameter it
@@ -222,6 +233,7 @@ class HybridEngine(EngineBase):
             images_dict=images_dict,
             page_nums=page_nums,
             progress=progress,
+            input_path=input_path,
         )
 
         # Decide which pages should take the dense (per-box) path before we
@@ -407,6 +419,7 @@ class HybridEngine(EngineBase):
         images_dict: dict[int, str],
         page_nums: Sequence[int],
         progress: ProgressCallback | None,
+        input_path: str = "",
     ) -> dict[int, PageBoxes]:
         """Run batched Surya layout detection and seed each page with empty text."""
         await notify(
@@ -414,38 +427,103 @@ class HybridEngine(EngineBase):
         )
 
         batch_boxes: list[list[BBox]] = []
-        for i in range(0, len(page_nums), DETECT_CHUNK_SIZE):
-            chunk_pages = page_nums[i : i + DETECT_CHUNK_SIZE]
-            # Decode base64 inside the worker thread alongside Surya inference
-            # so neither the list comp nor the (possibly large) image bytes
-            # block the asyncio event loop. (Refactor §1.3.) The cache write
-            # below populates ``self._decoded_cache`` with a ``PIL.Image`` per
-            # page so ``_ocr_per_box`` / ``_refine_uncertain`` can skip a
-            # second decode. (Refactor §1.2.)
-            chunk_bytes = await asyncio.to_thread(
-                _decode_chunk_bytes, images_dict, chunk_pages, self._decoded_put
-            )
-            chunk_boxes = await asyncio.to_thread(
-                self.aligner.get_detected_boxes_batch, chunk_bytes
-            )
-            if self.recall_booster is not None:
-                chunk_boxes = await self._apply_recall(
-                    chunk_pages=chunk_pages,
-                    images_dict=images_dict,
-                    chunk_boxes=chunk_boxes,
+        booster = self.recall_booster
+        recall_pages_touched = 0
+        recall_boxes_added = 0
+        # The booster accumulates its drop counter across ``supplement``
+        # calls (it may outlive one chunk, and the engine may be reused),
+        # so the run summary reads a delta. ``getattr`` keeps duck-typed
+        # test boosters without the counter working.
+        dropped_before = getattr(booster, "candidates_dropped", 0)
+        text_layer = self.text_layer_recall
+        tl_pages_touched = 0
+        tl_boxes_added = 0
+        tl_dropped_before = getattr(text_layer, "candidates_dropped", 0)
+        # One open document per detect pass; ``open`` is a no-op (False)
+        # for non-PDF inputs and env-disabled sources, and the finally
+        # below releases the handle even on cancellation.
+        tl_open = False
+        if text_layer is not None:
+            tl_open = await asyncio.to_thread(text_layer.open, input_path)
+        try:
+            for i in range(0, len(page_nums), DETECT_CHUNK_SIZE):
+                chunk_pages = page_nums[i : i + DETECT_CHUNK_SIZE]
+                # Decode base64 inside the worker thread alongside Surya inference
+                # so neither the list comp nor the (possibly large) image bytes
+                # block the asyncio event loop. (Refactor §1.3.) The cache write
+                # below populates ``self._decoded_cache`` with a ``PIL.Image`` per
+                # page so ``_ocr_per_box`` / ``_refine_uncertain`` can skip a
+                # second decode. (Refactor §1.2.)
+                chunk_bytes = await asyncio.to_thread(
+                    _decode_chunk_bytes, images_dict, chunk_pages, self._decoded_put
                 )
-            batch_boxes.extend(chunk_boxes)
-            await notify(
-                progress,
-                "detect",
-                min(i + DETECT_CHUNK_SIZE, len(page_nums)),
-                len(page_nums),
-                f"Detecting layout ({min(i + DETECT_CHUNK_SIZE, len(page_nums))}/{len(page_nums)})...",
-            )
+                chunk_boxes = await asyncio.to_thread(
+                    self.aligner.get_detected_boxes_batch, chunk_bytes
+                )
+                if booster is not None and getattr(booster, "enabled", True):
+                    # T6: a disabled booster short-circuits ``supplement`` anyway;
+                    # skipping here avoids the per-page decode + thread round-trip.
+                    # The T2 run summary below still emits its zero-count line.
+                    chunk_boxes, touched, added = await self._apply_recall(
+                        chunk_pages=chunk_pages,
+                        images_dict=images_dict,
+                        chunk_boxes=chunk_boxes,
+                    )
+                    recall_pages_touched += touched
+                    recall_boxes_added += added
+                if tl_open:
+                    # Runs after the booster so its dedup reference includes
+                    # the booster's extras — the two sources never add the
+                    # same missed line twice.
+                    chunk_boxes, touched, added = await self._apply_text_layer_recall(
+                        chunk_pages=chunk_pages,
+                        chunk_boxes=chunk_boxes,
+                    )
+                    tl_pages_touched += touched
+                    tl_boxes_added += added
+                batch_boxes.extend(chunk_boxes)
+                await notify(
+                    progress,
+                    "detect",
+                    min(i + DETECT_CHUNK_SIZE, len(page_nums)),
+                    len(page_nums),
+                    f"Detecting layout ({min(i + DETECT_CHUNK_SIZE, len(page_nums))}/{len(page_nums)})...",
+                )
+        finally:
+            if tl_open and text_layer is not None:
+                await asyncio.to_thread(text_layer.close)
 
         pages_structured: dict[int, PageBoxes] = {
             p: [(box, "") for box in batch_boxes[i]] for i, p in enumerate(page_nums)
         }
+        if booster is not None:
+            # T2 run summary: one INFO line per run so ops can tell whether
+            # the default-ON pass is doing anything — including the
+            # zero-count line when the booster is env-disabled.
+            dropped = getattr(booster, "candidates_dropped", 0) - dropped_before
+            logger.info(
+                "Whitespace recall summary: %d box(es) added on %d of %d page(s); "
+                "%d candidate(s) dropped by filters",
+                recall_boxes_added,
+                recall_pages_touched,
+                len(page_nums),
+                dropped,
+            )
+        if text_layer is not None:
+            # Per-source tally (E7-lite): same shape as the booster summary,
+            # emitted even when the source never opened (zero counts tell
+            # ops the pass is wired but inactive for this input).
+            tl_dropped = (
+                getattr(text_layer, "candidates_dropped", 0) - tl_dropped_before
+            )
+            logger.info(
+                "Text-layer recall summary: %d box(es) added on %d of %d page(s); "
+                "%d line(s) dropped by dedup/cap",
+                tl_boxes_added,
+                tl_pages_touched,
+                len(page_nums),
+                tl_dropped,
+            )
         await notify(progress, "detect", 1, 1, "Layout detection complete.")
         return pages_structured
 
@@ -455,16 +533,24 @@ class HybridEngine(EngineBase):
         chunk_pages: Sequence[int],
         images_dict: dict[int, str],
         chunk_boxes: list[list[BBox]],
-    ) -> list[list[BBox]]:
+    ) -> tuple[list[list[BBox]], int, int]:
         """Merge whitespace-recall boxes into each page's Surya boxes.
 
-        Best-effort recall improvement: a per-page failure degrades to the
-        original Surya boxes and never fails the job. Images come from the
-        per-page decode cache populated by ``_decode_chunk_bytes`` in the
-        same chunk; the fallback decode covers an LRU eviction.
+        Returns ``(merged_boxes, pages_touched, boxes_added)`` so the
+        caller can build the T2 INFO run summary. Best-effort recall
+        improvement: a per-page failure degrades to the original Surya
+        boxes and never fails the job. Images come from the per-page
+        decode cache populated by ``_decode_chunk_bytes`` in the same
+        chunk; the fallback decode covers an LRU eviction.
         """
-        assert self.recall_booster is not None
+        # T6: if-guard rather than ``assert`` — asserts are stripped under
+        # ``python -O``; the engine must degrade to the Surya boxes instead.
+        booster = self.recall_booster
+        if booster is None:
+            return chunk_boxes, 0, 0
         merged: list[list[BBox]] = []
+        pages_touched = 0
+        boxes_added = 0
         for p_num, boxes in zip(chunk_pages, chunk_boxes, strict=False):
             try:
                 image = self._decoded_get(p_num)
@@ -473,9 +559,12 @@ class HybridEngine(EngineBase):
                         _decode_page_image, images_dict[p_num]
                     )
                     self._decoded_put(p_num, image)
-                extra = await asyncio.to_thread(
-                    self.recall_booster.supplement, image, boxes
-                )
+                extra = await asyncio.to_thread(booster.supplement, image, boxes)
+                # CQ-3: force recall boxes onto the ``BBox`` tuple contract at
+                # the merge boundary. ``HybridAligner`` emits tuples, so this
+                # keeps the merged page homogeneous whatever container a
+                # duck-typed booster returns.
+                extra = [(b[0], b[1], b[2], b[3]) for b in extra]
             except Exception as e:
                 logger.warning(
                     "Whitespace recall failed for page %s: %s: %s",
@@ -491,9 +580,58 @@ class HybridEngine(EngineBase):
                     len(extra),
                     p_num,
                 )
+                pages_touched += 1
+                boxes_added += len(extra)
                 boxes = sorted([*boxes, *extra], key=lambda b: (b[1], b[0]))
             merged.append(boxes)
-        return merged
+        return merged, pages_touched, boxes_added
+
+    async def _apply_text_layer_recall(
+        self,
+        *,
+        chunk_pages: Sequence[int],
+        chunk_boxes: list[list[BBox]],
+    ) -> tuple[list[list[BBox]], int, int]:
+        """Merge text-layer recall boxes into each page's merged boxes.
+
+        Second recall source (TODOS.md CEO-voice item): lines recovered
+        from the input PDF's embedded text layer. Same contract as
+        ``_apply_recall`` — returns ``(merged_boxes, pages_touched,
+        boxes_added)``, fails open per page, and normalizes extras onto
+        the ``BBox`` tuple contract at the merge boundary. The dedup
+        reference is the page's current merged boxes, which already
+        include any whitespace-booster extras applied in this chunk.
+        """
+        source = self.text_layer_recall
+        if source is None:
+            return chunk_boxes, 0, 0
+        merged: list[list[BBox]] = []
+        pages_touched = 0
+        boxes_added = 0
+        for p_num, boxes in zip(chunk_pages, chunk_boxes, strict=False):
+            try:
+                extra = await asyncio.to_thread(source.supplement, p_num, boxes)
+                extra = [(b[0], b[1], b[2], b[3]) for b in extra]
+            except Exception as e:
+                logger.warning(
+                    "Text-layer recall failed for page %s: %s: %s",
+                    p_num,
+                    type(e).__name__,
+                    e,
+                )
+                merged.append(boxes)
+                continue
+            if extra:
+                logger.debug(
+                    "Text-layer recall added %d box(es) on page %s",
+                    len(extra),
+                    p_num,
+                )
+                pages_touched += 1
+                boxes_added += len(extra)
+                boxes = sorted([*boxes, *extra], key=lambda b: (b[1], b[0]))
+            merged.append(boxes)
+        return merged, pages_touched, boxes_added
 
     def _select_dense_pages(
         self,

@@ -12,11 +12,45 @@ from omniscribe.api.schemas.requests import (
 )
 from omniscribe.api.services.security import SAFE_API_BASE_ERROR, SERVER_ERROR_MESSAGE
 from omniscribe.core.llm_client import call_llm
+from omniscribe.core.llm_temperatures import (
+    TEMPERATURE_EXTRACTION,
+    TEMPERATURE_TRANSLATION,
+)
 from omniscribe.utils.json_parse import extract_json
 from omniscribe.utils.prompt_safety import sanitize_prompt_input
 from omniscribe.utils.security import is_ssrf_target
 
 logger = logging.getLogger(__name__)
+
+# Bumped when the user-facing prompt body changes.
+PROMPT_VERSION = "2026-08-15.v1"
+
+# System role companion for translation. Prepended so the role identity
+# sits in the system role and the user turn can focus on the translation
+# rules plus the actual source text. Includes the "preserve URLs /
+# identifiers / brand names" guard that the model otherwise tends to
+# helpfully mistranslate.
+TRANSLATION_SYSTEM_MESSAGE = (
+    "You are a precise document translator. "
+    "Preserve all markdown formatting, headings, lists, tables, and "
+    "mathematical formulas exactly as they appear in the source. "
+    "Do not translate URLs, code identifiers, file paths, or brand / "
+    "product names — keep them unchanged. "
+    "Do not add introductory or concluding comments, explanations, or "
+    "meta-commentary. Output only the direct translation."
+)
+
+# System role companion for structured extraction. The "null for missing"
+# guard lives here so the model doesn't invent plausible values for fields
+# that aren't present in the document.
+EXTRACTION_SYSTEM_MESSAGE = (
+    "You are a structured data extraction assistant. "
+    "Extract only fields that are explicitly present in the document. "
+    "If a field is not present, use null — not empty string, not 0, not "
+    "'N/A'. "
+    "Respond with a single valid JSON object and nothing else: no markdown "
+    "fences, no explanatory text, no prefix."
+)
 
 JsonObject = dict[str, Any]
 RuntimeConfig = Mapping[str, object]
@@ -105,7 +139,11 @@ async def translate_text(
     )
     prompt = build_translation_prompt(request.text, request.target_language)
     return await _complete_text(
-        settings, prompt, temperature=0.3, context="translation"
+        settings,
+        prompt,
+        temperature=TEMPERATURE_TRANSLATION,
+        context="translation",
+        system_prompt=TRANSLATION_SYSTEM_MESSAGE,
     )
 
 
@@ -132,19 +170,29 @@ async def extract_structured_data(
         custom_prompt=request.custom_prompt,
     )
     content = await _complete_text(
-        settings, prompt, temperature=0.1, context="extraction"
+        settings,
+        prompt,
+        temperature=TEMPERATURE_EXTRACTION,
+        context="extraction",
+        system_prompt=EXTRACTION_SYSTEM_MESSAGE,
     )
     parsed = extract_json(content)
     return parsed if isinstance(parsed, dict) else {}
 
 
 def build_translation_prompt(text: str, target_language: str) -> str:
+    # The user-controlled document text is the only string still going
+    # to the LLM unsanitized after Phase C. Boundary markers, control
+    # chars, and oversized payloads are all neutralized here so a
+    # crafted upload can't truncate the controlled prompt region or
+    # evict the schema.
+    safe_text = sanitize_prompt_input(text)
     return (
         f"Translate the following document text into {target_language}. "
         f"Maintain all markdown formatting, headings, lists, tables, and mathematical formulas exactly. "
         f"Do not add any introductory or concluding comments, explanations, or meta-commentary. "
         f"Only output the direct translation.\n\n"
-        f"TEXT:\n{text}"
+        f"TEXT:\n{safe_text}"
     )
 
 
@@ -155,6 +203,10 @@ def build_extraction_prompt(
     custom_prompt: str,
 ) -> str:
     instructions = extraction_instructions(template, custom_prompt)
+    # The document text is user-controlled (the upload that already
+    # passed OCR). Sanitize at the prompt boundary — extraction
+    # custom_prompt is already sanitized inside extraction_instructions.
+    safe_text = sanitize_prompt_input(text)
     return (
         f"You are a structured data extraction AI. "
         f"Analyze the following document text and extract the requested fields.\n\n"
@@ -162,7 +214,7 @@ def build_extraction_prompt(
         f"CRITICAL INSTRUCTION: Output the results STRICTLY as a single valid JSON object. "
         f"Do not wrap in markdown code blocks, do not include any explanatory text or prefix. "
         f"Ensure all JSON syntax is valid.\n\n"
-        f"DOCUMENT TEXT:\n{text}"
+        f"DOCUMENT TEXT:\n{safe_text}"
     )
 
 
@@ -205,6 +257,7 @@ async def _complete_text(
     *,
     temperature: float,
     context: str,
+    system_prompt: str | None = None,
 ) -> str:
     try:
         content = await call_llm(
@@ -212,6 +265,7 @@ async def _complete_text(
             api_base=settings.api_base,
             api_key=settings.api_key,
             temperature=temperature,
+            system_prompt=system_prompt,
             messages=[{"role": "user", "content": prompt}],
         )
         return content.strip()

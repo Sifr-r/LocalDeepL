@@ -17,12 +17,15 @@ Process-lifetime boundary
 This module owns two pieces of process-bound state:
 
 - ``manager`` (the module-level :class:`ConnectionManager` singleton)
-  with three internal dicts: ``manager.active`` (channel_id → live
+  with four internal dicts: ``manager.active`` (channel_id → live
   :class:`fastapi.WebSocket`), ``manager._tokens`` (channel_id →
-  session_token, used for ``is_authorized`` checks), and
+  session_token, used for ``is_authorized`` checks),
   ``manager._cancel_flags`` (channel_id → :class:`asyncio.Event`,
   flipped by :meth:`ConnectionManager.request_cancel` and read by the
-  OCR/translate worker via :meth:`ConnectionManager.is_cancelled`).
+  OCR/translate worker via :meth:`ConnectionManager.is_cancelled`), and
+  ``manager._accept_loops`` (channel_id → the event loop that accepted
+  the socket, so :meth:`ConnectionManager.send` can marshal
+  foreign-loop sends back onto it before touching the transport).
 - ``_progress_service`` (the :class:`ProgressService` resolved from
   ``state.progress_service``), used to validate token shape and compare
   bindings.
@@ -46,6 +49,7 @@ horizontal scaling."
 from __future__ import annotations
 
 import asyncio
+import json
 from http import HTTPStatus
 from typing import Any, Protocol, runtime_checkable
 
@@ -174,6 +178,9 @@ class ConnectionManager:
         self.active: dict[str, WebSocket] = {}
         self._tokens: dict[str, str] = {}
         self._cancel_flags: dict[str, asyncio.Event] = {}
+        # channel_id -> event loop that accepted the socket. ``send``
+        # marshals foreign-loop sends back onto this loop (see below).
+        self._accept_loops: dict[str, asyncio.AbstractEventLoop] = {}
 
     async def connect(
         self, websocket: WebSocket, channel_id: str, session_token: str
@@ -184,11 +191,13 @@ class ConnectionManager:
         self.active[channel_id] = websocket
         self._tokens[channel_id] = session_token
         self._cancel_flags[channel_id] = asyncio.Event()
+        self._accept_loops[channel_id] = asyncio.get_running_loop()
 
     def disconnect(self, channel_id: str) -> None:
         self.active.pop(channel_id, None)
         self._tokens.pop(channel_id, None)
         self._cancel_flags.pop(channel_id, None)
+        self._accept_loops.pop(channel_id, None)
 
     def is_authorized(self, channel_id: str | None, session_token: str | None) -> bool:
         if not channel_id or not session_token:
@@ -219,14 +228,45 @@ class ConnectionManager:
         return evt is not None and evt.is_set()
 
     async def send(self, channel_id: str | None, payload: dict[str, Any]) -> None:
-        """Send a JSON frame to an active channel. Silently drops on disconnect."""
+        """Send an NDJSON frame to an active channel. Silently drops on disconnect.
+
+        The wire format is line-delimited JSON (one JSON object + ``\\n``
+        per text frame). The trailing newline lets the browser split a
+        text frame that happens to contain multiple concatenated objects
+        — a real failure mode we've seen on the OmniScribe WebSocket
+        when the OCR pipeline fires many progress / block_retry events
+        in rapid succession. Even when the underlying transport
+        delivers each ASGI ``websocket.send`` as a separate text frame
+        (the common case), ``JSON.parse('{"a":1}\\n')`` is still valid
+        and the extra byte costs us almost nothing.
+
+        Thread/loop safety: the underlying uvicorn WebSocket (and its
+        wsproto state machine) is bound to the event loop that accepted
+        it and is **not** safe to write from any other loop. The
+        ``/api/process`` worker drives ``pipeline.run`` under
+        ``asyncio.run()`` in a thread with its own loop, so block-level
+        senders are awaited there while progress frames go out on the
+        main loop. When the calling loop differs from the accept loop we
+        marshal the actual ``send_text`` back onto the accept loop via
+        ``run_coroutine_threadsafe`` and await the wrapped future, which
+        preserves the caller's ordering/backpressure semantics. Skipping
+        this marshalling interleaved frame bytes from two threads on the
+        socket — the browser saw mangled JSON fragments ("pairge") and
+        eventually "Invalid frame header".
+        """
         if not channel_id:
             return
         ws = self.active.get(channel_id)
         if ws is None:
             return
+        text = json.dumps(payload, separators=(",", ":"), ensure_ascii=False) + "\n"
+        accept_loop = self._accept_loops.get(channel_id)
         try:
-            await ws.send_json(payload)
+            if accept_loop is None or accept_loop is asyncio.get_running_loop():
+                await ws.send_text(text)
+                return
+            future = asyncio.run_coroutine_threadsafe(ws.send_text(text), accept_loop)
+            await asyncio.wrap_future(future)
         except Exception:
             self.disconnect(channel_id)
 

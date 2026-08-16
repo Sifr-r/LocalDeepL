@@ -47,7 +47,7 @@ function readHeaderValue(headers: RequestInit['headers'], key: string): string |
 }
 
 function pickBearerForUrl(url: string, auth: { ocr?: string; translation?: string; transcription?: string; global?: string }): string | undefined {
-  if (url.includes('/api/process') || url.includes('/api/ocr') || url.includes('/api/text') || url.includes('/api/export')) {
+  if (url.includes('/api/process') || url.includes('/api/ocr') || url.includes('/api/text') || url.includes('/api/export') || url.includes('/api/jobs')) {
     return auth.ocr || auth.global;
   }
   if (url.includes('/api/translate')) return auth.translation || auth.global;

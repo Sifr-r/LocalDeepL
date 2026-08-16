@@ -78,8 +78,9 @@ def test_dockerfile_pins_python_and_uv_installs_extras():
         "Dockerfile must pin a specific Python base image"
     )
 
-    # Must install web extras so the API server can boot.
-    for extra in ("--extra web", "--extra async-translation"):
+    # Must install web extras so the API server can boot, plus
+    # preprocessing so the default-on whitespace recall pass has cv2.
+    for extra in ("--extra web", "--extra async-translation", "--extra preprocessing"):
         assert extra in dockerfile, f"Dockerfile missing `{extra}` flag"
 
     # Uses ``omniscribe-server`` so the console script is on PATH.
@@ -141,14 +142,16 @@ def test_nightly_workflow_targets_slow_tests_with_hf_cache():
 
 
 def test_pyproject_extras_present_for_docker_layering():
-    """The Dockerfile's ``uv sync --extra web --extra async-translation``
-    must reference real extras declared in ``pyproject.toml``.
+    """The Dockerfile's ``uv sync --extra web --extra async-translation
+    --extra preprocessing`` must reference real extras declared in
+    ``pyproject.toml``.
     """
     extras = tomllib.loads((ROOT / "pyproject.toml").read_bytes().decode("utf-8"))[
         "project"
     ]["optional-dependencies"]
     assert "web" in extras
     assert "async-translation" in extras
+    assert "preprocessing" in extras
 
 
 # ---------------------------------------------------------------------------

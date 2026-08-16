@@ -65,6 +65,7 @@ async def complete_vlm_prompt(
     temperature: float = 0.0,
     max_tokens: int = 4096,
     timeout: float | None = None,
+    system_prompt: str | None = None,
 ) -> str:
     """Execute asynchronous LLM completion based on provider configuration format.
 
@@ -78,6 +79,11 @@ async def complete_vlm_prompt(
         timeout: Per-request timeout in seconds. ``None`` falls back to the
             shared client's default (60s). Callers that need a longer budget
             (e.g. ``OMNISCRIBE_VLM_PAGE_TIMEOUT=240``) pass it here.
+        system_prompt: Optional system-role instruction. When set, it is
+            prepended to the messages array as a ``role: system`` entry
+            before the user turn. Kept separate from the user prompt so
+            OlmOCR-2's RL-trained prompt string stays a pure user message
+            (do not set this for the canonical OLMOCR_PAGE_PROMPT).
 
     Returns:
         Generated text completion.
@@ -130,9 +136,14 @@ async def complete_vlm_prompt(
         else:
             content = prompt
 
+        messages: list[dict[str, Any]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": content})
+
         payload: dict[str, Any] = {
             "model": target_model,
-            "messages": [{"role": "user", "content": content}],
+            "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
@@ -163,9 +174,14 @@ async def complete_vlm_prompt(
         else:
             anthropic_content = [{"type": "text", "text": prompt}]
 
+        anthropic_messages: list[dict[str, Any]] = []
+        if system_prompt:
+            anthropic_messages.append({"role": "system", "content": system_prompt})
+        anthropic_messages.append({"role": "user", "content": anthropic_content})
+
         payload = {
             "model": target_model,
-            "messages": [{"role": "user", "content": anthropic_content}],
+            "messages": anthropic_messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
         }
@@ -176,13 +192,18 @@ async def complete_vlm_prompt(
         if provider_config.api_key and "Authorization" not in headers:
             headers["Authorization"] = f"Bearer {provider_config.api_key}"
 
+        ollama_messages: list[dict[str, Any]] = []
+        if system_prompt:
+            ollama_messages.append({"role": "system", "content": system_prompt})
+
         user_msg: dict[str, Any] = {"role": "user", "content": prompt}
         if image_base64:
             user_msg["images"] = [image_base64]
+        ollama_messages.append(user_msg)
 
         payload = {
             "model": target_model,
-            "messages": [user_msg],
+            "messages": ollama_messages,
             "stream": False,
             "options": {"temperature": temperature},
         }

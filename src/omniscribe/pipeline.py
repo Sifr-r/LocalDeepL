@@ -22,6 +22,7 @@ from omniscribe.core.ocr_quality import TrustOrchestrator
 from omniscribe.core.preprocessing import PagePreprocessingOptions, PagePreprocessor
 from omniscribe.core.processors import DocumentProcessor
 from omniscribe.core.routing import QualityRoutingOptions
+from omniscribe.core.text_layer_recall import PdfTextLayerRecall, TextLayerRecallOptions
 from omniscribe.core.text_recall import WhitespaceRecallBooster, WhitespaceRecallOptions
 from omniscribe.core.workflows import (
     AnyOutputWriter,
@@ -101,6 +102,7 @@ class OCRPipeline:
                 recall_booster=WhitespaceRecallBooster(
                     WhitespaceRecallOptions.from_env()
                 ),
+                text_layer_recall=PdfTextLayerRecall(TextLayerRecallOptions.from_env()),
             )
 
     @property

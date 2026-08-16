@@ -73,6 +73,7 @@ export const defaultConfig: ConfigResponse = {
   crop_cleanup: false,
   quality_routing: false,
   document_processors: [],
+  use_async: false,
   security: { max_upload_bytes: 52428800, max_upload_mb: 50 },
 };
 export const configStore = writable<ConfigResponse>(defaultConfig);

@@ -146,11 +146,13 @@ class LocalStateBackend:
 def build_state_backend(settings: object) -> StateBackend:
     """Construct a :class:`StateBackend` from a settings-like object.
 
-    The ``settings`` argument only needs three attributes:
+    The ``settings`` argument only needs up to four attributes:
 
-    - ``state_backend`` — ``"memory"`` or ``"redis"``
+    - ``state_backend`` — ``"memory"``, ``"redis"``, or ``"sqlite"``
     - ``redis_url`` — used when ``state_backend == "redis"``
     - ``artifact_directory`` — :class:`Path` threaded to every store
+    - ``state_db_path`` — :class:`str | Path` used when
+      ``state_backend == "sqlite"`` (default: ``<artifact_dir>/omniscribe-state.db``)
 
     The factory is the single boundary where backend selection fails loud:
     an unknown value raises :class:`RuntimeError` (not :class:`ValueError`)
@@ -173,15 +175,26 @@ def build_state_backend(settings: object) -> StateBackend:
         from omniscribe.api.services.state_backend_redis import RedisStateBackend
 
         artifact_dir = getattr(settings, "artifact_directory", None)
-        kwargs: dict[str, object] = {}
+        redis_kwargs: dict[str, object] = {}
         if redis_url is not None:
-            kwargs["redis_url"] = redis_url
+            redis_kwargs["redis_url"] = redis_url
         if artifact_dir is not None:
-            kwargs["artifact_dir"] = artifact_dir
-        return RedisStateBackend(**kwargs)  # type: ignore[arg-type,return-value]
+            redis_kwargs["artifact_dir"] = artifact_dir
+        return RedisStateBackend(**redis_kwargs)  # type: ignore[arg-type,return-value]
+    if backend_name == "sqlite":
+        from omniscribe.api.services.state_backend_sqlite import SQLiteStateBackend
+
+        artifact_dir = getattr(settings, "artifact_directory", None)
+        db_path = getattr(settings, "state_db_path", None)
+        sqlite_kwargs: dict[str, object] = {}
+        if db_path is not None:
+            sqlite_kwargs["db_path"] = db_path
+        if artifact_dir is not None:
+            sqlite_kwargs["artifact_dir"] = artifact_dir
+        return SQLiteStateBackend(**sqlite_kwargs)  # type: ignore[arg-type,return-value]
     raise RuntimeError(
         f"Unknown OMNISCRIBE_STATE_BACKEND={backend_name!r}. "
-        "Expected 'memory' or 'redis'."
+        "Expected 'memory', 'redis', or 'sqlite'."
     )
 
 

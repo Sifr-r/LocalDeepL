@@ -34,11 +34,11 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN mkdir -p /app/src/omniscribe \
  && touch /app/src/omniscribe/__init__.py \
- && uv sync --extra web --extra async-translation --no-install-project
+ && uv sync --extra web --extra async-translation --extra preprocessing --no-install-project
 
 # Copy the project source and complete the install.
 COPY src ./src
-RUN uv sync --extra web --extra async-translation
+RUN uv sync --extra web --extra async-translation --extra preprocessing
 
 # Drop root for runtime. The official Python slim image ships a
 # ``nonroot`` user, but we create our own so the path is stable.

@@ -3,6 +3,7 @@ import type {
   RuntimeConfig,
   ProviderPreset,
   JobRecordResponse,
+  OcrJobStatusResponse,
   TranslationRequest,
   ExtractionRequest,
   GlossaryEntry,
@@ -81,8 +82,39 @@ export async function processOcr(formData: FormData): Promise<ProcessOcrResult> 
   };
 }
 
-export async function getOcrStatus(jobId: string): Promise<unknown> {
-  return fetchApi(`/process/status/${jobId}`);
+export async function getOcrStatus(jobId: string): Promise<OcrJobStatusResponse> {
+  return fetchApi<OcrJobStatusResponse>(`/process/status/${jobId}`);
+}
+
+/**
+ * Submit an upload to the async OCR endpoint and return the job_id.
+ *
+ * The server returns ``202 Accepted`` with ``{ job_id, status: "pending" }`
+ * immediately; the actual OCR runs on a single-worker asyncio queue
+ * (or a Celery worker when the ``async-translation`` extras + a Redis
+ * broker are configured). Progress streams through the bound WebSocket
+ * channel; poll :func:`getOcrStatus` until ``status === "complete"`` and
+ * then download the result PDF via :func:`getOcrResult`.
+ */
+export async function processOcrAsync(formData: FormData): Promise<{ job_id: string; status: string }> {
+  return fetchApi<{ job_id: string; status: string }>('/process/async', {
+    method: 'POST',
+    body: formData,
+    silent: true
+  });
+}
+
+/**
+ * Download the searchable PDF produced by a completed async OCR job.
+ *
+ * ``token`` is the per-job ``text_artifact_token`` from the status
+ * response (not the user's auth bearer). It is passed as the
+ * ``token`` query parameter so the URL works in a plain browser
+ * download link without needing a header. The route also accepts
+ * the token via the ``Authorization: Bearer <token>`` header.
+ */
+export async function getOcrResult(jobId: string, token: string): Promise<Blob> {
+  return fetchFile(`/jobs/${jobId}/result?token=${encodeURIComponent(token)}`);
 }
 
 export async function exportDocument(payload: {
@@ -116,7 +148,9 @@ export const configApi = {
 
 export const ocrApi = {
   process: processOcr,
+  processAsync: processOcrAsync,
   getStatus: getOcrStatus,
+  getResult: getOcrResult,
   cancel: (jobId: string) => fetchApi(`/jobs/${jobId}/cancel`, { method: 'POST' })
 };
 

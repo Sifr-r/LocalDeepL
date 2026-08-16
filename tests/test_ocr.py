@@ -16,6 +16,14 @@ from omniscribe.core.ocr import (
     _strip_runaway_repetition,
     _strip_yaml_front_matter,
 )
+from omniscribe.core.ocr.prompts import (
+    DUAL_ENGINE_OCR_SYSTEM_MESSAGE,
+    HANDWRITING_OCR_SYSTEM_MESSAGE,
+    OCR_SYSTEM_MESSAGE,
+    PROMPT_VERSION,
+    model_supports_system_role,
+    select_system_message,
+)
 
 
 class TestYAMLFrontMatter:
@@ -94,6 +102,7 @@ class TestHallucinationFilter:
 
         ocr = OCRProcessor.__new__(OCRProcessor)  # skip real init
         ocr.client = None  # type: ignore[assignment]  # never used; we override _chat below
+        ocr.model = "qwen/qwen3-vl-8b"  # non-OlmOCR — exercise the system message path
 
         async def _fake_pangram(*a, **kw):
             return "The quick brown fox jumps over the lazy dog."
@@ -111,6 +120,7 @@ class TestHallucinationFilter:
 
         ocr = OCRProcessor.__new__(OCRProcessor)
         ocr.client = None  # type: ignore[assignment]
+        ocr.model = "qwen/qwen3-vl-8b"
 
         async def _fake(*a, **kw):
             return "real handwritten content"
@@ -133,6 +143,7 @@ class TestHallucinationFilter:
 
         ocr = OCRProcessor.__new__(OCRProcessor)
         ocr.client = None  # type: ignore[assignment]
+        ocr.model = "qwen/qwen3-vl-8b"
 
         sentence = (
             "Practice typing: The quick brown fox jumps over the lazy dog. "
@@ -167,6 +178,7 @@ class TestHallucinationFilter:
         ):
             ocr = OCRProcessor.__new__(OCRProcessor)
             ocr.client = None  # type: ignore[assignment]
+            ocr.model = "qwen/qwen3-vl-8b"
             ocr._chat = _make_fake(variant)  # type: ignore[method-assign]
             ocr.CROP_TIMEOUT_S = 60.0
             ocr.CROP_MAX_TOKENS = 256
@@ -292,3 +304,234 @@ class TestPromptConstants:
         # For crops we want plain text — no metadata/markdown ceremony.
         assert "no markdown" in CROP_PROMPT.lower()
         assert "plain text" in CROP_PROMPT.lower()
+
+    def test_prompt_version_is_present(self):
+        # Bump PROMPT_VERSION when any user-facing prompt body changes so
+        # log / runtime telemetry can correlate regressions with a known
+        # version. The exact date is not asserted, just the format.
+        assert isinstance(PROMPT_VERSION, str)
+        assert PROMPT_VERSION  # non-empty
+        # date.version format: YYYY-MM-DD.vN
+        assert PROMPT_VERSION.count(".") >= 1
+        date_part = PROMPT_VERSION.split(".")[0]
+        assert len(date_part) == 10 and date_part[4] == "-" and date_part[7] == "-"
+
+    def test_ocr_system_message_guards_against_invented_text(self):
+        # The crop / page prompts rely on the system message to enforce
+        # the "no invented text" rule. If this assertion ever fails,
+        # downstream extraction / alignment will start seeing
+        # hallucinated content on blank regions.
+        assert "invent" in OCR_SYSTEM_MESSAGE.lower()
+        assert (
+            "diacritical" in OCR_SYSTEM_MESSAGE.lower()
+            or "diacritics" in OCR_SYSTEM_MESSAGE.lower()
+        )
+
+    def test_handwriting_system_message_patience_emphasis(self):
+        # Handwriting mode should reinforce "return empty rather than
+        # guess" — the base OCR message says the same but handwriting
+        # benefits from making this explicit and prominent.
+        assert "empty" in HANDWRITING_OCR_SYSTEM_MESSAGE.lower()
+        assert "handwritten" in HANDWRITING_OCR_SYSTEM_MESSAGE.lower()
+
+    def test_dual_engine_system_message_uses_image_as_truth(self):
+        # The dual-engine path must tell the model the image is the
+        # source of truth and the draft is a hint, otherwise the model
+        # will parrot the Tesseract draft even where it is wrong.
+        assert "image" in DUAL_ENGINE_OCR_SYSTEM_MESSAGE.lower()
+        assert "draft" in DUAL_ENGINE_OCR_SYSTEM_MESSAGE.lower()
+        assert "source of truth" in DUAL_ENGINE_OCR_SYSTEM_MESSAGE.lower()
+
+
+class TestSelectSystemMessage:
+    def test_dual_engine_path_uses_dual_engine_message(self):
+        result = select_system_message(handwriting_mode=False, dual_engine=True)
+        assert result is DUAL_ENGINE_OCR_SYSTEM_MESSAGE
+
+    def test_handwriting_path_uses_handwriting_message(self):
+        result = select_system_message(handwriting_mode=True, dual_engine=False)
+        assert result is HANDWRITING_OCR_SYSTEM_MESSAGE
+
+    def test_default_path_uses_ocr_message(self):
+        result = select_system_message(handwriting_mode=False, dual_engine=False)
+        assert result is OCR_SYSTEM_MESSAGE
+
+    def test_dual_engine_overrides_handwriting(self):
+        # When both flags are on, dual_engine wins — it's the more
+        # specific role (judge, not transcriber).
+        result = select_system_message(handwriting_mode=True, dual_engine=True)
+        assert result is DUAL_ENGINE_OCR_SYSTEM_MESSAGE
+
+
+class TestModelSupportsSystemRole:
+    """Models that have demonstrated system-role sensitivity get a
+    shorter, model-aware path that drops the system message entirely.
+    The list is intentionally narrow — see the docstring in
+    :func:`model_supports_system_role`.
+    """
+
+    def test_olmocr_2_model_is_excluded(self):
+        assert model_supports_system_role("allenai/olmocr-2-7b") is False
+
+    def test_olmocr_short_name_is_excluded(self):
+        assert model_supports_system_role("olmocr") is False
+
+    def test_olmocr_case_insensitive(self):
+        # The check is case-insensitive — model names from LM Studio
+        # sometimes carry the original casing, sometimes lowercase.
+        assert model_supports_system_role("AllenAI/OLMOCR-2-7B") is False
+
+    def test_qwen_model_supports_system_role(self):
+        assert model_supports_system_role("qwen/qwen3-vl-8b") is True
+
+    def test_unknown_model_defaults_to_supported(self):
+        # New model we haven't seen — don't accidentally disable
+        # system messages. Better to have a regression elsewhere
+        # than to silently strip the system role.
+        assert model_supports_system_role("some/new-model-v1") is True
+
+    def test_none_model_defaults_to_supported(self):
+        # Defensive: a misconfigured processor with no model should
+        # still attempt a system message rather than skip it.
+        assert model_supports_system_role(None) is True
+
+
+class TestProcessorSystemPromptWiring:
+    """The OCR processor decides at the call site whether to send a
+    system message. Two reasons it returns ``None``:
+
+    1. The canonical OLMOCR-2 page prompt is in use — the model was
+       RL-trained on the prompt as a pure user message, so the
+       processor must NOT add a system role there.
+    2. The active model is in the system-role-excluded family
+       (currently OlmOCR). Sending a system role causes LM Studio
+       + OlmOCR-2 to misbehave on the crop / handwriting / dual-engine
+       paths.
+
+    The tests below cover both reasons separately.
+    """
+
+    def _make_processor(self, model: str = "qwen/qwen3-vl-8b") -> OCRProcessor:
+        # No real network — build a processor with the minimum viable
+        # config and stub the chat method on the instance. Default
+        # model is a non-OlmOCR one so we exercise the system-message
+        # path; OlmOCR-specific cases have their own tests below.
+        return OCRProcessor(api_base="http://localhost:1/v1", api_key="x", model=model)
+
+    @pytest.mark.asyncio
+    async def test_olmocr_page_path_sends_no_system_message(self):
+        # Qwen model + OLMOCR canonical page prompt → no system message
+        # because the prompt itself is the RL-trained distribution.
+        proc = self._make_processor(model="qwen/qwen3-vl-8b")
+        captured: dict = {}
+
+        async def fake_chat(
+            prompt, image_base64, *, timeout, max_tokens, system_prompt=None
+        ):
+            captured["system_prompt"] = system_prompt
+            return "# Page"
+
+        proc._chat = fake_chat  # type: ignore[method-assign]
+        await proc.perform_ocr(image_base64="aW1hZ2U=")
+        assert captured["system_prompt"] is None
+
+    @pytest.mark.asyncio
+    async def test_handwriting_page_path_sends_handwriting_system_message(self):
+        proc = self._make_processor(model="qwen/qwen3-vl-8b")
+        proc.handwriting_mode = True
+        captured: dict = {}
+
+        async def fake_chat(
+            prompt, image_base64, *, timeout, max_tokens, system_prompt=None
+        ):
+            captured["system_prompt"] = system_prompt
+            return "# Page"
+
+        proc._chat = fake_chat  # type: ignore[method-assign]
+        await proc.perform_ocr(image_base64="aW1hZ2U=")
+        assert captured["system_prompt"] is HANDWRITING_OCR_SYSTEM_MESSAGE
+
+    @pytest.mark.asyncio
+    async def test_crop_path_sends_ocr_system_message(self):
+        proc = self._make_processor(model="qwen/qwen3-vl-8b")
+        captured: dict = {}
+
+        async def fake_chat(
+            prompt, image_base64, *, timeout, max_tokens, system_prompt=None
+        ):
+            captured["system_prompt"] = system_prompt
+            return "text"
+
+        proc._chat = fake_chat  # type: ignore[method-assign]
+        await proc.perform_ocr_on_crop(image_base64="aW1hZ2U=")
+        assert captured["system_prompt"] is OCR_SYSTEM_MESSAGE
+
+    @pytest.mark.asyncio
+    async def test_dual_engine_crop_path_sends_dual_engine_system_message(self):
+        proc = self._make_processor(model="qwen/qwen3-vl-8b")
+        captured: list = []
+
+        async def fake_chat(
+            prompt, image_base64, *, timeout, max_tokens, system_prompt=None
+        ):
+            captured.append(system_prompt)
+            return "text"
+
+        proc._chat = fake_chat  # type: ignore[method-assign]
+        # No Tesseract available in the test env, so dual_engine is
+        # effectively a no-op for the draft. The system message is
+        # still set, and the call returns the result of fake_chat.
+        await proc.perform_ocr_on_crop(image_base64="aW1hZ2U=", dual_engine=True)
+        assert all(sp is DUAL_ENGINE_OCR_SYSTEM_MESSAGE for sp in captured)
+        assert captured  # at least one chat call happened
+
+    @pytest.mark.asyncio
+    async def test_olmocr_model_drops_system_message_on_handwriting_path(self):
+        # OlmOCR-2 + handwriting mode → no system message. This is
+        # the bug from the field report: LM Studio + OlmOCR-2 fails
+        # on the crop / handwriting / dual-engine paths when a
+        # system role is layered on top of the model's RL training.
+        proc = self._make_processor(model="allenai/olmocr-2-7b")
+        proc.handwriting_mode = True
+        captured: dict = {}
+
+        async def fake_chat(
+            prompt, image_base64, *, timeout, max_tokens, system_prompt=None
+        ):
+            captured["system_prompt"] = system_prompt
+            return "# Page"
+
+        proc._chat = fake_chat  # type: ignore[method-assign]
+        await proc.perform_ocr(image_base64="aW1hZ2U=")
+        assert captured["system_prompt"] is None
+
+    @pytest.mark.asyncio
+    async def test_olmocr_model_drops_system_message_on_crop_path(self):
+        proc = self._make_processor(model="allenai/olmocr-2-7b")
+        captured: dict = {}
+
+        async def fake_chat(
+            prompt, image_base64, *, timeout, max_tokens, system_prompt=None
+        ):
+            captured["system_prompt"] = system_prompt
+            return "text"
+
+        proc._chat = fake_chat  # type: ignore[method-assign]
+        await proc.perform_ocr_on_crop(image_base64="aW1hZ2U=")
+        assert captured["system_prompt"] is None
+
+    @pytest.mark.asyncio
+    async def test_olmocr_model_drops_system_message_on_dual_engine_path(self):
+        proc = self._make_processor(model="allenai/olmocr-2-7b")
+        captured: list = []
+
+        async def fake_chat(
+            prompt, image_base64, *, timeout, max_tokens, system_prompt=None
+        ):
+            captured.append(system_prompt)
+            return "text"
+
+        proc._chat = fake_chat  # type: ignore[method-assign]
+        await proc.perform_ocr_on_crop(image_base64="aW1hZ2U=", dual_engine=True)
+        assert all(sp is None for sp in captured)
+        assert captured  # at least one chat call happened

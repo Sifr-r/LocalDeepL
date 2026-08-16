@@ -6,8 +6,8 @@ This file tells coding agents and contributors how to work with this repository.
 
 ```bash
 uv sync
-uv sync --extra web
-uv sync --extra web --extra async-translation
+uv sync --extra web --extra preprocessing
+uv sync --extra web --extra preprocessing --extra async-translation
 uv run omniscribe-server --port 8000
 ```
 
@@ -88,13 +88,13 @@ If a change touches **any** core path, run the full fast gate. If it is peripher
 ## Pipeline Paths
 
 ```text
-PDF/image -> pages -> Surya detection -> sparse: full-page OCR -> DP alignment -> refine --+
-                                    \-> dense: per-box OCR -------------------------------+-> post-process -> DocumentResult -> optional processors -> searchable PDF
+PDF/image -> pages -> Surya detection (+ whitespace + text-layer recall) -> sparse: full-page OCR -> DP alignment -> refine ---------------+
+                                    \-> dense: per-box OCR --------------------------------------------------------------------------------+-> post-process -> DocumentResult -> optional processors -> searchable PDF
 
 PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optional processors -> searchable PDF
 ```
 
-- Hybrid is the default: Surya detection, VLM OCR, DP alignment, optional refine, optional post-processing, embed.
+- Hybrid is the default: Surya detection, optional whitespace-recall and text-layer-recall supplements, VLM OCR, DP alignment, optional refine, optional post-processing, embed.
 - Dense hybrid pages use per-box OCR. `dense_mode="auto"` switches when box count exceeds `dense_threshold`.
 - Grounded OCR uses `grounded_backend=` and skips Surya, DP alignment, and refine.
 
@@ -112,6 +112,8 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/core/evaluation.py` | Local evaluation metric helpers (lightweight, for processor result scoring) |
 | `src/omniscribe/core/docx_writer.py` | Markdown → `.docx` converter for the docx export route |
 | `src/omniscribe/core/aligner.py` | Surya detection and DP alignment |
+| `src/omniscribe/core/text_recall.py` | Whitespace recall booster — pixel-statistics text-line candidates merged into Surya detection on the hybrid path; `OMNISCRIBE_WHITESPACE_RECALL` kill switch, INFO run summary, fail-open per page |
+| `src/omniscribe/core/text_layer_recall.py` | Text-layer recall source — recovers lines Surya missed from a digital PDF's embedded text layer (second box source, merged after the whitespace booster); `OMNISCRIBE_TEXT_LAYER_RECALL` kill switch, INFO run summary, fail-open per page; strict no-op for scans and image inputs |
 | `src/omniscribe/core/ocr/` | OpenAI/Anthropic/Ollama multi-format client, prompts, limits, filters, and resilience (retry + circuit breaker) |
 | `src/omniscribe/core/ocr_quality/` | OCR Quality Trust Layer (watermark, script detector, hallucination guard, Platt scaling calibration, trust scorer, orchestrator) |
 | `src/omniscribe/core/transcription/` | Speech-to-text audio transcription engines (local & OpenAI-compatible API backends) |
@@ -141,7 +143,8 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/api/routers/artifacts.py` | Token-bound artifact download routes (text, metadata, exports) |
 | `src/omniscribe/api/routers/translation.py` | Synchronous and async translation routes |
 | `src/omniscribe/api/routers/extraction.py` | `POST /api/extract` and `POST /api/export/*` routes |
-| `src/omniscribe/api/routers/state.py` | Module-level singletons (`text_artifacts`, `metadata_artifacts`, `export_artifacts`, `job_history`, `progress_service`) |
+| `src/omniscribe/api/routers/state.py` | Module-level singletons (`text_artifacts`, `metadata_artifacts`, `export_artifacts`, `job_history`, `progress_service`) — `backend` is the canonical access path; the seven module-level aliases mirror `state.backend.*` |
+| `src/omniscribe/api/services/state_backend.py` | `StateBackend` runtime-checkable Protocol + `LocalStateBackend` (in-memory, default) + `build_state_backend(settings)` factory. The factory is the single boundary that fails loud on an unknown `OMNISCRIBE_STATE_BACKEND` value |
 | `src/omniscribe/api/routers/common.py` | Shared router helpers (`_stable_server_error`, `_extract_bearer_token`, `_path_exists`) |
 | `src/omniscribe/api/schemas/requests.py` | `ConfigUpdate`, `ProcessSettings`, `TranslationRequest`, `ExtractionRequest`, `ExtractionTemplate`, `DocumentExportRequest`, `DocumentExportFormat`, `ExportDocxRequest`; enums: `PipelineMode`, `DenseMode`, `SpellcheckMode`, `DocumentProcessorName` |
 | `src/omniscribe/api/services/provider_manager.py` | `ProviderManager` service — provider templates, env-var discovery, disk persistence, and active provider switching |
@@ -150,6 +153,8 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/api/services/security_middleware.py` | ASGI middlewares wired by `server.create_app()`: `BearerAuthMiddleware` (constant-time `secrets.compare_digest`), `MaxUploadSizeMiddleware` (rejects on `Content-Length`), `RateLimitMiddleware` (per-IP 60s sliding window, in-memory). WebSocket handshake auth is still enforced per-channel in `routers/websocket.py` |
 | `src/omniscribe/api/services/artifacts.py` | `TextArtifactStore`, `PageText`, `TextArtifactHandle`, opaque id / token primitives |
 | `src/omniscribe/api/services/jobs.py` | `JobHistory`, `JobRecord`, `JobStatus` |
+| `src/omniscribe/api/services/state_backend_redis.py` | `RedisStateBackend` (opt-in; requires `OMNISCRIBE_STATE_BACKEND=redis` + a Redis server) — Redis-backed artifact metadata + job history for horizontal scaling across multiple uvicorn workers |
+| `src/omniscribe/api/services/state_backend_sqlite.py` | `SQLiteStateBackend` (opt-in; requires `OMNISCRIBE_STATE_BACKEND=sqlite`) — single-file persistent state for the local-first deployment shape. WAL-mode SQLite file (default `<artifact_dir>/omniscribe-state.db`; override with `OMNISCRIBE_STATE_DB_PATH`) holds the three artifact tables + jobs table; `ProgressService` / `GlossaryLibrary` / `OCRJobQueue` remain in-memory because they reference live channels |
 | `src/omniscribe/api/services/progress.py` | `ProgressService`, `ProgressChannel`, stage weights |
 | `src/omniscribe/api/services/document_metadata.py` | Token-bound metadata report artifacts for optional document processor outputs |
 | `src/omniscribe/api/services/document_exports.py` | Token-bound document export artifacts |
@@ -188,11 +193,13 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 - **Docker**: `Dockerfile` builds a `python:3.12-slim` runtime with the `web` and `async-translation` extras. `compose.yaml` runs `api` + `redis` by default; add `--profile async` to also start a Celery worker. Image exposes port 8000; bind `LLM_API_BASE` to `http://host.docker.internal:1234/v1` to talk to a host-side LM Studio.
 - **Pre-commit**: `.pre-commit-config.yaml` runs ruff (check + format), mypy, and `uv-lock` on every commit. Enable with `uv tool run pre-commit install` after cloning.
 - **Nightly slow tests**: `.github/workflows/nightly.yml` runs `pytest -m slow` at 03:00 UTC with cached HF Hub snapshots, catching Surya-path regressions the fast tier skips.
+- **OCR system-role gating**: some models (notably OlmOCR-2 / OlmOCR) were RL-trained on a single user-role turn with the canonical OlmOCR page prompt and reject a layered system role. `omniscribe.core.ocr.prompts.model_supports_system_role` is the single source of truth — the canonical OLMOCR page prompt is also always sent as a pure user message even on models that *do* support system role. When adding a new call site that emits OCR prompts, route through `_resolve_page_system` / `_resolve_crop_system` (or `select_system_message` for crop / dual-engine / correction) rather than hand-rolling a system role.
+- **Progress WebSocket cross-loop marshalling**: `ConnectionManager.send` records each channel's accept loop on `connect` and marshals any foreign-loop send back onto it. **All writes to the underlying uvicorn WebSocket must go through `manager.send(...)` from any non-accept loop** — uvicorn's wsproto state machine is not safe to drive from two threads / loops at once, and concurrent writes interleave bytes on the wire (browser sees mangled JSON, truncated frames, `Invalid frame header`). The regression test is `test_ws_send_from_foreign_event_loop_is_marshaled_to_accept_loop`; if you find yourself bypassing the manager to call `ws.send_text` / `ws.send_json` directly, that test is the contract you're breaking.
 
 ## Known Tech Debt
 
-- `/api/process` runs the full OCR pipeline synchronously on the uvicorn worker (no background task queue on the default path); long jobs block other requests on the same worker.
-- Job/artifact state is in-memory only (`api/routers/state.py` singletons) — restarts lose history; no horizontal scaling.
+- `/api/process` runs the full OCR pipeline synchronously on the uvicorn worker (no background task queue on the default path); long jobs block other requests on the same worker. The async path ships already — `POST /api/process/async` returns `202 + job_id` immediately and the single-worker `OCRJobQueue` (in `api/services/ocr_jobs.py`) drains jobs sequentially. The workstation UI gained an "Async processing" toggle in Phase D2 that lets users opt into the async path; the result PDF is fetched from `GET /api/jobs/{job_id}/result` once the job reaches `status: "complete"`. The async queue is still in-memory (dies on restart) and single-worker — true multi-worker / crash-safe dispatch needs a Celery task that mirrors the translation pattern in `api/tasks.py`.
+- Job/artifact state is in-memory by default (`api/routers/state.py` singletons). Two opt-in persistent backends ship now: `OMNISCRIBE_STATE_BACKEND=sqlite` (single-file, local-first; see `state_backend_sqlite.py`) and `OMNISCRIBE_STATE_BACKEND=redis` (multi-worker; see `state_backend_redis.py`). All three implementations satisfy the `StateBackend` Protocol so call sites are unchanged. `ProgressService` / `GlossaryLibrary` / `OCRJobQueue` stay in-memory by design — they reference live WebSocket channels / RAG index state and cannot meaningfully be persisted.
 - `pages_structured` legacy dict is still the working format inside `HybridEngine`; `DocumentResult` is built at finalize. The output boundary now supports the lossless rich path (`DocumentResultWriter`), but intermediate stages still convert.
 - `dense.pdf` and `notes.pdf` ground-truth fixtures are bootstrapped from hybrid output (regression baseline, not absolute quality).
 - `surya-ocr 0.17.x` imports `requests` in `surya/common/s3.py` without declaring it. `pyproject.toml` includes a `requests>=2.31` workaround dependency; track for cleanup once `surya-ocr` updates upstream.
@@ -229,4 +236,4 @@ survive into the post-scout roadmap) live in
 - [DEPLOYMENT.md](DEPLOYMENT.md) — local / LAN / public-internet deployment profiles
 - [SECURITY.md](SECURITY.md) — threat model, hardening checklist, vulnerability disclosure
 
-_Last updated: 2026-08-14_
+_Last updated: 2026-08-16_

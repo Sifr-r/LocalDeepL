@@ -229,3 +229,190 @@ async def test_shared_client_reused_across_calls() -> None:
 
     assert c1 is c2, "shared client must be reused across calls"
     await multi_format_client.aclose_shared_client()
+
+
+async def test_openai_system_prompt_prepended_to_messages(
+    openai_config: ProviderConfig,
+) -> None:
+    """When system_prompt is set on complete_vlm_prompt, the OpenAI
+    payload must contain a system-role entry at index 0, then the user
+    entry at index 1. When unset (None), the user entry stays at index 0
+    to preserve backward compatibility with existing test assertions
+    and any third-party OpenAI-compatible servers that don't accept a
+    system role.
+    """
+    expected_resp = {"choices": [{"message": {"content": "ok"}}]}
+
+    async def mock_post(url: str, json: dict, headers: dict, **kwargs):
+        assert json["messages"][0]["role"] == "system"
+        assert json["messages"][0]["content"] == "You are a careful OCR engine."
+        assert json["messages"][1]["role"] == "user"
+        return httpx.Response(200, json=expected_resp)
+
+    with patch("httpx.AsyncClient.post", side_effect=mock_post):
+        await complete_vlm_prompt(
+            openai_config,
+            prompt="OCR this",
+            image_base64="aW1hZ2VfZGF0YQ==",
+            system_prompt="You are a careful OCR engine.",
+        )
+
+
+async def test_openai_no_system_prompt_keeps_user_at_index_zero(
+    openai_config: ProviderConfig,
+) -> None:
+    """Backward-compat guard: with no system_prompt, the user role
+    stays at index 0 so existing model clients and the canonical
+    OlmOCR-2 page path (which depends on user-only distribution) keep
+    working unchanged.
+    """
+    expected_resp = {"choices": [{"message": {"content": "ok"}}]}
+    seen: dict = {}
+
+    async def mock_post(url: str, json: dict, headers: dict, **kwargs):
+        seen["messages"] = json["messages"]
+        return httpx.Response(200, json=expected_resp)
+
+    with patch("httpx.AsyncClient.post", side_effect=mock_post):
+        await complete_vlm_prompt(
+            openai_config,
+            prompt="OCR this",
+            image_base64="aW1hZ2VfZGF0YQ==",
+        )
+
+    assert seen["messages"][0]["role"] == "user"
+    assert all(m["role"] != "system" for m in seen["messages"])
+
+
+async def test_anthropic_system_prompt_prepended(
+    anthropic_config: ProviderConfig,
+) -> None:
+    expected_resp = {"content": [{"type": "text", "text": "ok"}]}
+
+    async def mock_post(url: str, json: dict, headers: dict, **kwargs):
+        assert json["messages"][0]["role"] == "system"
+        assert json["messages"][0]["content"] == "be precise"
+        assert json["messages"][1]["role"] == "user"
+        assert json["messages"][1]["content"][0]["type"] == "image"
+        return httpx.Response(200, json=expected_resp)
+
+    with patch("httpx.AsyncClient.post", side_effect=mock_post):
+        await complete_vlm_prompt(
+            anthropic_config,
+            prompt="OCR this",
+            image_base64="aW1hZ2VfZGF0YQ==",
+            system_prompt="be precise",
+        )
+
+
+async def test_ollama_system_prompt_prepended(
+    ollama_config: ProviderConfig,
+) -> None:
+    expected_resp = {"message": {"content": "ok"}}
+
+    async def mock_post(url: str, json: dict, headers: dict, **kwargs):
+        assert json["messages"][0]["role"] == "system"
+        assert json["messages"][0]["content"] == "stay terse"
+        assert json["messages"][1]["role"] == "user"
+        assert json["messages"][1]["images"] == ["aW1hZ2VfZGF0YQ=="]
+        return httpx.Response(200, json=expected_resp)
+
+    with patch("httpx.AsyncClient.post", side_effect=mock_post):
+        await complete_vlm_prompt(
+            ollama_config,
+            prompt="Read image",
+            image_base64="aW1hZ2VfZGF0YQ==",
+            system_prompt="stay terse",
+        )
+
+
+async def test_call_llm_passes_system_prompt_through() -> None:
+    """``call_llm`` is the entry point used by the OCR / translation /
+    extraction call sites. Confirm system_prompt flows from there
+    through to the wire payload.
+    """
+    expected_resp = {"choices": [{"message": {"content": "ok"}}]}
+    seen: dict = {}
+
+    async def mock_post(url: str, json: dict, headers: dict, **kwargs):
+        seen["messages"] = json["messages"]
+        return httpx.Response(200, json=expected_resp)
+
+    with patch("httpx.AsyncClient.post", side_effect=mock_post):
+        await call_llm(
+            api_base="http://localhost:1234/v1",
+            api_key="key",
+            model="gpt-4o",
+            system_prompt="system role content",
+            messages=[{"role": "user", "content": "user role content"}],
+        )
+
+    assert seen["messages"][0]["role"] == "system"
+    assert seen["messages"][0]["content"] == "system role content"
+    assert seen["messages"][1]["role"] == "user"
+
+
+async def test_call_llm_drops_system_role_from_messages() -> None:
+    """A ``role: system`` entry inside the ``messages`` list is
+    silently dropped. The explicit ``system_prompt`` parameter is
+    the single source of truth for the system role — if you want
+    one, pass it as a parameter, not as a messages-list entry.
+
+    This used to extract the system role from the messages list
+    and use it as a fallback. That path had no production caller
+    and created two ways to do the same thing; we removed it
+    so the explicit parameter is unambiguous.
+    """
+    expected_resp = {"choices": [{"message": {"content": "ok"}}]}
+    seen: dict = {}
+
+    async def mock_post(url: str, json: dict, headers: dict, **kwargs):
+        seen["messages"] = json["messages"]
+        return httpx.Response(200, json=expected_resp)
+
+    with patch("httpx.AsyncClient.post", side_effect=mock_post):
+        await call_llm(
+            api_base="http://localhost:1234/v1",
+            api_key="key",
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "I am the system role"},
+                {"role": "user", "content": "user content here"},
+            ],
+        )
+
+    # Only the user message survives — no system role leaks onto
+    # the wire because the caller didn't use the explicit parameter.
+    assert all(m["role"] != "system" for m in seen["messages"])
+    assert seen["messages"][0]["role"] == "user"
+    assert seen["messages"][0]["content"] == "user content here"
+
+
+async def test_call_llm_explicit_system_prompt_overrides_messages_system() -> None:
+    """When both forms are set, the explicit ``system_prompt``
+    parameter wins and the system entry inside ``messages`` is dropped
+    (single-sourced, to prevent accidental double-system messages on
+    the wire).
+    """
+    expected_resp = {"choices": [{"message": {"content": "ok"}}]}
+    seen: dict = {}
+
+    async def mock_post(url: str, json: dict, headers: dict, **kwargs):
+        seen["messages"] = json["messages"]
+        return httpx.Response(200, json=expected_resp)
+
+    with patch("httpx.AsyncClient.post", side_effect=mock_post):
+        await call_llm(
+            api_base="http://localhost:1234/v1",
+            api_key="key",
+            model="gpt-4o",
+            system_prompt="explicit",
+            messages=[
+                {"role": "system", "content": "from-messages"},
+                {"role": "user", "content": "user content"},
+            ],
+        )
+
+    system_msgs = [m for m in seen["messages"] if m["role"] == "system"]
+    assert len(system_msgs) == 1
+    assert system_msgs[0]["content"] == "explicit"

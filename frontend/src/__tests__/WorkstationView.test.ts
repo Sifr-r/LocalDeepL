@@ -10,12 +10,18 @@ const {
   disconnectMock,
   requestCancelMock,
   processOcrMock,
+  processOcrAsyncMock,
+  getOcrStatusMock,
+  getOcrResultMock,
   pushToastMock
 } = vi.hoisted(() => ({
   connectMock: vi.fn(),
   disconnectMock: vi.fn(),
   requestCancelMock: vi.fn().mockResolvedValue(undefined),
   processOcrMock: vi.fn(),
+  processOcrAsyncMock: vi.fn(),
+  getOcrStatusMock: vi.fn(),
+  getOcrResultMock: vi.fn(),
   pushToastMock: vi.fn()
 }));
 
@@ -81,7 +87,10 @@ vi.mock('../lib/stores/appStore', () => {
 });
 
 vi.mock('../lib/api/endpoints', () => ({
-  processOcr: processOcrMock
+  processOcr: processOcrMock,
+  processOcrAsync: processOcrAsyncMock,
+  getOcrStatus: getOcrStatusMock,
+  getOcrResult: getOcrResultMock
 }));
 
 // ``pdfjs-dist`` ships an ESM worker bootstrap that tries to dynamically
@@ -286,5 +295,52 @@ describe('WorkstationView', () => {
       });
     });
     expect(docs.trustSummary).toEqual(trustSummary);
+  });
+
+  it('submits via /api/process/async, polls status, downloads result when use_async is on', async () => {
+    // Switch the config store to async mode for this test.
+    const mocked = await import('../lib/stores/appStore');
+    const { configStore } = mocked as unknown as {
+      configStore: { set: (v: unknown) => void; update: (fn: (c: Record<string, unknown>) => Record<string, unknown>) => void };
+    };
+    configStore.update((c) => ({ ...c, use_async: true }));
+
+    processOcrAsyncMock.mockResolvedValueOnce({ job_id: 'job_async_1', status: 'pending' });
+    getOcrStatusMock.mockResolvedValueOnce({
+      job_id: 'job_async_1',
+      filename: 'test.pdf',
+      status: 'complete',
+      created_at: 0,
+      text_artifact_id: 'aid_async_1',
+      text_artifact_token: 'tok_async_1'
+    });
+    // ``getOcrResult`` must return a Blob-shaped object that ``pdfPreview.loadResponse``
+    // accepts. The mock implementation only needs to be a non-null object.
+    getOcrResultMock.mockResolvedValueOnce({ size: 1024 } as unknown as Blob);
+
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    mount(WorkstationView, { target });
+    await tick();
+
+    const fileInput = document.getElementById('file-input') as HTMLInputElement;
+    const file = makeFile();
+    setInputFiles(fileInput, [file]);
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+    const startBtn = document.getElementById('start-btn') as HTMLButtonElement;
+    await waitForButtonEnabled(startBtn);
+    startBtn.click();
+    // Let the 2-second poll cadence elapse at least once.
+    await new Promise((r) => setTimeout(r, 30));
+    await new Promise((r) => setTimeout(r, 30));
+    await new Promise((r) => setTimeout(r, 30));
+    await tick();
+
+    expect(processOcrAsyncMock).toHaveBeenCalledTimes(1);
+    expect(getOcrStatusMock).toHaveBeenCalledWith('job_async_1');
+    expect(getOcrResultMock).toHaveBeenCalledWith('job_async_1', 'tok_async_1');
+    // The sync path must NOT have been called.
+    expect(processOcrMock).not.toHaveBeenCalled();
   });
 });

@@ -10,11 +10,26 @@ invisible text layer.
 ## Pipeline
 
 ```text
-PDF/image -> raster pages -> Surya detection -> sparse: full-page VLM OCR -> DP alignment --+
-                                      \-> dense: per-box VLM OCR ---------------------------+-> optional refine -> optional quality repair -> optional post-process -> DocumentResult -> optional document processors -> searchable PDF
+PDF/image -> raster pages -> Surya detection (+ optional whitespace + text-layer recall) -> sparse: full-page VLM OCR -> DP alignment --+
+                                      \-> dense: per-box VLM OCR -----------------------------------------------------------------------+-> optional refine -> optional quality repair -> optional post-process -> DocumentResult -> optional document processors -> searchable PDF
 
 PDF/image -> grounded bbox-native VLM OCR -> optional quality repair -> optional post-process -> DocumentResult -> optional document processors -> searchable PDF
 ```
+
+The optional whitespace-recall pass (`core/text_recall.py`, hybrid path only,
+default on, kill switch `OMNISCRIBE_WHITESPACE_RECALL`) merges conservative
+pixel-statistics text-line candidates into the Surya boxes before dense
+selection, OCR, and alignment. It fails open: any per-page error degrades to
+the original Surya boxes.
+
+The optional text-layer-recall pass (`core/text_layer_recall.py`, hybrid path
+only, default on, kill switch `OMNISCRIBE_TEXT_LAYER_RECALL`) is the second
+recall source: on digital PDFs it recovers lines Surya missed straight from
+the embedded text layer (`page.get_text("words")`), merged after the
+whitespace booster so its dedup sees both sources' extras. Scanned pages and
+image inputs have no text layer, making the pass a strict no-op there. Same
+fail-open contract: any per-page error degrades to the boxes merged so far,
+and each pass logs one INFO run summary per job.
 
 ## Directory Responsibilities
 
@@ -34,6 +49,8 @@ PDF/image -> grounded bbox-native VLM OCR -> optional quality repair -> optional
 | `src/omniscribe/core/processors/layout.py` | `LayoutEnrichmentProcessor` — page region and layout role labeling (headers, footers, page numbers, figures, captions) |
 | `src/omniscribe/core/processors/table.py` | `TableExtractionProcessor` — table grid structure extraction from aligned text blocks |
 | `src/omniscribe/core/aligner.py` | Surya detection and DP text-to-box alignment |
+| `src/omniscribe/core/text_recall.py` | Whitespace recall booster — pixel-statistics text-line candidates merged into Surya detection on the hybrid path (`OMNISCRIBE_WHITESPACE_RECALL` kill switch, INFO run summary) |
+| `src/omniscribe/core/text_layer_recall.py` | Text-layer recall source — lines Surya missed recovered from a digital PDF's embedded text layer; second box source merged after the whitespace booster (`OMNISCRIBE_TEXT_LAYER_RECALL` kill switch, INFO run summary, no-op for scans/images) |
 | `src/omniscribe/core/ocr/` | OpenAI/Anthropic/Ollama multi-format VLM client, prompts, response filters, limits, exceptions, retry, and circuit-breaker resilience; `__init__.py` preserves the public import surface |
 | `src/omniscribe/core/ocr_quality/` | OCR Quality Trust Layer — watermark detection, script detection, hallucination guard, Platt scaling calibration fit/eval, trust scorer, and orchestrator |
 | `src/omniscribe/core/transcription/` | Speech-to-text audio transcription engines (local Whisper & OpenAI-compatible API backends) |
@@ -112,7 +129,7 @@ PDF/image -> grounded bbox-native VLM OCR -> optional quality repair -> optional
 | `scripts/` | Repo-root developer utilities: confidence eval, fixture builder, debug/inspection scripts, bbox visualizers |
 | `examples/` | Sample PDFs and images used by `tests/`, `test_ui.py`, and the confidence scripts |
 | `tests/` | Unit, integration, security, and slow-path validation |
-| `install.bat` / `install.ps1` | Windows one-click install: `uv` bootstrap, `uv sync --extra web`, Docker check, Desktop/Start-Menu shortcuts, post-install verification |
+| `install.bat` / `install.ps1` | Windows one-click install: `uv` bootstrap, `uv sync --extra web --extra preprocessing`, Docker check, Desktop/Start-Menu shortcuts, post-install verification |
 | `start_app.vbs` / `stop_app.bat` | Windows hidden-start and stop-launcher for Redis + Celery + uvicorn; `start_app.vbs` writes a timestamped append log to `start_app.log` |
 | `test_ui.py` | Headless Playwright smoke test against the running web UI |
 

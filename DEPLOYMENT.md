@@ -12,7 +12,7 @@ You're running OmniScribe on your own laptop. You open the browser to
 `http://localhost:8000` and use it.
 
 ```bash
-uv sync --extra web
+uv sync --extra web --extra preprocessing
 uv run omniscribe-server --port 8000
 ```
 
@@ -155,7 +155,7 @@ infrastructure. To use `/api/translate/async` (which survives worker
 restarts and exposes long-poll status):
 
 ```bash
-uv sync --extra async-translation --extra memory
+uv sync --extra web --extra preprocessing --extra async-translation --extra memory
 docker compose --profile async up -d   # adds the celery worker
 ```
 

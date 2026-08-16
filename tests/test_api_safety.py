@@ -660,7 +660,15 @@ def test_websocket_manager_emits_warning_flag():
         async def accept(self):
             pass
 
+        async def send_text(self, text: str) -> None:
+            # NDJSON wire format: parse the JSON line and store the
+            # dict so the existing assertion keeps working.
+            import json
+
+            sent_frames.append(json.loads(text))
+
         async def send_json(self, payload):
+            # Kept for any path that bypasses the NDJSON envelope.
             sent_frames.append(payload)
 
     async def _drive():

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from omniscribe.core.entity_memory import EntityMemory
 from omniscribe.core.glossary import Glossary
+from omniscribe.utils.prompt_safety import sanitize_prompt_input
 
 if TYPE_CHECKING:
     from omniscribe.core.block_tree import BlockNode, DocumentTree
@@ -189,6 +190,11 @@ async def _translate_node(
 def _build_translation_prompt(
     *, text: str, target_language: str, context: str, block_type: str
 ) -> str:
+    # Sanitize the user-controlled text once. Control characters and
+    # boundary markers are the realistic injection vectors for a
+    # document that already passed OCR; sanitize rather than escape
+    # per-injection-site so a future block type can't forget.
+    safe_text = sanitize_prompt_input(text)
     type_hint = ""
     if block_type == "section_header":
         type_hint = (
@@ -204,7 +210,7 @@ def _build_translation_prompt(
             f"Translate only the natural-language parts of the following code block. "
             f"Do not translate code identifiers, function names, or string literals. "
             f"Target language: {target_language}.\n\n"
-            f"```\n{text}\n```\n"
+            f"```\n{safe_text}\n```\n"
         )
     elif block_type == "key_value":
         type_hint = (
@@ -218,14 +224,14 @@ def _build_translation_prompt(
             f"Preserve formatting, line breaks, and any inline runs.\n"
             f"{type_hint}\n"
             f"{context}\n\n"
-            f"SOURCE:\n{text}\n\n"
+            f"SOURCE:\n{safe_text}\n\n"
             f"TRANSLATION ({target_language}):"
         )
     return (
         f"Translate the following text into {target_language}. "
         f"Preserve formatting, line breaks, and any inline runs.\n"
         f"{type_hint}\n"
-        f"SOURCE:\n{text}\n\n"
+        f"SOURCE:\n{safe_text}\n\n"
         f"TRANSLATION ({target_language}):"
     )
 

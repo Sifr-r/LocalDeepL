@@ -88,14 +88,25 @@ class RuntimeSettings(BaseSettings):
         default="redis://localhost:6379/0", validation_alias="REDIS_URL"
     )
 
-    # State backend selector (audit A-3). ``memory`` keeps every store in
-    # the local process; ``redis`` offloads artifact metadata and job
-    # history to a Redis instance using :class:`RedisStateBackend`. The
-    # selector is resolved at startup by
-    # :mod:`omniscribe.api.routers.state`; an unknown value fails fast.
+    # State backend selector (audit A-3). ``memory`` keeps every
+    # store in the local process; ``redis`` offloads artifact
+    # metadata and job history to a Redis instance using
+    # :class:`RedisStateBackend`; ``sqlite`` persists to a single
+    # SQLite file via :class:`SQLiteStateBackend` (no Redis
+    # required — the local-first default when persistence matters
+    # but horizontal scaling does not). The selector is resolved
+    # at startup by :mod:`omniscribe.api.routers.state`; an
+    # unknown value fails fast.
     state_backend: str = Field(
         default="memory",
         validation_alias="OMNISCRIBE_STATE_BACKEND",
+    )
+    # Path to the SQLite file when ``state_backend="sqlite"``.
+    # Defaults to ``<artifact_dir>/omniscribe-state.db``; only
+    # consulted by :class:`SQLiteStateBackend`.
+    state_db_path: str | None = Field(
+        default=None,
+        validation_alias="OMNISCRIBE_STATE_DB_PATH",
     )
 
     allow_ssrf_local: bool = Field(default=False, validation_alias="ALLOW_SSRF_LOCAL")
@@ -191,9 +202,10 @@ class RuntimeSettings(BaseSettings):
         if value is None or (isinstance(value, str) and not value.strip()):
             return "memory"
         normalized = str(value).strip().lower()
-        if normalized not in {"memory", "redis"}:
+        if normalized not in {"memory", "redis", "sqlite"}:
             raise ValueError(
-                f"OMNISCRIBE_STATE_BACKEND must be 'memory' or 'redis', got {value!r}"
+                f"OMNISCRIBE_STATE_BACKEND must be 'memory', 'redis', or 'sqlite', "
+                f"got {value!r}"
             )
         return normalized
 

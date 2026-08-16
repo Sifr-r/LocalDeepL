@@ -9,10 +9,15 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 from omniscribe.core.llm_client import call_llm
+from omniscribe.core.llm_temperatures import (
+    TEMPERATURE_EVALUATION,
+    TEMPERATURE_TRANSLATION,
+)
 from omniscribe.core.translation_config import (
     AsyncTranslationUnavailable,
     TranslationSettings,
 )
+from omniscribe.utils.prompt_safety import sanitize_prompt_input
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +26,34 @@ logger = logging.getLogger(__name__)
 _DEFAULT_CHROMA_DB = Path(__file__).resolve().parent.parent.parent / "chroma_db"
 CHROMA_COLLECTION_NAME = "lanes_lexicon"
 EMBEDDING_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
+
+# Bumped when the user-facing prompt body changes.
+PROMPT_VERSION = "2026-08-15.v1"
+
+# System role companion for the async translation loop. Same
+# "preserve URLs / identifiers / brand names" guard the sync path
+# uses, kept in one place.
+TRANSLATION_SYSTEM_MESSAGE = (
+    "You are a precise document translator. "
+    "Preserve all markdown formatting, headings, lists, tables, and "
+    "mathematical formulas exactly as they appear in the source. "
+    "Do not translate URLs, code identifiers, file paths, or brand / "
+    "product names — keep them unchanged. "
+    "Do not add introductory or concluding comments, explanations, or "
+    "meta-commentary. Output only the direct translation."
+)
+
+# System role companion for the LLM-as-judge evaluation step. The
+# rubric itself stays in the user turn; this just sets the role and
+# tells the judge what failure modes matter.
+EVALUATION_SYSTEM_MESSAGE = (
+    "You are a translation quality evaluator. "
+    "Score the translation on a 0.0-1.0 scale using the supplied "
+    "rubric. Flag terminology that doesn't match the supplied "
+    "glossary, untranslated source-language fragments, and any "
+    "URLs / identifiers / brand names that were altered. "
+    "Respond with a single JSON object and nothing else."
+)
 
 # --- Quality thresholds ----------------------------------------------------
 # Defaults for the translate/evaluate loop. The runtime values come from
@@ -201,7 +234,10 @@ async def translate_node(state: TranslationState) -> dict[str, str | int]:
             f"Previous translation had issues. Feedback: {state['feedback']}\nPlease fix these issues.\n\n"
         )
 
-    prompt_parts.append(f"SOURCE TEXT:\n{state['source_chunk']}")
+    # The source chunk is user-controlled (uploaded document text that
+    # already passed OCR). Sanitize at the prompt boundary so a crafted
+    # chunk can't truncate the controlled prompt region above.
+    prompt_parts.append(f"SOURCE TEXT:\n{sanitize_prompt_input(state['source_chunk'])}")
     prompt = "".join(prompt_parts)
 
     try:
@@ -209,7 +245,8 @@ async def translate_node(state: TranslationState) -> dict[str, str | int]:
             model=settings.model,
             api_base=settings.api_base,
             api_key=settings.api_key,
-            temperature=0.3,
+            temperature=TEMPERATURE_TRANSLATION,
+            system_prompt=TRANSLATION_SYSTEM_MESSAGE,
             messages=[{"role": "user", "content": prompt}],
         )
     except Exception as e:
@@ -309,7 +346,8 @@ async def _llm_evaluate_translation(state: TranslationState) -> tuple[float, str
         model=settings.model,
         api_base=settings.api_base,
         api_key=settings.api_key,
-        temperature=0.1,
+        temperature=TEMPERATURE_EVALUATION,
+        system_prompt=EVALUATION_SYSTEM_MESSAGE,
         messages=[{"role": "user", "content": prompt}],
     )
 
@@ -331,30 +369,54 @@ def build_evaluation_prompt(
 
     Anything else falls back to ``(1.0, "")`` in :func:`parse_evaluation_response`.
     """
+    # Both ``source`` and ``translation`` are user-controlled: ``source``
+    # was the document text uploaded to /api/translate, and ``translation``
+    # is whatever the upstream translation step produced (which itself
+    # came from sanitized input but we don't assume the judge LLM is
+    # the same model). Sanitize both at the prompt boundary.
+    safe_source = sanitize_prompt_input(source)
+    safe_translation = sanitize_prompt_input(translation)
+
     parts: list[str] = [
         "You are a translation quality evaluator. Score the translation below "
         f"into {target_language} on a 0.0-1.0 scale and explain any issues.\n",
         "SCORING RUBRIC:\n"
-        "- 1.0: Faithful translation. No meaning loss. All glossary terms used correctly.\n"
-        "- 0.7-0.9: Minor issues (one term missing, slight stylistic differences).\n"
-        "- 0.4-0.6: Moderate issues (multiple terms missing, awkward phrasing, partial translation).\n"
-        "- 0.0-0.3: Major issues (untranslated, mistranslated, missing significant content).\n",
+        "- 1.0: Faithful translation. No meaning loss. All glossary terms used correctly. "
+        "URLs, identifiers, brand / product names preserved unchanged.\n"
+        "- 0.7-0.9: Minor issues (one term missing, slight stylistic differences, "
+        "one URL or identifier mishandled but still recognizable).\n"
+        "- 0.4-0.6: Moderate issues (multiple terms missing, awkward phrasing, "
+        "partial translation, untranslated source-language fragments left in, "
+        "several URLs / identifiers altered).\n"
+        "- 0.0-0.3: Major issues (untranslated, mistranslated, missing significant "
+        "content, glossary terms substituted with wrong ones).\n",
     ]
 
     if rag_context:
         parts.append(
-            "GLOSSARY (use these terms correctly):\n"
+            "GLOSSARY (use these terms correctly; flag any deviation in `issues`):\n"
             + "\n".join(f"- {term}" for term in rag_context)
             + "\n"
         )
+
+    parts.append(
+        "FAILURE MODES TO FLAG IN `issues`:\n"
+        "- Any glossary term in the SOURCE replaced with a different word in the translation.\n"
+        "- Any URL, code identifier, file path, or brand / product name in the SOURCE\n"
+        "  that was altered, transliterated, translated, or removed in the translation.\n"
+        "- Any non-trivial source-language fragment (sentence, clause, or label) left\n"
+        "  untranslated in the target-language output.\n"
+        "- Any content present in the SOURCE that is missing from the translation.\n"
+        "- Any hallucinated content in the translation that has no source equivalent.\n",
+    )
 
     parts.append(
         "OUTPUT FORMAT:\n"
         "Respond with a single JSON object and nothing else:\n"
         '{"score": <float 0.0-1.0>, "feedback": "<one sentence>", '
         '"issues": ["<issue>", ...]}\n\n'
-        f"SOURCE:\n{source}\n\n"
-        f"TRANSLATION ({target_language}):\n{translation}"
+        f"SOURCE:\n{safe_source}\n\n"
+        f"TRANSLATION ({target_language}):\n{safe_translation}"
     )
 
     return "".join(parts)

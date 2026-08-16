@@ -28,8 +28,18 @@ def test_state_backend_setting_normalises_case_and_whitespace():
 
 
 def test_state_backend_setting_rejects_unknown():
-    with pytest.raises(ValueError, match="must be 'memory' or 'redis'"):
-        load_settings(OMNISCRIBE_STATE_BACKEND="sqlite")
+    with pytest.raises(ValueError, match="must be 'memory', 'redis', or 'sqlite'"):
+        load_settings(OMNISCRIBE_STATE_BACKEND="nosql")
+
+
+def test_state_backend_setting_accepts_sqlite():
+    settings = load_settings(OMNISCRIBE_STATE_BACKEND="sqlite")
+    assert settings.state_backend == "sqlite"
+
+
+def test_state_backend_setting_normalises_sqlite_case_and_whitespace():
+    settings = load_settings(OMNISCRIBE_STATE_BACKEND="  SQLITE  ")
+    assert settings.state_backend == "sqlite"
 
 
 def test_state_backend_setting_empty_falls_back_to_memory(
@@ -85,7 +95,7 @@ def test_build_state_backend_rejects_unknown_value(tmp_path: Any):
     """A programmatically injected bad name fails at the factory boundary."""
 
     class _FakeSettings:
-        state_backend = "sqlite"
+        state_backend = "nosql"
         redis_url = "redis://localhost:6379/0"
         artifact_directory = tmp_path
 

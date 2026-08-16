@@ -155,4 +155,17 @@
       />
     </div>
   </div>
+
+  <div>
+    <p class="form-label">Submission</p>
+    <div id="submission-group" class="surface-inset p-3">
+      <Toggle
+        id="toggle-async"
+        label="Async processing"
+        description="Submit to /api/process/async and poll for the result. Long jobs no longer block the upload response; the result PDF is fetched when the worker finishes."
+        checked={Boolean($configStore.use_async)}
+        on:click={() => configStore.update((c) => ({ ...c, use_async: !c.use_async }))}
+      />
+    </div>
+  </div>
 </div>

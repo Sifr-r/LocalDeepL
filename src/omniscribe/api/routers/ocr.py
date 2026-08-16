@@ -247,7 +247,15 @@ async def _run_ocr_pipeline(
 
     def _warning_bridge(page_index, exc):
         """Thread-safe warning callback (runs in the worker thread)."""
-        warning_message = f"OCR failed for page {page_index + 1}: {type(exc).__name__}"
+        # Include the full exception message, not just the class name, so
+        # users can diagnose without opening the server log. Capped at
+        # 500 chars to keep the WebSocket frame small.
+        exc_msg = str(exc).strip() or "(no message)"
+        if len(exc_msg) > 500:
+            exc_msg = exc_msg[:497] + "..."
+        warning_message = (
+            f"OCR failed for page {page_index + 1}: {type(exc).__name__}: {exc_msg}"
+        )
         fut = asyncio.run_coroutine_threadsafe(
             manager.send_progress(
                 progress_target,

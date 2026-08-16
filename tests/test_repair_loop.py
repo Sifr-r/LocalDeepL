@@ -83,6 +83,13 @@ class _FakeWebSocket:
     async def send_json(self, payload: dict) -> None:
         self.sent.append(payload)
 
+    async def send_text(self, text: str) -> None:
+        # NDJSON wire format: parse the JSON line and store the dict
+        # so existing test assertions keep working.
+        import json
+
+        self.sent.append(json.loads(text))
+
 
 def _manager_with_channel() -> tuple[ConnectionManager, _FakeWebSocket]:
     manager = ConnectionManager()

@@ -36,6 +36,7 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
 from omniscribe.core.llm_client import call_llm
+from omniscribe.core.llm_temperatures import TEMPERATURE_OCR
 from omniscribe.core.ocr.client import (
     _format_model_not_loaded,
     _list_loaded_model_ids,
@@ -56,6 +57,8 @@ from omniscribe.core.ocr.prompts import (
     fill_correction_page,
     fill_dual_engine_crop,
     fill_dual_engine_page,
+    model_supports_system_role,
+    select_system_message,
 )
 from omniscribe.core.ocr.resilience import (
     CircuitBreakerRegistry,
@@ -170,27 +173,42 @@ class OCRProcessor:
         stuck emitting the same line over and over) is detected and clipped
         — this happens occasionally on dense handwritten pages even with
         max_tokens set, and pollutes downstream alignment with junk lines.
+
+        The OLMOCR-2 page prompt is sent as a plain user message with no
+        system role — the model was RL-trained on this exact distribution
+        and a system message would shift it. Dual-engine and correction
+        paths wrap a system message around their user turns.
         """
         if binarize:
             image_base64 = await asyncio.to_thread(
                 self._apply_adaptive_threshold, image_base64
             )
 
-        prompt = (
-            HANDWRITING_PAGE_PROMPT
-            if getattr(self, "handwriting_mode", False)
-            else OLMOCR_PAGE_PROMPT
-        )
+        handwriting_mode = getattr(self, "handwriting_mode", False)
+        prompt = HANDWRITING_PAGE_PROMPT if handwriting_mode else OLMOCR_PAGE_PROMPT
         if dual_engine:
             draft = await asyncio.to_thread(self._get_tesseract_draft, image_base64)
             if draft:
                 prompt = fill_dual_engine_page(draft)
+
+        # OlmOCR-2 page path: pure user message, no system role. Every
+        # other page path gets a system message — *unless* the active
+        # model is one of the system-role-excluded families
+        # (e.g. allenai/olmocr-2-7b), in which case we drop the system
+        # message entirely to keep the model's RL-trained distribution
+        # intact.
+        page_system = self._resolve_page_system(
+            prompt=prompt,
+            handwriting_mode=handwriting_mode,
+            dual_engine=dual_engine,
+        )
 
         text = await self._chat(
             prompt,
             image_base64,
             timeout=self.PAGE_TIMEOUT_S,
             max_tokens=self.PAGE_MAX_TOKENS,
+            system_prompt=page_system,
         )
         if not text:
             return []
@@ -202,6 +220,11 @@ class OCRProcessor:
                 image_base64,
                 timeout=self.PAGE_TIMEOUT_S,
                 max_tokens=self.PAGE_MAX_TOKENS,
+                system_prompt=self._resolve_page_system(
+                    prompt=correction_prompt,
+                    handwriting_mode=handwriting_mode,
+                    dual_engine=dual_engine,
+                ),
             )
             if not text:
                 return []
@@ -244,6 +267,10 @@ class OCRProcessor:
                     image_base64,
                     timeout=self.CROP_TIMEOUT_S,
                     max_tokens=self.CROP_MAX_TOKENS,
+                    system_prompt=self._resolve_crop_system(
+                        handwriting_mode=getattr(self, "handwriting_mode", False),
+                        dual_engine=True,
+                    ),
                 )
                 vlm_corrected_body = _strip_yaml_front_matter(vlm_corrected)
                 vlm_corrected_res = " ".join(
@@ -283,21 +310,23 @@ class OCRProcessor:
                 self._apply_adaptive_threshold, image_base64
             )
 
-        prompt = (
-            HANDWRITING_CROP_PROMPT
-            if getattr(self, "handwriting_mode", False)
-            else CROP_PROMPT
-        )
+        handwriting_mode = getattr(self, "handwriting_mode", False)
+        prompt = HANDWRITING_CROP_PROMPT if handwriting_mode else CROP_PROMPT
         if dual_engine:
             draft = await asyncio.to_thread(self._get_tesseract_draft, image_base64)
             if draft:
                 prompt = fill_dual_engine_crop(draft)
+
+        crop_system = self._resolve_crop_system(
+            handwriting_mode=handwriting_mode, dual_engine=dual_engine
+        )
 
         text = await self._chat(
             prompt,
             image_base64,
             timeout=self.CROP_TIMEOUT_S,
             max_tokens=self.CROP_MAX_TOKENS,
+            system_prompt=crop_system,
         )
         if not text:
             return ""
@@ -309,6 +338,7 @@ class OCRProcessor:
                 image_base64,
                 timeout=self.CROP_TIMEOUT_S,
                 max_tokens=self.CROP_MAX_TOKENS,
+                system_prompt=crop_system,
             )
             if not text:
                 return ""
@@ -338,6 +368,7 @@ class OCRProcessor:
         *,
         timeout: float,
         max_tokens: int,
+        system_prompt: str | None = None,
     ) -> str:
         """Call the VLM with retry-on-transient and circuit-breaker protection.
 
@@ -347,6 +378,10 @@ class OCRProcessor:
         immediately. The circuit breaker counts consecutive failures
         (across all attempts) and fails fast once the endpoint is deemed
         down, so a dead server doesn't serialize N page-timeouts.
+
+        ``system_prompt``: when set, sent as a separate system-role
+        message. The OLMOCR-2 page path leaves this ``None`` to keep
+        the model's RL-trained distribution intact.
         """
         await self.circuit_breaker.check()
 
@@ -362,9 +397,10 @@ class OCRProcessor:
                     model=self.model,
                     api_base=self.api_base,
                     api_key=self.api_key,
-                    temperature=0.1,
+                    temperature=TEMPERATURE_OCR,
                     max_tokens=max_tokens,
                     timeout=timeout,
+                    system_prompt=system_prompt,
                     messages=[
                         {
                             "role": "user",
@@ -440,6 +476,52 @@ class OCRProcessor:
             return draft.strip()
         except Exception:
             return ""
+
+    def _resolve_page_system(
+        self,
+        *,
+        prompt: str,
+        handwriting_mode: bool,
+        dual_engine: bool,
+    ) -> str | None:
+        """Pick the right system message for a page-level OCR call.
+
+        Two reasons to return ``None``:
+
+        1. The canonical OLMOCR-2 page prompt is in use — the model
+           was RL-trained on it as a pure user message; a system role
+           would shift the distribution.
+        2. The active model is one of the system-role-excluded
+           families (currently just OlmOCR). Sending a system role
+           causes LM Studio + OlmOCR-2 to misbehave on the crop /
+           handwriting / dual-engine paths.
+        """
+        if prompt is OLMOCR_PAGE_PROMPT:
+            return None
+        if not model_supports_system_role(self.model):
+            return None
+        return select_system_message(
+            handwriting_mode=handwriting_mode, dual_engine=dual_engine
+        )
+
+    def _resolve_crop_system(
+        self,
+        *,
+        handwriting_mode: bool,
+        dual_engine: bool,
+    ) -> str | None:
+        """Pick the right system message for a crop-level OCR call.
+
+        Crop calls never use the canonical OLMOCR page prompt, so
+        reason #1 from :meth:`_resolve_page_system` doesn't apply.
+        The only thing that can suppress the system message here
+        is the active model being system-role-excluded.
+        """
+        if not model_supports_system_role(self.model):
+            return None
+        return select_system_message(
+            handwriting_mode=handwriting_mode, dual_engine=dual_engine
+        )
 
     def _apply_adaptive_threshold(self, image_base64: str) -> str:
         """Adaptive mean threshold using only PIL (no OpenCV dependency).

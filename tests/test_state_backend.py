@@ -69,3 +69,11 @@ def test_redis_state_backend_satisfies_protocol_without_connecting(tmp_path):
     backend = RedisStateBackend("redis://localhost:6379/0", artifact_dir=tmp_path)
     assert isinstance(backend, StateBackend)
     assert isinstance(backend.ocr_job_queue, OCRJobQueue)
+
+
+def test_sqlite_state_backend_satisfies_protocol_without_connecting(tmp_path):
+    from omniscribe.api.services.state_backend_sqlite import SQLiteStateBackend
+
+    backend = SQLiteStateBackend(db_path=tmp_path / "state.db", artifact_dir=tmp_path)
+    assert isinstance(backend, StateBackend)
+    assert isinstance(backend.ocr_job_queue, OCRJobQueue)

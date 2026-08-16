@@ -79,11 +79,25 @@ export function connectProgressSocket(
       };
 
       socket.onmessage = (event: MessageEvent) => {
-        try {
-          const frame = JSON.parse(event.data) as WebSocketEnvelope;
-          onMessage(frame);
-        } catch (err) {
-          console.error('Failed to parse WebSocket envelope:', err, event.data);
+        // The server sends line-delimited JSON: every text frame is
+        // one or more JSON objects, each terminated by a single '\n'.
+        // The delimiter lets us recover from a transport that
+        // accidentally concatenates multiple frames into one text
+        // payload (a real failure mode we've seen when the OCR
+        // pipeline fires many progress / block_retry events in a
+        // burst). Parse each line independently so a single bad
+        // frame doesn't take down the whole stream.
+        const raw = typeof event.data === 'string' ? event.data : '';
+        if (!raw) return;
+        const lines = raw.split('\n');
+        for (const line of lines) {
+          if (!line) continue;
+          try {
+            const frame = JSON.parse(line) as WebSocketEnvelope;
+            onMessage(frame);
+          } catch (err) {
+            console.error('Failed to parse WebSocket envelope:', err, line);
+          }
         }
       };
 

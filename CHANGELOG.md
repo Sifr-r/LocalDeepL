@@ -8,6 +8,25 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Whitespace recall booster (default ON)** — the hybrid pipeline now
+  runs a secondary whitespace-masking discovery pass
+  (`core/text_recall.py`) after Surya layout detection: binarize +
+  invert, horizontal dilation, connected-component filtering, dedup
+  against Surya boxes. Recovered line boxes join detection before
+  dense selection, OCR, and DP alignment. Disable per process with
+  `OMNISCRIBE_WHITESPACE_RECALL=0` (also `false`/`no`/`off`).
+  Requires the `preprocessing` extra (`opencv-python-headless`);
+  without it the pass logs one warning and stays inert.
+
+### Changed
+
+- **Install paths now include the `preprocessing` extra** —
+  `Dockerfile`, `install.ps1`, `Makefile setup`, and the README /
+  AGENTS.md / DEPLOYMENT.md quick-start commands all add
+  `--extra preprocessing`, so the default-on whitespace recall pass
+  is actually active in Docker and one-click installs instead of
+  silently degrading. `tests/test_repo_hygiene.py` pins the new flag.
+
 - **Windows quick-start robustness (install.ps1 + start_app.vbs)** —
   the Windows one-click launcher no longer silently fails on
   re-launch. `start_app.vbs` now writes a timestamped log to
@@ -62,6 +81,162 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   - New WebSocket frames: `block_retry`, `block_revised` and
     `quality_summary` (job-level repaired-block count);
     progress accounting reuses the `refine` stage band.
+- **System / user role split in OCR + translation prompts** —
+  the canonical OLMOCR page prompt stays a pure user message
+  (it was RL-trained on that exact string, so a system role
+  would shift the distribution). For other code paths we now
+  emit the role identity in a system message so the model
+  doesn't have to compete with task content. New constants
+  in `omniscribe.core.ocr.prompts`:
+  - `OCR_SYSTEM_MESSAGE`, `HANDWRITING_OCR_SYSTEM_MESSAGE`,
+    `DUAL_ENGINE_OCR_SYSTEM_MESSAGE`,
+    `GROUNDED_OCR_SYSTEM_MESSAGE` — identity + diacritics
+    emphasis + "no invent / emit empty on blank" guards.
+  - `TRANSLATION_SYSTEM_MESSAGE` (sync + async paths) and
+    `EVALUATION_SYSTEM_MESSAGE` (LLM-as-judge step) — both
+    pin the "preserve URLs / identifiers / brand names"
+    rule that local models otherwise helpfully mistranslate.
+  - `EXTRACTION_SYSTEM_MESSAGE` — pins the
+    "use `null` for missing fields, no markdown fences" rules
+    so the model doesn't invent plausible values for absent
+    fields.
+  - `model_supports_system_role(model_name)` — the narrow
+    OlmOCR exclusion list (see also the bug fix above).
+  - `select_system_message(...)` and the new
+    `_resolve_page_system` / `_resolve_crop_system` helpers
+    on `OCRProcessor` are the single source of truth for
+    "which system message goes with which call site".
+  - `PROMPT_VERSION = "2026-08-15.v1"` per file. Bump on any
+    user-visible prompt body change so log / runtime
+    telemetry can correlate regressions with a known version.
+  - The OlmOCR-2 canonical page-prompt body is **unchanged**
+    and is locked by
+    `test_olmocr_prompt_is_canonical` — the model was
+    RL-trained on that exact string and any drift would cost
+    OCR quality. The system-role plumbing is wired around
+    it, never into it.
+- **`scripts/debug_websocket_frames.py`** — Python WebSocket
+  diagnostic that opens a real progress session, prints every
+  incoming text frame as hex + UTF-8 + parse result, and
+  writes a JSONL log. Use when a future regression looks
+  like "mangled JSON in the browser console": run this
+  alongside a real OCR job, and if every frame arrives with
+  `parse_ok=true` the corruption is browser-side; if frames
+  are already mangled on the wire, the issue is uvicorn /
+  websockets.
+- **Centralized LLM temperature constants**
+  (`omniscribe.core.llm_temperatures`) — six named
+  constants (`TEMPERATURE_OCR`, `TEMPERATURE_GROUNDED`,
+  `TEMPERATURE_EXTRACTION`, `TEMPERATURE_EVALUATION`,
+  `TEMPERATURE_TRANSLATION`,
+  `TEMPERATURE_TRANSLATION_TREE`) replace the literal
+  floats previously scattered across `core/ocr/processor.py`,
+  `core/grounded/prompted.py`, `core/translation.py`,
+  `core/translation_tree.py`, and `api/services/ai.py`. Each
+  constant has a per-call-site rationale (e.g. OCR=0.1 lets
+  the model escape degenerate-token traps without injecting
+  real randomness; TRANSLATION_TREE=0.2 because the sliding
+  window already constrains per-chunk variation). The
+  values are deliberately **not** env-overridable — they
+  are deployment shape, not user preference. Adding a new
+  call site should pick an existing constant that matches
+  the tolerance rather than invent a new float. (Issue 7)
+- **Translation evaluator rubric + failure-mode block** —
+  `build_evaluation_prompt` in `core/translation.py` now
+  ships a 0–10 rubric (meaning preservation, terminology
+  fidelity, fluency, format) and an explicit failure-mode
+  checklist ("do not reward code-switching mid-sentence",
+  "do not award a pass when brand names are silently
+  translated") so the LLM-as-judge step stops rewarding the
+  exact behaviors the rubric was supposed to penalize. (Issue 9)
+- **Prompt input sanitization at the LLM boundary** —
+  `sanitize_prompt_input` from `omniscribe.utils.prompt_safety`
+  is now applied to every user-controlled text segment that
+  reaches a prompt body: translation source chunks, structured
+  extraction document text + custom prompt, evaluation
+  source + translation, dual-engine / correction OCR draft
+  text, and the translation tree chunk input. The helper
+  neutralizes control characters and the prompt-injection
+  markers most likely to make the model ignore the system
+  message; it is applied at the prompt-builder level so a
+  future call site can't forget. (Issue 11)
+- **`_extract_prompt_and_image` simplified to a 2-tuple**
+  — `core.ocr.multi_format_client._extract_prompt_and_image`
+  dropped the legacy `(prompt, system_prompt, image)`
+  3-tuple shape and the system-from-`messages` branch. The
+  single source of truth for the system role is now the
+  explicit `system_prompt` parameter on `call_llm` (routed
+  through `model_supports_system_role` for OlmOCR family
+  models). The previous dual path was not exercised by any
+  production caller. (Issue 12)
+- **SQLite-backed `StateBackend` (opt-in persistent
+  state)** — `OMNISCRIBE_STATE_BACKEND=sqlite` activates
+  :class:`SQLiteStateBackend` in
+  `omniscribe.api.services.state_backend_sqlite`. Sits
+  alongside the existing :class:`LocalStateBackend`
+  (`memory`, the default — no behaviour change) and
+  :class:`RedisStateBackend` (`redis`, requires a Redis
+  server). The SQLite backend writes the three artifact
+  tables (`omniscribe_artifact_text`,
+  `omniscribe_artifact_meta`, `omniscribe_artifact_export`)
+  and the jobs table (`omniscribe_jobs`) to a single
+  SQLite file (default
+  ``$OMNISCRIBE_ARTIFACT_DIR/omniscribe-state.db``;
+  override with `OMNISCRIBE_STATE_DB_PATH`); artifact
+  files themselves still live on disk in the existing
+  artifact directory. WAL mode is enabled for concurrent
+  readers + crash safety; the cap on
+  `max_jobs` / `max_entries` is enforced via SQL on every
+  write. `ProgressService`, `GlossaryLibrary`, and
+  `OCRJobQueue` remain in-memory because they reference
+  live WebSocket channels / RAG index state — see the
+  module docstring for the "recovery boundary"
+  explanation. The backend is the persistent opt-in for
+  the local-first deployment shape; the Redis backend
+  remains the answer when you need horizontal scaling
+  across multiple uvicorn workers. New test module
+  `tests/test_state_backend_sqlite.py` covers
+  round-trip persistence, TTL/overflow enforcement, the
+  per-instance monotonic counter for job ordering, and
+  factory wiring.
+- **`GET /api/jobs/{job_id}/result` — async OCR result
+  download** — completes the existing async path. The
+  route streams the searchable PDF produced by
+  `POST /api/process/async` once the job reaches
+  `status: "complete"`, gated by the per-job
+  `text_artifact_token` from
+  `GET /api/process/status/{job_id}` (constant-time
+  compared via `secrets.compare_digest`; the token is
+  passed via `?token=`, `Authorization: Bearer`, or
+  `X-Artifact-Token` — matching the legacy artifact
+  convention). 404 when the job is unknown, 409 when
+  it exists but is not yet complete (PENDING /
+  PROCESSING / ERROR), 403 when the token is missing
+  or wrong, 410 when the on-disk PDF has been swept
+  but the record is still in memory. The
+  Content-Disposition header is `<stem>.ocr.pdf` (the
+  trailing `.pdf` is stripped from the source filename
+  to avoid `report.pdf.ocr.pdf`). The existing async
+  endpoint was already shipping but lacked a
+  result-download path; this is the user-visible
+  completion of the async loop. (Phase D2.1)
+- **Async OCR mode toggle in the workstation UI** —
+  `ProcessSettings.svelte` gains an "Async processing"
+  toggle (off by default — no behaviour change for
+  existing users). When on, `WorkstationView` submits
+  to `POST /api/process/async` and polls
+  `GET /api/process/status/{job_id}` every 2 seconds
+  (max 1000 attempts ≈ 33 min, well under the 24h
+  record retention) until the job reaches a terminal
+  state, then fetches the result PDF via
+  `GET /api/jobs/{job_id}/result`. The toggle is
+  purely UI state (`configStore.use_async`) — it is
+  not synced to the server config because it is a
+  deployment preference, not a runtime knob. The
+  frontend `ocrApi` gains `processAsync` and
+  `getResult`; the `apiClient` route-bearer table
+  learns `/api/jobs` so the per-route OCR bearer is
+  attached. (Phase D2.2 + D2.3)
 
 ### Fixed
 
@@ -194,9 +369,54 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 - `test_websocket_handler.py` covers `/api/progress/cancel`
   session-token binding (missing header, wrong token, unbound
   channel, success). (T2)
+- **WebSocket byte-level corruption on the progress channel** —
+  block-level senders (`block_complete`, `block_retry`,
+  `block_revised`, `quality_summary`) are awaited on the
+  `/api/process` worker's own event loop while progress and
+  warning frames are emitted on the main uvicorn loop. uvicorn's
+  wsproto state machine is not safe to drive from two threads
+  at once, so writes interleaved byte-by-byte on the wire and
+  the browser saw mangled JSON fragments ("pairge" where the
+  real text was "progress", "4tage" instead of "stage"),
+  truncated frames (`{"status":"OCR (1/1)","percent` cut off
+  mid-string), and ultimately `Invalid frame header` as the
+  wsproto receiver gave up. `ConnectionManager.send` now records
+  each channel's accept loop on `connect` and marshals any
+  foreign-loop send back onto it via
+  `asyncio.run_coroutine_threadsafe` + `asyncio.wrap_future`,
+  so all socket writes are serialized through the loop that
+  accepted the socket. The fix preserves caller ordering and
+  backpressure. Regression-locked by
+  `test_ws_send_from_foreign_event_loop_is_marshaled_to_accept_loop`,
+  which fails against the old single-loop send path because
+  `send_threads[0]` would no longer match `accept_thread["id"]`.
+- **OCR fail on LM Studio + OlmOCR-2** — adding a system-role
+  message on top of the canonical OlmOCR page prompt shifted
+  the model's input distribution (OlmOCR-2 was RL-trained on
+  the prompt as a single user turn). Symptom was
+  `LLMCallError: ...` for every crop / handwriting / dual-engine
+  call. `omniscribe.core.ocr.prompts` now exports
+  `model_supports_system_role(model_name)`, which returns
+  `False` for any model whose name contains `olmocr` (case-
+  insensitive) — the only family we have direct field evidence
+  for. `OCRProcessor._resolve_page_system` /
+  `_resolve_crop_system` and the grounded backend's
+  `_call_with_retry` gate on this helper, so the canonical
+  page prompt stays a pure user message for OlmOCR-2 *and*
+  every crop / handwriting / dual-engine call also drops the
+  system role. Other models (Qwen, future additions) keep
+  the system role. The list is intentionally narrow — see the
+  helper's docstring for the "extend cautiously" rationale.
 
 ### Changed
 
+- `_extract_prompt_and_image` now returns a 2-tuple
+  `(prompt, image)`; the legacy `system_prompt` slot and the
+  system-from-`messages` branch are removed. Callers must
+  pass the system role via the explicit `system_prompt`
+  parameter on `call_llm` (which routes through
+  `model_supports_system_role` for OlmOCR family models).
+  (Issue 12)
 - `process_pdf` / `process_pdf_async` share a single
   `_prepare_process_request` helper (was duplicated ~60 lines of
   validation/upload). (Q1)
@@ -207,6 +427,35 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 - Synchronous `json.load` / `open` calls inside async handlers are
   wrapped in `asyncio.to_thread`. (Q4)
 - `_convert_pages` tautology guard simplified to `if pages:`. (Q5)
+- **Progress WebSocket wire format is now line-delimited JSON
+  (NDJSON)** — every frame the server sends is one JSON object
+  followed by a single `\n`. The frontend's `socket.onmessage`
+  in `frontend/src/lib/api/websocket.ts` splits on `\n` and
+  parses each line independently. Belt-and-suspenders: even
+  if a future bug ever concatenates two ASGI frames into one
+  text payload, the client can split and recover. The
+  previous single-JSON-per-frame path is still valid (a
+  trailing `\n` is harmless to `JSON.parse`).
+- **`/api/process` warning text now includes the underlying
+  exception message**, capped at 500 chars. Old format was
+  `OCR failed for page N: LLMCallError`; new format is
+  `OCR failed for page N: LLMCallError: <underlying message>`.
+  Saves a round-trip to the server log when a warning fires.
+- **OCR + grounded prompt bodies slimmed** — the diacritics
+  emphasis and "no invent" guard text moved out of the user
+  prompt and into the system message (which the model
+  processes separately from the per-task instructions).
+  Visible side effects: the OlmOCR-2 page prompt and the
+  ground-truth OlmOCR page body are unchanged, but the crop
+  / handwriting / dual-engine / correction crops no longer
+  carry the long diacritics preamble in their user turn.
+- **Grounded default prompt gained two extra lines**:
+  "for multi-column layouts, read each column top-to-bottom
+  before moving to the next column" and "if the page
+  contains no readable text, emit an empty JSON array `[]`".
+  Both are belt-and-suspenders against the historical
+  line-collapsing and "single placeholder element" failure
+  modes on dense / blank pages.
 - `_ai_error_response` deduplicated to one definition in
   `common.py`. (Q6)
 - TrOCR dual-engine fallback catches `LLMCallError` separately so

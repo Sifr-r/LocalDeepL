@@ -22,13 +22,26 @@ def _extract_prompt_and_image(
     prompt: str | None = None,
     image_base64: str | None = None,
 ) -> tuple[str, str | None]:
-    """Parse messages payload or direct args into text prompt and optional image_base64 string."""
+    """Parse messages payload or direct args into ``(text_prompt, image_base64)``.
+
+    Only user-role entries contribute to the returned prompt and image;
+    system-role entries (if any) are silently dropped — the explicit
+    ``system_prompt`` parameter on :func:`call_llm` is the only
+    supported way to attach a system message. Centralizing the
+    system role there means a single parameter is the source of
+    truth, instead of having to reason about every possible
+    messages-list shape the caller might construct.
+    """
     extracted_prompt = prompt or ""
     extracted_image = image_base64
 
     if messages:
         p_parts: list[str] = []
         for msg in messages:
+            if msg.get("role") == "system":
+                # Drop system entries — use the ``system_prompt``
+                # parameter on call_llm / call_vlm instead.
+                continue
             content = msg.get("content")
             if isinstance(content, str):
                 p_parts.append(content)
@@ -75,6 +88,7 @@ async def call_vlm(
     max_tokens: int = 4096,
     timeout: float | None = None,
     provider_config: ProviderConfig | None = None,
+    system_prompt: str | None = None,
 ) -> str:
     """Make an asynchronous VLM call using active ProviderManager configuration or explicit settings."""
     if provider_config is None:
@@ -103,6 +117,7 @@ async def call_vlm(
         temperature=temperature,
         max_tokens=max_tokens,
         timeout=timeout,
+        system_prompt=system_prompt,
     )
 
 
@@ -118,8 +133,16 @@ async def call_llm(
     max_tokens: int | None = None,
     timeout: float | None = None,
     provider_config: ProviderConfig | None = None,
+    system_prompt: str | None = None,
 ) -> str:
-    """Make an asynchronous LLM chat completion call using active ProviderManager config."""
+    """Make an asynchronous LLM chat completion call using active ProviderManager config.
+
+    The system role is set exclusively through the ``system_prompt``
+    parameter — system entries inside ``messages`` are dropped by
+    :func:`_extract_prompt_and_image`. OlmOCR-2's RL-trained prompt
+    string stays a pure user message, so most callers leave
+    ``system_prompt=None`` and pass the prompt as user content.
+    """
     extracted_prompt, extracted_image = _extract_prompt_and_image(
         messages=messages,
         prompt=prompt,
@@ -152,6 +175,7 @@ async def call_llm(
         temperature=temperature,
         max_tokens=max_tokens or 4096,
         timeout=timeout,
+        system_prompt=system_prompt,
     )
 
 
