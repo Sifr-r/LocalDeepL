@@ -72,13 +72,32 @@ Function GetOrCreateRedisPassword()
         f.Close
         Exit Function
     End If
-    Dim chars, i, pwd
-    chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    pwd = ""
-    Randomize
-    For i = 1 To 32
-        pwd = pwd & Mid(chars, Int(Rnd() * Len(chars)) + 1, 1)
-    Next
+    ' Generate a 24-character password using the .NET CSPRNG. The previous
+    ' implementation used the VBScript built-in PRNG (an LCG seeded by the
+    ' wall clock), which is guessable in shared environments even with
+    ' --requirepass set on the Redis side. sh.Exec is the portable form for
+    ' capturing stdout; sh.Run only returns the exit code.
+    Dim pwd, psCmd, exec, attempts
+    psCmd = "powershell -NoProfile -NonInteractive -Command ""$alphabet = [char[]]'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'; $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create(); $bytes = New-Object byte[] 24; $rng.GetBytes($bytes); -join ($bytes | ForEach-Object { $alphabet[[int]($_ % 62)] })"""
+    Set exec = objShell.Exec(psCmd)
+    attempts = 0
+    Do While exec.Status = 0
+        WScript.Sleep POLL_INTERVAL_MS
+        attempts = attempts + 1
+        If attempts >= MAX_POLL_ATTEMPTS Then
+            LogMsg "FATAL: PowerShell CSPRNG did not exit within " & (MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS / 1000) & "s; aborting launcher"
+            logFile.Close
+            WScript.Quit 1
+        End If
+    Loop
+    pwd = exec.StdOut.ReadAll()
+    pwd = Replace(pwd, vbCrLf, "")
+    pwd = Replace(pwd, vbLf, "")
+    If Len(pwd) <> 24 Then
+        LogMsg "FATAL: PowerShell CSPRNG returned unexpected length " & Len(pwd) & " (expected 24); aborting launcher"
+        logFile.Close
+        WScript.Quit 1
+    End If
     Dim nf : Set nf = objFSO.OpenTextFile(passPath, 2, True)
     nf.WriteLine pwd
     nf.Close
