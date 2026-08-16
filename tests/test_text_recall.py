@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 
+import numpy as np
 import pytest
 from PIL import Image, ImageDraw
 
@@ -281,4 +282,80 @@ class TestWhitespaceRecallOptionsFromEnv:
     ) -> None:
         monkeypatch.setenv("OMNISCRIBE_WHITESPACE_RECALL", "banana")
         assert WhitespaceRecallOptions.from_env().enabled is True
+
+
+def test_photo_edge_page_returns_image_with_expected_shape() -> None:
+    """Pins the synthetic helper's output shape and line position.
+
+    The helper is consumed by ``test_photo_edge_passes_filters_as_known_limitation``
+    in this file. This test pins the helper's contract independently so a
+    regression in the helper is identifiable separately from a regression in
+    the booster.
+    """
+    img = _photo_edge_page(
+        line_height_px=14,
+        line_width_px=800,
+        density=0.40,
+    )
+    assert img.size == (1000, 1400)
+    # White background check: top-left pixel must be near-white.
+    assert img.getpixel((10, 10))[0] > 240
+    # The line sits at y = 0.5 * 1400 = 700. Inside the line region the
+    # pixel must be darker than the background. The pre-dilation density
+    # is 0.40, so on average 60% of pixels in the line are white and 40%
+    # are dark — sampling the center of the line should find a dark pixel
+    # at least once across 5 samples.
+    samples = [img.getpixel((200 + i * 100, 700)) for i in range(5)]
+    assert any(px[0] < 100 for px in samples), (
+        f"no dark pixel found in line region (samples={samples})"
+    )
+
+
+def _photo_edge_page(
+    *,
+    line_y_frac: float = 0.5,
+    line_height_px: int,
+    line_width_px: int,
+    density: float,
+    page_w: int = 1000,
+    page_h: int = 1400,
+) -> Image.Image:
+    """Return a white ``Image`` with one horizontal line at ``y = line_y_frac * page_h``.
+
+    The line has the given pixel height, width, and ink ``density``. The
+    density is the *pre-dilation* ink fraction inside the line rect, which
+    maps directly to the booster's ``_MIN_INK_DENSITY`` / ``_MAX_INK_DENSITY``
+    checks at ``src/omniscribe/core/text_recall.py:51-52``. Dilation in the
+    booster will inflate connectivity but the density check uses the
+    pre-dilation mask, so the asserted density must be the pre-dilation value.
+
+    The RNG is seeded deterministically from ``(line_height_px, density,
+    line_width_px)`` so the same parameters always produce the same image —
+    the test is reproducible and a regression in this helper is traceable.
+
+    Consumed by ``test_photo_edge_passes_filters_as_known_limitation`` to
+    produce a line-shape that exercises the booster's height + density
+    filters without needing a real photo or scanned page.
+    """
+    seed = int(line_height_px * 1_000_000 + int(density * 1000) * 1000 + line_width_px)
+    rng = np.random.default_rng(seed)
+
+    img = Image.new("RGB", (page_w, page_h), (255, 255, 255))
+    arr = np.array(img)
+
+    y_start = int(line_y_frac * page_h) - line_height_px // 2
+    y_end = y_start + line_height_px
+    x_start = (page_w - line_width_px) // 2
+    x_end = x_start + line_width_px
+
+    # Build the line as a random mask with the requested ink density.
+    line_pixels = arr[y_start:y_end, x_start:x_end]
+    mask_shape = line_pixels.shape[:2]
+    keep = rng.random(mask_shape) < density
+    # Ink pixels are dark; background pixels stay white.
+    line_pixels[keep] = (0, 0, 0)
+    line_pixels[~keep] = (255, 255, 255)
+    arr[y_start:y_end, x_start:x_end] = line_pixels
+
+    return Image.fromarray(arr)
 
