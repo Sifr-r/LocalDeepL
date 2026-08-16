@@ -1,8 +1,13 @@
 # Multi-stage Dockerfile for the OmniScribe web app.
 #
 # Two stages:
-#   1. ``runtime-base`` installs ``uv`` and the pinned dependency set.
-#   2. ``app`` copies the project source and runs the server.
+#   1. ``builder`` installs ``uv`` and syncs the pinned dependency set
+#      + the project itself into ``/app/.venv``.
+#   2. ``runtime`` copies ``/app/.venv`` from the builder; the final
+#      image has no uv toolchain, no build tools, and no build cache.
+#
+# Defense-in-depth: the runtime image runs as a non-root ``app`` user
+# (uid 1001) and binds the default web port 8000.
 #
 # Extras baked in: ``web`` (FastAPI / uvicorn) + ``async-translation``
 # (Celery + Redis + LangGraph) so the same image is usable for both the
@@ -14,12 +19,13 @@
 # CUDA major version. Out of scope for this template.
 
 # Pinned: 2026-08-16 to a verified Docker Hub OCI image-index digest for
-# library/python:3.12-slim. Lookup performed against
-# registry-1.docker.io/v2/library/python/manifests/3.12-slim
+# library/python:3.14-slim. Lookup performed against
+# registry-1.docker.io/v2/library/python/manifests/3.14-slim
 # (Content-Type: application/vnd.oci.image.index.v1+json,
 #  self-digest re-lookup consistent). Satisfies the digest-pinning
 # requirement in SECURITY.md (M7).
-FROM python:3.14-slim@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4 AS runtime-base
+# ---- builder stage ----
+FROM python:3.14-slim@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4 AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -31,38 +37,57 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # (audit P1-7): without it the build fetches whatever ``latest`` is,
 # a moving supply-chain target. Bump deliberately, in lockstep with
 # the developer toolchain.
+ARG UV_VERSION=0.11.16
 RUN apt-get update \
  && apt-get install -y --no-install-recommends curl ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
- && curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin UV_VERSION=0.11.16 sh
+ && curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin UV_VERSION=${UV_VERSION} sh \
+ && rm -rf /root/.cache
 
 WORKDIR /app
 
 # Copy dependency manifest first so the install layer is cacheable
 # independent of the source tree. ``--locked`` (audit P1-7) installs
 # exactly the committed uv.lock set instead of re-resolving.
-COPY pyproject.toml uv.lock ./
+# ``LICENSE`` and ``README.md`` are required by hatchling during the
+# project install (see ``pyproject.toml``: ``license = { file = "LICENSE" }``
+# and ``readme = "README.md"``).
+COPY pyproject.toml uv.lock LICENSE README.md ./
 RUN mkdir -p /app/src/omniscribe \
  && touch /app/src/omniscribe/__init__.py \
  && uv sync --locked --extra web --extra async-translation --extra preprocessing --no-install-project
 
 # Copy the project source and complete the install.
 COPY src ./src
-RUN uv sync --locked --extra web --extra async-translation --extra preprocessing
+RUN uv sync --locked --extra web --extra async-translation --extra preprocessing \
+ && rm -rf /root/.cache
+
+# ---- runtime stage ----
+FROM python:3.14-slim@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4 AS runtime
 
 # Drop root for runtime. The official Python slim image ships a
 # ``nonroot`` user, but we create our own so the path is stable.
-RUN groupadd --system app && useradd --system --gid app --uid 1001 app \
- && chown -R app:app /app
+# ``--system`` mirrors the pre-P1-7 user (uid 1001, no interactive
+# shell — the CMD is the long-running web server, not a login).
+RUN groupadd --system app && useradd --system --gid app --uid 1001 --no-create-home --shell /usr/sbin/nologin app
+
+WORKDIR /app
+
+# Copy the venv from the builder. The project is installed in the
+# venv as a regular (non-editable) install, so the source tree is
+# not strictly required at runtime; we still copy it for debugging
+# and so ``python -m omniscribe.server`` works even if the venv
+# metadata is lost.
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/pyproject.toml /app/uv.lock ./
+
+ENV PATH="/app/.venv/bin:$PATH"
+
+RUN chown -R app:app /app
 USER app
 
 EXPOSE 8000
-
-# Surface the uv-managed venv bin directory on PATH so the bare
-# ``omniscribe-server`` / ``celery`` entrypoints resolve at runtime
-# (uv installs to /app/.venv per UV_PROJECT_ENVIRONMENT above, but
-# does not add it to PATH for us).
-ENV PATH="/app/.venv/bin:$PATH"
 
 # Default: bind on all interfaces so the container is reachable from
 # the host on non-loopback adapters. Use ``--host 127.0.0.1`` when
