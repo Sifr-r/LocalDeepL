@@ -20,6 +20,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege: the fast tier only reads the repo and uploads
+# workflow artifacts (no extra scopes needed for either).
+permissions:
+  contents: read
+
 jobs:
   fast:
     name: pytest (py${{ matrix.python }})
@@ -29,9 +34,11 @@ jobs:
       matrix:
         python: ["3.11", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      # Action refs are SHA-pinned (audit P3-12); bump with
+      # `gh api repos/<owner>/<repo>/git/ref/tags/<tag>`.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
           cache: npm
@@ -45,7 +52,7 @@ jobs:
           npm test
           npm run build
 
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
         with:
           enable-cache: true
           python-version: ${{ matrix.python }}
@@ -66,13 +73,19 @@ jobs:
         run: uv run pytest -m "not slow" --cov=src/omniscribe --cov-report=term-missing --cov-report=xml -v
 
       - name: Run pip-audit vulnerability check
-        run: uv run pip-audit
+        # Keep in sync with `make audit` (Makefile): PYSEC-2026-311 /
+        # CVE-2026-45829 (chromadb server RCE) is risk-accepted — no
+        # patched release exists yet and neither vector is reachable in
+        # OmniScribe (embedded PersistentClient only, explicit
+        # embedding_function= everywhere). See the Makefile comment; drop
+        # the flag once chromadb ships a fixed release (>1.5.9).
+        run: uv run pip-audit --ignore-vuln PYSEC-2026-311
 
       - name: Generate CycloneDX SBOM
         run: uv run cyclonedx-py environment --output-format json --output-file sbom.json
 
       - name: Upload CycloneDX SBOM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sbom-py${{ matrix.python }}.json
           path: sbom.json

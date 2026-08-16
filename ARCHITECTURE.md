@@ -218,7 +218,7 @@ CORS respectively. Artifact IDs use a separate artifact token supplied through
 | `GET` / `DELETE` | `/api/jobs` | `jobs` | Recent completed-job history; `DELETE` clears history and text artifacts |
 | `POST` | `/api/progress/session` | `websocket` | Issue an opaque progress channel and session token |
 | `POST` | `/api/progress/cancel/{channel_id}` | `websocket` | Request cancellation for an active progress channel |
-| `WS` | `/ws/{channel_id}?token=...` | `websocket` | Token-bound progress stream; accepts `{"type":"cancel"}` inbound |
+| `WS` | `/ws/{channel_id}` | `websocket` | Token-bound progress stream; first inbound frame must be `{"type":"auth","session_token":...}`, then accepts `{"type":"cancel"}` |
 | `GET` | `/api/text/{artifact_id}` | `artifacts` | Text artifact; aliases: `/text/...` and `/api/artifacts/text/...` |
 | `GET` | `/api/metadata/{artifact_id}` | `artifacts` | Metadata artifact; aliases: `/metadata/...` and `/api/artifacts/metadata/...` |
 | `GET` | `/api/export/{artifact_id}` | `artifacts` | Export artifact; aliases: `/export/...` and `/api/artifacts/export/...` |
@@ -261,7 +261,9 @@ and extraction routers use the single-purpose `api/services/ai.py` service.
 Added the single-worker OCR queue to `LocalStateBackend`, wired
 its start/stop lifecycle to FastAPI lifespan, exposed async submit/status/cancel
 routes, and preserved cancellation as a terminal state when a runner winds down.
-The WebSocket contract is `/ws/{channel_id}?token=...`; progress sessions are
+The WebSocket contract is `/ws/{channel_id}`: the session token is
+presented in the first inbound frame (`{"type":"auth","session_token":...}`),
+never in the URL. Progress sessions are
 issued by `POST /api/progress/session`.
 
 | Area | Canonical route | Compatibility route |

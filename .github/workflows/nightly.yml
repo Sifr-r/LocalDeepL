@@ -21,6 +21,11 @@ concurrency:
   group: nightly
   cancel-in-progress: true
 
+# Least privilege: nightly jobs only read the repo and cache/upload
+# their own artifacts.
+permissions:
+  contents: read
+
 jobs:
   slow:
     name: pytest (py${{ matrix.python }}, slow tier)
@@ -30,9 +35,11 @@ jobs:
       matrix:
         python: ["3.12"]
     steps:
-      - uses: actions/checkout@v4
+      # Action refs are SHA-pinned (audit P3-12); bump with
+      # `gh api repos/<owner>/<repo>/git/ref/tags/<tag>`.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
         with:
           enable-cache: true
           python-version: ${{ matrix.python }}
@@ -41,7 +48,7 @@ jobs:
         run: uv sync --extra web --extra async-translation
 
       - name: Cache HF Hub snapshot
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cache/huggingface
@@ -57,12 +64,12 @@ jobs:
 
       - name: Upload results on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pytest-slow-results
           path: |
             .pytest_cache/v/cache/lastfailed
-          if-no-original-found: ignore
+          if-no-files-found: ignore
 
   calibration:
     name: pytest (py${{ matrix.python }}, calibration regression)
@@ -85,9 +92,11 @@ jobs:
       matrix:
         python: ["3.12"]
     steps:
-      - uses: actions/checkout@v4
+      # Action refs are SHA-pinned (audit P3-12); bump with
+      # `gh api repos/<owner>/<repo>/git/ref/tags/<tag>`.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
         with:
           enable-cache: true
           python-version: ${{ matrix.python }}
@@ -96,7 +105,7 @@ jobs:
         run: uv sync --extra web --extra async-translation
 
       - name: Cache HF Hub snapshot
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cache/huggingface
@@ -105,7 +114,7 @@ jobs:
             hf-surya-
 
       - name: Cache regression datasets
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             tests/fixtures/datasets/ocr_quality_full.json
@@ -115,21 +124,31 @@ jobs:
             regression-datasets-
 
       - name: Fetch regression datasets
-        # Idempotent: skips when already cached. No-op if the licence
-        # gates a download — the tests then skip cleanly and the job
-        # stays green.
+        # Idempotent: skips when already cached. The script exits 77
+        # (EX_NOPERM) while the license review gates the download —
+        # treated as a clean skip here. Any *other* non-zero exit is a
+        # genuine failure and must red-flag the job: the previous
+        # `|| true` swallowed real breakage and silently turned the
+        # regression gate into a no-op (audit P3-12).
         run: |
-          uv run python scripts/fetch_datasets.py --dataset ocr-quality || true
-          uv run python scripts/fetch_datasets.py --dataset kie-hvqa || true
+          set -euo pipefail
+          for ds in ocr-quality kie-hvqa; do
+            rc=0
+            uv run python scripts/fetch_datasets.py --dataset "$ds" || rc=$?
+            if [ "$rc" -ne 0 ] && [ "$rc" -ne 77 ]; then
+              echo "::error::fetch_datasets.py --dataset $ds exited $rc"
+              exit "$rc"
+            fi
+          done
 
       - name: Run slow_dataset regression tests
         run: uv run pytest -m slow_dataset --no-header -v
 
       - name: Upload results on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pytest-slow-dataset-results
           path: |
             .pytest_cache/v/cache/lastfailed
-          if-no-original-found: ignore
+          if-no-files-found: ignore

@@ -1,0 +1,53 @@
+# Keep the Docker build context small and secret-free (audit P1-7).
+# The Dockerfile only copies pyproject.toml, uv.lock, and src/ — but
+# without this file the whole repo (including .env and caches) is
+# shipped to the daemon as build context.
+
+# VCS and IDE
+.git/
+.gitignore
+.qoder/
+.claude/
+.cursorignore
+.idea/
+.vscode/
+
+# Python caches and virtualenvs
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+.fallow/
+dist/
+*.egg-info/
+
+# Frontend (not part of the Python image)
+frontend/
+
+# Local secrets and runtime state
+.env
+.env.*
+redis-password.txt
+start_app.log
+*.log
+
+# Agent / planning / audit scratch
+.autoplan/
+.mavis/
+.superpowers/
+docs/
+scratch/
+.minimax/
+.research/
+
+# Test assets not needed at runtime
+examples/
+tests/
+bug_repro_*.png
+
+# OS / editor leftovers
+.DS_Store
+Thumbs.db

@@ -7,6 +7,10 @@
 #   * ``redis``  - Broker + result backend for Celery. Always-on so
 #                  ``api`` can publish jobs even if no worker is up.
 #
+# ``api`` and ``redis`` carry no ``profiles:`` key on purpose: Compose
+# has no implicit default profile, so a ``profiles: ["default"]`` tag
+# would exclude them from a plain ``docker compose up`` entirely.
+#
 # Usage:
 #   docker compose up             # api + redis only
 #   docker compose --profile async up --build
@@ -25,6 +29,9 @@ services:
       # below targets the host network gateway that Docker Desktop
       # exposes the LM Studio server on.
       LLM_API_BASE: http://host.docker.internal:1234/v1
+      # Broker/backend for the async-translation and redis state paths.
+      # Password matches the redis service below (audit P1-6).
+      REDIS_URL: redis://:${REDIS_PASSWORD:-omniscribe-local-dev}@redis:6379/0
       # Recommended security defaults. See README "Security" section.
       OMNISCRIBE_MAX_UPLOAD_MB: "100"
       OMNISCRIBE_RATE_LIMIT_PER_MIN: "60"
@@ -36,13 +43,13 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
-    profiles: ["default"]
 
   worker:
     image: omniscribe:app
     command: ["celery", "-A", "omniscribe.api.tasks", "worker", "--loglevel=info", "--pool=solo"]
     environment:
       LLM_API_BASE: http://host.docker.internal:1234/v1
+      REDIS_URL: redis://:${REDIS_PASSWORD:-omniscribe-local-dev}@redis:6379/0
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -56,18 +63,22 @@ services:
     # ``AOF every second`` is the standard production trade-off; for a
     # single-host personal stack, ``--save ""`` (no snapshots) is fine
     # and avoids disk pressure. Override with command: when needed.
-    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    # ``--requirepass`` closes the unauthenticated-Redis hole (audit
+    # P1-6); override ``REDIS_PASSWORD`` in the environment or a
+    # ``.env`` file for anything beyond a personal workstation.
+    command: ["redis-server", "--appendonly", "no", "--save", "", "--requirepass", "${REDIS_PASSWORD:-omniscribe-local-dev}"]
+    # Loopback-only publish: api/worker reach redis over the compose
+    # network, so the host port is only for local inspection tools.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-omniscribe-local-dev}", "--no-auth-warning", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
     restart: unless-stopped
-    profiles: ["default", "async"]
 
 volumes:
   redis-data:

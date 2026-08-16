@@ -33,17 +33,29 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege top level; the semgrep job elevates only what the
+# SARIF upload needs (``security-events: write``). Without it the
+# upload step silently no-ops and findings never reach the Security tab.
+permissions:
+  contents: read
+
 jobs:
   semgrep:
     name: semgrep (OSS engine)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     # Container image is published by Semgrep and pre-pins the OSS
     # engine + rule packs; avoids a slow `pip install semgrep` step on
-    # every CI run.
+    # every CI run. Pinned to a version tag — `returntocorp/semgrep`
+    # is the stale org name and `:latest` is a supply-chain vector.
     container:
-      image: returntocorp/semgrep:latest
+      image: semgrep/semgrep:1.173.0
     steps:
-      - uses: actions/checkout@v4
+      # Action refs are SHA-pinned (audit P3-12); bump with
+      # `gh api repos/<owner>/<repo>/git/ref/tags/<tag>`.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Run Semgrep
         # `--error` makes the exit code non-zero on any finding so
@@ -62,7 +74,7 @@ jobs:
 
       - name: Upload SARIF to GitHub Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@f3712979fa5f215279b101dd0a2e3bdfb4353324 # v3
         with:
           sarif_file: semgrep.sarif
           category: semgrep

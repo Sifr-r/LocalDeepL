@@ -21,24 +21,28 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_PROJECT_ENVIRONMENT=/app/.venv
 
 # ``uv`` from the official standalone binary keeps the image smaller
-# than pip-installing it. The slice below is the recommended one.
+# than pip-installing it. ``UV_VERSION`` pins the installer payload
+# (audit P1-7): without it the build fetches whatever ``latest`` is,
+# a moving supply-chain target. Bump deliberately, in lockstep with
+# the developer toolchain.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends curl ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
- && curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+ && curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin UV_VERSION=0.11.16 sh
 
 WORKDIR /app
 
 # Copy dependency manifest first so the install layer is cacheable
-# independent of the source tree.
+# independent of the source tree. ``--locked`` (audit P1-7) installs
+# exactly the committed uv.lock set instead of re-resolving.
 COPY pyproject.toml uv.lock ./
 RUN mkdir -p /app/src/omniscribe \
  && touch /app/src/omniscribe/__init__.py \
- && uv sync --extra web --extra async-translation --extra preprocessing --no-install-project
+ && uv sync --locked --extra web --extra async-translation --extra preprocessing --no-install-project
 
 # Copy the project source and complete the install.
 COPY src ./src
-RUN uv sync --extra web --extra async-translation --extra preprocessing
+RUN uv sync --locked --extra web --extra async-translation --extra preprocessing
 
 # Drop root for runtime. The official Python slim image ships a
 # ``nonroot`` user, but we create our own so the path is stable.

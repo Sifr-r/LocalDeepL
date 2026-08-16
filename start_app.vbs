@@ -35,6 +35,30 @@ Function ContainerExists(name)
     On Error Goto 0
 End Function
 
+' --- Redis password (audit P1-6): generated once, kept next to this
+'     script, never logged. Reused on every subsequent launch so Celery
+'     and uvicorn can rebuild the same REDIS_URL. ---
+Function GetOrCreateRedisPassword()
+    Dim passPath : passPath = scriptDir & "\redis-password.txt"
+    If objFSO.FileExists(passPath) Then
+        Dim f : Set f = objFSO.OpenTextFile(passPath, 1)
+        GetOrCreateRedisPassword = Trim(f.ReadLine())
+        f.Close
+        Exit Function
+    End If
+    Dim chars, i, pwd
+    chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    pwd = ""
+    Randomize
+    For i = 1 To 32
+        pwd = pwd & Mid(chars, Int(Rnd() * Len(chars)) + 1, 1)
+    Next
+    Dim nf : Set nf = objFSO.OpenTextFile(passPath, 2, True)
+    nf.WriteLine pwd
+    nf.Close
+    GetOrCreateRedisPassword = pwd
+End Function
+
 ' --- 0. Pre-check: uv must be on PATH (added by the official uv installer
 '     to the user PATH; needs a fresh logon to propagate). ---
 On Error Resume Next
@@ -56,24 +80,39 @@ LogMsg "uv is on PATH"
 Dim dockerUp : dockerUp = IsDockerAvailable()
 If dockerUp Then
     LogMsg "Docker daemon is reachable"
+    Dim redisPass : redisPass = GetOrCreateRedisPassword()
+    Dim redisUrl : redisUrl = "redis://:" & redisPass & "@localhost:6379/0"
+    ' Always recreate: the container holds only ephemeral broker state
+    ' (--rm + --save ""), and recreating guarantees the hardened flags
+    ' (pinned image, loopback bind, requirepass) even for containers
+    ' created by older versions of this script.
     If ContainerExists("redis-local-ocr") Then
-        LogMsg "Reusing existing redis-local-ocr container (docker start)"
-        objShell.Run "cmd.exe /c docker start redis-local-ocr", 0, True
-    Else
-        LogMsg "Creating new redis-local-ocr container (docker run --rm)"
-        objShell.Run "cmd.exe /c docker run -d --name redis-local-ocr -p 6379:6379 --rm redis", 0, True
+        LogMsg "Removing pre-hardening redis-local-ocr container"
+        objShell.Run "cmd.exe /c docker rm -f redis-local-ocr", 0, True
     End If
+    LogMsg "Creating hardened redis-local-ocr container (pinned image, loopback-only, requirepass)"
+    objShell.Run "cmd.exe /c docker run -d --name redis-local-ocr -p 127.0.0.1:6379:6379 --rm redis:7-alpine redis-server --appendonly no --save """" --requirepass " & redisPass, 0, True
 
     ' --- 2. Celery worker (hidden, fire-and-forget) ---
+    ' -A must use the installed-package module path (compose.yaml uses the
+    ' same). The old `src.*` namespace form resolved a second module copy,
+    ' so tasks registered on the `omniscribe.*` copy were invisible to the
+    ' worker (audit DevOps High #6, drift half).
     LogMsg "Starting Celery worker"
-    objShell.Run "cmd.exe /c uv run --extra web celery -A src.omniscribe.api.celery_app worker --loglevel=info -P solo", 0, False
+    objShell.Run "cmd.exe /c set ""REDIS_URL=" & redisUrl & "" && uv run --extra web celery -A omniscribe.api.tasks worker --loglevel=info -P solo", 0, False
 Else
     LogMsg "Docker is not available; skipping Redis and Celery. Async translation will be disabled."
 End If
 
 ' --- 3. uvicorn (hidden, fire-and-forget) ---
+' Same installed-package path as the `omniscribe-server` console script so
+' the API process imports one module copy, not a `src.*` namespace twin.
 LogMsg "Starting uvicorn on :8000"
-objShell.Run "cmd.exe /c uv run --extra web uvicorn src.omniscribe.server:app --port 8000", 0, False
+If dockerUp Then
+    objShell.Run "cmd.exe /c set ""REDIS_URL=" & redisUrl & "" && uv run --extra web uvicorn omniscribe.server:app --port 8000", 0, False
+Else
+    objShell.Run "cmd.exe /c uv run --extra web uvicorn omniscribe.server:app --port 8000", 0, False
+End If
 
 ' --- 4. Wait for uvicorn to actually respond (poll HTTP, max 60s) ---
 LogMsg "Waiting for uvicorn to respond on http://localhost:8000"
