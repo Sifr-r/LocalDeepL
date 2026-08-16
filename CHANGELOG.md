@@ -237,6 +237,19 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   `getResult`; the `apiClient` route-bearer table
   learns `/api/jobs` so the per-route OCR bearer is
   attached. (Phase D2.2 + D2.3)
+- **P1 #4 (type `Any` escapes in `postprocess.py` /
+  `handwriting_preprocessor.py`) resolved by venv refresh —
+  no code change** — the §2 #4 finding flagged pyspellchecker's
+  `candidates()` and `cv2.cvtColor` as untyped at the domain
+  boundary, propagating `Any` through the return paths and
+  tripping mypy's `warn_return_any = true`. An interim
+  `typing.cast(...)` was applied in `glossary_imports.py`
+  mid-investigation, then reverted once the
+  `uv.lock` reconciliation (commit `829cd3b`) refreshed the
+  venv (numpy 2.2.6 → 2.4.6, websockets 13.1 → 17.0.1). The
+  mypy violations were symptoms of a stale venv, not actual
+  code defects. Logged here for future auditors so the
+  finding is not re-opened against a green baseline.
 
 ### Fixed
 
@@ -407,6 +420,49 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   system role. Other models (Qwen, future additions) keep
   the system role. The list is intentionally narrow — see the
   helper's docstring for the "extend cautiously" rationale.
+- **OCR fallback paths now log warnings** — three sites
+  (`src/omniscribe/core/ocr/processor.py:487, 566` and
+  `src/omniscribe/core/pdf/embedder.py:121`) used to swallow
+  all exceptions with bare `except Exception:`, returning safe
+  defaults without any log line. OCR quality degradation was
+  invisible to operators. The except clauses are now narrowed
+  to the specific exception types (pytesseract errors, cv2
+  errors, font-probe errors) and each site emits a
+  `logger.warning` with the underlying exception before the
+  safe-default return. Tests cover the three sites.
+- **Form primitives now associate errors and hints via
+  ARIA** — `Input.svelte` and `Select.svelte` rendered an
+  error/hint `<p>` below the form element but didn't link it
+  via `aria-describedby` or set `aria-invalid`. Screen readers
+  could not announce the error or hint on focus. The
+  `ariaLabel` prop (added in the prior audit-fix 2bec3bf) is
+  unchanged; the missing describedby + invalid wiring is
+  added in this commit. The `Select.svelte` `ariaLabel` prop
+  binding stays as-is.
+- **TabRibbon now follows the WAI-ARIA tab pattern** — the
+  container was a plain `<nav>` with `<button>` children. The
+  container now has `role="tablist"`, each tab has
+  `role="tab"`, `aria-selected`, and roving `tabindex`
+  (active=0, others=-1).
+- **Docker image is now multi-stage** — the Dockerfile was a
+  single `FROM python:3.14-slim AS runtime-base` (dependabot PR
+  #22 had bumped the base from 3.12 to 3.14 just before P1
+  started) that ran `uv sync` of transformers, torch, surya-ocr,
+  and chromadb in the production image, with the `uv` toolchain
+  and `curl` build deps landing in the final image and
+  enlarging the attack surface. A `builder` stage now does the
+  `uv sync`; the runtime stage copies only `/app/.venv` from
+  the builder, leaving the final image with no `uv` toolchain,
+  no `curl`, and no build cache. The pre-change image did not
+  build (it was missing a `COPY LICENSE README.md` for
+  hatchling's project install — a pre-existing gap, incidentally
+  fixed in this commit), so no pre-change size baseline exists.
+  The 17.4 GB virtual / 11.4 GB unique final image is dominated
+  by `torch` + `transformers` + `chromadb` + `surya-ocr`; the
+  main win is the absence of build tools and build cache from
+  runtime, verified by `docker run` smoke (no `uv`/`curl`
+  in the container) and import test (`transformers`, `surya`,
+  `omniscribe` all import).
 
 ### Security
 
