@@ -26,15 +26,17 @@ dependencies = [
     "python-dotenv>=1.2.1",
     "tqdm>=4.67.1",
     "surya-ocr>=0.22.1",
-    "torch>=2.0.0",
-    "torchvision>=0.15.0",
+    # Bounded majors (audit backlog): a torch 3.x or torchvision 1.x
+    # release could break surya's model layer without warning.
+    "torch>=2.0.0,<3",
+    "torchvision>=0.15.0,<1",
     "httpx>=0.27.0",
     "requests>=2.31",
     "pyspellchecker>=0.8.1",
     "python-docx>=1.1.0",
     "redis>=5.0.0",
     "chromadb>=0.5.0",
-    "numpy<2.3.0",
+    "numpy>=1.24.0,<2.3.0",
     "defusedxml>=0.7.1",  # XLIFF/TBX/TMX glossary parsing without XXE/DTD
 ]
 
@@ -47,7 +49,7 @@ web = [
 ]
 preprocessing = [
     "opencv-python-headless>=4.8.0",
-    "numpy>=1.24.0",
+    # numpy lives in the base deps (>=1.24.0,<2.3.0) — no duplicate here.
 ]
 # Async translation: the LLM-driven translation workflow. ``chromadb`` and
 # ``sentence-transformers`` are intentionally kept out so this extra is
@@ -56,10 +58,13 @@ preprocessing = [
 # gracefully when the lexicon store is unavailable.
 async-translation = [
     "celery>=5.4.0",
-    "redis>=5.0.0",
+    # redis is a base dep — no duplicate here.
     "langgraph>=0.1.0",
 ]
 memory = [
+    # chromadb is already a base dep; the repeat here is deliberate —
+    # the extra documents the lexicon-RAG feature surface and
+    # test_optional_extras_split_chromadb_into_memory pins the pair.
     "chromadb>=0.5.0",
     "sentence-transformers>=5.5.1",
 ]
@@ -83,10 +88,10 @@ quality = [
 ]
 
 
-# Voice transcription extra: faster-whisper local model engine & openai client.
+# Voice transcription extra: faster-whisper local model engine.
+# openai is a base dep — no duplicate here.
 transcription = [
     "faster-whisper>=1.0.0",
-    "openai>=2.11.0",
 ]
 
 # Glossary multi-source import: optional XLSX, SQL pair-table, git archive

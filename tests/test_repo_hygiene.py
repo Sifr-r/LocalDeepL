@@ -127,6 +127,114 @@ def test_precommit_config_pins_ruff_and_uvlock_hooks():
     assert "https://github.com/astral-sh/uv-pre-commit" in repos
 
 
+def test_precommit_mypy_runs_in_the_project_environment():
+    """The mypy hook must type-check with the project venv, not an
+    isolated mirror env.
+
+    ``mirrors-mypy`` installs mypy into a clean pre-commit env with no
+    project dependencies, so import resolution diverges from CI's
+    ``uv run mypy src`` (audit backlog). A ``language: system`` hook
+    that shells out to ``uv run mypy`` keeps both gates on the same
+    interpreter and dependency set.
+    """
+    cfg = yaml.safe_load(_read(ROOT / ".pre-commit-config.yaml"))
+    mypy_hooks = [
+        hook
+        for repo in cfg["repos"]
+        for hook in repo.get("hooks", [])
+        if hook.get("id") == "mypy"
+    ]
+    assert mypy_hooks, "pre-commit config lost its mypy hook"
+    hook = mypy_hooks[0]
+    assert hook.get("language") == "system", (
+        "mypy hook must run in the project environment "
+        "(language: system), not an isolated mirror env"
+    )
+    assert "uv run mypy" in hook.get("entry", ""), (
+        "mypy hook entry must delegate to `uv run mypy` so it picks "
+        "up the synced project venv"
+    )
+
+
+def test_stop_app_covers_current_entry_points_and_redis_container():
+    """``stop_app.bat`` must terminate what ``start_app.vbs`` starts.
+
+    The launcher entry points moved to the installed-package module
+    path (``omniscribe.server:app`` / ``celery -A omniscribe.api.tasks``);
+    a stop script still matching only the old ``src.*`` forms would
+    leave both processes running. The ``redis-local-ocr`` broker
+    container must also be stopped (audit backlog).
+    """
+    stop = _read(ROOT / "stop_app.bat")
+    assert "omniscribe.server:app" in stop
+    assert "celery -A omniscribe.api.tasks" in stop
+    assert "redis-local-ocr" in stop, (
+        "stop_app.bat must stop the redis-local-ocr container created by start_app.vbs"
+    )
+
+
+def test_install_scripts_avoid_elevation_and_blind_remote_execution():
+    """Installer hygiene invariants (audit backlog).
+
+    - Nothing in the install flow writes to machine locations, so the
+      bat wrapper must not self-elevate.
+    - The ps1 must never pipe a remote script straight into the
+      interpreter (``| iex``); the uv bootstrap downloads to a file
+      (or uses winget) instead.
+    - Frontend deps install from the lockfile (``npm ci``) and every
+      npm step is exit-code checked.
+    """
+    bat = _read(ROOT / "install.bat")
+    assert "RunAs" not in bat and "NET SESSION" not in bat, (
+        "install.bat must not self-elevate — shortcuts and uv are per-user"
+    )
+    ps1 = _read(ROOT / "install.ps1")
+    assert "| iex" not in ps1 and "| Invoke-Expression" not in ps1, (
+        "install.ps1 must not execute a remote script sight-unseen"
+    )
+    assert "npm ci" in ps1, "frontend deps must install from package-lock.json"
+    assert "npm install" not in ps1.replace("npm ci", ""), (
+        "install.ps1 should use `npm ci`, not `npm install`"
+    )
+    npm_calls = ps1.count("$LASTEXITCODE -ne 0")
+    assert npm_calls >= 4, (
+        "uv sync, npm ci, npm run build, and the uv-run verification "
+        "must all be exit-code checked"
+    )
+
+
+def test_pyproject_has_no_duplicate_deps_across_extras():
+    """A package pinned in the base deps must not be re-declared in an
+    extra (audit backlog: duplicated declarations drifted across
+    extras). torch / torchvision must also carry an upper major bound
+    so an upstream major can't silently break surya.
+    """
+    project = tomllib.loads((ROOT / "pyproject.toml").read_bytes().decode("utf-8"))[
+        "project"
+    ]
+
+    def _name(dep: str) -> str:
+        return re.split(r"[<>=!~\[;\s]", dep, maxsplit=1)[0].lower()
+
+    base = {_name(dep) for dep in project["dependencies"]}
+    # Deliberate repeats that document a feature surface and are pinned
+    # by another contract test (test_optional_extras_split_chromadb_into_memory).
+    allowed_overlaps = {("memory", "chromadb")}
+    for extra_name, deps in project["optional-dependencies"].items():
+        overlap = {_name(dep) for dep in deps} & base
+        overlap -= {pkg for (ex, pkg) in allowed_overlaps if ex == extra_name}
+        assert not overlap, (
+            f"extra `{extra_name}` re-declares base dependencies: "
+            f"{sorted(overlap)} — remove the duplicate from the extra"
+        )
+
+    by_name = {_name(dep): dep for dep in project["dependencies"]}
+    for pkg in ("torch", "torchvision"):
+        assert "<" in by_name[pkg], (
+            f"{pkg} must carry an upper major bound ({by_name[pkg]!r})"
+        )
+
+
 def test_nightly_workflow_targets_slow_tests_with_hf_cache():
     workflow = _read(ROOT / ".github/workflows/nightly.yml")
 

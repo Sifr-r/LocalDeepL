@@ -137,12 +137,12 @@ Normalized-bbox contract end-to-end; cancellation design (`OCRCancelled(BaseExce
 6. `start_app.vbs`: unpinned redis, no auth, 0.0.0.0 bind (also listed under Security); Celery app module drift (`-A src.omniscribe.api.celery_app` vs compose's `-A omniscribe.api.tasks`) can register tasks in a different module copy. *(Redis half: P1-6. Drift half: fixed 2026-08-16 — `start_app.vbs` celery + uvicorn targets now use the installed-package `omniscribe.*` path, matching compose; pinned by `test_celery_and_uvicorn_targets_match_installed_package_path` in `test_repo_hygiene.py`.)*
 
 ### Medium
-- nightly.yml: `if-no-original-found:` is not a valid upload-artifact input (should be `if-no-files-found`); dataset fetch `|| true` turns the slow regression gate into a silent no-op.
-- All GitHub Actions pinned to mutable tags (`@v4`), no top-level `permissions:` block.
-- pre-commit mypy runs in an isolated env (weaker than CI's `uv run mypy src`).
-- `pyproject.toml`: `torch>=2.0.0` unbounded; duplicated dep declarations across extras.
-- `install.bat` self-elevates to admin unnecessarily; `install.ps1` pipes a remote script to `iex` unverified and never checks npm exit codes; uses `npm install` instead of `npm ci`.
-- `stop_app.bat` never stops the `redis-local-ocr` container.
+- nightly.yml: `if-no-original-found:` is not a valid upload-artifact input (should be `if-no-files-found`); dataset fetch `|| true` turns the slow regression gate into a silent no-op. *(Fixed P3 2026-08-16 — `if-no-files-found` + `EXIT_LICENSE_GATED=77` exit-code contract in `fetch_datasets.py`, pinned by `test_fetch_datasets_script.py`.)*
+- All GitHub Actions pinned to mutable tags (`@v4`), no top-level `permissions:` block. *(Fixed P3 2026-08-16 — SHA pins + `permissions: contents: read` across all four workflows.)*
+- pre-commit mypy runs in an isolated env (weaker than CI's `uv run mypy src`). *(Fixed backlog 2026-08-16 — `language: system` hook running `uv run mypy src` in the project venv; pinned by `test_precommit_mypy_runs_in_the_project_environment`.)*
+- `pyproject.toml`: `torch>=2.0.0` unbounded; duplicated dep declarations across extras. *(Fixed backlog 2026-08-16 — `torch<3`/`torchvision<1` bounds, numpy/redis/openai dupes removed; the `memory` extra keeps its deliberate chromadb repeat, allowlisted in `test_pyproject_has_no_duplicate_deps_across_extras` to stay compatible with `test_optional_extras_split_chromadb_into_memory`.)*
+- `install.bat` self-elevates to admin unnecessarily; `install.ps1` pipes a remote script to `iex` unverified and never checks npm exit codes; uses `npm install` instead of `npm ci`. *(Fixed backlog 2026-08-16 — elevation removed; uv installs via winget with a download-to-disk fallback; `npm ci` + exit-code checks; pinned by `test_install_scripts_avoid_elevation_and_blind_remote_execution`.)*
+- `stop_app.bat` never stops the `redis-local-ocr` container. *(Fixed backlog 2026-08-16 — guarded `docker stop redis-local-ocr` + process matching now covers both installed-package and legacy `src.*` entry points; pinned by `test_stop_app_covers_current_entry_points_and_redis_container` in `test_repo_hygiene.py`.)*
 
 ### Good
 Concurrency groups, fail-fast-off matrices, build-before-tag release ordering, HF/dataset caching, Python 3.11→3.13 matrix, frontend gate in CI, non-root Docker runtime user, layer-cache-friendly COPY order, uv-lock pre-commit hook, lockfile in sync.

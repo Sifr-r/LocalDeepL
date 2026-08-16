@@ -2875,7 +2875,6 @@ dependencies = [
 async-translation = [
     { name = "celery" },
     { name = "langgraph" },
-    { name = "redis" },
 ]
 glossary = [
     { name = "chardet" },
@@ -2892,7 +2891,6 @@ nllb = [
     { name = "transformers" },
 ]
 preprocessing = [
-    { name = "numpy" },
     { name = "opencv-python-headless" },
 ]
 quality = [
@@ -2900,7 +2898,6 @@ quality = [
 ]
 transcription = [
     { name = "faster-whisper" },
-    { name = "openai" },
 ]
 trocr = [
     { name = "safetensors" },
@@ -2941,10 +2938,8 @@ requires-dist = [
     { name = "gitpython", marker = "extra == 'glossary'", specifier = ">=3.1.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "langgraph", marker = "extra == 'async-translation'", specifier = ">=0.1.0" },
-    { name = "numpy", specifier = "<2.3.0" },
-    { name = "numpy", marker = "extra == 'preprocessing'", specifier = ">=1.24.0" },
+    { name = "numpy", specifier = ">=1.24.0,<2.3.0" },
     { name = "openai", specifier = ">=2.11.0,<3" },
-    { name = "openai", marker = "extra == 'transcription'", specifier = ">=2.11.0" },
     { name = "opencv-python-headless", marker = "extra == 'preprocessing'", specifier = ">=4.8.0" },
     { name = "openpyxl", marker = "extra == 'glossary'", specifier = ">=3.1.0" },
     { name = "pillow", specifier = ">=11.3" },
@@ -2954,7 +2949,6 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "python-multipart", marker = "extra == 'web'", specifier = ">=0.0.20" },
     { name = "redis", specifier = ">=5.0.0" },
-    { name = "redis", marker = "extra == 'async-translation'", specifier = ">=5.0.0" },
     { name = "requests", specifier = ">=2.31" },
     { name = "sacrebleu", marker = "extra == 'quality'", specifier = ">=2.4.0" },
     { name = "safetensors", marker = "extra == 'trocr'", specifier = ">=0.4.0" },
@@ -2963,8 +2957,8 @@ requires-dist = [
     { name = "sentencepiece", marker = "extra == 'trocr'", specifier = ">=0.2.0" },
     { name = "sqlalchemy", marker = "extra == 'glossary'", specifier = ">=2.0.0" },
     { name = "surya-ocr", specifier = ">=0.22.1" },
-    { name = "torch", specifier = ">=2.0.0" },
-    { name = "torchvision", specifier = ">=0.15.0" },
+    { name = "torch", specifier = ">=2.0.0,<3" },
+    { name = "torchvision", specifier = ">=0.15.0,<1" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "transformers", marker = "extra == 'nllb'", specifier = ">=4.45.0" },
     { name = "transformers", marker = "extra == 'trocr'", specifier = ">=4.45.0" },

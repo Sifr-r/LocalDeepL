@@ -6,17 +6,43 @@ Write-Host "Installing OmniScribe Dependencies"
 Write-Host "======================================================="
 
 # 1. Check/Install uv
+#
+# Audit backlog hardening: the old one-liner downloaded a remote
+# script and executed it sight-unseen. Prefer winget (package manifest
+# + signature verification); the fallback downloads the official
+# installer to a temp file, sanity-checks it, and runs it from disk
+# so remote code never executes directly from the network stream.
 if (!(Get-Command "uv" -ErrorAction SilentlyContinue)) {
     Write-Host "uv not found. Installing uv..."
-    try {
-        irm https://astral.sh/uv/install.ps1 | iex
-    } catch {
-        Write-Host "ERROR: Failed to install uv. Please install it manually from https://docs.astral.sh/uv/" -ForegroundColor Red
-        Write-Host "Underlying error: $_" -ForegroundColor Red
-        exit 1
+    $installed = $false
+    if (Get-Command "winget" -ErrorAction SilentlyContinue) {
+        Write-Host "Installing uv via winget..."
+        winget install --id astral-sh.uv -e --silent --accept-source-agreements --accept-package-agreements
+        if ($LASTEXITCODE -eq 0) { $installed = $true }
+        else { Write-Host "winget install failed (exit $LASTEXITCODE); falling back to the astral.sh installer." -ForegroundColor Yellow }
+    }
+    if (!$installed) {
+        $uvInstaller = Join-Path -Path $env:TEMP -ChildPath "uv-install.ps1"
+        try {
+            Invoke-RestMethod -Uri "https://astral.sh/uv/install.ps1" -OutFile $uvInstaller
+            # Sanity check: a truncated/empty or non-script payload must
+            # never reach the interpreter.
+            $content = Get-Content -Path $uvInstaller -Raw -ErrorAction SilentlyContinue
+            if ([string]::IsNullOrWhiteSpace($content) -or $content.Length -lt 1000) {
+                throw "Downloaded uv installer is empty or truncated."
+            }
+            & powershell -NoProfile -ExecutionPolicy Bypass -File $uvInstaller
+            if ($LASTEXITCODE -ne 0) { throw "uv installer script exited with $LASTEXITCODE." }
+        } catch {
+            Write-Host "ERROR: Failed to install uv. Please install it manually from https://docs.astral.sh/uv/" -ForegroundColor Red
+            Write-Host "Underlying error: $_" -ForegroundColor Red
+            exit 1
+        } finally {
+            Remove-Item -Path $uvInstaller -ErrorAction SilentlyContinue
+        }
     }
     # Refresh PATH so the just-installed uv is visible to the rest of this script.
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User") + ";$env:LOCALAPPDATA\Microsoft\WinGet\Links"
     if (!(Get-Command "uv" -ErrorAction SilentlyContinue)) {
         Write-Host "ERROR: uv still not on PATH after installation. Try restarting the installer." -ForegroundColor Red
         exit 1
@@ -36,11 +62,25 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # 2a. Build frontend static assets (if npm is available)
+#
+# `npm ci` installs exactly what package-lock.json pins (reproducible,
+# and picks up security updates the way Dependabot intends). Every
+# npm step is exit-code checked: a silent frontend build failure
+# used to leave the installer reporting success with stale assets
+# (audit backlog).
 if (Get-Command "npm" -ErrorAction SilentlyContinue) {
     Write-Host "`nBuilding Svelte 5 + Tailwind v4 frontend..."
     Set-Location -Path (Join-Path -Path $ScriptDir -ChildPath "frontend")
-    npm install
+    npm ci
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: npm ci failed. See the output above for details." -ForegroundColor Red
+        exit 1
+    }
     npm run build
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: npm run build failed. See the output above for details." -ForegroundColor Red
+        exit 1
+    }
     Set-Location -Path $ScriptDir
 } else {
     Write-Host "`nNote: npm not found in PATH; skipping frontend build (pre-built static assets will be used)." -ForegroundColor Yellow

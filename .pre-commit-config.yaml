@@ -8,6 +8,12 @@
 #
 # Ruff is pinned to a recent stable version matching the ``>=0.3.0``
 # dev requirement in ``pyproject.toml``. Bump both in lockstep.
+#
+# The mypy hook runs with ``language: system`` so it uses the project
+# venv (``uv sync``) — the same interpreter and dependency set CI's
+# ``uv run mypy src`` uses. The previous ``mirrors-mypy`` isolated env
+# lacked the project's dependencies, so import resolution diverged
+# from CI (audit backlog: "pre-commit mypy weaker than CI").
 
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -17,13 +23,14 @@ repos:
         args: ["--fix"]
       - id: ruff-format
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.15.0
+  - repo: local
     hooks:
       - id: mypy
-        args: ["src"]
+        name: mypy (project venv)
+        entry: uv run mypy src
+        language: system
+        types: [python]
         pass_filenames: false
-        additional_dependencies: []
 
   - repo: https://github.com/astral-sh/uv-pre-commit
     rev: 0.8.7
