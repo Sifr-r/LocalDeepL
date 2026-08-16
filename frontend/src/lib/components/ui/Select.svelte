@@ -10,6 +10,10 @@
   export let id: string = `select-${Math.random().toString(36).slice(2, 9)}`;
   export let value: string = '';
   export let label = '';
+  // Accessible name for the unlabeled inline variant (audit P3: the
+  // language/model comboboxes had no accessible name). Used only when
+  // no visible `label` is rendered.
+  export let ariaLabel = '';
   export let hint = '';
   export let error: string = '';
   export let disabled = false;
@@ -27,6 +31,7 @@
     <select
       {id}
       {disabled}
+      aria-label={label ? undefined : ariaLabel || undefined}
       bind:value
       on:change
       on:blur

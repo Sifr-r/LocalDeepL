@@ -15,14 +15,23 @@
   let activeNamespace: Namespace = 'ocr';
   let isSaving = false;
 
-  // Document processor chips options
+  // Document processor chips options — mirrors the backend
+  // DocumentProcessorName enum and the workstation's ProcessSettings
+  // list (audit P3: the previous labels were made-up names whose ids
+  // the API rejects with a 422).
   const availableProcessors = [
-    { id: 'table_structure', label: 'Table Structure Extractor' },
-    { id: 'formula_rec', label: 'LaTeX Math Formula Engine' },
-    { id: 'handwriting_ocr', label: 'Handwritten Text Model' },
-    { id: 'signature_detect', label: 'Signature & Stamp Detector' },
-    { id: 'reading_order', label: 'Advanced Reading Order Bounding' },
+    { id: 'reading_order', label: 'Reading order' },
+    { id: 'quality_analysis', label: 'Quality analysis' },
+    { id: 'structure_analysis', label: 'Structure analysis' },
+    { id: 'section_analysis', label: 'Section analysis' },
+    { id: 'layout_enrichment', label: 'Layout enrichment' },
+    { id: 'table_extraction', label: 'Table extraction' },
   ];
+
+  // Render the real server cap from /api/config instead of a
+  // hard-coded value (audit P3 copy fix).
+  $: maxUploadMb = Math.round(($configStore.security?.max_upload_bytes || 0) / (1024 * 1024));
+  $: uploadCapLabel = maxUploadMb >= 1024 ? `${Math.round(maxUploadMb / 1024)} GB` : `${maxUploadMb} MB`;
 
   onMount(() => {
     refreshModels('ocr');
@@ -176,6 +185,7 @@
               />
               <Select
                 label=""
+                ariaLabel="Pick OCR model from the server list"
                 options={[
                   { value: '', label: '(Select model)' },
                   ...$modelStore.ocr.map(m => ({ value: m, label: m }))
@@ -260,6 +270,7 @@
               />
               <Select
                 label=""
+                ariaLabel="Pick translation model from the server list"
                 options={[
                   { value: '', label: '(Select model)' },
                   ...$modelStore.translation.map(m => ({ value: m, label: m }))
@@ -373,7 +384,7 @@
             <p class="text-sm font-display font-semibold text-foreground">Upload limits & environment</p>
             <div class="flex items-center gap-2 text-xs text-foreground-muted">
               <span>Max upload cap:</span>
-              <Badge variant="success" size="sm" dot>10 GB</Badge>
+              <Badge variant="success" size="sm" dot>{uploadCapLabel}</Badge>
               <span class="font-mono text-foreground-subtle">({$configStore.security?.max_upload_bytes} bytes)</span>
             </div>
           </div>

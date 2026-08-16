@@ -738,11 +738,12 @@ export interface DocumentViewModel {
   selectedPageIndex?: number;
   bboxes: BBoxItem[];
   confidence?: number;
-  confidenceSummary: {
+  /** ``null`` until real results exist — audit P2-10: no fake 100% pre-run. */
+  confidenceSummary?: {
     average: number;
     min: number;
     max: number;
-  };
+  } | null;
   pageCount: number;
   trustSummary?: TrustSummary | null;
 }

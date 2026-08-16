@@ -85,7 +85,14 @@ export const fetchGlossaryEntries = loadEntries;
 export async function loadMerged(): Promise<void> {
   try {
     const res = await glossaryApi.getMerged();
-    mergedGlossary.set(res || {});
+    // Backend returns { entries: [{ source, target, ... }] }; the merged
+    // view renders a flat term → translation map. Server-side merge is
+    // already priority-deduped, so order here is display-only.
+    const flat: Record<string, string> = {};
+    for (const entry of res?.entries ?? []) {
+      if (entry.source) flat[entry.source] = entry.target;
+    }
+    mergedGlossary.set(flat);
   } catch (err) {
     console.error('Failed to fetch merged glossary preview:', err);
   }

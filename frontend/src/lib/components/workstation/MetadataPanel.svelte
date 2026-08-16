@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { documentStore, exportModalOpen } from '../../stores/appStore';
+  import { documentStore, exportModalOpen, jobStore } from '../../stores/appStore';
   import { pdfPreview } from '../../stores/pdfPreview';
   import Card from '../ui/Card.svelte';
   import SectionHeader from '../ui/SectionHeader.svelte';
@@ -14,16 +14,40 @@
   $: totalPages = Math.max(pages.length, $documentStore.pageCount || 0);
 
   // Live confidence: average the streamed block confidences when present,
-  // otherwise fall back to the response summary.
+  // then the job quality summary, then the response summary. Audit P2-10:
+  // before any real result exists every source is null and the panel
+  // renders "—" instead of a fake "Overall confidence 100%".
   $: scoredBoxes = streamedBoxes.filter((b) => b.confidence != null);
   $: streamedAvg = scoredBoxes.length
     ? scoredBoxes.reduce((sum, b) => sum + (b.confidence as number), 0) / scoredBoxes.length
     : null;
-  $: confidencePercent = Math.round(
-    (streamedAvg ?? $documentStore.confidenceSummary?.average ?? $documentStore.confidence ?? 0) * 100
-  );
+  $: confidenceSource =
+    streamedAvg ??
+    $documentStore.confidenceSummary?.average ??
+    $jobStore.qualitySummary?.avg_confidence ??
+    $documentStore.confidence ??
+    null;
+  $: confidencePercent = Math.round((confidenceSource ?? 0) * 100);
 
-  $: confidenceLevel = (confidencePercent >= 90 ? 'success' : confidencePercent >= 70 ? 'warning' : 'danger') as BadgeVariant;
+  $: confidenceLevel = (confidenceSource == null
+    ? 'neutral'
+    : confidencePercent >= 90
+    ? 'success'
+    : confidencePercent >= 70
+    ? 'warning'
+    : 'danger') as BadgeVariant;
+
+  // The most recent page a streamed block landed on — drives "Active page"
+  // during a run (block_complete frames) instead of the user's selection.
+  $: lastStreamedPage = streamedBoxes.length
+    ? Math.max(...streamedBoxes.map((b) => b.page))
+    : null;
+  $: activePageLabel =
+    lastStreamedPage != null
+      ? String(lastStreamedPage + 1)
+      : totalPages > 0
+      ? String(currentPageIndex + 1)
+      : '—';
 
   // Extracted text: prefer server page text; fall back to the live
   // streamed blocks grouped by page so the panel fills in during a run.
@@ -49,7 +73,7 @@
     <div class="flex items-center justify-between">
       <span class="text-xs text-foreground-muted">Overall confidence</span>
       <Badge variant={confidenceLevel} size="md" dot>
-        {confidencePercent}%
+        {confidenceSource != null ? `${confidencePercent}%` : '—'}
       </Badge>
     </div>
     <div class="w-full h-1.5 rounded-full bg-muted overflow-hidden">
@@ -57,9 +81,10 @@
         class={[
           'h-full transition-all duration-300',
           confidenceLevel === 'success' ? 'bg-success' :
-          confidenceLevel === 'warning' ? 'bg-warning' : 'bg-danger'
+          confidenceLevel === 'warning' ? 'bg-warning' :
+          confidenceLevel === 'danger' ? 'bg-danger' : 'bg-foreground-muted'
         ].join(' ')}
-        style="width: {confidencePercent}%;"
+        style="width: {confidenceSource != null ? confidencePercent : 0}%;"
       ></div>
     </div>
   </div>
@@ -74,7 +99,7 @@
       </div>
       <div class="flex justify-between">
         <span class="text-foreground-muted">Active page</span>
-        <span class="text-foreground">{totalPages > 0 ? currentPageIndex + 1 : '—'}</span>
+        <span class="text-foreground">{activePageLabel}</span>
       </div>
       <div class="flex justify-between">
         <span class="text-foreground-muted">Blocks streamed</span>

@@ -143,7 +143,12 @@ export async function exportDocx(payload: {
 export const configApi = {
   get: getConfig,
   update: updateConfig,
-  getModels: (namespace: string = 'general') => fetchApi<{ models: string[] }>(`/models/${namespace}`)
+  getModels: (namespace: string = 'general') =>
+    // The server only registers /api/models plus the ocr/translation/
+    // transcription namespaces — 'general' maps to the bare route.
+    fetchApi<{ models: string[] }>(
+      namespace && namespace !== 'general' ? `/models/${namespace}` : '/models'
+    )
 };
 
 export const ocrApi = {
@@ -170,7 +175,7 @@ export const transcriptionApi = {
 export const glossaryApi = {
   getLibraries: () => fetchApi<{ libraries: GlossaryListItem[] }>('/glossary/library'),
   getEntries: (id: string) => fetchApi<{ entries: GlossaryEntry[] } | GlossaryEntry[]>(`/glossary/library/${id}/entries`),
-  getMerged: () => fetchApi<Record<string, string>>('/glossary/merged'),
+  getMerged: () => fetchApi<{ entries: GlossaryEntry[] }>('/glossary/library/merged'),
   getPreview: () => fetchApi<GlossaryPreviewResponse>('/glossary/library/preview'),
   toggle: (id: string, enabled: boolean) =>
     fetchApi(`/glossary/library/${id}/enable`, { method: 'POST', body: JSON.stringify({ enabled }) }),

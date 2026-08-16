@@ -260,12 +260,13 @@ function createWebSocketStore() {
       }
     }
 
-    // Optimistic UI: the worker honors the cancel on its next tick and
-    // the server confirms with a `cancelled` frame / 503 response.
+    // Optimistic UI: the worker honors the cancel on its next block
+    // boundary — an in-flight VLM call finishes first — and the server
+    // confirms with a `cancelled` frame / 503 response (audit P2-10).
     jobStore.update((curr) => ({
       ...curr,
       stage: 'cancelling',
-      statusMessage: 'Cancelling…'
+      statusMessage: 'Cancelling — waiting for the current model call…'
     }));
   };
 

@@ -100,7 +100,9 @@ export const defaultDocumentModel: DocumentViewModel = {
   textArtifactId: null,
   textArtifactToken: null,
   bboxes: [],
-  confidenceSummary: { average: 1.0, min: 1.0, max: 1.0 },
+  // Audit P2-10: null (not { average: 1.0 }) so the metadata panel shows
+  // "—" before any result exists instead of a fake "Overall confidence 100%".
+  confidenceSummary: null,
   pageCount: 0,
   trustSummary: null,
 };

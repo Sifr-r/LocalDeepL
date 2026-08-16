@@ -166,6 +166,7 @@
     <div class="flex items-center gap-2 flex-wrap">
       <Select
         label=""
+        ariaLabel="Target language"
         options={languages.map(l => ({ value: l, label: l }))}
         value={targetLanguage}
         on:change={(e) => targetLanguage = (e.target as HTMLSelectElement).value}
@@ -173,6 +174,7 @@
       <div class="flex items-center gap-1">
         <Select
           label=""
+          ariaLabel="Translation model override"
           options={[
             { value: '', label: `Default: ${$configStore.translation_model || $configStore.model || 'auto'}` },
             ...$modelStore.translation.map(m => ({ value: m, label: m }))

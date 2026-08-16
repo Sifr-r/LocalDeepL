@@ -34,7 +34,7 @@
   }
 
   function validateAndDispatch(file: File) {
-    const maxBytes = $configStore.security?.max_upload_bytes || 52428800; // 50MB default
+    const maxBytes = maxUploadBytes;
     if (file.size > maxBytes) {
       const maxMb = Math.round(maxBytes / (1024 * 1024));
       toastStore.pushToast('error', `File size exceeds ${maxMb}MB limit.`);
@@ -48,10 +48,15 @@
     selectedFile = null;
     dispatch('fileSelect', null as File | null);
   }
+
+  // Hint mirrors the server cap from /api/config — the old hard-coded
+  // "up to 50 MB" contradicted the configured limit (audit P3).
+  $: maxUploadBytes = $configStore.security?.max_upload_bytes || 52428800;
+  $: maxUploadMb = Math.round(maxUploadBytes / (1024 * 1024));
 </script>
 
 <div>
-  <SectionHeader title="Upload" description="PDF, PNG, JPG, AVIF, TIFF — up to 50 MB." />
+  <SectionHeader title="Upload" description={`PDF, PNG, JPG, AVIF, TIFF — up to ${maxUploadMb} MB.`} />
 
   <div
     class={[

@@ -193,3 +193,28 @@ describe('connectProgressSocket — NDJSON wire format', () => {
     controller.close();
   });
 });
+
+describe('connectProgressSocket — auth handshake', () => {
+  it('keeps the session token out of the WebSocket URL', async () => {
+    const { connectProgressSocket } = await import('../websocket');
+    const controller = connectProgressSocket('chan-auth', 'secret-token', () => {});
+    const ws = MockWebSocket.instances[0]!;
+    expect(ws.url).toMatch(/^ws(s)?:\/\/[^/]+\/ws\/chan-auth$/);
+    expect(ws.url).not.toContain('token');
+    expect(ws.url).not.toContain('secret-token');
+    controller.close();
+  });
+
+  it('sends the auth frame as the very first message on open', async () => {
+    const { connectProgressSocket } = await import('../websocket');
+    const controller = connectProgressSocket('chan-auth-2', 'secret-token', () => {});
+    const ws = MockWebSocket.instances[0]!;
+    if (ws.onopen) ws.onopen();
+    expect(ws.sentFrames).toHaveLength(1);
+    expect(JSON.parse(ws.sentFrames[0]!)).toEqual({
+      type: 'auth',
+      session_token: 'secret-token',
+    });
+    controller.close();
+  });
+});

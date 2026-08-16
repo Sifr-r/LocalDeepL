@@ -105,6 +105,15 @@
       {/if}
     </div>
 
+    <!-- Audit P2-10: cancel is honored between blocks, so an in-flight
+         VLM call can delay shutdown. Tell the user why it isn't instant. -->
+    {#if isCancelling}
+      <div class="text-center text-[11px] font-mono text-warning" role="status">
+        Waiting for the current model call to finish — cancel takes effect
+        once the in-flight block completes.
+      </div>
+    {/if}
+
     <!-- Warnings surfaced by the worker (per-page OCR failures etc.) -->
     {#if warnings.length > 0}
       <div class="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 max-h-24 overflow-y-auto">

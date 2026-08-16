@@ -289,9 +289,12 @@ describe('WorkstationView', () => {
     // mocked module (vitest hoists vi.mock and caches module instances).
     const mocked = await import('../lib/stores/appStore');
     const docs = await new Promise<DocumentViewModel>((resolve) => {
+      // Svelte fires subscribers synchronously with the current value,
+      // so `unsub` isn't initialized yet inside the callback — defer the
+      // unsubscribe with queueMicrotask to avoid a TDZ ReferenceError.
       const unsub = mocked.documentStore.subscribe((v: DocumentViewModel) => {
         resolve(v);
-        unsub();
+        queueMicrotask(() => unsub());
       });
     });
     expect(docs.trustSummary).toEqual(trustSummary);

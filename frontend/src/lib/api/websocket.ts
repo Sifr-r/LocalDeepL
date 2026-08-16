@@ -51,12 +51,15 @@ export function connectProgressSocket(
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   function getWsUrl(): string {
+    // The session token is NOT part of the URL: query-string secrets
+    // leak into server access logs, proxy logs, and browser history.
+    // It is sent as the first frame after open instead (see onopen).
     if (typeof window === 'undefined') {
-      return `ws://localhost:8000/ws/${channelId}?token=${encodeURIComponent(token)}`;
+      return `ws://localhost:8000/ws/${channelId}`;
     }
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    return `${protocol}//${host}/ws/${channelId}?token=${encodeURIComponent(token)}`;
+    return `${protocol}//${host}/ws/${channelId}`;
   }
 
   function connect(): void {
@@ -72,6 +75,10 @@ export function connectProgressSocket(
       socket = new WebSocket(url);
 
       socket.onopen = () => {
+        // Authenticate immediately: the server requires this auth frame
+        // as the first message and closes with 1008 if it is missing,
+        // malformed, or doesn't match the minted channel/token pair.
+        socket?.send(JSON.stringify({ type: 'auth', session_token: token }));
         retryCount = 0;
         if (options?.onOpen) {
           options.onOpen();
