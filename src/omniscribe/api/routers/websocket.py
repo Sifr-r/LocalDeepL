@@ -85,6 +85,17 @@ _MINTED_CHANNEL_CAP = 1024
 # accepting a progress socket before closing it with 1008.
 _WS_AUTH_TIMEOUT_SECONDS = 10.0
 
+# Per-message inbound cap (bytes). The receive loop reads each frame with
+# ``receive_text()`` and closes the socket with WS 1009 (message too big)
+# when the UTF-8 byte length exceeds this bound. Without this guard a
+# client can stream a multi-GB payload and exhaust server memory before
+# the application layer ever sees it. 64 KiB is generous for the JSON
+# control frames the UI actually sends (``{"type": "cancel"}`` and the
+# initial auth frame) and well below the WS default max-frame-size that
+# uvicorn forwards.
+MAX_WS_MESSAGE_BYTES: int = 64 * 1024  # 64 KiB; per-message cap
+WS_CLOSE_MESSAGE_TOO_BIG: int = 1009
+
 
 @runtime_checkable
 class ConnectionManagerLike(Protocol):
@@ -613,6 +624,15 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
             try:
                 raw = await websocket.receive_text()
             except WebSocketDisconnect:
+                break
+            # Cap inbound payload size. The control frames the UI sends
+            # (``{"type": "cancel"}``) are tens of bytes; anything over
+            # 64 KiB is either a misbehaving client or an active DoS
+            # attempt — close with WS 1009 before parsing.
+            if len(raw.encode("utf-8")) > MAX_WS_MESSAGE_BYTES:
+                await websocket.close(
+                    code=WS_CLOSE_MESSAGE_TOO_BIG, reason="message too big"
+                )
                 break
             try:
                 msg = json.loads(raw)
