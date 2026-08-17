@@ -41,3 +41,32 @@ def parse_page_range(spec: str) -> list[tuple[int, int]] | None:
             return None
         out.append((start, end))
     return out
+
+
+def parse_page_range_with_total(spec: str, total_pages: int) -> list[int]:
+    """Parse a page range string into a sorted, 0-indexed, deduped page list.
+
+    Composes :func:`parse_page_range` with the ``total_pages`` clamp and
+    the ``ValueError`` on invalid input that the pre-leaf
+    ``_parse_page_range_local`` / ``parse_page_range`` implementations
+    used to provide. This is the function both
+    :mod:`omniscribe.core.pdf.rasterizer` and
+    :mod:`omniscribe.core.workflows.utils` re-export under the
+    ``parse_page_range`` name — it owns the only remaining parser logic
+    that used to live in the duplicated wrappers.
+
+    Examples:
+        "1-3,5,7-9", total=10 -> [0, 1, 2, 4, 6, 7, 8]
+        "8-12",       total=5  -> []              # out of range
+        "1,1,2-3,3",  total=5  -> [0, 1, 2]       # duplicates collapsed
+        "abc",        total=10 -> raises ValueError
+    """
+    ranges = parse_page_range(spec)
+    if ranges is None:
+        raise ValueError(f"Invalid page range syntax: '{spec}'")
+    pages: set[int] = set()
+    for start, end in ranges:
+        for p in range(start, end + 1):
+            if 1 <= p <= total_pages:
+                pages.add(p - 1)
+    return sorted(pages)

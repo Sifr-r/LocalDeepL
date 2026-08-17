@@ -25,7 +25,9 @@ from pathlib import Path
 import fitz  # PyMuPDF
 from PIL import Image, ImageSequence
 
-from omniscribe.core.pdf.page_range import parse_page_range as _parse_page_range_spec
+from omniscribe.core.pdf.page_range import (
+    parse_page_range_with_total as parse_page_range,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -187,29 +189,6 @@ def _images_from_image_file(path: str | Path, max_image_dim: int) -> dict[int, s
     return images
 
 
-def _parse_page_range_local(page_str: str, total_pages: int) -> list[int]:
-    """Parse a 1-indexed range like '1-3,5,7-9' into sorted 0-indexed pages.
-
-    Thin wrapper over the leaf parser in
-    :mod:`omniscribe.core.pdf.page_range` that adds the ``total_pages``
-    clamp and the ``ValueError`` on invalid input. The wrapper keeps the
-    rasterizer self-contained (it cannot import from
-    ``omniscribe.core.workflows.utils`` without re-introducing the
-    ``rasterizer -> workflows.utils -> workflows -> hybrid -> pdf``
-    cycle), so the parser logic lives in a sibling leaf module that
-    both this file and ``workflows.utils`` can reach.
-    """
-    ranges = _parse_page_range_spec(page_str)
-    if ranges is None:
-        raise ValueError(f"Invalid page range syntax: '{page_str}'")
-    pages: set[int] = set()
-    for start, end in ranges:
-        for p in range(start, end + 1):
-            if 1 <= p <= total_pages:
-                pages.add(p - 1)
-    return sorted(pages)
-
-
 def _generator_from_image_source(
     source: str | bytes | Path,
     pages: str | None,
@@ -225,7 +204,7 @@ def _generator_from_image_source(
         total_pages = len(frames)
         selected_pages: set[int] | None = None
         if pages:
-            selected_pages = set(_parse_page_range_local(pages, total_pages))
+            selected_pages = set(parse_page_range(pages, total_pages))
         _check_page_cap(
             len(selected_pages) if selected_pages is not None else total_pages
         )
@@ -285,7 +264,7 @@ def _generator_from_pdf_source(
         total_pages = len(doc)
         selected_pages: set[int] | None = None
         if pages:
-            selected_pages = set(_parse_page_range_local(pages, total_pages))
+            selected_pages = set(parse_page_range(pages, total_pages))
 
         if selected_pages is not None:
             page_nums = sorted(selected_pages)

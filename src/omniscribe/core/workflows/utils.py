@@ -7,10 +7,26 @@ from typing import TYPE_CHECKING
 
 from PIL import Image
 
-from omniscribe.core.pdf.page_range import parse_page_range as _parse_page_range_spec
+from omniscribe.core.pdf.page_range import (
+    parse_page_range_with_total as parse_page_range,
+)
 
 if TYPE_CHECKING:
     from omniscribe.core.workflows.base import PageBoxes
+
+
+__all__ = [
+    "DETECT_CHUNK_SIZE",
+    "REFINABLE_MIN_HEIGHT",
+    "REFINABLE_MIN_WIDTH",
+    "WELL_FORMED_CONFIDENCE",
+    "_decode_page_image",
+    "_drop_refined_duplicates",
+    "_estimate_confidence",
+    "_is_refinable",
+    "_normalize_for_dedup",
+    "parse_page_range",
+]
 
 
 # Confidence awarded to well-formed OCR output (multiple words, mostly
@@ -55,30 +71,6 @@ REFINABLE_MIN_HEIGHT = 0.008
 # Surya layout detection is batched; this chunk size keeps memory + GPU pressure
 # predictable without dominating the detect stage wall clock.
 DETECT_CHUNK_SIZE = 10
-
-
-def parse_page_range(page_str: str, total_pages: int) -> list[int]:
-    """Parse a 1-indexed range like '1-3,5,7-9' into sorted 0-indexed pages.
-
-    Thin wrapper over the leaf parser in
-    :mod:`omniscribe.core.pdf.page_range` that adds the ``total_pages``
-    clamp and the ``ValueError`` on invalid input. Kept as a wrapper
-    (rather than a re-export of the leaf function) so the public
-    ``parse_page_range`` symbol exposed via ``omniscribe.core.workflows``
-    and ``omniscribe.parse_page_range`` retains the
-    ``(page_str, total_pages) -> list[int]`` contract that
-    :func:`omniscribe.core.workflows.hybrid.HybridEngine.execute` and
-    the existing tests depend on.
-    """
-    ranges = _parse_page_range_spec(page_str)
-    if ranges is None:
-        raise ValueError(f"Invalid page range syntax: '{page_str}'")
-    pages: set[int] = set()
-    for start, end in ranges:
-        for p in range(start, end + 1):
-            if 1 <= p <= total_pages:
-                pages.add(p - 1)
-    return sorted(pages)
 
 
 def _decode_page_image(image_b64: str) -> Image.Image:
