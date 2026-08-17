@@ -6,6 +6,11 @@ from typing import Any, cast
 from omniscribe.api.celery_app import celery_app
 from omniscribe.core.translation_config import TranslationSettings
 
+try:
+    from celery import Task as _CeleryTask
+except ImportError:
+    _CeleryTask = object
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,7 +26,7 @@ def _current_translation_settings() -> TranslationSettings:
     return get_translation_settings()
 
 
-class _CeleryTaskBase:
+class _CeleryTaskBase(_CeleryTask):
     """Mixin consolidating boilerplate shared by every Celery task in this app.
 
     Two patterns repeat across ``process_translation_task`` and
@@ -54,7 +59,7 @@ class _CeleryTaskBase:
         meta={"progress": <pct>, "status": <str>})`` boilerplate that
         previously appeared at every progress tick.
         """
-        self.update_state(  # type: ignore[attr-defined]
+        self.update_state(
             state="PROGRESS",
             meta={"progress": progress_pct, "status": status},
         )

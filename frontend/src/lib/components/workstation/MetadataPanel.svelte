@@ -5,6 +5,7 @@
   import SectionHeader from '../ui/SectionHeader.svelte';
   import Badge, { type BadgeVariant } from '../ui/Badge.svelte';
   import Button from '../ui/Button.svelte';
+  import SegmentedControl from '../ui/SegmentedControl.svelte';
   import PdfMiniViewer from './PdfMiniViewer.svelte';
 
   $: currentPageIndex = $documentStore.selectedPageIndex || 0;
@@ -119,34 +120,14 @@
     <div class="flex items-center justify-between mb-1.5">
       <p class="form-label !mb-0">Extracted content</p>
       {#if hasResponsePdf}
-        <div class="inline-flex rounded-md border border-border bg-card-raised p-0.5 text-[10px] font-mono">
-          <button
-            type="button"
-            class={[
-              'px-2 py-0.5 rounded-sm transition-colors',
-              effectivePreviewMode === 'pdf'
-                ? 'bg-brand text-white'
-                : 'text-foreground-muted hover:text-foreground'
-            ].join(' ')}
-            on:click={() => (previewMode = 'pdf')}
-            title="Render the OCR'd PDF (preserves the original layout)"
-          >
-            OCR PDF
-          </button>
-          <button
-            type="button"
-            class={[
-              'px-2 py-0.5 rounded-sm transition-colors',
-              effectivePreviewMode === 'text'
-                ? 'bg-brand text-white'
-                : 'text-foreground-muted hover:text-foreground'
-            ].join(' ')}
-            on:click={() => (previewMode = 'text')}
-            title="Show the raw recognized text"
-          >
-            Text
-          </button>
-        </div>
+        <SegmentedControl
+          bind:value={previewMode}
+          ariaLabel="Preview mode"
+          options={[
+            { value: 'pdf', label: 'OCR PDF', title: 'Render the OCR\u2019d PDF (preserves the original layout)' },
+            { value: 'text', label: 'Text', title: 'Show the raw recognized text' }
+          ]}
+        />
       {/if}
     </div>
     <!-- Bounded scroll box: the OCR PDF mini viewer stacks every page,

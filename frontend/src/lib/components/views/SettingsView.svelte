@@ -102,7 +102,7 @@
   <!-- Header -->
   <header class="flex flex-col lg:flex-row lg:items-end justify-between border-b border-border pb-4 gap-3">
     <div class="space-y-1.5 min-w-0">
-      <h2 class="font-display text-xl font-bold text-foreground">System configuration & settings</h2>
+      <h2 class="text-2xl font-semibold font-display text-foreground">System configuration & settings</h2>
       <p class="text-xs text-foreground-muted">Configure LLM endpoints, credentials, processor plugins, and authentication</p>
     </div>
 
@@ -176,12 +176,12 @@
               </button>
             </div>
             <div class="flex gap-2">
-              <input
+              <Input
                 id="ocr-model"
                 type="text"
                 bind:value={$configStore.ocr_model}
                 placeholder="allenai/olmocr-2-7b"
-                class="flex-1 h-9 px-3 rounded-md text-sm font-mono bg-card text-foreground border border-input focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-colors"
+                class="flex-1 font-mono"
               />
               <Select
                 label=""
@@ -192,7 +192,7 @@
                 ]}
                 on:change={(e) => {
                   const v = (e.target as HTMLSelectElement).value;
-                  if (v) $configStore.ocr_model = v;
+                  if (v) configStore.update((c) => ({ ...c, ocr_model: v }));
                 }}
               />
             </div>
@@ -261,12 +261,12 @@
               </button>
             </div>
             <div class="flex gap-2">
-              <input
+              <Input
                 id="translation-model"
                 type="text"
                 bind:value={$configStore.translation_model}
                 placeholder="allenai/olmocr-2-7b"
-                class="flex-1 h-9 px-3 rounded-md text-sm font-mono bg-card text-foreground border border-input focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-colors"
+                class="flex-1 font-mono"
               />
               <Select
                 label=""
@@ -277,7 +277,7 @@
                 ]}
                 on:change={(e) => {
                   const v = (e.target as HTMLSelectElement).value;
-                  if (v) $configStore.translation_model = v;
+                  if (v) configStore.update((c) => ({ ...c, translation_model: v }));
                 }}
               />
             </div>
@@ -333,7 +333,10 @@
                 { value: 'faster-whisper', label: 'Local Faster-Whisper' }
               ]}
               value={$configStore.transcription_engine}
-              on:change={(e) => $configStore.transcription_engine = (e.target as HTMLSelectElement).value}
+              on:change={(e) => {
+                const v = (e.target as HTMLSelectElement).value;
+                configStore.update((c) => ({ ...c, transcription_engine: v }));
+              }}
             />
             <Input
               id="transcription-model"

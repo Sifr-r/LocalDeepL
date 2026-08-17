@@ -61,6 +61,8 @@ _TOO_MANY_REQUESTS: Final[dict[str, str]] = {"error": "Rate limit exceeded"}
 
 class _UploadGuard(TypedDict):
     total: int
+    rejected: bool
+    sent_rejection: bool
     envelope: dict[str, str] | None
     status: int | None
 
@@ -196,6 +198,20 @@ def _is_health_path(path: str) -> bool:
     return path in _HEALTH_PATHS
 
 
+def _is_management_route(path: str) -> bool:
+    """Return True when ``path`` is a management or administration endpoint."""
+    return bool(
+        path == "/api/providers"
+        or path.startswith("/api/providers/")
+        or path == "/api/jobs"
+        or path.startswith("/api/jobs/")
+        or path == "/api/progress/session"
+        or path.startswith("/api/progress/session/")
+        or path == "/api/config"
+        or path.startswith("/api/config/")
+    )
+
+
 class BearerAuthMiddleware:
     """Reject any HTTP request whose bearer token does not match.
 
@@ -229,6 +245,37 @@ class BearerAuthMiddleware:
         self.translation_token = _normalize_token(translation_token)
         self.transcription_token = _normalize_token(transcription_token)
 
+    def _get_active_tokens(self) -> dict[str, str | None]:
+        dynamic_ocr: str | None = None
+        dynamic_translation: str | None = None
+        dynamic_transcription: str | None = None
+        dynamic_global: str | None = None
+        try:
+            from omniscribe.api.routers.config import _load_config_from_store
+
+            cfg = _load_config_from_store()
+            dynamic_ocr = _normalize_token(cfg.get("ocr_auth_token"))
+            dynamic_translation = _normalize_token(cfg.get("translation_auth_token"))
+            dynamic_transcription = _normalize_token(
+                cfg.get("transcription_auth_token")
+            )
+            dynamic_global = _normalize_token(cfg.get("auth_token"))
+        except Exception:
+            pass
+
+        return {
+            "global": dynamic_global
+            if dynamic_global is not None
+            else self.expected_token,
+            "ocr": dynamic_ocr if dynamic_ocr is not None else self.ocr_token,
+            "translation": dynamic_translation
+            if dynamic_translation is not None
+            else self.translation_token,
+            "transcription": dynamic_transcription
+            if dynamic_transcription is not None
+            else self.transcription_token,
+        }
+
     @staticmethod
     def route_group_for(path: str) -> str:
         """Classify an HTTP path into ``"ocr"``, ``"translation"``, ``"transcription"`` or ``"other"``.
@@ -254,17 +301,25 @@ class BearerAuthMiddleware:
 
         Per-service tokens (OCR / translation / transcription) win over the global
         token when set. When only the global token is set,
-        every route uses it. When neither is set, returns ``None``
-        and the caller is open.
+        every route uses it. When global is unset but subsystem tokens exist,
+        management routes return the first available subsystem token.
+        When no token applies, returns ``None``.
         """
+        tokens = self._get_active_tokens()
         group = self.route_group_for(path)
-        if group == "ocr" and self.ocr_token is not None:
-            return self.ocr_token
-        if group == "translation" and self.translation_token is not None:
-            return self.translation_token
-        if group == "transcription" and self.transcription_token is not None:
-            return self.transcription_token
-        return self.expected_token
+        if group == "ocr" and tokens["ocr"] is not None:
+            return tokens["ocr"]
+        if group == "translation" and tokens["translation"] is not None:
+            return tokens["translation"]
+        if group == "transcription" and tokens["transcription"] is not None:
+            return tokens["transcription"]
+        if tokens["global"] is not None:
+            return tokens["global"]
+        if _is_management_route(path):
+            for t in (tokens["ocr"], tokens["translation"], tokens["transcription"]):
+                if t is not None:
+                    return t
+        return None
 
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] != "http":
@@ -287,8 +342,32 @@ class BearerAuthMiddleware:
             await self.app(scope, receive, send)
             return
 
-        token = self._token_for(normalized)
-        if token is None:
+        tokens = self._get_active_tokens()
+        group = self.route_group_for(normalized)
+
+        acceptable_tokens: list[str] = []
+        if group == "ocr" and tokens["ocr"] is not None:
+            acceptable_tokens = [tokens["ocr"]]
+        elif group == "translation" and tokens["translation"] is not None:
+            acceptable_tokens = [tokens["translation"]]
+        elif group == "transcription" and tokens["transcription"] is not None:
+            acceptable_tokens = [tokens["transcription"]]
+        elif tokens["global"] is not None:
+            acceptable_tokens = [tokens["global"]]
+        elif _is_management_route(normalized):
+            subsystem_tokens = [
+                t
+                for t in (
+                    tokens["ocr"],
+                    tokens["translation"],
+                    tokens["transcription"],
+                )
+                if t is not None
+            ]
+            if subsystem_tokens:
+                acceptable_tokens = subsystem_tokens
+
+        if not acceptable_tokens:
             await self.app(scope, receive, send)
             return
 
@@ -308,7 +387,8 @@ class BearerAuthMiddleware:
         if scheme.lower() != "bearer" or not candidate.strip():
             await _send_json(scope, receive, send, _UNAUTHORIZED, 401)
             return
-        if not secrets.compare_digest(candidate.strip(), token):
+        cand = candidate.strip()
+        if not any(secrets.compare_digest(cand, tok) for tok in acceptable_tokens):
             await _send_json(scope, receive, send, _UNAUTHORIZED, 401)
             return
 
@@ -338,13 +418,6 @@ class MaxUploadSizeMiddleware:
     def __init__(self, app, max_bytes: int) -> None:
         self.app = app
         self.max_bytes = max_bytes
-        # Per-request rejection state. ``_rejected`` is set the moment the
-        # chunked-byte counter crosses the cap (or by the Content-Length
-        # fast path); ``_sent_rejection`` flips once the middleware has
-        # actually emitted its 413 envelope so subsequent downstream
-        # ``send`` calls can be dropped without further inspection.
-        self._rejected: bool = False
-        self._sent_rejection: bool = False
 
     @staticmethod
     def _envelope(max_bytes: int) -> dict[str, str]:
@@ -364,12 +437,6 @@ class MaxUploadSizeMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-
-        # Reset per-request rejection state. The middleware is
-        # instantiated once per app boot, so concurrent requests on the
-        # same instance MUST not bleed state into each other.
-        self._rejected = False
-        self._sent_rejection = False
 
         # Fast path: Content-Length known. Reject up front without
         # reading any body so the server never pays the buffering cost.
@@ -397,6 +464,8 @@ class MaxUploadSizeMiddleware:
         max_bytes = self.max_bytes
         guard: _UploadGuard = {
             "total": 0,
+            "rejected": False,
+            "sent_rejection": False,
             "envelope": None,
             "status": None,
         }
@@ -417,7 +486,7 @@ class MaxUploadSizeMiddleware:
                 # knows to drop every subsequent downstream event (the
                 # inner app will still try to emit its own start + body
                 # even though we've truncated its body stream).
-                self._rejected = True
+                guard["rejected"] = True
                 # Truncate this chunk so downstream reads stop.
                 return {
                     "type": "http.request",
@@ -433,7 +502,7 @@ class MaxUploadSizeMiddleware:
             # forwarding the inner app's body event after our own body
             # is a duplicate-completion bug that crashes uvicorn and
             # can be abused for HTTP request smuggling.
-            if self._sent_rejection:
+            if guard["sent_rejection"]:
                 return
             # While the request is rejected, any non-``start`` event
             # the inner app tries to send is dropped on the floor. The
@@ -441,12 +510,12 @@ class MaxUploadSizeMiddleware:
             # first time it sees a start event; the inner app's own
             # body event would otherwise follow our body and produce a
             # second response completion.
-            if self._rejected and event.get("type") != "http.response.start":
+            if guard["rejected"] and event.get("type") != "http.response.start":
                 return
-            if event.get("type") == "http.response.start" and self._rejected:
+            if event.get("type") == "http.response.start" and guard["rejected"]:
                 envelope = guard.get("envelope") or self._envelope(max_bytes)
                 envelope_body = json.dumps(envelope).encode("utf-8")
-                self._sent_rejection = True
+                guard["sent_rejection"] = True
                 event = {
                     **event,
                     "status": 413,

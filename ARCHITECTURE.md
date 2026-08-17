@@ -565,7 +565,14 @@ Conducted a comprehensive 4-domain audit (Core Pipeline, Backend API/Security, F
 | `pyproject.toml` | Upgraded `surya-ocr>=0.22.1`, bounded `openai>=2.11.0,<3`, pinned `numpy<2.3.0` for Python 3.11 typing stub compatibility, removed unmaintained `comet` (`unbabel-comet`) extra to unblock modern `transformers 5.x` and `huggingface-hub>=1.5.0`, and locked `redis>=5.0.0` and `chromadb>=0.5.0` |
 | `uv.lock` | Updated 220 resolved packages across runtime, upgrading `transformers` (v4.57.6 -> v5.15.0), `protobuf` (v4.25.9 -> v7.35.1), `huggingface-hub` (v0.36.2 -> v1.27.0), `pypdfium2` (v4.30.0 -> v5.13.0), resolving 45 of 46 known `pip-audit` security advisories |
 | `src/omniscribe/core/nllb_engine.py` | Adapted HuggingFace pipeline and tokenizer typing for `transformers` 5.x |
-| `src/omniscribe/core/handwriting_preprocessor.py` | Adapted numpy stroke width calculation for NumPy 2.x typing |
+### 2026-08-17: Comprehensive 5-Domain Multi-Agent Codebase Audit
+
+Conducted an exhaustive 5-domain audit across Core Pipeline, API & Security, Frontend, Testing & QA, and DevOps & Configuration:
+1. **Core Pipeline:** Identified OpenCV `_deskew` coordinate transposition in `preprocessing.py` causing ~84.3° rotation error; `CircuitOpenError` swallowing in `PromptedGroundedOCR`; preprocessing crop/deskew bounding box coordinate drift at PDF embedding boundary; and script detector 1st-block bias in `TrustOrchestrator`.
+2. **API & Security:** Identified `MaxUploadSizeMiddleware` instance state race condition under concurrent streaming uploads; `0.0.0.0` and IPv4-mapped IPv6 SSRF bypasses in `security.py`; in-memory `BearerAuthMiddleware` stale token caching bypassing runtime token rotation; and unbuffered full-file memory reading in `/api/transcribe`.
+3. **Frontend:** Identified `ExportModal.svelte` contract break (missing token, 0-byte Markdown, corrupt JSON, undownloaded DOCX); dual disconnected `ProviderModal` stores making "Browse Presets" a no-op; undownloaded HTML/DOCX in `ExtractionView`; and unmanaged `setInterval` leak on tab switch in `TranslationView`.
+4. **Testing & QA:** Identified `live_llm` marker phantom (0 tests defined, causing command exit code 5); `slow_dataset` tests leaking into PR fast-tier CI; critical coverage blindspots in `WhisperLocalEngine` (0 tests) and `docx_tree_writer.py`; and assertion bypass antipattern in Celery task test.
+5. **DevOps & Config:** Identified missing `curl` in Dockerfile runtime stage breaking `compose.yaml` healthcheck; `stop_app.bat` failing to match `omniscribe-server` CLI entrypoint; and missing `--extra async-translation` in `install.ps1` breaking Celery workers on Windows.
 
 ## See Also
 
@@ -575,5 +582,6 @@ Conducted a comprehensive 4-domain audit (Core Pipeline, Backend API/Security, F
 - [SECURITY.md](SECURITY.md) — threat model, hardening checklist, vulnerability disclosure
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var reference
 
-_Last updated: 2026-08-14_
+_Last updated: 2026-08-17_
+
 

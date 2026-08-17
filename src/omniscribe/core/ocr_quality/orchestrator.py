@@ -188,13 +188,13 @@ def run(
             fallback_used_box=fallback_used_box,
         )
 
-    # Sub-module: script_detect — derive page-level script from any block's
+    # Sub-module: script_detect — derive page-level script from all blocks'
     # text, then per-block mismatch flag.
     page_script: str | None = None
     if settings.script_detect_enabled:
-        any_text = next((b.text for b in blocks if b.text), "")
+        page_text = " ".join(b.text for b in blocks if b.text)
         hint = _safe(
-            lambda: script_detector.detect(any_text),
+            lambda: script_detector.detect(page_text),
             default=None,
             sub_module="script_detect",
             fallback_used_box=fallback_used_box,

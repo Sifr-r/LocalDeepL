@@ -153,14 +153,12 @@ class HybridAligner:
                 boxes: list[BBox] = []
                 for bbox in pred.bboxes or []:
                     x0, y0, x1, y1 = bbox.bbox
-                    boxes.append(
-                        (
-                            _clamp(x0 / img_w),
-                            _clamp(y0 / img_h),
-                            _clamp(x1 / img_w),
-                            _clamp(y1 / img_h),
-                        )
-                    )
+                    cx0 = _clamp(x0 / img_w)
+                    cy0 = _clamp(y0 / img_h)
+                    cx1 = _clamp(x1 / img_w)
+                    cy1 = _clamp(y1 / img_h)
+                    if cx1 > cx0 and cy1 > cy0:
+                        boxes.append((cx0, cy0, cx1, cy1))
                 # Stable row-major default. The actual reading-order choice for
                 # the DP happens inside align_text, which tries both row-major
                 # and column-major orderings and picks the lower-cost result.

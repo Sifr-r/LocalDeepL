@@ -169,10 +169,35 @@
         {/each}
 
         {#if renderError}
-          <div class="absolute inset-x-0 bottom-0 px-3 py-1.5 bg-danger/15 text-danger text-[11px] font-mono">
-            {renderError}
+          <!-- Promoted to a top banner (was an 11px footer band that
+               was easy to miss). Keeps the error attached to the
+               document, not the empty state. -->
+          <div class="absolute top-0 inset-x-0 z-10 px-3 py-2 bg-danger/15 border-b border-danger/30 text-danger text-xs font-mono flex items-start gap-2 backdrop-blur-sm">
+            <svg class="w-3.5 h-3.5 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div class="min-w-0">
+              <p class="font-semibold">Preview failed</p>
+              <p class="opacity-80 truncate" title={renderError}>{renderError}</p>
+            </div>
           </div>
         {/if}
+      </div>
+    {:else if renderError}
+      <!-- Error empty state: a non-PDF upload (or a corrupt PDF) lands
+           here because `hasDocument` flips back to false when the canvas
+           never produces a render. Without this branch the user only
+           sees the generic "No document loaded" copy. -->
+      <div class="m-auto flex flex-col items-center justify-center gap-3 text-center max-w-sm">
+        <div class="w-16 h-16 rounded-full bg-danger/15 border border-danger/30 flex items-center justify-center">
+          <svg class="w-7 h-7 text-danger" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <div class="space-y-1">
+          <p class="text-sm font-display font-semibold text-foreground">Couldn’t render this file</p>
+          <p class="text-xs text-foreground-muted font-mono break-words">{renderError}</p>
+        </div>
       </div>
     {:else}
       <!-- Empty state -->

@@ -157,7 +157,7 @@ If dockerUp Then
     ' so tasks registered on the `omniscribe.*` copy were invisible to the
     ' worker (audit DevOps High #6, drift half).
     LogMsg "Starting Celery worker"
-    objShell.Run "cmd.exe /c set ""REDIS_URL=" & redisUrl & """" & " && uv run --extra web celery -A omniscribe.api.tasks worker --loglevel=info -P solo", 0, False
+    objShell.Run "cmd.exe /c set ""REDIS_URL=" & redisUrl & """" & " && uv run --extra web --extra async-translation celery -A omniscribe.api.tasks worker --loglevel=info -P solo", 0, False
 Else
     LogMsg "Docker is not available; skipping Redis and Celery. Async translation will be disabled."
 End If

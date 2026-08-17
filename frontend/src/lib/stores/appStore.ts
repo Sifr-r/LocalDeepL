@@ -8,15 +8,12 @@ import type {
   ToastLevel,
 } from '../types/api';
 import { fetchApi } from '../api/client';
-import { websocketStore } from './websocketStore';
-// documentStore / jobStore used to be defined inline here. Extracting
-// them into their own leaf modules (documentStore.ts, jobStore.ts) breaks
-// the appStore ↔ websocketStore import cycle (audit M5). The public API
-// is preserved via re-exports below.
-import { documentStore, defaultDocumentModel } from './documentStore';
-import { jobStore, defaultJobState } from './jobStore';
-
-export { websocketStore };
+// documentStore / jobStore / websocketStore used to be defined inline here.
+// Extracting them into their own leaf modules (documentStore.ts, jobStore.ts,
+// websocketStore.ts) breaks the appStore ↔ leaf-store import cycle (audit
+// M5). The public API is preserved via ``export ... from`` re-exports below
+// — this avoids creating local bindings that the linter would flag as unused.
+export { websocketStore } from './websocketStore';
 export { documentStore, defaultDocumentModel } from './documentStore';
 export { jobStore, defaultJobState } from './jobStore';
 
@@ -311,5 +308,11 @@ export function setPerServiceAuthToken(
 
 // 9. Modal State Stores
 export const exportModalOpen = writable<boolean>(false);
-export const providerModalOpen = writable<boolean>(false);
+export {
+  isProviderModalOpen,
+  providerTargetNamespace,
+  openProviderModal,
+  closeProviderModal,
+  isProviderModalOpen as providerModalOpen
+} from './providerModalStore';
 

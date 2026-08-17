@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
+from fastapi.responses import JSONResponse
 
 from omniscribe.api.routers.common import _stable_server_error
 from omniscribe.api.routers.config import (
@@ -15,13 +16,21 @@ from omniscribe.api.routers.config import (
     _mask_api_key,
     _persist_config,
 )
-from omniscribe.api.schemas.requests import TranscriptionConfigUpdate
+from omniscribe.api.schemas.requests import (
+    AuthTokenUpdate,
+    TranscriptionConfigUpdate,
+)
 from omniscribe.api.schemas.responses import (
     ModelsResponse,
     TranscriptionConfigResponse,
     TranscriptionJobResponse,
 )
-from omniscribe.api.services.security import SAFE_API_BASE_ERROR
+from omniscribe.api.services.security import (
+    SAFE_API_BASE_ERROR,
+    UploadValidationError,
+    cleanup_files,
+    save_validated_upload,
+)
 from omniscribe.api.services.transcription import TranscriptionService
 from omniscribe.core.transcription import AudioValidationError, TranscriptionError
 from omniscribe.utils.security import is_ssrf_target
@@ -47,19 +56,26 @@ async def transcribe_audio(
 
     Accepts audio formats (.mp3, .wav, .m4a, .flac, .ogg, .webm, etc.) up to configured upload cap.
     """
-    file_bytes = await file.read()
-    config = _load_config_from_store()
-
-    resolved_api_base = str(
-        api_base or config.get("transcription_api_base", "https://api.openai.com/v1")
-    )
-    if not (await is_ssrf_target(resolved_api_base)).allowed:
-        raise HTTPException(status_code=403, detail=SAFE_API_BASE_ERROR)
+    try:
+        upload = await save_validated_upload(file)
+    except UploadValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
     try:
+        with open(upload.path, "rb") as f:
+            file_bytes = f.read()
+        config = _load_config_from_store()
+
+        resolved_api_base = str(
+            api_base
+            or config.get("transcription_api_base", "https://api.openai.com/v1")
+        )
+        if not (await is_ssrf_target(resolved_api_base)).allowed:
+            raise HTTPException(status_code=403, detail=SAFE_API_BASE_ERROR)
+
         res = await _service.transcribe_audio(
             file_bytes=file_bytes,
-            filename=file.filename or "audio.wav",
+            filename=file.filename or f"audio{upload.suffix}",
             content_type=file.content_type,
             engine_type=str(engine or config.get("transcription_engine", "api")),
             model=str(model or config.get("transcription_model", "whisper-1")),
@@ -76,9 +92,13 @@ async def transcribe_audio(
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     except TranscriptionError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    except HTTPException:
+        raise
     except Exception:
         logger.exception("Voice transcription request failed")
         return _stable_server_error()
+    finally:
+        cleanup_files(upload.path)
 
 
 @router.get("/api/models/transcription", response_model=ModelsResponse)
@@ -134,6 +154,11 @@ async def get_transcription_config() -> Any:
 
     sec = SecuritySettings.from_env()
     config = _load_config_from_store()
+    auth_tok = (
+        config.get("transcription_auth_token")
+        if "transcription_auth_token" in config
+        else sec.transcription_auth_token
+    )
 
     return TranscriptionConfigResponse(
         transcription_api_base=str(
@@ -145,7 +170,7 @@ async def get_transcription_config() -> Any:
         or "",
         transcription_model=str(config.get("transcription_model", "whisper-1")),
         transcription_engine=str(config.get("transcription_engine", "api")),
-        transcription_auth_token=_mask_api_key(sec.transcription_auth_token),
+        transcription_auth_token=_mask_api_key(auth_tok),
         language=str(config.get("transcription_language", "")) or None,
         prompt=str(config.get("transcription_prompt", "")) or None,
         temperature=float(config.get("transcription_temperature", 0.0)),
@@ -192,3 +217,21 @@ async def update_transcription_config(
             ) from None
 
     return await get_transcription_config()
+
+
+@router.post("/api/config/transcription/auth")
+async def update_transcription_auth_token(body: AuthTokenUpdate) -> Any:
+    """Persist the per-namespace transcription auth token. ``None`` clears it.
+
+    Writes through the StateBackend's config_store so every worker
+    sees the new value (issue H1). When the active backend is the
+    default in-memory one, the request is refused with a 503.
+    """
+    try:
+        _persist_config({"transcription_auth_token": body.auth_token})
+    except _ConfigBackendIncompatible as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": str(exc)},
+        )
+    return JSONResponse(content={"transcription_auth_token": body.auth_token})

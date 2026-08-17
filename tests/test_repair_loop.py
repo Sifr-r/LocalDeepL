@@ -169,8 +169,10 @@ class TestEstimateConfidenceCeiling:
             _estimate_confidence("The quick brown fox jumps over the lazy dog") >= 0.98
         )
 
-    def test_digit_heavy_multiword_text_stays_below_target(self) -> None:
-        assert _estimate_confidence("12 34 56 78") < 0.98
+    def test_valid_numeric_expressions_clear_target(self) -> None:
+        assert _estimate_confidence("12 34 56 78") >= 0.98
+        assert _estimate_confidence("$1,234.50") >= 0.98
+        assert _estimate_confidence("+1 (555) 123-4567") >= 0.98
 
     def test_mixed_noise_text_stays_at_intermediate_band(self) -> None:
         # 4 words but low alpha ratio -> 0.85 band, still repair-worthy.
@@ -179,7 +181,8 @@ class TestEstimateConfidenceCeiling:
     def test_existing_bands_unchanged(self) -> None:
         assert _estimate_confidence("") == 0.0
         assert _estimate_confidence("   ") == 0.0
-        assert _estimate_confidence("12345") == 0.3
+        assert _estimate_confidence("~^&*") == 0.3
+        assert _estimate_confidence("12345") == 0.99
         assert _estimate_confidence("ab") == 0.4
         assert _estimate_confidence("hello there") == 0.7
 

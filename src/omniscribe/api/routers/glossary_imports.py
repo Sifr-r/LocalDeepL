@@ -89,14 +89,6 @@ def _decode_bytes_payload(value: str) -> bytes:
         ) from exc
 
 
-def _has_running_loop() -> bool:
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return False
-    return True
-
-
 def _sync_ssrf_blocked(url: str) -> bool:
     from concurrent.futures import ThreadPoolExecutor
 
@@ -110,12 +102,7 @@ def _validate_ssrf(url: str) -> None:
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST, detail="URL is required."
         )
-    blocked = (
-        _sync_ssrf_blocked(url)
-        if not _has_running_loop()
-        else not (asyncio.run(is_ssrf_target(url))).allowed
-    )
-    if blocked:
+    if _sync_ssrf_blocked(url):
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST, detail="URL targets a blocked address."
         )
@@ -363,14 +350,23 @@ def import_glossary(req: GlossaryImportRequest) -> GlossaryImportJobResponse:
 
 
 @router.post("/api/glossary/import/url")
-def import_glossary_from_url(
+async def import_glossary_from_url(
     url: str = Query(..., min_length=1),
     name: str | None = Query(default=None, max_length=200),
     encoding: str | None = Query(default=None),
     format_param: GlossaryFormat | None = Query(default=None, alias="format"),
 ) -> GlossaryImportJobResponse:
     """Infer format from URL extension (or use ?format=) and run the sync path."""
-    _validate_ssrf(url)
+    if not url:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST, detail="URL is required."
+        )
+    ssrf_check = await is_ssrf_target(url)
+    if not ssrf_check.allowed:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST, detail="URL targets a blocked address."
+        )
+
     extension_to_format = {
         "csv": GlossaryFormat.CSV,
         "tsv": GlossaryFormat.TSV,
@@ -403,7 +399,7 @@ def import_glossary_from_url(
         )
 
     try:
-        payload = asyncio.run(fetch_url_bytes(url))
+        payload = await fetch_url_bytes(url)
     except Exception as exc:
         raise HTTPException(
             status_code=HTTPStatus.BAD_GATEWAY,

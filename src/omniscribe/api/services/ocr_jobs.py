@@ -13,11 +13,15 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
+
+logger = logging.getLogger(__name__)
 
 #: Default retention for terminal-state (COMPLETE / ERROR) OCR job records.
 #: Set to 0 (or any value <= 0) to disable TTL-based eviction entirely.
@@ -109,7 +113,7 @@ class OCRJobRecord:
         return d
 
 
-OCRJobRunner = Callable[[], Awaitable[OCRJobResult]]
+OCRJobRunner = Callable[[], Coroutine[Any, Any, OCRJobResult]]
 
 
 class OCRJobQueue:
@@ -130,6 +134,7 @@ class OCRJobQueue:
     ) -> None:
         self._records: dict[str, OCRJobRecord] = {}
         self._runners: dict[str, OCRJobRunner] = {}
+        self._active_tasks: dict[str, asyncio.Task[Any]] = {}
         self._queue: asyncio.Queue[str] = asyncio.Queue(maxsize=max_pending)
         self._lock = asyncio.Lock()
         self._worker: asyncio.Task[None] | None = None
@@ -154,12 +159,16 @@ class OCRJobQueue:
             )
 
     async def stop(self) -> None:
-        """Cancel the worker. Pending jobs are lost on restart."""
+        """Cancel the worker and any active running jobs. Pending jobs are lost on restart."""
+        for task in list(self._active_tasks.values()):
+            if not task.done():
+                task.cancel()
         if self._worker is not None and not self._worker.done():
             self._worker.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._worker
         self._worker = None
+        self._active_tasks.clear()
 
     async def submit(self, job_id: str, filename: str, runner: OCRJobRunner) -> str:
         """Register a job and enqueue it for the worker. Returns job_id."""
@@ -225,11 +234,8 @@ class OCRJobQueue:
 
         For ``PENDING`` jobs the record is removed so the worker drops
         it the next time it pops from the queue. For ``PROCESSING``
-        jobs the running pipeline cannot be interrupted safely here
-        (the worker is owned by the asyncio task doing the work), so
-        we mark the record as ``ERROR`` with a clear message and let
-        the worker finish; the record already carries the cancellation
-        signal so the client sees a stable terminal state.
+        jobs the running pipeline task is cancelled and the record is
+        marked as ``ERROR`` with a clear message.
         Returns the updated record, or ``None`` if the job is unknown.
         """
         async with self._lock:
@@ -249,12 +255,23 @@ class OCRJobQueue:
             record.completed_at = time.monotonic()
             if record.started_at is not None:
                 record.duration_s = record.completed_at - record.started_at
+            task = self._active_tasks.get(job_id)
+            if task is not None and not task.done():
+                task.cancel()
             return record
 
     async def _worker_loop(self) -> None:
         """Drain the queue forever; the queue is unbounded by the caller."""
         while True:
-            job_id = await self._queue.get()
+            try:
+                job_id = await self._queue.get()
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.exception("Unexpected error waiting for OCR job: %s", exc)
+                await asyncio.sleep(0.1)
+                continue
+
             try:
                 async with self._lock:
                     record = self._records.get(job_id)
@@ -265,7 +282,9 @@ class OCRJobQueue:
                 record.status = OCRJobStatus.PROCESSING
                 record.started_at = time.monotonic()
                 try:
-                    result = await runner()
+                    task: asyncio.Task[OCRJobResult] = asyncio.create_task(runner())
+                    self._active_tasks[job_id] = task
+                    result = await task
                     record.text_artifact_id = result.text_artifact_id
                     record.text_artifact_token = result.text_artifact_token
                     record.output_pdf_path = result.output_pdf_path
@@ -274,6 +293,10 @@ class OCRJobQueue:
                     # the runner winds down. Never overwrite that terminal state.
                     if record.status is OCRJobStatus.PROCESSING:
                         record.status = OCRJobStatus.COMPLETE
+                except asyncio.CancelledError:
+                    if record.status is OCRJobStatus.PROCESSING:
+                        record.error = "cancelled by client"
+                        record.status = OCRJobStatus.ERROR
                 except Exception as exc:
                     # Preserve a concurrent cancellation's terminal message.
                     # The runner is allowed to wind down, but neither success
@@ -282,9 +305,14 @@ class OCRJobQueue:
                         record.error = str(exc) or type(exc).__name__
                         record.status = OCRJobStatus.ERROR
                 finally:
+                    self._active_tasks.pop(job_id, None)
                     record.completed_at = time.monotonic()
                     if record.started_at is not None:
                         record.duration_s = record.completed_at - record.started_at
+            except Exception as exc:
+                logger.exception(
+                    "Unexpected error processing OCR job %s: %s", job_id, exc
+                )
             finally:
                 self._queue.task_done()
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import tempfile
 from pathlib import Path
@@ -71,18 +72,23 @@ class WhisperLocalEngine:
             tmp_path = tmp.name
 
         try:
-            segments_iter, info = model.transcribe(
-                tmp_path,
-                language=language,
-                initial_prompt=prompt,
-                temperature=temperature,
-                word_timestamps=True,
-            )
+
+            def _sync_transcribe() -> tuple[list[Any], Any]:
+                segments_iter, info = model.transcribe(
+                    tmp_path,
+                    language=language,
+                    initial_prompt=prompt,
+                    temperature=temperature,
+                    word_timestamps=True,
+                )
+                return list(segments_iter), info
+
+            segments_list, info = await asyncio.to_thread(_sync_transcribe)
 
             segments: list[TranscriptionSegment] = []
             full_text_parts: list[str] = []
 
-            for idx, seg in enumerate(segments_iter):
+            for idx, seg in enumerate(segments_list):
                 text_clean = seg.text.strip()
                 full_text_parts.append(text_clean)
                 words = [

@@ -14,6 +14,7 @@
   import Input from '../ui/Input.svelte';
   import Select from '../ui/Select.svelte';
   import Badge from '../ui/Badge.svelte';
+  import SectionHeader from '../ui/SectionHeader.svelte';
 
   let selectedAudioFile: File | null = null;
   let audioInput: HTMLInputElement;
@@ -129,7 +130,7 @@
   <header class="flex flex-col lg:flex-row lg:items-end justify-between border-b border-border pb-4 gap-3">
     <div class="space-y-1.5 min-w-0">
       <div class="flex items-center gap-2.5 flex-wrap">
-        <h2 class="font-display text-xl font-bold text-foreground">Voice & audio transcription</h2>
+        <h2 class="text-2xl font-semibold font-display text-foreground">Voice & audio transcription</h2>
         <Badge variant="brand" size="md">Whisper / Faster-Whisper</Badge>
       </div>
       <p class="text-xs text-foreground-muted">Transcribe speech to text with precise segment timestamps and multi-language support</p>
@@ -156,7 +157,7 @@
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 flex-1 min-h-0">
     <!-- Left: Audio file + controls -->
     <Card padding="md" class="flex flex-col gap-4">
-      <h3 class="font-display text-xs font-semibold uppercase tracking-wider text-foreground-muted -mb-2">Audio file</h3>
+      <SectionHeader title="Audio file" divider={false} />
 
       <input
         id="audio-file-input"
@@ -229,19 +230,20 @@
 
     <!-- Right: Segments list -->
     <Card padding="md" class="lg:col-span-2 flex flex-col gap-3 min-h-0 overflow-hidden">
-      <div class="flex items-center justify-between -mb-1">
-        <h3 class="font-display text-xs font-semibold uppercase tracking-wider text-foreground-muted">Transcription segments</h3>
-        {#if $transcriptionResult}
-          <div class="flex items-center gap-2">
-            <Button size="sm" variant="ghost" on:click={downloadAsText}>
-              Export .TXT
-            </Button>
-            <Button size="sm" variant="outline" on:click={downloadAsSrt}>
-              Export .SRT
-            </Button>
-          </div>
-        {/if}
-      </div>
+      <SectionHeader title="Transcription segments" divider={false}>
+        <svelte:fragment slot="action">
+          {#if $transcriptionResult}
+            <div class="flex items-center gap-2">
+              <Button size="sm" variant="ghost" on:click={downloadAsText}>
+                Export .TXT
+              </Button>
+              <Button size="sm" variant="outline" on:click={downloadAsSrt}>
+                Export .SRT
+              </Button>
+            </div>
+          {/if}
+        </svelte:fragment>
+      </SectionHeader>
 
       <div class="flex-1 overflow-y-auto space-y-2 pr-1">
         {#if $isTranscribing}

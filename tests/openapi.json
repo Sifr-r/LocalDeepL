@@ -23,7 +23,7 @@
       },
       "post": {
         "summary": "Update Config",
-        "description": "Update legacy configuration.\n\nOnly mutates the legacy ``api_*`` keys and the OCR knobs; the\nper-namespace ``ocr_*`` / ``translation_*`` keys are intentionally\nuntouched so a legacy POST does not silently clobber a deliberate\nsplit.",
+        "description": "Update legacy configuration.\n\nOnly mutates the legacy ``api_*`` keys and the OCR knobs; the\nper-namespace ``ocr_*`` / ``translation_*`` keys are intentionally\nuntouched so a legacy POST does not silently clobber a deliberate\nsplit.\n\nThe update is written through the StateBackend's config_store so\nevery uvicorn worker sees the new value (issue H1). When the\nactive backend is the default in-memory one, the request is\nrefused with a 503 + a remediation message so operators do not\nsee a silently per-worker update.",
         "operationId": "update_config_api_config_post",
         "requestBody": {
           "content": {
@@ -75,7 +75,7 @@
       },
       "post": {
         "summary": "Update Ocr Namespace Config",
-        "description": "Persist the OCR-namespace update and return the masked view.",
+        "description": "Persist the OCR-namespace update and return the masked view.\n\nWrites through the StateBackend's config_store so every worker\nsees the new value (issue H1). When the active backend is the\ndefault in-memory one, the request is refused with a 503.",
         "operationId": "update_ocr_namespace_config_api_config_ocr_post",
         "requestBody": {
           "content": {
@@ -127,7 +127,7 @@
       },
       "post": {
         "summary": "Update Translation Namespace Config",
-        "description": "Persist the translation-namespace update and return the masked view.",
+        "description": "Persist the translation-namespace update and return the masked view.\n\nWrites through the StateBackend's config_store so every worker\nsees the new value (issue H1). When the active backend is the\ndefault in-memory one, the request is refused with a 503.",
         "operationId": "update_translation_namespace_config_api_config_translation_post",
         "requestBody": {
           "content": {
@@ -164,7 +164,7 @@
     "/api/config/ocr/auth": {
       "post": {
         "summary": "Update Ocr Auth Token",
-        "description": "Persist the per-namespace OCR auth token. ``None`` clears it.",
+        "description": "Persist the per-namespace OCR auth token. ``None`` clears it.\n\nWrites through the StateBackend's config_store so every worker\nsees the new value (issue H1). When the active backend is the\ndefault in-memory one, the request is refused with a 503.",
         "operationId": "update_ocr_auth_token_api_config_ocr_auth_post",
         "requestBody": {
           "content": {
@@ -201,7 +201,7 @@
     "/api/config/translation/auth": {
       "post": {
         "summary": "Update Translation Auth Token",
-        "description": "Persist the per-namespace translation auth token. ``None`` clears it.",
+        "description": "Persist the per-namespace translation auth token. ``None`` clears it.\n\nWrites through the StateBackend's config_store so every worker\nsees the new value (issue H1). When the active backend is the\ndefault in-memory one, the request is refused with a 503.",
         "operationId": "update_translation_auth_token_api_config_translation_auth_post",
         "requestBody": {
           "content": {
@@ -219,6 +219,45 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config/transcription/auth": {
+      "post": {
+        "summary": "Update Transcription Auth Token",
+        "description": "Persist the per-namespace transcription auth token. ``None`` clears it.\n\nWrites through the StateBackend's config_store so every worker\nsees the new value (issue H1). When the active backend is the\ndefault in-memory one, the request is refused with a 503.",
+        "operationId": "update_transcription_auth_token_api_config_transcription_auth_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthTokenUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Update Transcription Auth Token Api Config Transcription Auth Post"
+                }
               }
             }
           },
@@ -605,6 +644,44 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/process/{job_id}/events": {
+      "get": {
+        "summary": "Stream Events",
+        "description": "SSE progress stream for ``job_id``.\n\n- ``404`` if the job_id is unknown (never submitted, already\n  evicted, or processed on a different uvicorn worker).\n- ``200`` ``text/event-stream`` with at least one SSE frame\n  per producer publish, plus a ``: keepalive`` comment every\n  :data:`_KEEPALIVE_TIMEOUT_S` seconds of silence.\n\nThe stream stays open until the client disconnects, at which\npoint :meth:`SSEBroker.unsubscribe` removes the local\ncallback so the broker registry stays bounded.",
+        "operationId": "stream_events_api_process__job_id__events_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1919,7 +1996,7 @@
     "/api/config/transcription": {
       "get": {
         "summary": "Get Transcription Config",
-        "description": "Get the current voice transcription runtime configuration.",
+        "description": "Get the current voice transcription runtime configuration.\n\nReads go through the StateBackend's config_store (see\n:func:`omniscribe.api.routers.config._load_config_from_store`) so\na value written by another worker is visible here in a multi-worker\ndeployment.",
         "operationId": "get_transcription_config_api_config_transcription_get",
         "responses": {
           "200": {
@@ -1936,7 +2013,7 @@
       },
       "post": {
         "summary": "Update Transcription Config",
-        "description": "Update runtime configuration for voice transcription.",
+        "description": "Update runtime configuration for voice transcription.\n\nWrites go through the StateBackend's config_store (see\n:func:`omniscribe.api.routers.config._persist_config`) so every\nworker sees the new value in a multi-worker deployment. When the\nactive backend is the default in-memory one, the request is\nrefused with a 503 + a remediation message.",
         "operationId": "update_transcription_config_api_config_transcription_post",
         "requestBody": {
           "content": {

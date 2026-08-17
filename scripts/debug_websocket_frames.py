@@ -43,7 +43,7 @@ def _now_iso() -> str:
 async def _open_session(base_url: str) -> tuple[str, str]:
     """Create a progress session and return (channel_id, token)."""
     async with httpx.AsyncClient(base_url=base_url, timeout=10.0) as client:
-        resp = await client.post("/progress/session", json={})
+        resp = await client.post("/api/progress/session", json={})
         resp.raise_for_status()
         data = resp.json()
         return data["channel_id"], data["session_token"]

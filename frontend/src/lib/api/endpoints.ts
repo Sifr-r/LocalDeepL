@@ -12,7 +12,8 @@ import type {
   GlossaryFormat,
   GlossaryPreviewResponse,
   TranscriptionSegment,
-  TrustSummary
+  TrustSummary,
+  DocumentExportFormat
 } from '../types/api';
 
 export async function getConfig(): Promise<RuntimeConfig> {
@@ -117,26 +118,38 @@ export async function getOcrResult(jobId: string, token: string): Promise<Blob> 
   return fetchFile(`/jobs/${jobId}/result?token=${encodeURIComponent(token)}`);
 }
 
+export interface DocumentExportResult {
+  artifact_id: string;
+  token: string;
+  format: string;
+}
+
 export async function exportDocument(payload: {
   text_artifact_id?: string;
+  text_artifact_token?: string;
+  metadata_artifact_id?: string;
+  metadata_artifact_token?: string;
+  export_format?: DocumentExportFormat | string;
   format?: string;
   filename?: string;
   [key: string]: unknown;
-}): Promise<unknown> {
-  return fetchApi('/export/document', {
+}): Promise<DocumentExportResult> {
+  return fetchApi<DocumentExportResult>('/export/document', {
     method: 'POST',
     body: JSON.stringify(payload)
   });
 }
 
 export async function exportDocx(payload: {
-  text_artifact_id?: string;
-  filename?: string;
+  text?: string;
   [key: string]: unknown;
-}): Promise<unknown> {
-  return fetchApi('/export/docx', {
+}): Promise<Blob> {
+  return fetchFile('/export/docx', {
     method: 'POST',
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    headers: {
+      'Content-Type': 'application/json'
+    }
   });
 }
 
@@ -188,7 +201,7 @@ export const glossaryApi = {
 };
 
 export const jobsApi = {
-  list: () => fetchApi<{ jobs: JobRecordResponse[] }>('/jobs'),
+  list: () => fetchApi<JobRecordResponse[]>('/jobs'),
   clear: () => fetchApi('/jobs', { method: 'DELETE' }),
   cancel: (jobId: string) => fetchApi(`/jobs/${jobId}/cancel`, { method: 'POST' })
 };

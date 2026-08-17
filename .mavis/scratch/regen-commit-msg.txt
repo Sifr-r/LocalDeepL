@@ -1,0 +1,10 @@
+chore(frontend): regenerate static bundle (unblocks sub-phase B fast gate)
+
+The pre-existing test failure `test_static_html_references_resolve_to_disk`
+was caused by a stale `src/omniscribe/static/index.html` referencing a JS
+bundle (`assets/index-D0Qr4St_.js`) that was no longer on disk. `npm run
+build` regenerates the index.html with the current bundle name
+(`assets/index-DYr8-22l.js`).
+
+No source-tree changes; this is a tracked build artifact that the test
+expects to match the current on-disk bundle.

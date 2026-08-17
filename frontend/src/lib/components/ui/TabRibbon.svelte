@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import { activeTab, themeStore, websocketStore, type TabType } from '../../stores/appStore';
 
   const tabs: { id: string; label: string; tabKey: TabType }[] = [
@@ -55,6 +55,31 @@
   function toggleTheme() {
     themeStore.update((t) => (t === 'dark' ? 'light' : 'dark'));
   }
+
+  // WAI-ARIA tablist keyboard pattern. The roving `tabindex` already
+  // puts only the active tab in the tab order; arrow keys move focus
+  // AND activate the new tab (the "automatic activation" pattern,
+  // which fits a primary navigation tablist where every tab is a
+  // one-keystroke destination). Home/End jump to the first/last tab.
+  async function onTabKeydown(e: KeyboardEvent, fromIndex: number) {
+    let target: number | null = null;
+    if (e.key === 'ArrowRight') {
+      target = (fromIndex + 1) % tabs.length;
+    } else if (e.key === 'ArrowLeft') {
+      target = (fromIndex - 1 + tabs.length) % tabs.length;
+    } else if (e.key === 'Home') {
+      target = 0;
+    } else if (e.key === 'End') {
+      target = tabs.length - 1;
+    }
+    if (target === null || target === fromIndex) return;
+    e.preventDefault();
+    activeTab.set(tabs[target].tabKey);
+    // Defer focus until Svelte has updated the active tab's tabindex
+    // and aria-selected, so the next focus() lands on the right node.
+    await tick();
+    document.getElementById(tabs[target].id)?.focus();
+  }
 </script>
 
 <header class="w-full bg-card/80 backdrop-blur-md border-b border-border px-5 h-14 flex items-center justify-between sticky top-0 z-30">
@@ -96,7 +121,7 @@
       role="tablist"
       aria-label="Primary"
     >
-      {#each tabs as tab (tab.id)}
+      {#each tabs as tab, i (tab.id)}
         <button
           id={tab.id}
           type="button"
@@ -112,6 +137,7 @@
               : 'text-foreground-muted hover:text-foreground hover:bg-muted'
           ].join(' ')}
           on:click={() => activeTab.set(tab.tabKey)}
+          on:keydown={(e) => onTabKeydown(e, i)}
         >
           {tab.label}
         </button>

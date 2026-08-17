@@ -30,7 +30,19 @@ def _local_ssrf_allowed() -> bool:
 
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    return bool(ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast)
+    normalized: ipaddress.IPv4Address | ipaddress.IPv6Address = ip
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        normalized = ip.ipv4_mapped
+    if str(normalized) == "0.0.0.0":
+        return True
+    return bool(
+        normalized.is_unspecified
+        or normalized.is_reserved
+        or normalized.is_private
+        or normalized.is_loopback
+        or normalized.is_link_local
+        or normalized.is_multicast
+    )
 
 
 @dataclass(frozen=True)

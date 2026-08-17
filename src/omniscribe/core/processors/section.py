@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from omniscribe.core.block_tree import Section
+from omniscribe.core.block_tree import BlockNode, Section
 from omniscribe.core.document import DocumentBlock, DocumentResult
 from omniscribe.core.processors.base import (
     _KEY_VALUE_RE,
@@ -62,7 +62,7 @@ class SectionAnalysisProcessor:
                         "role": "heading",
                     }
 
-                    if tree and node:
+                    if tree and node and isinstance(node, BlockNode):
                         current_tree_section = Section(
                             title=title,
                             level=1,
@@ -87,7 +87,7 @@ class SectionAnalysisProcessor:
                         **current_section,
                         "role": "body",
                     }
-                    if node and current_tree_section:
+                    if node and current_tree_section and isinstance(node, BlockNode):
                         node.parent_id = current_tree_section.block_id
                         node.section_hierarchy = [current_tree_section.title]
 

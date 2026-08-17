@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { activeTab, documentStore, configStore, modelStore, refreshModels, pushToast } from '$lib/stores/appStore';
   import { fetchApi } from '$lib/api/client';
   import type { TranslationRequest, TreeTranslationRequest } from '$lib/types/api';
@@ -8,6 +8,7 @@
   import Badge from '../ui/Badge.svelte';
   import Select from '../ui/Select.svelte';
   import Toggle from '../ui/Toggle.svelte';
+  import SectionHeader from '../ui/SectionHeader.svelte';
 
   let sourceText = '';
   let selectedArtifactId = '';
@@ -21,14 +22,26 @@
   let asyncStatus = '';
   let useNllb = false;
   let useTree = false;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
 
   const languages = [
     'French', 'Spanish', 'German', 'Italian', 'Portuguese',
     'Japanese', 'Chinese (Simplified)', 'Korean', 'Russian', 'Arabic', 'Dutch'
   ];
 
+  function clearPolling() {
+    if (pollTimer !== null) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
   onMount(() => {
     refreshModels('translation');
+  });
+
+  onDestroy(() => {
+    clearPolling();
   });
 
   $: if ($documentStore.textArtifactId) {
@@ -101,6 +114,7 @@
       return;
     }
 
+    clearPolling();
     isTranslating = true;
     asyncJobId = null;
     asyncStatus = 'Queuing async translation job...';
@@ -129,22 +143,23 @@
   }
 
   async function pollAsyncStatus(jobId: string) {
-    const interval = setInterval(async () => {
+    clearPolling();
+    pollTimer = setInterval(async () => {
       try {
         const res = await fetchApi<{ state?: string; status?: string; result?: unknown; error?: string }>(`/translate/status/${jobId}`, { silent: true });
         asyncStatus = `Status: ${res.state || res.status}`;
         if (res.state === 'SUCCESS') {
-          clearInterval(interval);
+          clearPolling();
           isTranslating = false;
           translatedOutput = typeof res.result === 'string' ? res.result : JSON.stringify(res.result, null, 2);
           pushToast('success', 'Async translation job completed!', 4000);
         } else if (res.state === 'FAILURE' || res.error) {
-          clearInterval(interval);
+          clearPolling();
           isTranslating = false;
           pushToast('error', res.error || 'Async job failed', 4000);
         }
       } catch {
-        clearInterval(interval);
+        clearPolling();
         isTranslating = false;
       }
     }, 2000);
@@ -156,7 +171,7 @@
   <header class="flex flex-col lg:flex-row lg:items-end justify-between border-b border-border pb-4 gap-3">
     <div class="space-y-1.5 min-w-0">
       <div class="flex items-center gap-2.5 flex-wrap">
-        <h2 class="font-display text-xl font-bold text-foreground">Neural translation engine</h2>
+        <h2 class="text-2xl font-semibold font-display text-foreground">Neural translation engine</h2>
         <Badge variant="brand" size="md">LangGraph / NLLB</Badge>
       </div>
       <p class="text-xs text-foreground-muted">Context-aware document translation with term preservation</p>
@@ -165,16 +180,13 @@
     <!-- Controls bar -->
     <div class="flex items-center gap-2 flex-wrap">
       <Select
-        label=""
-        ariaLabel="Target language"
+        label="Target language"
         options={languages.map(l => ({ value: l, label: l }))}
-        value={targetLanguage}
-        on:change={(e) => targetLanguage = (e.target as HTMLSelectElement).value}
+        bind:value={targetLanguage}
       />
-      <div class="flex items-center gap-1">
+      <div class="flex items-end gap-1">
         <Select
-          label=""
-          ariaLabel="Translation model override"
+          label="Model"
           options={[
             { value: '', label: `Default: ${$configStore.translation_model || $configStore.model || 'auto'}` },
             ...$modelStore.translation.map(m => ({ value: m, label: m }))
@@ -227,18 +239,19 @@
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 flex-1 min-h-0">
     <!-- Source -->
     <Card padding="md" className="flex flex-col gap-3 min-h-[400px]">
-      <div class="flex items-center justify-between -mb-1">
-        <h3 class="font-display text-xs font-semibold uppercase tracking-wider text-foreground-muted">Source input</h3>
-        {#if selectedArtifactId}
-          <button
-            type="button"
-            on:click={() => { selectedArtifactId = ''; selectedArtifactToken = ''; }}
-            class="text-xs text-foreground-muted hover:text-danger transition-colors"
-          >
-            Clear artifact binding
-          </button>
-        {/if}
-      </div>
+      <SectionHeader title="Source input" divider={false}>
+        <svelte:fragment slot="action">
+          {#if selectedArtifactId}
+            <button
+              type="button"
+              on:click={() => { selectedArtifactId = ''; selectedArtifactToken = ''; }}
+              class="text-xs text-foreground-muted hover:text-danger transition-colors"
+            >
+              Clear artifact binding
+            </button>
+          {/if}
+        </svelte:fragment>
+      </SectionHeader>
 
       <textarea
         bind:value={sourceText}
@@ -268,20 +281,19 @@
 
     <!-- Target -->
     <Card padding="md" className="flex flex-col gap-3 min-h-[400px]">
-      <div class="flex items-center justify-between -mb-1">
-        <h3 class="font-display text-xs font-semibold uppercase tracking-wider text-brand">
-          Translated output ({targetLanguage})
-        </h3>
-        {#if isTranslating}
-          <span class="flex items-center gap-1.5 text-[11px] font-mono text-warning">
-            <span class="relative flex h-1.5 w-1.5">
-              <span class="absolute inline-flex h-full w-full rounded-full bg-warning opacity-60 animate-ping"></span>
-              <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-warning"></span>
+      <SectionHeader title={`Translated output (${targetLanguage})`} divider={false}>
+        <svelte:fragment slot="action">
+          {#if isTranslating}
+            <span class="flex items-center gap-1.5 text-[11px] font-mono text-warning">
+              <span class="relative flex h-1.5 w-1.5">
+                <span class="absolute inline-flex h-full w-full rounded-full bg-warning opacity-60 animate-ping"></span>
+                <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-warning"></span>
+              </span>
+              Processing
             </span>
-            Processing
-          </span>
-        {/if}
-      </div>
+          {/if}
+        </svelte:fragment>
+      </SectionHeader>
 
       {#if asyncStatus}
         <div class="p-2.5 surface-inset rounded-md text-xs font-mono text-foreground-muted">

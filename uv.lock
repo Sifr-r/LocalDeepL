@@ -2884,7 +2884,6 @@ name = "omniscribe"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "chromadb" },
     { name = "defusedxml" },
     { name = "httpx" },
     { name = "numpy" },
@@ -2961,7 +2960,6 @@ dev = [
 requires-dist = [
     { name = "celery", marker = "extra == 'async-translation'", specifier = ">=5.4.0" },
     { name = "chardet", marker = "extra == 'glossary'", specifier = ">=5.2.0" },
-    { name = "chromadb", specifier = ">=0.5.0" },
     { name = "chromadb", marker = "extra == 'memory'", specifier = ">=0.5.0" },
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.124.4" },

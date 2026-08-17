@@ -40,6 +40,8 @@ from omniscribe.core.glossary_library import GlossaryLibrary
 class RedisTextArtifactStore(TextArtifactStore):
     """Redis-backed storage for Text Artifact metadata."""
 
+    EXPIRATIONS_KEY = "omniscribe:artifacts:expirations"
+
     def __init__(
         self,
         redis_url: str,
@@ -69,6 +71,7 @@ class RedisTextArtifactStore(TextArtifactStore):
         token: str,
         path: str | os.PathLike[str],
     ) -> TextArtifactHandle:
+        self.cleanup_expired()
         _validate_artifact_id(artifact_id)
         _validate_token(token)
         artifact_path = self._resolve_artifact_path(path)
@@ -77,18 +80,15 @@ class RedisTextArtifactStore(TextArtifactStore):
 
         key = self._key(artifact_id)
 
-        # We store token and path. Expiry is managed by Redis TTL.
+        # We store token and path. Expiry is managed by Redis TTL and tracked in ZSET.
         payload = {
             "token": token,
             "path": str(artifact_path),
         }
         self._redis.set(key, json.dumps(payload), ex=int(self._ttl_seconds))
 
-        # Enforce max entries by keeping a list of recent IDs?
-        # A full LRU is hard in plain Redis without sorted sets.
-        # For this audit, simple TTL-based retention is usually sufficient since Redis will auto-evict,
-        # but to strictly follow `max_entries`, we could use a ZSET for access times.
-        # However, for simplicity we rely on Redis TTL.
+        member = json.dumps({"key": key, "path": str(artifact_path)})
+        self._redis.zadd(self.EXPIRATIONS_KEY, {member: expires_at})
 
         return TextArtifactHandle(
             artifact_id=artifact_id,
@@ -116,6 +116,7 @@ class RedisTextArtifactStore(TextArtifactStore):
     def pop(self, artifact_id: str, token: str) -> str | None:
         _validate_artifact_id(artifact_id)
         _validate_token(token)
+        self.cleanup_expired()
         key = self._key(artifact_id)
         data = self._redis.get(key)
         if not data:
@@ -128,7 +129,10 @@ class RedisTextArtifactStore(TextArtifactStore):
             raise ArtifactAccessDeniedError("Artifact token does not match.")
 
         self._redis.delete(key)
-        return cast(str | None, entry["path"])
+        path = str(entry["path"])
+        member = json.dumps({"key": key, "path": path})
+        self._redis.zrem(self.EXPIRATIONS_KEY, member)
+        return cast(str | None, path)
 
     async def delete(self, artifact_id: str, token: str) -> bool:
         path = self.pop(artifact_id, token)
@@ -145,21 +149,41 @@ class RedisTextArtifactStore(TextArtifactStore):
             data = self._redis.get(key)
             if data:
                 entry = json.loads(data)
-                paths.append(entry["path"])
-                _delete_file(Path(entry["path"]))
+                p = str(entry["path"])
+                paths.append(p)
+                _delete_file(Path(p))
+                member = json.dumps({"key": key, "path": p})
+                self._redis.zrem(self.EXPIRATIONS_KEY, member)
             keys.append(key)
         if keys:
             self._redis.delete(*keys)
         return paths
 
     def cleanup_expired(self) -> list[str]:
-        # Redis handles TTL eviction automatically, so we don't need a manual cleanup
-        # However, we'd need to delete the files. For exact parity, a background task would be needed.
-        # This is a known trade-off of using Redis TTL for file deletion.
-        return []
+        now = self._clock()
+        expired_members = self._redis.zrangebyscore(self.EXPIRATIONS_KEY, "-inf", now)
+        removed_paths: list[str] = []
+        if not expired_members:
+            return removed_paths
+
+        for item in expired_members:
+            try:
+                info = json.loads(cast(str, item))
+                key = info.get("key")
+                path_str = info.get("path")
+                if key:
+                    self._redis.delete(key)
+                if path_str:
+                    _delete_file(Path(path_str))
+                    removed_paths.append(str(path_str))
+            except Exception:
+                pass
+
+        self._redis.zremrangebyscore(self.EXPIRATIONS_KEY, "-inf", now)
+        return removed_paths
 
     def __len__(self) -> int:
-        # Not exact without scanning, but returning 0 for now as it's rarely used for logic
+        self.cleanup_expired()
         return 0
 
 

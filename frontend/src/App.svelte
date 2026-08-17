@@ -50,6 +50,17 @@
   });
 </script>
 
+<!-- Skip-to-content link. Hidden by default with `sr-only`; the
+     `focus:not-sr-only` brings it on-screen when a keyboard user
+     tabs into it. Saves Tab users from walking through all 7 tabs
+     in the TabRibbon on every page load. -->
+<a
+  href="#view-workstation"
+  class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-3 focus:py-1.5 focus:rounded focus:bg-brand focus:text-brand-foreground focus:text-xs focus:font-medium focus:shadow-lg"
+>
+  Skip to content
+</a>
+
 <!-- Root App Shell Container -->
 <div class="flex flex-col h-screen w-screen bg-app text-foreground overflow-hidden relative font-sans">
   <!-- Ambient Glow Backdrop Effects -->

@@ -17,14 +17,15 @@ from __future__ import annotations
 import base64
 import html
 from collections.abc import Iterable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+
+from omniscribe.core.block_tree import TableNode
 
 if TYPE_CHECKING:
     from omniscribe.core.block_tree import (
         BlockNode,
         DocumentTree,
         PageTree,
-        TableNode,
     )
 
 
@@ -39,20 +40,15 @@ def render_html(tree: DocumentTree) -> str:
     out.append(f"<title>{html.escape(title)}</title>")
     out.append(_embedded_css())
     out.append("</head><body>")
+    rendered_table_ids: set[str] = set()
     for i, page in enumerate(tree.pages):
         if i > 0:
             out.append("<!-- PageBreak -->")
-        out.append(_render_page(page))
-    # Tables live on the tree (``tree.tables``) rather than on a page's
-    # children — the table-extraction processor builds ``TableNode``s and
-    # filters the cell blocks back out of ``page.children``, so this loop is
-    # the only place a ``<table>`` is emitted. The corresponding figure and
-    # equation elements are rendered via the page-walk above (``_render_block``
-    # branches on ``block_type == "figure" | "equation"``); rendering them
-    # again from ``tree.figures`` / ``tree.equations`` would duplicate the
-    # markup, so those post-walks were removed.
+        out.append(_render_page(page, rendered_table_ids))
     for table in tree.tables:
-        out.append(_render_table(table))
+        if table.block_id not in rendered_table_ids:
+            out.append(_render_table(table))
+            rendered_table_ids.add(table.block_id)
     out.append("</body></html>")
     return "\n".join(out)
 
@@ -77,16 +73,59 @@ def _embedded_css() -> str:
     )
 
 
-def _render_page(page: PageTree) -> str:
+def _render_page(page: PageTree, rendered_table_ids: set[str] | None = None) -> str:
     parts: list[str] = []
     parts.append(f'<section data-page-idx="{page.page_idx}">')
+    current_list: list[str] = []
+
+    def flush_list() -> None:
+        if current_list:
+            parts.append("<ul>")
+            parts.extend(current_list)
+            parts.append("</ul>")
+            current_list.clear()
+
     for child in page.children:
-        parts.append(_render_block(child))
+        if isinstance(child, TableNode):
+            flush_list()
+            if rendered_table_ids is not None:
+                rendered_table_ids.add(child.block_id)
+            parts.append(_render_table(child))
+            continue
+
+        bt = getattr(child, "block_type", None)
+        bt_val = (
+            bt.value if (bt is not None and hasattr(bt, "value")) else str(bt or "")
+        )
+        if bt_val == "list_item":
+            current_list.append(_render_block(child))
+        else:
+            flush_list()
+            if bt_val == "table":
+                if rendered_table_ids is not None:
+                    rendered_table_ids.add(child.block_id)
+                if hasattr(child, "cells"):
+                    parts.append(_render_table(cast("TableNode", child)))
+            else:
+                parts.append(_render_block(child))
+
+    flush_list()
     parts.append("</section>")
     return "\n".join(parts)
 
 
-def _render_block(node: BlockNode) -> str:
+def _render_block(node: BlockNode | TableNode) -> str:
+    if isinstance(node, TableNode):
+        return _render_table(node)
+    bt = (
+        node.block_type.value
+        if hasattr(node.block_type, "value")
+        else str(node.block_type)
+    )
+    if bt == "table":
+        if hasattr(node, "cells"):
+            return _render_table(cast("TableNode", node))
+        return ""
     data = (
         f' data-block-id="{node.block_id}"'
         f' data-bbox="{",".join(f"{v:.4f}" for v in node.bbox)}"'
@@ -94,20 +133,18 @@ def _render_block(node: BlockNode) -> str:
     if node.confidence is not None:
         data += f' data-confidence="{node.confidence:.3f}"'
 
-    if node.block_type.value == "section_header":
+    if bt == "section_header":
         level = max(1, min(6, node.level or 1))
         tag = f"h{level}"
         return f"<{tag}{data}>{html.escape(node.text)}</{tag}>"
-    if node.block_type.value == "list_item":
-        depth = max(0, node.level)
-        tag = "ul" if depth == 0 else f"ul data-depth='{depth}'"
+    if bt == "list_item":
         return f"<li{data}>{html.escape(node.text)}</li>"
-    if node.block_type.value == "code":
+    if bt == "code":
         return f"<pre{data}><code>{html.escape(node.text)}</code></pre>"
-    if node.block_type.value == "equation":
+    if bt == "equation":
         latex = html.escape(getattr(node, "latex", None) or node.text)
         return f"<span{data}><code>{latex}</code></span>"
-    if node.block_type.value == "figure":
+    if bt == "figure":
         img_html = ""
         # Figures can be either a BlockNode (caption-only) or a FigureNode
         # (image_bytes + caption). Handle both.
@@ -130,13 +167,11 @@ def _render_block(node: BlockNode) -> str:
             caption = node.text
         cap = html.escape(caption)
         return f"<figure{data}>{img_html}<figcaption>{cap}</figcaption></figure>"
-    if node.block_type.value == "table":
-        return _render_table(node)  # type: ignore[arg-type]
-    if node.block_type.value == "page_header":
+    if bt == "page_header":
         return f"<!-- PageHeader={html.escape(node.text)} -->"
-    if node.block_type.value == "page_footer":
+    if bt == "page_footer":
         return f"<!-- PageFooter={html.escape(node.text)} -->"
-    if node.block_type.value == "page_number":
+    if bt == "page_number":
         return f"<!-- PageNumber={html.escape(node.text)} -->"
 
     text = _render_spans(node)
@@ -185,7 +220,12 @@ def _render_table(table: TableNode) -> str:
 def iter_blocks(tree: DocumentTree) -> Iterable[BlockNode]:
     for page in tree.pages:
         for child in page.children:
-            yield from _walk(child)
+            if isinstance(child, BlockNode):
+                yield from _walk(child)
+            elif isinstance(child, TableNode):
+                for row in child.cells:
+                    for cell in row:
+                        yield from _walk(cell)
 
 
 def _walk(node: BlockNode) -> Iterable[BlockNode]:

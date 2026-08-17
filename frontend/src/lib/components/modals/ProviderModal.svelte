@@ -1,5 +1,10 @@
 <script lang="ts">
-  import { providerModalOpen, configStore, toastStore } from '../../stores/appStore';
+  import {
+    isProviderModalOpen,
+    providerTargetNamespace,
+    closeProviderModal
+  } from '../../stores/providerModalStore';
+  import { configStore, toastStore } from '../../stores/appStore';
   import { getProviders } from '../../api/endpoints';
   import type { ProviderPreset } from '../../types/api';
   import Modal from '../ui/Modal.svelte';
@@ -22,28 +27,54 @@
     }
   }
 
-  $: if ($providerModalOpen) {
+  $: if ($isProviderModalOpen) {
     loadCatalog();
   }
 
   function closeModal() {
-    providerModalOpen.set(false);
+    closeProviderModal();
   }
 
   function applyPreset(provider: ProviderPreset) {
-    configStore.update((cfg) => ({
-      ...cfg,
-      api_base: provider.api_base || provider.recommended_base_url,
-      model: provider.default_model
-    }));
-    toastStore.pushToast('success', `Applied preset: ${provider.name}`);
+    const target = $providerTargetNamespace;
+    const base = provider.api_base || provider.recommended_base_url;
+    const model = provider.default_model;
+
+    configStore.update((cfg) => {
+      if (target === 'ocr') {
+        return {
+          ...cfg,
+          ocr_api_base: base,
+          ocr_model: model,
+        };
+      } else if (target === 'translation') {
+        return {
+          ...cfg,
+          translation_api_base: base,
+          translation_model: model,
+        };
+      } else if (target === 'transcription') {
+        return {
+          ...cfg,
+          transcription_api_base: base,
+          transcription_model: model,
+        };
+      } else {
+        return {
+          ...cfg,
+          api_base: base,
+          model: model,
+        };
+      }
+    });
+    toastStore.pushToast('success', `Applied preset: ${provider.name} (${target})`);
     closeModal();
   }
 </script>
 
 <Modal
-  open={$providerModalOpen}
-  on:close={() => providerModalOpen.set(false)}
+  open={$isProviderModalOpen}
+  on:close={closeModal}
   title="LLM provider catalog"
   description="Select a preset to populate API base and model configuration"
   maxWidth="xl"

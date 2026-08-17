@@ -143,6 +143,18 @@ class LocalPagePreprocessor:
             if options.crop_cleanup:
                 image, crop_meta = _trim_border(image)
                 page_meta["crop_cleanup"] = crop_meta
+                if crop_meta.get("trimmed"):
+                    page_meta["preprocessing"] = {
+                        "crop_offset": crop_meta.get("offset"),
+                        "crop_dimensions": [
+                            crop_meta.get("crop_width"),
+                            crop_meta.get("crop_height"),
+                        ],
+                        "original_dimensions": [
+                            crop_meta.get("original_width"),
+                            crop_meta.get("original_height"),
+                        ],
+                    }
                 operations.append("crop_cleanup")
 
             array = np.array(image.convert("RGB"))
@@ -180,7 +192,25 @@ def _trim_border(image: Image.Image) -> tuple[Image.Image, dict[str, object]]:
         return image, {"trimmed": False}
     if bbox == (0, 0, image.width, image.height):
         return image, {"trimmed": False}
-    return image.crop(bbox), {"trimmed": True, "bbox": list(bbox)}
+    offset_x, offset_y, max_x, max_y = bbox
+    crop_width = max_x - offset_x
+    crop_height = max_y - offset_y
+    return image.crop(bbox), {
+        "trimmed": True,
+        "bbox": list(bbox),
+        "offset": [offset_x, offset_y],
+        "offset_x": offset_x,
+        "offset_y": offset_y,
+        "crop_width": crop_width,
+        "crop_height": crop_height,
+        "width": crop_width,
+        "height": crop_height,
+        "original_width": image.width,
+        "original_height": image.height,
+    }
+
+
+_crop_cleanup = _trim_border
 
 
 def _normalize_contrast(array: np.ndarray) -> np.ndarray:
@@ -205,7 +235,8 @@ def _deskew(array: np.ndarray) -> tuple[np.ndarray, float]:
 
     gray = cv2.cvtColor(array, cv2.COLOR_RGB2GRAY)
     gray = cv2.bitwise_not(gray)
-    coords = np.column_stack(np.where(gray > 0))
+    y_indices, x_indices = np.where(gray > 0)
+    coords = np.column_stack((x_indices, y_indices))
     if len(coords) < 10:
         return array, 0.0
 

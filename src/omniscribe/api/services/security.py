@@ -102,18 +102,37 @@ def detect_upload_suffix(header: bytes) -> str:
         return ".tiff"
     if header.startswith(b"BM"):
         return ".bmp"
-    if header.startswith(b"RIFF") and len(header) >= 12 and header[8:12] == b"WEBP":
-        return ".webp"
-    if (
-        len(header) >= 12
-        and header[4:8] == b"ftyp"
-        and header[8:12]
-        in {
-            b"avif",
-            b"avis",
-        }
+    if header.startswith(b"RIFF") and len(header) >= 12:
+        if header[8:12] == b"WEBP":
+            return ".webp"
+        if header[8:12] == b"WAVE":
+            return ".wav"
+    if header.startswith(b"ID3") or (
+        len(header) >= 2 and header[0] == 0xFF and (header[1] & 0xE0) == 0xE0
     ):
-        return ".avif"
+        return ".mp3"
+    if header.startswith(b"fLaC"):
+        return ".flac"
+    if header.startswith(b"OggS"):
+        return ".ogg"
+    if header.startswith(b"\x1a\x45\xdf\xa3"):
+        return ".webm"
+    if len(header) >= 2 and header[0] == 0xFF and (header[1] & 0xF6) == 0xF0:
+        return ".aac"
+    if len(header) >= 12 and header[4:8] == b"ftyp":
+        brand = header[8:12]
+        if brand in {b"avif", b"avis"}:
+            return ".avif"
+        if brand in {
+            b"M4A ",
+            b"M4B ",
+            b"mp41",
+            b"mp42",
+            b"isom",
+            b"iso2",
+            b"dash",
+        }:
+            return ".m4a"
     raise UploadValidationError("Unsupported file type.", status_code=415)
 
 

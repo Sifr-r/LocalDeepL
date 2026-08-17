@@ -20,6 +20,8 @@
   import Input from '../ui/Input.svelte';
   import Select from '../ui/Select.svelte';
   import Badge from '../ui/Badge.svelte';
+  import Modal from '../ui/Modal.svelte';
+  import SegmentedControl from '../ui/SegmentedControl.svelte';
 
   let activeTabMode: 'library' | 'entries' | 'merged' = 'library';
   let isImportModalOpen = false;
@@ -50,13 +52,16 @@
       let textContent: string | undefined = undefined;
 
       if (importFile) {
-        const buffer = await importFile.arrayBuffer();
-        const bytes = new Uint8Array(buffer);
-        let binary = '';
-        for (let i = 0; i < bytes.byteLength; i++) {
-          binary += String.fromCharCode(bytes[i]);
-        }
-        inline_bytes_b64 = btoa(binary);
+        inline_bytes_b64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const dataUrl = reader.result as string;
+            const base64 = dataUrl.split(',')[1] || '';
+            resolve(base64);
+          };
+          reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
+          reader.readAsDataURL(importFile as File);
+        });
       } else {
         textContent = importText;
       }
@@ -146,7 +151,7 @@
   <header class="flex flex-col lg:flex-row lg:items-end justify-between border-b border-border pb-4 gap-3">
     <div class="space-y-1.5 min-w-0">
       <div class="flex items-center gap-2.5 flex-wrap">
-        <h2 class="font-display text-xl font-bold text-foreground">Terminology glossary</h2>
+        <h2 class="text-2xl font-semibold font-display text-foreground">Terminology glossary</h2>
         <Badge variant="success" size="md" dot>
           {$glossaryLibrary.length} {($glossaryLibrary.length === 1 ? 'library' : 'libraries')} active
         </Badge>
@@ -156,23 +161,11 @@
 
     <div class="flex items-center gap-2 flex-wrap">
       <!-- Sub-view navigation -->
-      <div class="flex items-center gap-1 surface-inset p-1 rounded-md">
-        {#each subTabs as tab (tab.id)}
-          <button
-            type="button"
-            on:click={() => activeTabMode = tab.id}
-            class={[
-              'h-7 px-3 rounded text-xs font-medium font-body transition-colors',
-              'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand',
-              activeTabMode === tab.id
-                ? 'bg-brand text-brand-foreground shadow-sm'
-                : 'text-foreground-muted hover:text-foreground'
-            ].join(' ')}
-          >
-            {tab.label}
-          </button>
-        {/each}
-      </div>
+      <SegmentedControl
+        bind:value={activeTabMode}
+        ariaLabel="Sub-view"
+        options={subTabs.map((t) => ({ value: t.id, label: t.label }))}
+      />
 
       <Button variant="primary" on:click={() => isImportModalOpen = true}>
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -311,97 +304,75 @@
   {/if}
 
   <!-- Import modal -->
-  {#if isImportModalOpen}
-    <div
-      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-overlay/80 backdrop-blur-sm"
-      role="presentation"
-      on:click={() => isImportModalOpen = false}
-      on:keydown={(e) => e.key === 'Escape' && (isImportModalOpen = false)}
-    >
-      <div
-        on:click|stopPropagation
-        on:keydown|stopPropagation
-        role="dialog"
-        aria-modal="true"
-        aria-label="Import glossary"
-        tabindex="-1"
-        class="w-full max-w-lg"
-      >
-        <Card padding="lg" className="shadow-2xl space-y-4">
-        <div class="flex items-center justify-between border-b border-border pb-3">
-          <h3 class="font-display text-lg font-semibold text-foreground">Import glossary lexicon</h3>
-          <Button variant="ghost" size="sm" on:click={() => isImportModalOpen = false} title="Close import dialog">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </Button>
-        </div>
+  <Modal
+    open={isImportModalOpen}
+    on:close={() => isImportModalOpen = false}
+    title="Import glossary lexicon"
+    description="Upload a term bank file or import from a URL"
+    maxWidth="lg"
+  >
+    <div class="space-y-3">
+      <Input
+        id="import-name"
+        label="Display name (optional)"
+        bind:value={importName}
+        placeholder="e.g. Legal Terms EN-FR"
+      />
+      <Select
+        id="import-format"
+        label="Format"
+        options={importFormats}
+        bind:value={importFormat}
+      />
 
-        <div class="space-y-3">
-          <Input
-            id="import-name"
-            label="Display name (optional)"
-            bind:value={importName}
-            placeholder="e.g. Legal Terms EN-FR"
+      <div>
+        <label for="import-file" class="form-label">Upload file or paste inline text</label>
+        <input
+          id="import-file"
+          type="file"
+          on:change={(e) => {
+            const target = e.target as HTMLInputElement;
+            if (target.files) importFile = target.files[0];
+          }}
+          class="block w-full text-foreground-muted surface-inset p-2 rounded-md border border-border file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-brand file:text-brand-foreground hover:file:bg-brand-600 cursor-pointer"
+        />
+      </div>
+
+      <div>
+        <label for="import-text" class="form-label">Inline content (if no file chosen)</label>
+        <textarea
+          id="import-text"
+          bind:value={importText}
+          rows="3"
+          placeholder="source = target&#10;hello = bonjour"
+          class="w-full surface-inset rounded-md p-2 text-sm font-mono text-foreground placeholder:text-foreground-subtle focus:outline-none focus:ring-2 focus:ring-brand/20 resize-none"
+        ></textarea>
+      </div>
+
+      <div class="pt-2 border-t border-border">
+        <label for="import-url" class="form-label">Or import via URL</label>
+        <div class="flex items-center gap-2">
+          <input
+            id="import-url"
+            type="url"
+            bind:value={importUrl}
+            placeholder="https://example.com/glossary.csv"
+            class="flex-1 h-9 px-3 rounded-md text-sm bg-card text-foreground border border-input focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand"
           />
-          <Select
-            id="import-format"
-            label="Format"
-            options={importFormats}
-            bind:value={importFormat}
-          />
-
-          <div>
-            <label for="import-file" class="form-label">Upload file or paste inline text</label>
-            <input
-              id="import-file"
-              type="file"
-              on:change={(e) => {
-                const target = e.target as HTMLInputElement;
-                if (target.files) importFile = target.files[0];
-              }}
-              class="block w-full text-foreground-muted surface-inset p-2 rounded-md border border-border file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-brand file:text-brand-foreground hover:file:bg-brand-600 cursor-pointer"
-            />
-          </div>
-
-          <div>
-            <label for="import-text" class="form-label">Inline content (if no file chosen)</label>
-            <textarea
-              id="import-text"
-              bind:value={importText}
-              rows="3"
-              placeholder="source = target&#10;hello = bonjour"
-              class="w-full surface-inset rounded-md p-2 text-sm font-mono text-foreground placeholder:text-foreground-subtle focus:outline-none focus:ring-2 focus:ring-brand/20 resize-none"
-            ></textarea>
-          </div>
-
-          <div class="pt-2 border-t border-border">
-            <label for="import-url" class="form-label">Or import via URL</label>
-            <div class="flex items-center gap-2">
-              <input
-                id="import-url"
-                type="url"
-                bind:value={importUrl}
-                placeholder="https://example.com/glossary.csv"
-                class="flex-1 h-9 px-3 rounded-md text-sm bg-card text-foreground border border-input focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand"
-              />
-              <Button size="sm" variant="secondary" on:click={handleUrlImport} loading={isSubmittingImport}>
-                Fetch URL
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        <div class="flex justify-end gap-2 pt-3 border-t border-border">
-          <Button variant="ghost" on:click={() => isImportModalOpen = false}>
-            Cancel
-          </Button>
-          <Button variant="primary" on:click={handleFileImport} loading={isSubmittingImport}>
-            {isSubmittingImport ? 'Importing…' : 'Submit import'}
+          <Button size="sm" variant="secondary" on:click={handleUrlImport} loading={isSubmittingImport}>
+            Fetch URL
           </Button>
         </div>
-      </Card>
       </div>
     </div>
-  {/if}
+
+    <svelte:fragment slot="footer">
+      <Button variant="ghost" on:click={() => isImportModalOpen = false}>
+        Cancel
+      </Button>
+      <Button variant="primary" on:click={handleFileImport} loading={isSubmittingImport}>
+        {isSubmittingImport ? 'Importing…' : 'Submit import'}
+      </Button>
+    </svelte:fragment>
+  </Modal>
 </section>

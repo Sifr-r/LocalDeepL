@@ -925,7 +925,8 @@ def _create_app_with_security(monkeypatch, **env):
 
 
 def test_bearer_auth_required_when_token_set(monkeypatch):
-    app = _create_app_with_security(monkeypatch, OMNISCRIBE_AUTH_TOKEN="s3cret")
+    secret_token = "s3cret-token-for-testing-purposes-12345"
+    app = _create_app_with_security(monkeypatch, OMNISCRIBE_AUTH_TOKEN=secret_token)
     client = TestClient(app)
 
     unauthorized = client.get("/api/config")
@@ -937,15 +938,18 @@ def test_bearer_auth_required_when_token_set(monkeypatch):
 
     right = client.get(
         "/api/config",
-        headers={"Authorization": "Bearer s3cret"},
+        headers={"Authorization": f"Bearer {secret_token}"},
     )
     assert right.status_code == 200
 
 
 def test_bearer_auth_accepts_lowercase_scheme(monkeypatch):
-    app = _create_app_with_security(monkeypatch, OMNISCRIBE_AUTH_TOKEN="token")
+    valid_token = "valid-token-with-sufficient-entropy-32chars"
+    app = _create_app_with_security(monkeypatch, OMNISCRIBE_AUTH_TOKEN=valid_token)
     client = TestClient(app)
-    response = client.get("/api/config", headers={"Authorization": "bearer token"})
+    response = client.get(
+        "/api/config", headers={"Authorization": f"bearer {valid_token}"}
+    )
     assert response.status_code == 200
 
 

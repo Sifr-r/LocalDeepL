@@ -640,6 +640,24 @@ async def update_translation_auth_token(body: AuthTokenUpdate):
     return JSONResponse(content={"translation_auth_token": body.auth_token})
 
 
+@router.post("/api/config/transcription/auth")
+async def update_transcription_auth_token(body: AuthTokenUpdate):
+    """Persist the per-namespace transcription auth token. ``None`` clears it.
+
+    Writes through the StateBackend's config_store so every worker
+    sees the new value (issue H1). When the active backend is the
+    default in-memory one, the request is refused with a 503.
+    """
+    try:
+        _persist_config({"transcription_auth_token": body.auth_token})
+    except _ConfigBackendIncompatible as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": str(exc)},
+        )
+    return JSONResponse(content={"transcription_auth_token": body.auth_token})
+
+
 # ---------------------------------------------------------------------------
 # Model discovery
 # ---------------------------------------------------------------------------

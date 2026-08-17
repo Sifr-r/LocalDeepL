@@ -321,21 +321,11 @@ class SQLiteJobHistory(JobHistory):
     """Job history persisted in SQLite.
 
     Reads (``list()``) are a single indexed ``SELECT ... ORDER BY
-    inserted_at DESC`` and the cap is enforced with a single
-    indexed ``DELETE`` on every ``record()`` — both are O(log N)
-    because the ``inserted_at DESC`` index is unique-friendly for
-    the common case (one record per job_id). The default
-    ``max_jobs`` matches :class:`JobHistory` (1000) so the
+    rowid DESC`` and the cap is enforced with a single
+    indexed ``DELETE`` on every ``record()`` using SQLite's monotonic rowid.
+    The default ``max_jobs`` matches :class:`JobHistory` (1000) so the
     persistent backend does not silently drop history that the
     in-memory backend would have kept.
-
-    ``inserted_at`` is a strictly monotonic per-instance counter
-    (not wall-clock time) so the cap test is deterministic
-    even when 5 records land inside the same millisecond. The
-    human-readable timestamp is stored in the ``payload`` JSON
-    under the ``timestamp`` field (already produced by
-    :func:`_current_timestamp`); ``inserted_at`` is purely a
-    monotonic logical clock for ordering.
     """
 
     def __init__(
@@ -347,36 +337,8 @@ class SQLiteJobHistory(JobHistory):
     ) -> None:
         super().__init__(max_jobs=max_jobs, now=now)
         self._db_path = db_path
-        # Create the table *before* the counter probe — the
-        # probe queries the table, so the schema must exist.
         with _connect(db_path) as conn:
             conn.executescript(_JOBS_TABLE_SCHEMA)
-        # ``_counter`` is the per-instance monotonic logical clock.
-        # It is *not* persisted: a restarted backend starts the
-        # new counter above the highest existing ``inserted_at``
-        # in the table so the "newest first" order stays correct
-        # across restarts (old rows have lower counters than
-        # any new row, by construction).
-        self._counter = self._max_existing_inserted_at(db_path)
-
-    @staticmethod
-    def _max_existing_inserted_at(db_path: Path) -> int:
-        if not db_path.exists():
-            return 0
-        try:
-            with _connect(db_path) as conn:
-                row = conn.execute(
-                    "SELECT MAX(inserted_at) FROM omniscribe_jobs"
-                ).fetchone()
-        except sqlite3.OperationalError:
-            # The table doesn't exist yet (the first backend to
-            # open this file might probe before its own CREATE
-            # TABLE — e.g. on a fresh file that was just created
-            # by ``_connect`` via ``db_path.parent.mkdir``).
-            return 0
-        if row is None or row[0] is None:
-            return 0
-        return int(row[0])
 
     def record(
         self,
@@ -401,22 +363,19 @@ class SQLiteJobHistory(JobHistory):
             status=_clean_status(status),
             failed_pages=_clean_failed_pages(failed_pages),
         )
-        self._counter += 1
         payload = json.dumps(record.to_dict())
+        inserted_at = time.time()
         with _connect(self._db_path) as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO omniscribe_jobs "
                 "(id, inserted_at, payload) VALUES (?, ?, ?)",
-                (record.id, self._counter, payload),
+                (record.id, inserted_at, payload),
             )
-            # Cap: keep only the newest ``max_jobs`` rows. The
-            # ``ORDER BY ... LIMIT -1 OFFSET ?`` pattern is the
-            # canonical SQLite idiom for "everything past offset N"
-            # without a subquery.
+            # Cap: keep only the newest ``max_jobs`` rows using SQLite's native rowid.
             conn.execute(
-                "DELETE FROM omniscribe_jobs WHERE id IN ("
-                "  SELECT id FROM omniscribe_jobs "
-                "  ORDER BY inserted_at DESC "
+                "DELETE FROM omniscribe_jobs WHERE rowid IN ("
+                "  SELECT rowid FROM omniscribe_jobs "
+                "  ORDER BY rowid DESC "
                 "  LIMIT -1 OFFSET ?"
                 ")",
                 (self.max_jobs,),
@@ -426,7 +385,7 @@ class SQLiteJobHistory(JobHistory):
     def list(self) -> list[dict[str, Any]]:
         with _connect(self._db_path) as conn:
             rows = conn.execute(
-                "SELECT payload FROM omniscribe_jobs ORDER BY inserted_at DESC"
+                "SELECT payload FROM omniscribe_jobs ORDER BY rowid DESC"
             ).fetchall()
         return [cast(dict[str, Any], json.loads(row[0])) for row in rows]
 

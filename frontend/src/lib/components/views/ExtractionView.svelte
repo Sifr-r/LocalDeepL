@@ -1,10 +1,12 @@
 <script lang="ts">
   import { activeTab, documentStore, configStore, pushToast } from '$lib/stores/appStore';
-  import { fetchApi } from '$lib/api/client';
+  import { fetchApi, fetchFile } from '$lib/api/client';
   import type { ExtractionRequest } from '$lib/types/api';
   import Card from '../ui/Card.svelte';
   import Button from '../ui/Button.svelte';
   import Badge from '../ui/Badge.svelte';
+  import SectionHeader from '../ui/SectionHeader.svelte';
+  import SegmentedControl from '../ui/SegmentedControl.svelte';
 
   type Template = 'invoice' | 'resume' | 'academic' | 'custom';
   let selectedTemplate: Template = 'invoice';
@@ -26,6 +28,17 @@
     { value: 'academic', label: 'Academic' },
     { value: 'custom', label: 'Custom schema' }
   ];
+
+  function downloadBlob(blob: Blob, name: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
 
   async function handleExtract() {
     if (!inputText.trim() && !selectedArtifactId) {
@@ -61,36 +74,43 @@
   }
 
   async function downloadExport(format: 'markdown' | 'docx' | 'html' | 'blocktree') {
-    if (!selectedArtifactId) {
-      pushToast('warning', 'Export requires an active text artifact ID.', 3000);
+    if (!selectedArtifactId || !selectedArtifactToken) {
+      pushToast('warning', 'Export requires an active text artifact ID and token.', 3000);
       return;
     }
 
     try {
-      let endpoint = '';
-      if (format === 'html') endpoint = '/export/html';
-      else if (format === 'docx') endpoint = '/export/docx-tree';
-      else if (format === 'blocktree') endpoint = '/export/blocktree';
-
       const payload = {
         text_artifact_id: selectedArtifactId,
         text_artifact_token: selectedArtifactToken,
       };
 
       pushToast('info', `Generating ${format.toUpperCase()} export...`, 2000);
-      const res = await fetchApi<unknown>(endpoint, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
 
-      if (format === 'blocktree') {
+      if (format === 'html') {
+        const blob = await fetchFile('/export/html', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+          headers: { 'Content-Type': 'application/json' },
+        });
+        downloadBlob(blob, `export-${selectedArtifactId}.html`);
+        pushToast('success', 'HTML export downloaded.', 3000);
+      } else if (format === 'docx') {
+        const blob = await fetchFile('/export/docx-tree', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+          headers: { 'Content-Type': 'application/json' },
+        });
+        downloadBlob(blob, `export-${selectedArtifactId}.docx`);
+        pushToast('success', 'DOCX export downloaded.', 3000);
+      } else if (format === 'blocktree') {
+        const res = await fetchApi<unknown>('/export/blocktree', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
         const blob = new Blob([JSON.stringify(res, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `blocktree-${selectedArtifactId}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+        downloadBlob(blob, `blocktree-${selectedArtifactId}.json`);
+        pushToast('success', 'BlockTree export downloaded.', 3000);
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -104,44 +124,33 @@
   <header class="flex flex-col lg:flex-row lg:items-end justify-between border-b border-border pb-4 gap-3">
     <div class="space-y-1.5 min-w-0">
       <div class="flex items-center gap-2.5 flex-wrap">
-        <h2 class="font-display text-xl font-bold text-foreground">Structured information extraction</h2>
+        <h2 class="text-2xl font-semibold font-display text-foreground">Structured information extraction</h2>
         <Badge variant="brand" size="md">JSON Schema / AST</Badge>
       </div>
       <p class="text-xs text-foreground-muted">Extract structured entities and key-value fields from OCR document trees</p>
     </div>
 
     <!-- Template selector -->
-    <div class="flex items-center gap-1 surface-inset p-1 rounded-md">
-      {#each templates as tmpl (tmpl.value)}
-        <button
-          type="button"
-          on:click={() => selectedTemplate = tmpl.value}
-          class={[
-            'h-7 px-3 rounded text-xs font-medium font-body transition-colors',
-            'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand',
-            selectedTemplate === tmpl.value
-              ? 'bg-brand text-brand-foreground shadow-sm'
-              : 'text-foreground-muted hover:text-foreground'
-          ].join(' ')}
-        >
-          {tmpl.label}
-        </button>
-      {/each}
-    </div>
+    <SegmentedControl
+      bind:value={selectedTemplate}
+      ariaLabel="Extraction template"
+      options={templates}
+    />
   </header>
 
   <!-- Dual pane -->
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 flex-1 min-h-0">
     <!-- Left: Input -->
     <Card padding="md" class="flex flex-col gap-4 min-h-[400px]">
-      <div class="flex items-center justify-between -mb-2">
-        <h3 class="font-display text-xs font-semibold uppercase tracking-wider text-foreground-muted">Input text / document artifact</h3>
-        {#if selectedArtifactId}
-          <Badge variant="brand" size="sm" title={selectedArtifactId}>
-            {selectedArtifactId.slice(0, 12)}…
-          </Badge>
-        {/if}
-      </div>
+      <SectionHeader title="Input text / document artifact" divider={false}>
+        <svelte:fragment slot="action">
+          {#if selectedArtifactId}
+            <Badge variant="brand" size="sm" title={selectedArtifactId}>
+              {selectedArtifactId.slice(0, 12)}…
+            </Badge>
+          {/if}
+        </svelte:fragment>
+      </SectionHeader>
 
       <textarea
         bind:value={inputText}
@@ -171,20 +180,21 @@
 
     <!-- Right: Output -->
     <Card padding="md" class="flex flex-col gap-4 min-h-[400px]">
-      <div class="flex items-center justify-between -mb-2">
-        <h3 class="font-display text-xs font-semibold uppercase tracking-wider text-foreground-muted">Extracted output AST</h3>
-        <div class="flex items-center gap-1.5">
-          <Button size="sm" variant="ghost" on:click={() => downloadExport('html')}>
-            .HTML
-          </Button>
-          <Button size="sm" variant="ghost" on:click={() => downloadExport('docx')}>
-            .DOCX
-          </Button>
-          <Button size="sm" variant="ghost" on:click={() => downloadExport('blocktree')}>
-            BlockTree
-          </Button>
-        </div>
-      </div>
+      <SectionHeader title="Extracted output AST" divider={false}>
+        <svelte:fragment slot="action">
+          <div class="flex items-center gap-1.5">
+            <Button size="sm" variant="ghost" on:click={() => downloadExport('html')}>
+              .HTML
+            </Button>
+            <Button size="sm" variant="ghost" on:click={() => downloadExport('docx')}>
+              .DOCX
+            </Button>
+            <Button size="sm" variant="ghost" on:click={() => downloadExport('blocktree')}>
+              BlockTree
+            </Button>
+          </div>
+        </svelte:fragment>
+      </SectionHeader>
 
       <div class="flex-1 surface-inset rounded-md p-3 font-mono text-xs overflow-y-auto leading-relaxed min-h-[160px]">
         {#if isExtracting}

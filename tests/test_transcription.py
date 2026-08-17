@@ -1,4 +1,6 @@
-from unittest.mock import AsyncMock, patch
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -9,8 +11,10 @@ from omniscribe.api.services.security_middleware import BearerAuthMiddleware
 from omniscribe.core.transcription import (
     AudioValidationError,
     GenericAudioAPIEngine,
+    TranscriptionError,
     TranscriptionResult,
     TranscriptionSegment,
+    WhisperLocalEngine,
     get_transcription_engine,
     validate_audio_input,
 )
@@ -172,7 +176,8 @@ def test_transcribe_endpoint_success():
         "omniscribe.core.transcription.api_engine.GenericAudioAPIEngine.transcribe",
         new=AsyncMock(return_value=mock_result),
     ):
-        files = {"file": ("test.wav", b"dummy wav content", "audio/wav")}
+        wav_header = b"RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00D\xac\x00\x00\x88X\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00"
+        files = {"file": ("test.wav", wav_header, "audio/wav")}
         response = client.post(
             "/api/transcribe", files=files, data={"model": "whisper-1"}
         )
@@ -246,3 +251,85 @@ def test_transcription_auth_middleware_enforcement():
         headers={"Authorization": f"Bearer {TEST_PLACEHOLDER_TOKEN}"},
     )
     assert resp_auth.status_code == 200
+
+
+def test_whisper_local_engine_missing_dependency():
+    """Missing faster_whisper dependency raises a 503 TranscriptionError."""
+    engine = WhisperLocalEngine()
+    with patch.dict("sys.modules", {"faster_whisper": None}):
+        with pytest.raises(TranscriptionError) as exc_info:
+            engine._get_model()
+        assert exc_info.value.status_code == 503
+        assert "transcription" in str(exc_info.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_whisper_local_engine_mock_transcribe():
+    """Mock faster_whisper transcription returns segment text and language."""
+    engine = WhisperLocalEngine(model_size_or_path="base", device="cpu")
+
+    mock_word = SimpleNamespace(word="OmniScribe", start=0.0, end=1.5, probability=0.98)
+    mock_segment = SimpleNamespace(
+        id=0,
+        start=0.0,
+        end=2.0,
+        text="  OmniScribe voice transcription  ",
+        avg_logprob=-0.15,
+        words=[mock_word],
+    )
+    mock_info = SimpleNamespace(language="en", duration=2.0)
+
+    mock_model = MagicMock()
+    mock_model.transcribe.return_value = ([mock_segment], mock_info)
+    engine._model = mock_model
+
+    result = await engine.transcribe(b"fake audio data", filename="test.wav")
+    assert result.text == "OmniScribe voice transcription"
+    assert result.language == "en"
+    assert result.duration == 2.0
+    assert len(result.segments) == 1
+    assert result.segments[0].text == "OmniScribe voice transcription"
+    assert result.segments[0].confidence == -0.15
+    assert len(result.segments[0].words) == 1
+    assert result.segments[0].words[0]["word"] == "OmniScribe"
+
+
+@pytest.mark.asyncio
+async def test_whisper_local_engine_temp_file_unlinked_in_finally():
+    """Verify temp files created during transcription are deleted in finally block."""
+    engine = WhisperLocalEngine(model_size_or_path="base")
+    mock_segment = SimpleNamespace(
+        id=0, start=0.0, end=1.0, text="Test", avg_logprob=-0.1, words=[]
+    )
+    mock_info = SimpleNamespace(language="en", duration=1.0)
+
+    mock_model = MagicMock()
+    captured_paths: list[str] = []
+
+    def _side_effect(path, **kwargs):
+        captured_paths.append(path)
+        # Verify the temp file exists on disk while transcribe is running
+        assert Path(path).is_file()
+        return ([mock_segment], mock_info)
+
+    mock_model.transcribe.side_effect = _side_effect
+    engine._model = mock_model
+
+    # 1. Success case: temp file is deleted
+    await engine.transcribe(b"audio-bytes-success", filename="test_success.wav")
+    assert len(captured_paths) == 1
+    assert not Path(captured_paths[0]).exists()
+
+    # 2. Error case: temp file is deleted even when transcribe raises
+    error_paths: list[str] = []
+
+    def _failing_side_effect(path, **kwargs):
+        error_paths.append(path)
+        assert Path(path).is_file()
+        raise RuntimeError("Transcribe backend error")
+
+    mock_model.transcribe.side_effect = _failing_side_effect
+    with pytest.raises(RuntimeError, match="Transcribe backend error"):
+        await engine.transcribe(b"audio-bytes-error", filename="test_error.wav")
+    assert len(error_paths) == 1
+    assert not Path(error_paths[0]).exists()

@@ -338,3 +338,39 @@ def test_bearer_middleware_rejects_http_without_token():
 
     asyncio.run(middleware(http_scope, _noop_receive, _capture_send))
     assert captured_status == [401]
+
+
+def test_ws_send_disconnects_channel_on_transport_error():
+    """Verify that when ws.send_text raises an exception, the channel is cleaned up."""
+    from omniscribe.api.routers.websocket import ConnectionManager
+
+    class _FailingWS:
+        async def accept(self):
+            pass
+
+        async def send_text(self, text: str) -> None:
+            raise RuntimeError("Transport connection broken")
+
+    channel_id = "abcd" * 8
+    session_token = "efgh" * 8
+
+    async def _drive():
+        manager = ConnectionManager()
+        stub = _FailingWS()
+        await manager.connect(stub, channel_id, session_token)
+
+        # Verify channel registered
+        assert channel_id in manager.active
+        assert channel_id in manager._tokens
+        assert channel_id in manager._accept_loops
+
+        # Send frame which triggers transport error in send_text
+        await manager.send(channel_id, {"status": "progress", "percent": 50})
+
+        # Verify channel state was cleaned up from active, _tokens, and _accept_loops
+        assert channel_id not in manager.active
+        assert channel_id not in manager._tokens
+        assert channel_id not in manager._accept_loops
+        assert channel_id not in manager._cancel_flags
+
+    asyncio.run(_drive())

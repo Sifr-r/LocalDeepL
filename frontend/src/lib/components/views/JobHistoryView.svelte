@@ -72,7 +72,7 @@
   <header class="flex flex-col sm:flex-row sm:items-end justify-between border-b border-border pb-4 gap-3">
     <div class="space-y-1.5">
       <div class="flex items-center gap-2.5">
-        <h2 class="font-display text-xl font-bold text-foreground">Job execution history</h2>
+        <h2 class="text-2xl font-semibold font-display text-foreground">Job execution history</h2>
         <Badge variant="brand" size="md" dot>
           {jobs.length} {jobs.length === 1 ? 'job' : 'jobs'}
         </Badge>
@@ -127,7 +127,7 @@
           {:else}
             {#each jobs as job (job.id)}
               <tr class="hover:bg-muted/50 transition-colors">
-                <td class="py-2.5 px-4 font-mono text-xs font-semibold text-brand truncate max-w-[120px]" title={job.id}>
+                <td class="py-2.5 px-4 font-mono text-xs font-semibold text-foreground truncate max-w-[120px]" title={job.id}>
                   {job.id}
                 </td>
                 <td class="py-2.5 px-4">
@@ -155,13 +155,9 @@
                 </td>
                 <td class="py-2.5 px-4 text-right">
                   {#if job.status === 'processing' || job.status === 'pending'}
-                    <button
-                      type="button"
-                      on:click={() => cancelJob(job.id)}
-                      class="text-xs font-medium text-danger hover:underline"
-                    >
+                    <Button variant="danger" size="sm" on:click={() => cancelJob(job.id)}>
                       Cancel
-                    </button>
+                    </Button>
                   {:else}
                     <span class="text-foreground-subtle text-xs">—</span>
                   {/if}

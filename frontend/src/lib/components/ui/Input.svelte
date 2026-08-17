@@ -34,6 +34,13 @@
   export let min: number | string | null = null;
   export let max: number | string | null = null;
   export let step: number | string | null = null;
+  // Optional utility-class passthrough (Card has the same pattern).
+  // Lets call sites add `font-mono` for identifier fields, `flex-1` to
+  // sit alongside a sibling Select, etc., without hand-rolling the
+  // input element.
+  export let className: string = '';
+  let customClass: string = '';
+  export { customClass as class };
 </script>
 
 <div class={fullWidth ? 'w-full' : ''}>
@@ -69,7 +76,9 @@
       error
         ? 'border-danger focus:border-danger focus:ring-danger/20'
         : 'border-input focus:border-brand',
-      disabled && 'opacity-50 cursor-not-allowed'
+      disabled && 'opacity-50 cursor-not-allowed',
+      customClass,
+      className
     ].filter(Boolean).join(' ')}
   />
   {#if error}

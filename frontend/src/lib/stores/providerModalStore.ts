@@ -1,9 +1,11 @@
 import { writable } from 'svelte/store';
 
-export const isProviderModalOpen = writable<boolean>(false);
-export const providerTargetNamespace = writable<'ocr' | 'translation' | 'transcription' | 'general'>('general');
+export type ProviderTargetNamespace = 'ocr' | 'translation' | 'transcription' | 'general';
 
-export function openProviderModal(targetNamespace: 'ocr' | 'translation' | 'transcription' | 'general' = 'general') {
+export const isProviderModalOpen = writable<boolean>(false);
+export const providerTargetNamespace = writable<ProviderTargetNamespace>('general');
+
+export function openProviderModal(targetNamespace: ProviderTargetNamespace = 'general') {
   providerTargetNamespace.set(targetNamespace);
   isProviderModalOpen.set(true);
 }

@@ -60,7 +60,8 @@ class TableExtractionProcessor:
             # raises ``IndexError`` instead of degrading gracefully.
             if tree and page_idx < len(tree.pages) and tree.pages[page_idx]:
                 tree_page = tree.pages[page_idx]
-                table_cell_indices = set()
+                table_cell_indices: set[int] = set()
+                first_cell_map: dict[int, TableNode] = {}
 
                 for table_data in tables_data:
                     row_count = table_data["row_count"]
@@ -80,20 +81,24 @@ class TableExtractionProcessor:
                         float("-inf"),
                     )
 
+                    first_b_idx: int | None = None
                     for cell in cells_data:
                         r_idx = cell["row_index"]
                         b_idx = cell["block_index"]
                         table_cell_indices.add(b_idx)
+                        if first_b_idx is None or b_idx < first_b_idx:
+                            first_b_idx = b_idx
 
-                        node = tree_page.children[b_idx]
-                        node.block_type = BlockType.TABLE
-                        grid[r_idx].append(node)
-
-                        bbox = node.bbox
-                        min_x = min(min_x, bbox[0])
-                        min_y = min(min_y, bbox[1])
-                        max_x = max(max_x, bbox[2])
-                        max_y = max(max_y, bbox[3])
+                        if b_idx < len(tree_page.children):
+                            child_node = tree_page.children[b_idx]
+                            if isinstance(child_node, BlockNode):
+                                child_node.block_type = BlockType.TABLE
+                                grid[r_idx].append(child_node)
+                                bbox = child_node.bbox
+                                min_x = min(min_x, bbox[0])
+                                min_y = min(min_y, bbox[1])
+                                max_x = max(max_x, bbox[2])
+                                max_y = max(max_y, bbox[3])
 
                     # Pad grid rows to ensure rectangular matrix
                     for r in range(row_count):
@@ -114,14 +119,18 @@ class TableExtractionProcessor:
                         cells=grid,
                     )
                     tree.tables.append(table_node)
+                    if first_b_idx is not None:
+                        first_cell_map[first_b_idx] = table_node
 
                 if table_cell_indices:
-                    # Filter out the individual cell blocks from the page's children
-                    tree_page.children = [
-                        node
-                        for i, node in enumerate(tree_page.children)
-                        if i not in table_cell_indices
-                    ]
+                    # Place TableNodes in reading order at the position of their first cell
+                    new_children: list[BlockNode | TableNode] = []
+                    for i, node in enumerate(tree_page.children):
+                        if i in first_cell_map:
+                            new_children.append(first_cell_map[i])
+                        elif i not in table_cell_indices:
+                            new_children.append(node)
+                    tree_page.children = new_children
 
         return document
 

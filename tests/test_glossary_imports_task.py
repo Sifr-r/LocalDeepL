@@ -10,12 +10,19 @@ def test_process_glossary_import_task_importable():
     assert callable(process_glossary_import_task)
 
 
-def test_process_glossary_import_task_runs_sync():
+def test_process_glossary_import_task_runs_sync(monkeypatch):
     """When Celery isn't installed, ``delay()`` is replaced by a stub that
     executes the task synchronously. We must confirm the sync path still
     produces a saved glossary."""
+    from omniscribe.api.celery_app import celery_app
     from omniscribe.api.routers import state
     from omniscribe.api.tasks import process_glossary_import_task
+
+    if hasattr(celery_app, "conf"):
+        monkeypatch.setattr(celery_app.conf, "task_always_eager", True)
+        monkeypatch.setattr(celery_app.conf, "result_backend", "cache")
+        monkeypatch.setattr(celery_app.conf, "cache_backend", "memory")
+        monkeypatch.setattr(celery_app.conf, "task_eager_propagates", True)
 
     source_dict = {
         "format": "json_pairs",
@@ -31,7 +38,7 @@ def test_process_glossary_import_task_runs_sync():
         from omniscribe.api.tasks import process_glossary_import_task as t
 
         assert t.name == "process_glossary_import"
-        assert "AsyncTranslationUnavailable" in str(exc) or True
+        assert "AsyncTranslationUnavailable" in str(exc)
         return
 
     payload = result if isinstance(result, dict) else getattr(result, "result", None)

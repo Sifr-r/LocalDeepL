@@ -441,15 +441,23 @@ async def test_whitespace_global_token_is_ignored() -> None:
 def test_security_settings_loads_per_service_tokens(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OMNISCRIBE_AUTH_TOKEN", "global-secret")
-    monkeypatch.setenv("OMNISCRIBE_OCR_AUTH_TOKEN", "ocr-secret")
-    monkeypatch.setenv("OMNISCRIBE_TRANSLATION_AUTH_TOKEN", "translation-secret")
+    monkeypatch.setenv(
+        "OMNISCRIBE_AUTH_TOKEN", "global-secret-with-sufficient-length-32"
+    )
+    monkeypatch.setenv(
+        "OMNISCRIBE_OCR_AUTH_TOKEN", "ocr-secret-with-sufficient-length-32"
+    )
+    monkeypatch.setenv(
+        "OMNISCRIBE_TRANSLATION_AUTH_TOKEN", "translation-secret-with-sufficient-length"
+    )
 
     settings = SecuritySettings.from_env()
 
-    assert settings.auth_token == "global-secret"
-    assert settings.ocr_auth_token == "ocr-secret"
-    assert settings.translation_auth_token == "translation-secret"
+    assert settings.auth_token == "global-secret-with-sufficient-length-32"
+    assert settings.ocr_auth_token == "ocr-secret-with-sufficient-length-32"
+    assert (
+        settings.translation_auth_token == "translation-secret-with-sufficient-length"
+    )
     assert settings.auth_enabled is True
     assert settings.ocr_auth_enabled is True
     assert settings.translation_auth_enabled is True
@@ -458,12 +466,14 @@ def test_security_settings_loads_per_service_tokens(
 def test_security_settings_only_ocr_token(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OMNISCRIBE_AUTH_TOKEN", raising=False)
     monkeypatch.delenv("OMNISCRIBE_TRANSLATION_AUTH_TOKEN", raising=False)
-    monkeypatch.setenv("OMNISCRIBE_OCR_AUTH_TOKEN", "ocr-secret")
+    monkeypatch.setenv(
+        "OMNISCRIBE_OCR_AUTH_TOKEN", "ocr-secret-with-sufficient-length-32"
+    )
 
     settings = SecuritySettings.from_env()
 
     assert settings.auth_token is None
-    assert settings.ocr_auth_token == "ocr-secret"
+    assert settings.ocr_auth_token == "ocr-secret-with-sufficient-length-32"
     assert settings.translation_auth_token is None
     assert settings.auth_enabled is False
     assert settings.ocr_auth_enabled is True
@@ -475,13 +485,17 @@ def test_security_settings_only_translation_token(
 ) -> None:
     monkeypatch.delenv("OMNISCRIBE_AUTH_TOKEN", raising=False)
     monkeypatch.delenv("OMNISCRIBE_OCR_AUTH_TOKEN", raising=False)
-    monkeypatch.setenv("OMNISCRIBE_TRANSLATION_AUTH_TOKEN", "translation-secret")
+    monkeypatch.setenv(
+        "OMNISCRIBE_TRANSLATION_AUTH_TOKEN", "translation-secret-with-sufficient-length"
+    )
 
     settings = SecuritySettings.from_env()
 
     assert settings.auth_token is None
     assert settings.ocr_auth_token is None
-    assert settings.translation_auth_token == "translation-secret"
+    assert (
+        settings.translation_auth_token == "translation-secret-with-sufficient-length"
+    )
     assert settings.auth_enabled is False
     assert settings.translation_auth_enabled is True
 
@@ -504,15 +518,21 @@ def test_security_settings_empty_tokens_are_none(
 def test_security_settings_trims_token_whitespace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OMNISCRIBE_AUTH_TOKEN", "  trimmed-global  ")
-    monkeypatch.setenv("OMNISCRIBE_OCR_AUTH_TOKEN", "  trimmed-ocr  ")
-    monkeypatch.setenv("OMNISCRIBE_TRANSLATION_AUTH_TOKEN", "  trimmed-tr  ")
+    monkeypatch.setenv(
+        "OMNISCRIBE_AUTH_TOKEN", "  trimmed-global-with-sufficient-length-32  "
+    )
+    monkeypatch.setenv(
+        "OMNISCRIBE_OCR_AUTH_TOKEN", "  trimmed-ocr-with-sufficient-length-32  "
+    )
+    monkeypatch.setenv(
+        "OMNISCRIBE_TRANSLATION_AUTH_TOKEN", "  trimmed-tr-with-sufficient-length-32  "
+    )
 
     settings = SecuritySettings.from_env()
 
-    assert settings.auth_token == "trimmed-global"
-    assert settings.ocr_auth_token == "trimmed-ocr"
-    assert settings.translation_auth_token == "trimmed-tr"
+    assert settings.auth_token == "trimmed-global-with-sufficient-length-32"
+    assert settings.ocr_auth_token == "trimmed-ocr-with-sufficient-length-32"
+    assert settings.translation_auth_token == "trimmed-tr-with-sufficient-length-32"
 
 
 def test_security_settings_no_env_returns_none_tokens(
@@ -534,7 +554,7 @@ def test_security_settings_no_env_returns_none_tokens(
 
 
 # ---------------------------------------------------------------------------
-# M10: fail-fast on well-known placeholder auth tokens
+# M10: fail-fast on well-known placeholder auth tokens and short tokens
 # ---------------------------------------------------------------------------
 
 
@@ -561,7 +581,29 @@ def test_security_settings_rejects_placeholder_auth_token(
     monkeypatch.delenv("OMNISCRIBE_TRANSLATION_AUTH_TOKEN", raising=False)
     monkeypatch.setenv(env_name, placeholder)
 
-    with pytest.raises(RuntimeError, match="placeholder"):
+    with pytest.raises(RuntimeError):
+        SecuritySettings.from_env()
+
+
+@pytest.mark.parametrize(
+    "env_name, short_val",
+    [
+        ("OMNISCRIBE_AUTH_TOKEN", "short"),
+        ("OMNISCRIBE_AUTH_TOKEN", "a" * 31),
+        ("OMNISCRIBE_OCR_AUTH_TOKEN", "ocr-short-1234"),
+        ("OMNISCRIBE_TRANSLATION_AUTH_TOKEN", "trans-short-123"),
+    ],
+)
+def test_security_settings_rejects_short_auth_token(
+    monkeypatch: pytest.MonkeyPatch, env_name: str, short_val: str
+) -> None:
+    """Auth tokens shorter than MIN_AUTH_TOKEN_LENGTH (32 chars) must refuse boot."""
+    monkeypatch.delenv("OMNISCRIBE_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("OMNISCRIBE_OCR_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("OMNISCRIBE_TRANSLATION_AUTH_TOKEN", raising=False)
+    monkeypatch.setenv(env_name, short_val)
+
+    with pytest.raises(RuntimeError, match="too short"):
         SecuritySettings.from_env()
 
 

@@ -166,7 +166,7 @@ class PageTree:
     page_idx: int
     width: int | None = None
     height: int | None = None
-    children: list[BlockNode] = field(default_factory=list)
+    children: list[BlockNode | TableNode] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -181,11 +181,17 @@ class PageTree:
     # Phase D (review M4) — see Span.from_dict for the contract.
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PageTree:
+        children: list[BlockNode | TableNode] = []
+        for c in data.get("children", []):
+            if c.get("block_type") == "table" and "rows" in c:
+                children.append(TableNode.from_dict(c))
+            else:
+                children.append(BlockNode.from_dict(c))
         return cls(
             page_idx=int(data["page_idx"]),
             width=(int(data["width"]) if data.get("width") is not None else None),
             height=(int(data["height"]) if data.get("height") is not None else None),
-            children=[BlockNode.from_dict(c) for c in data.get("children", [])],
+            children=children,
             metadata=dict(data.get("metadata", {})),
         )
 
@@ -239,6 +245,7 @@ class TableNode:
     bbox: _BBox
     cells: list[list[BlockNode]] = field(default_factory=list)
     block_id: str = field(default_factory=_new_block_id)
+    block_type: BlockType = BlockType.TABLE
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -394,8 +401,8 @@ class DocumentTree:
         return out
 
 
-def _walk_text(node: BlockNode) -> list[BlockNode]:
-    if node.block_type == BlockType.TABLE:
+def _walk_text(node: BlockNode | TableNode) -> list[BlockNode]:
+    if isinstance(node, TableNode) or node.block_type == BlockType.TABLE:
         # table cells are walked separately
         return []
     if node.children and node.block_type not in (BlockType.LIST_ITEM,):

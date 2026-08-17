@@ -306,3 +306,16 @@ class _SuffixProcessor:
             for block in page.blocks:
                 block.text += self.suffix
         return document
+
+
+def test_normalize_bbox_handles_degenerate_boxes_gracefully():
+    # x1 <= x0 should expand x1 slightly without error
+    norm = document_module._normalize_bbox([0.2, 0.3, 0.2, 0.5])
+    assert norm[0] == 0.2
+    assert norm[2] > norm[0]
+    assert norm[1] == 0.3
+    assert norm[3] == 0.5
+
+    # y1 <= y0 should expand y1 slightly without error
+    norm_y = document_module._normalize_bbox([0.1, 0.4, 0.3, 0.4])
+    assert norm_y[3] > norm_y[1]

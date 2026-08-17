@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { get } from 'svelte/store';
   import UploadPanel from './UploadPanel.svelte';
   import ProcessSettings from './ProcessSettings.svelte';
   import PageCanvas from './PageCanvas.svelte';
@@ -217,11 +216,19 @@
     </div>
   </div>
 
-  <!-- Legacy Overlay Container #process-view (kept for CSS/Playwright hooks) -->
+  <!-- Processing overlay. The #process-view element must stay in the DOM
+       at all times with `hidden` toggled on/off: the Playwright smoke test
+       in test_ui.py and the WorkstationView vitest both assert on the
+       `hidden` class. So we keep the legacy hook, drop the `transition-all`
+       that could never transition `display`, and add the dialog ARIA
+       attributes the previous version was missing. -->
   <div
     id="process-view"
     bind:this={processViewEl}
-    class="fixed inset-0 z-40 bg-overlay/80 backdrop-blur-md flex items-center justify-center p-4 transition-all duration-300 {isProcessing ? '' : 'hidden'}"
+    class="fixed inset-0 z-40 bg-overlay/80 backdrop-blur-md flex items-center justify-center p-4 {isProcessing ? '' : 'hidden'}"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Processing document"
   >
     <PipelineProgress on:cancel={handleCancel} />
   </div>

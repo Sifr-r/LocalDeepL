@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from omniscribe.core.block_tree import BlockType
+from omniscribe.core.block_tree import BlockNode, BlockType
 from omniscribe.core.document import DocumentBlock, DocumentResult
 from omniscribe.core.processors.base import (
     _KEY_VALUE_RE,
@@ -54,18 +54,19 @@ class StructureAnalysisProcessor:
 
                 if tree_page and block_idx < len(tree_page.children):
                     node = tree_page.children[block_idx]
-                    if kind == "heading":
-                        node.block_type = BlockType.SECTION_HEADER
-                        node.level = 1
-                    elif kind == "list_item":
-                        node.block_type = BlockType.LIST_ITEM
-                    elif kind == "key_value":
-                        node.block_type = BlockType.KEY_VALUE
-                    elif kind == "table_candidate":
-                        # Table processor will properly replace it later
-                        node.block_type = BlockType.PARAGRAPH
-                    else:
-                        node.block_type = BlockType.PARAGRAPH
+                    if isinstance(node, BlockNode):
+                        if kind == "heading":
+                            node.block_type = BlockType.SECTION_HEADER
+                            node.level = 1
+                        elif kind == "list_item":
+                            node.block_type = BlockType.LIST_ITEM
+                        elif kind == "key_value":
+                            node.block_type = BlockType.KEY_VALUE
+                        elif kind == "table_candidate":
+                            # Table processor will properly replace it later
+                            node.block_type = BlockType.PARAGRAPH
+                        else:
+                            node.block_type = BlockType.PARAGRAPH
 
             page.metadata["structure"] = {
                 "block_kinds": dict(sorted(counts.items())),

@@ -45,9 +45,11 @@ from omniscribe.core.ocr.prompts import (
     model_supports_system_role as _model_supports_system_role,
 )
 from omniscribe.core.ocr.resilience import (
+    CircuitOpenError,
     get_default_circuit_breaker_registry,
     is_transient_error,
 )
+from omniscribe.core.workflows.base import OCRCancelled
 
 logger = logging.getLogger(__name__)
 
@@ -410,6 +412,8 @@ class PromptedGroundedOCR:
                         )
 
                     return page_idx, blocks, None
+                except (CircuitOpenError, OCRCancelled):
+                    raise
                 except Exception as e:
                     # Per-page isolation: log the failure and return zero
                     # blocks for this page so surviving pages still land in

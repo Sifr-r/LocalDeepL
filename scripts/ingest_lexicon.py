@@ -10,10 +10,6 @@ import requests
 if sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
-import chromadb
-from chromadb.utils import embedding_functions
-
-
 def _parse_xml(content: str):
     """Parse an XML string with XXE/DTD protection.
 
@@ -29,6 +25,9 @@ def _parse_xml(content: str):
 
 
 def get_chroma_collection(db_path="./chroma_db"):
+    import chromadb
+    from chromadb.utils import embedding_functions
+
     os.makedirs(db_path, exist_ok=True)
     client = chromadb.PersistentClient(path=db_path)
     emb_fn = embedding_functions.SentenceTransformerEmbeddingFunction(

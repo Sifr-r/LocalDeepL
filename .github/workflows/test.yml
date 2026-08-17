@@ -27,12 +27,16 @@ permissions:
 
 jobs:
   fast:
-    name: pytest (py${{ matrix.python }})
-    runs-on: ubuntu-latest
+    name: pytest (py${{ matrix.python }} on ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python: ["3.11", "3.13"]
+        include:
+          - os: windows-latest
+            python: "3.11"
     steps:
       # Action refs are SHA-pinned (audit P3-12); bump with
       # `gh api repos/<owner>/<repo>/git/ref/tags/<tag>`.
@@ -70,7 +74,7 @@ jobs:
         run: uv run mypy src
 
       - name: Run fast tests
-        run: uv run pytest -m "not slow" --cov=src/omniscribe --cov-report=term-missing --cov-report=xml -v
+        run: uv run pytest -m "not slow and not slow_dataset" --cov=src/omniscribe --cov-report=term-missing --cov-report=xml -v
 
       - name: Run pip-audit vulnerability check
         # Keep in sync with `make audit` (Makefile): PYSEC-2026-311 /
@@ -87,7 +91,7 @@ jobs:
       - name: Upload CycloneDX SBOM artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: sbom-py${{ matrix.python }}.json
+          name: sbom-py${{ matrix.python }}-${{ matrix.os }}.json
           path: sbom.json
 
   # Audit M2: build the production Dockerfile and scan the resulting image

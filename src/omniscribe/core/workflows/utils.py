@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
+import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
@@ -35,12 +36,15 @@ __all__ = [
 # 0.85 band below it. See spec §3.2.
 WELL_FORMED_CONFIDENCE = 0.99
 
+_NUMERIC_EXPR_PATTERN = re.compile(r"^[\d\s.,:/\-+$€£%()#№]+$")
+
 
 def _estimate_confidence(text: str) -> float:
     """Cheap confidence proxy for OCR output.
 
     Returns a value in [0, 1] based on text quality signals:
     - empty / whitespace => 0.0
+    - valid numeric / date / currency / phone / punctuation expressions => 0.99
     - no alphabetic characters at all => 0.3
     - 3+ words that are mostly alphabetic => 0.99 (clears the default
       0.98 quality target so healthy text is not re-OCRed)
@@ -53,6 +57,8 @@ def _estimate_confidence(text: str) -> float:
     stripped = text.strip()
     alpha = sum(1 for c in stripped if c.isalpha())
     if alpha == 0:
+        if _NUMERIC_EXPR_PATTERN.match(stripped):
+            return WELL_FORMED_CONFIDENCE
         return 0.3
     words = stripped.split()
     if len(words) >= 3:

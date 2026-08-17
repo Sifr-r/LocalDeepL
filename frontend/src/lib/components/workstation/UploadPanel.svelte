@@ -49,6 +49,13 @@
     dispatch('fileSelect', null as File | null);
   }
 
+  function handleKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+      e.preventDefault();
+      document.getElementById('file-input')?.click();
+    }
+  }
+
   // Hint mirrors the server cap from /api/config — the old hard-coded
   // "up to 50 MB" contradicted the configured limit (audit P3).
   $: maxUploadBytes = $configStore.security?.max_upload_bytes || 52428800;
@@ -73,7 +80,7 @@
     on:dragleave={handleDragLeave}
     on:drop={handleDrop}
     on:click={() => document.getElementById('file-input')?.click()}
-    on:keydown={(e) => e.key === 'Enter' && document.getElementById('file-input')?.click()}
+    on:keydown={handleKeyDown}
     role="button"
     tabindex="0"
     aria-label={selectedFile ? 'Replace uploaded file' : 'Upload a document'}
@@ -118,15 +125,17 @@
         <p class="text-xs text-foreground-muted font-mono">PDF, PNG, JPG, AVIF, TIFF</p>
       {/if}
     </div>
+  </div>
 
-    {#if selectedFile}
+  {#if selectedFile}
+    <div class="mt-2 flex justify-end">
       <button
         type="button"
-        on:click|stopPropagation={clearFile}
-        class="text-xs text-foreground-muted hover:text-danger transition-colors"
+        on:click={clearFile}
+        class="text-xs text-foreground-muted hover:text-danger transition-colors focus:outline-none focus-visible:underline"
       >
-        Remove
+        Remove file
       </button>
-    {/if}
-  </div>
+    </div>
+  {/if}
 </div>

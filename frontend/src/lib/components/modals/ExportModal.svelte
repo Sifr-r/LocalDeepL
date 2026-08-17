@@ -1,7 +1,7 @@
 <script lang="ts">
   import { exportModalOpen, documentStore, toastStore } from '../../stores/appStore';
   import { pdfPreview } from '../../stores/pdfPreview';
-  import { exportDocument, exportDocx } from '../../api/endpoints';
+  import { exportDocument, exportDocx, artifactsApi } from '../../api/endpoints';
   import Modal from '../ui/Modal.svelte';
   import Button from '../ui/Button.svelte';
   import Badge, { type BadgeVariant } from '../ui/Badge.svelte';
@@ -50,22 +50,21 @@
     exportModalOpen.set(false);
   }
 
-  // ``exportDocument`` returns whatever shape the server shipped, which
-  // is a string for text / markdown exports and an object envelope
-  // (``{ artifact_id, token, format }``) for JSON exports. Normalize
-  // both into a string so the download path doesn't care.
-  function extractExportString(body: unknown, key: string): string {
-    if (typeof body === 'string') return body;
-    if (body && typeof body === 'object' && key in body) {
-      const value = (body as Record<string, unknown>)[key];
-      if (typeof value === 'string') return value;
-    }
-    return '';
+  function downloadBlob(blob: Blob, name: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   async function handleExport(format: ExportFormat) {
     try {
       const artifactId: string | null = $documentStore.textArtifactId ?? $documentStore.textArtifact?.id ?? null;
+      const artifactToken: string | null = $documentStore.textArtifactToken ?? $documentStore.textArtifact?.token ?? null;
       const filename: string = $documentStore.filename ?? 'export_result';
 
       if (format === 'txt') {
@@ -73,15 +72,34 @@
         const textContent = pages.map((p) => p.text ?? '').join('\n\n');
         downloadBlob(new Blob([textContent], { type: 'text/plain;charset=utf-8' }), `${filename}.txt`);
       } else if (format === 'markdown') {
-        const res = await exportDocument({ text_artifact_id: artifactId ?? undefined, format: 'markdown', filename });
-        const content = extractExportString(res, 'content');
-        downloadBlob(new Blob([content], { type: 'text/markdown;charset=utf-8' }), `${filename}.md`);
+        if (!artifactId || !artifactToken) {
+          toastStore.pushToast('error', 'Document text artifact not available for export');
+          return;
+        }
+        const exportHandle = await exportDocument({
+          text_artifact_id: artifactId,
+          text_artifact_token: artifactToken,
+          export_format: 'markdown'
+        });
+        const blob = await artifactsApi.getExport(exportHandle.artifact_id, exportHandle.token);
+        downloadBlob(blob, `${filename}.md`);
       } else if (format === 'json') {
-        const res = await exportDocument({ text_artifact_id: artifactId ?? undefined, format: 'json', filename });
-        const jsonStr = typeof res === 'string' ? res : JSON.stringify(res, null, 2);
-        downloadBlob(new Blob([jsonStr], { type: 'application/json' }), `${filename}.json`);
+        if (!artifactId || !artifactToken) {
+          toastStore.pushToast('error', 'Document text artifact not available for export');
+          return;
+        }
+        const exportHandle = await exportDocument({
+          text_artifact_id: artifactId,
+          text_artifact_token: artifactToken,
+          export_format: 'json'
+        });
+        const blob = await artifactsApi.getExport(exportHandle.artifact_id, exportHandle.token);
+        downloadBlob(blob, `${filename}.json`);
       } else if (format === 'docx') {
-        await exportDocx({ text_artifact_id: artifactId ?? undefined, filename });
+        const pages: Array<{ text?: string }> = ($documentStore.pages || []);
+        const markdownText = pages.map((p) => p.text ?? '').join('\n\n');
+        const blob = await exportDocx({ text: markdownText });
+        downloadBlob(blob, `${filename}.docx`);
         toastStore.pushToast('success', 'DOCX generated successfully');
       } else if (format === 'pdf') {
         // The PDF returned by ``/api/process`` is already the structured,
@@ -110,15 +128,6 @@
       const message = err instanceof Error ? err.message : String(err);
       toastStore.pushToast('error', `Export failed: ${message}`);
     }
-  }
-
-  function downloadBlob(blob: Blob, name: string) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(url);
   }
 </script>
 

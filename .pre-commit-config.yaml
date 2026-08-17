@@ -6,7 +6,7 @@
 # lint / format gates locally so CI doesn't surprise you; the mypy
 # hook catches type errors before they reach review.
 #
-# Ruff is pinned to a recent stable version matching the ``>=0.3.0``
+# Ruff is pinned to a recent stable version matching the ``>=0.16.2``
 # dev requirement in ``pyproject.toml``. Bump both in lockstep.
 #
 # The mypy hook runs with ``language: system`` so it uses the project
@@ -17,7 +17,7 @@
 
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.15
+    rev: v0.16.2
     hooks:
       - id: ruff
         args: ["--fix"]

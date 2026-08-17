@@ -52,7 +52,6 @@ const PREPROCESS_TOGGLES = [
   'normalize_contrast',
   'crop_cleanup'
 ] as const;
-type PreprocessToggle = (typeof PREPROCESS_TOGGLES)[number];
 
 /**
  * Minimal config-store shape the OCR FormData consumes. Wider config

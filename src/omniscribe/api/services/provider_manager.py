@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -396,9 +398,14 @@ class ProviderManager:
         return restored_active_id
 
     def _save(self) -> None:
-        """Persist active state and provider configurations to disk."""
+        """Persist active state and provider configurations to disk atomically."""
         try:
-            self._config_path.parent.mkdir(parents=True, exist_ok=True)
+            parent_dir = self._config_path.parent
+            parent_dir.mkdir(parents=True, exist_ok=True)
+            if os.name != "nt":
+                with contextlib.suppress(Exception):
+                    os.chmod(parent_dir, 0o700)
+
             data = {
                 "active_provider_id": self._active_provider_id,
                 "providers": {
@@ -406,12 +413,27 @@ class ProviderManager:
                 },
             }
 
-            if self._config_path.suffix in (".yaml", ".yml"):
-                with open(self._config_path, "w", encoding="utf-8") as f:
-                    yaml.safe_dump(data, f, sort_keys=False)
-            else:
-                with open(self._config_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2)
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                dir=str(parent_dir),
+                delete=False,
+                encoding="utf-8",
+                suffix=self._config_path.suffix,
+            ) as tf:
+                tmp_path = Path(tf.name)
+                if self._config_path.suffix in (".yaml", ".yml"):
+                    yaml.safe_dump(data, tf, sort_keys=False)
+                else:
+                    json.dump(data, tf, indent=2)
+
+            if os.name != "nt":
+                with contextlib.suppress(Exception):
+                    os.chmod(tmp_path, 0o600)
+
+            tmp_path.replace(self._config_path)
+            if os.name != "nt":
+                with contextlib.suppress(Exception):
+                    os.chmod(self._config_path, 0o600)
         except Exception as exc:
             logger.error(
                 "Failed to save providers config to %s: %s",

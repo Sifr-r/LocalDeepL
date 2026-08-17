@@ -35,14 +35,25 @@ def convert_tree_to_docx(tree: DocumentTree) -> io.BytesIO:
     for page in tree.pages:
         for node in page.children:
             _render_block(doc, node)
+    for table in tree.tables:
+        _render_table(doc, table)
     out = io.BytesIO()
     doc.save(out)
     out.seek(0)
     return out
 
 
-def _render_block(doc: Any, node: BlockNode) -> None:
-    bt = node.block_type.value
+def _render_block(doc: Any, node: BlockNode | TableNode | Any) -> None:
+    if hasattr(node, "rows") and hasattr(node, "cells"):
+        _render_table(doc, cast("TableNode", node))
+        return
+    if not hasattr(node, "block_type"):
+        return
+    bt = (
+        node.block_type.value
+        if hasattr(node.block_type, "value")
+        else str(node.block_type)
+    )
     if bt == "section_header":
         level = max(1, min(6, node.level or 1))
         h = doc.add_heading(node.text, level=level)

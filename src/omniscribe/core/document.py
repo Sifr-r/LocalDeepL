@@ -144,6 +144,16 @@ def _normalize_bbox(bbox: Sequence[float]) -> BBox:
     if len(bbox) != 4:
         raise ValueError(f"Expected bbox with 4 values, got {len(bbox)}")
     x0, y0, x1, y1 = (float(value) for value in bbox)
-    if not (0.0 <= x0 < x1 <= 1.0 and 0.0 <= y0 < y1 <= 1.0):
+    if not (
+        0.0 <= x0 <= 1.0 and 0.0 <= y0 <= 1.0 and 0.0 <= x1 <= 1.0 and 0.0 <= y1 <= 1.0
+    ):
         raise ValueError(f"Expected normalized bbox in 0..1, got {(x0, y0, x1, y1)!r}")
+    if x1 <= x0:
+        x1 = min(1.0, max(x0 + 1e-4, 1e-4))
+        if x1 <= x0:
+            x0 = max(0.0, x1 - 1e-4)
+    if y1 <= y0:
+        y1 = min(1.0, max(y0 + 1e-4, 1e-4))
+        if y1 <= y0:
+            y0 = max(0.0, y1 - 1e-4)
     return (x0, y0, x1, y1)

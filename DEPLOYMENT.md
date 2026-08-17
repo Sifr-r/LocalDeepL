@@ -179,7 +179,7 @@ to a blank page or never opens:
   starts, and only `/api/translate/async` is unavailable.
 - If the log says "Server did not respond within 60s" — open a
   terminal in the project root and run
-  `uv run --extra web uvicorn src.omniscribe.server:app --port 8000`
+  `uv run --extra web uvicorn omniscribe.server:app --port 8000`
   directly to see uvicorn's traceback.
 
 ## Backup & Recovery

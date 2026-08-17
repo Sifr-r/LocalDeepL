@@ -21,6 +21,7 @@ services:
       context: .
       dockerfile: Dockerfile
     image: omniscribe:app
+    mem_limit: 4g
     ports:
       - "8000:8000"
     environment:
@@ -49,12 +50,11 @@ services:
         condition: service_healthy
     # Liveness probe: ``/health`` is the cheap, no-I/O endpoint
     # (see ``src/omniscribe/api/routers/health.py``) — it only confirms
-    # that the FastAPI process is up. ``curl`` is already in the image
-    # (the Dockerfile installs it for the uv bootstrap), so the probe
-    # needs no extra apt layer. Interval/timeout/retries/start_period
+    # that the FastAPI process is up. Uses Python urllib to avoid depending
+    # on curl in the container. Interval/timeout/retries/start_period
     # follow the audit's recommended defaults.
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -62,7 +62,11 @@ services:
     restart: unless-stopped
 
   worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: omniscribe:app
+    mem_limit: 4g
     command: ["celery", "-A", "omniscribe.api.tasks", "worker", "--loglevel=info", "--pool=solo"]
     environment:
       LLM_API_BASE: http://host.docker.internal:1234/v1

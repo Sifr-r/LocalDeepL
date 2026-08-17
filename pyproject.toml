@@ -35,7 +35,6 @@ dependencies = [
     "pyspellchecker>=0.8.1",
     "python-docx>=1.1.0",
     "redis>=8.1.0",
-    "chromadb>=0.5.0",
     "numpy>=2.4.6,<2.5.0",
     "defusedxml>=0.7.1",  # XLIFF/TBX/TMX glossary parsing without XXE/DTD
 ]
@@ -62,9 +61,7 @@ async-translation = [
     "langgraph>=0.1.0",
 ]
 memory = [
-    # chromadb is already a base dep; the repeat here is deliberate —
-    # the extra documents the lexicon-RAG feature surface and
-    # test_optional_extras_split_chromadb_into_memory pins the pair.
+    # Optional lexicon-backed RAG store and embeddings for translation.
     "chromadb>=0.5.0",
     "sentence-transformers>=5.5.1",
 ]

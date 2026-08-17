@@ -61,7 +61,7 @@ if (!(Get-Command "uv" -ErrorAction SilentlyContinue)) {
 Write-Host "`nSyncing python dependencies with uv..."
 Set-Location -Path $ScriptDir
 # uv will automatically download the correct python version based on .python-version if it is missing
-uv sync --extra web --extra preprocessing
+uv sync --extra web --extra preprocessing --extra async-translation
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: uv sync failed. See the output above for details." -ForegroundColor Red
     exit 1

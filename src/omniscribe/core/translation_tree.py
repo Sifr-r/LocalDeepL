@@ -109,34 +109,35 @@ async def translate_tree(
 
     for page in tree.pages:
         for node in page.children:
-            translated_text, last_window = await _translate_node(
-                node,
-                target_language=target_language,
-                translator=translator,
-                glossary=glossary,
-                memory=memory,
-                last_window=last_window,
-                sliding_window_words=sliding_window_words,
-                dual_translate=dual_translate,
-                second_translator=second_translator,
-            )
-            if translated_text is not None:
-                node.text = translated_text
-                node.metadata["translation"] = translated_text
-                if on_translate_chunk is not None:
-                    # The chunk index is a per-call counter, not a
-                    # global one — each translate_tree() invocation
-                    # restarts from 0. Consumers that need a
-                    # document-wide index can compute it from the
-                    # block's tree position.
-                    source_chars = len(node.text)
-                    await on_translate_chunk(
-                        chunk_idx,
-                        source_chars,
-                        translated_text,
-                        target_language,
-                    )
-                    chunk_idx += 1
+            if isinstance(node, BlockNode):
+                translated_text, last_window = await _translate_node(
+                    node,
+                    target_language=target_language,
+                    translator=translator,
+                    glossary=glossary,
+                    memory=memory,
+                    last_window=last_window,
+                    sliding_window_words=sliding_window_words,
+                    dual_translate=dual_translate,
+                    second_translator=second_translator,
+                )
+                if translated_text is not None:
+                    node.text = translated_text
+                    node.metadata["translation"] = translated_text
+                    if on_translate_chunk is not None:
+                        # The chunk index is a per-call counter, not a
+                        # global one — each translate_tree() invocation
+                        # restarts from 0. Consumers that need a
+                        # document-wide index can compute it from the
+                        # block's tree position.
+                        source_chars = len(node.text)
+                        await on_translate_chunk(
+                            chunk_idx,
+                            source_chars,
+                            translated_text,
+                            target_language,
+                        )
+                        chunk_idx += 1
     return tree
 
 

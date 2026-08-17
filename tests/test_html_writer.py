@@ -261,3 +261,103 @@ def test_html_writer_renders_table_only_from_tree_tables():
     assert ">head</th>" in html
     assert ">data</td>" in html
     assert "body" in html
+
+
+def test_html_writer_wraps_consecutive_list_items_in_ul():
+    tree = DocumentTree(
+        pages=[
+            PageTree(
+                page_idx=0,
+                children=[
+                    BlockNode(
+                        block_type=BlockType.PARAGRAPH,
+                        bbox=(0.0, 0.0, 1.0, 0.1),
+                        text="Intro:",
+                        page_idx=0,
+                    ),
+                    BlockNode(
+                        block_type=BlockType.LIST_ITEM,
+                        bbox=(0.0, 0.1, 1.0, 0.2),
+                        text="First item",
+                        page_idx=0,
+                    ),
+                    BlockNode(
+                        block_type=BlockType.LIST_ITEM,
+                        bbox=(0.0, 0.2, 1.0, 0.3),
+                        text="Second item",
+                        page_idx=0,
+                    ),
+                    BlockNode(
+                        block_type=BlockType.PARAGRAPH,
+                        bbox=(0.0, 0.3, 1.0, 0.4),
+                        text="Outro.",
+                        page_idx=0,
+                    ),
+                ],
+            )
+        ]
+    )
+    html = render_html(tree)
+    assert "<ul>\n<li" in html or "<ul>" in html
+    assert "First item</li>\n<li" in html or (
+        "First item" in html and "Second item" in html
+    )
+    assert "</li>\n</ul>" in html or "</ul>" in html
+    assert html.count("<ul>") == 1
+    assert html.count("</ul>") == 1
+
+
+def test_html_writer_renders_table_in_page_reading_order():
+    table = TableNode(
+        rows=1,
+        cols=2,
+        page_idx=0,
+        bbox=(0.0, 0.1, 1.0, 0.2),
+        cells=[
+            [
+                BlockNode(
+                    block_type=BlockType.PARAGRAPH,
+                    bbox=(0.0, 0.1, 0.5, 0.2),
+                    text="Cell 1",
+                    page_idx=0,
+                ),
+                BlockNode(
+                    block_type=BlockType.PARAGRAPH,
+                    bbox=(0.5, 0.1, 1.0, 0.2),
+                    text="Cell 2",
+                    page_idx=0,
+                ),
+            ]
+        ],
+        block_id="table-in-page-1",
+    )
+    tree = DocumentTree(
+        pages=[
+            PageTree(
+                page_idx=0,
+                children=[
+                    BlockNode(
+                        block_type=BlockType.PARAGRAPH,
+                        bbox=(0.0, 0.0, 1.0, 0.1),
+                        text="Above table",
+                        page_idx=0,
+                    ),
+                    table,
+                    BlockNode(
+                        block_type=BlockType.PARAGRAPH,
+                        bbox=(0.0, 0.2, 1.0, 0.3),
+                        text="Below table",
+                        page_idx=0,
+                    ),
+                ],
+            )
+        ],
+        tables=[table],
+    )
+    html = render_html(tree)
+    # The table should render only once, positioned between Above table and Below table
+    assert html.count("<table") == 1
+    above_pos = html.find("Above table")
+    table_pos = html.find("<table")
+    below_pos = html.find("Below table")
+    assert -1 < above_pos < table_pos < below_pos

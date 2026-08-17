@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 _MAX_REDIRECTS = 5
+MAX_GLOSSARY_BYTES: int = 50 * 1024 * 1024
 
 
 class SSRFBlockedError(Exception):
@@ -111,10 +112,23 @@ class _PinnedIPTransport(httpx.AsyncBaseTransport):
             writer.write(payload)
             await writer.drain()
 
-            response_data = await asyncio.wait_for(
-                reader.read(),
-                timeout=self._timeout,
-            )
+            chunks: list[bytes] = []
+            total_bytes = 0
+            while True:
+                chunk = await asyncio.wait_for(
+                    reader.read(64 * 1024),
+                    timeout=self._timeout,
+                )
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > MAX_GLOSSARY_BYTES:
+                    raise httpx.RequestError(
+                        f"Response body exceeds maximum allowed size of {MAX_GLOSSARY_BYTES} bytes",
+                        request=request,
+                    )
+                chunks.append(chunk)
+            response_data = b"".join(chunks)
         finally:
             try:
                 writer.close()

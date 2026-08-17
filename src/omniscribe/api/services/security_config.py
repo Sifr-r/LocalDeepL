@@ -171,18 +171,23 @@ def _env_cidr_list(name: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Netw
 
 
 def _validate_auth_token(env_name: str, token: str | None) -> str | None:
-    """Trim and fail-fast on well-known placeholder values.
+    """Trim and fail-fast on well-known placeholder values or short tokens.
 
     Returns the trimmed token (or None for unset/whitespace). Raises
-    ``RuntimeError`` if the supplied value is a known placeholder so a
-    copy-pasted ``.env`` never lets the server come up with an
-    attacker-guessable credential.
+    ``RuntimeError`` if the supplied value is a known placeholder or shorter
+    than ``MIN_AUTH_TOKEN_LENGTH`` so a copy-pasted ``.env`` never lets the
+    server come up with an attacker-guessable credential.
     """
     if token is None:
         return None
     trimmed = token.strip()
     if not trimmed:
         return None
+    if len(trimmed) < MIN_AUTH_TOKEN_LENGTH:
+        raise RuntimeError(
+            f"{env_name}={token!r} is too short (length {len(trimmed)}); "
+            f"refusing to boot. Auth tokens must be at least {MIN_AUTH_TOKEN_LENGTH} characters."
+        )
     if trimmed.lower() in PLACEHOLDER_AUTH_TOKENS:
         raise RuntimeError(
             f"{env_name}={token!r} is a well-known placeholder auth token; "
