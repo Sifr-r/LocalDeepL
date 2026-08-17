@@ -2,9 +2,14 @@
   import { exportModalOpen, documentStore, toastStore } from '../../stores/appStore';
   import { pdfPreview } from '../../stores/pdfPreview';
   import { exportDocument, exportDocx, artifactsApi } from '../../api/endpoints';
+  import {
+    aggregateMarkdownFromBboxes,
+    aggregateTextFromBboxes,
+  } from '../../utils/exportAggregation';
   import Modal from '../ui/Modal.svelte';
   import Button from '../ui/Button.svelte';
   import Badge, { type BadgeVariant } from '../ui/Badge.svelte';
+  import type { BBoxItem } from '../../types/api';
 
   type ExportFormat = 'txt' | 'pdf' | 'markdown' | 'json' | 'docx';
 
@@ -66,10 +71,10 @@
       const artifactId: string | null = $documentStore.textArtifactId ?? $documentStore.textArtifact?.id ?? null;
       const artifactToken: string | null = $documentStore.textArtifactToken ?? $documentStore.textArtifact?.token ?? null;
       const filename: string = $documentStore.filename ?? 'export_result';
+      const bboxes: BBoxItem[] = $documentStore.bboxes ?? [];
 
       if (format === 'txt') {
-        const pages: Array<{ text?: string }> = ($documentStore.pages || []);
-        const textContent = pages.map((p) => p.text ?? '').join('\n\n');
+        const textContent = aggregateTextFromBboxes(bboxes);
         downloadBlob(new Blob([textContent], { type: 'text/plain;charset=utf-8' }), `${filename}.txt`);
       } else if (format === 'markdown') {
         if (!artifactId || !artifactToken) {
@@ -96,8 +101,7 @@
         const blob = await artifactsApi.getExport(exportHandle.artifact_id, exportHandle.token);
         downloadBlob(blob, `${filename}.json`);
       } else if (format === 'docx') {
-        const pages: Array<{ text?: string }> = ($documentStore.pages || []);
-        const markdownText = pages.map((p) => p.text ?? '').join('\n\n');
+        const markdownText = aggregateMarkdownFromBboxes(bboxes);
         const blob = await exportDocx({ text: markdownText });
         downloadBlob(blob, `${filename}.docx`);
         toastStore.pushToast('success', 'DOCX generated successfully');
