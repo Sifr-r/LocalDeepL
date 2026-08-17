@@ -506,6 +506,85 @@ class TestDetectionBatchResilience:
         assert all(0.0 <= v <= 1.0 for v in result[0][0])
 
 
+class TestNaNBboxHandling:
+    """F1.6 audit fix (HIGH): Surya occasionally returns NaN/inf
+    bbox coordinates. The aligner must drop those boxes (not silently
+    drop them via the downstream ``cx1 > cx0`` filter) and log a
+    per-page count so operators see the regression in the server log.
+    """
+
+    def test_nan_bboxes_are_dropped_and_counted(self, caplog) -> None:
+        import logging
+
+        # A prediction with one valid box, one NaN box, and one inf box.
+        # The page image is 100x100, so the valid box normalizes cleanly
+        # to (0.1, 0.1, 0.5, 0.4). The NaN and inf boxes are dropped.
+        pred = _StubPredictor(
+            [
+                [
+                    types.SimpleNamespace(
+                        bboxes=[
+                            types.SimpleNamespace(bbox=[10.0, 10.0, 50.0, 40.0]),
+                            types.SimpleNamespace(
+                                bbox=[float("nan"), 10.0, 50.0, 40.0]
+                            ),
+                            types.SimpleNamespace(
+                                bbox=[10.0, 10.0, float("inf"), 40.0]
+                            ),
+                        ]
+                    )
+                ]
+            ]
+        )
+        aligner = HybridAligner(detection_predictor=pred)
+
+        with caplog.at_level(logging.WARNING, logger="omniscribe.core.aligner"):
+            result = aligner.get_detected_boxes_batch([_png_bytes()])
+
+        # Only the valid box survives.
+        assert len(result) == 1
+        assert len(result[0]) == 1
+        assert all(0.0 <= v <= 1.0 for v in result[0][0])
+
+        # The warning was logged with the NaN/inf count.
+        warnings = [r.message for r in caplog.records if "NaN" in r.message]
+        assert len(warnings) == 1
+        assert "1 NaN" in warnings[0]
+        assert "1 inf" in warnings[0]
+
+    def test_pure_nan_page_returns_empty_with_warning(self, caplog) -> None:
+        import logging
+
+        # A page whose every box is NaN — common if Surya's batch
+        # output is corrupted for a single image. The page degrades
+        # to no detected boxes; the warning still fires so the
+        # regression is visible. (The aligner also retries the
+        # detection on fully-empty pages, so the warning may fire
+        # more than once; we only assert that it fires at least
+        # once.)
+        pred = _StubPredictor(
+            [
+                [
+                    types.SimpleNamespace(
+                        bboxes=[
+                            types.SimpleNamespace(
+                                bbox=[float("nan")] * 4
+                            ),
+                        ]
+                    )
+                ]
+            ]
+        )
+        aligner = HybridAligner(detection_predictor=pred)
+
+        with caplog.at_level(logging.WARNING, logger="omniscribe.core.aligner"):
+            result = aligner.get_detected_boxes_batch([_png_bytes()])
+
+        assert result == [[]]
+        warnings = [r.message for r in caplog.records if "NaN" in r.message]
+        assert len(warnings) >= 1, "expected at least one NaN warning"
+
+
 # --- Audit L5: tqdm_patch.apply() must run before the surya import --------
 
 

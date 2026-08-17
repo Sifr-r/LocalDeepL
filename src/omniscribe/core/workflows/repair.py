@@ -62,7 +62,7 @@ class QualityRepairLoop:
     def __init__(
         self,
         options: RepairOptions | None = None,
-        confidence_estimator: Callable[[str], float] | None = None,
+        confidence_estimator: Callable[[str], float | None] | None = None,
     ) -> None:
         self.options = options if options is not None else RepairOptions()
         self._estimate = (
@@ -102,7 +102,12 @@ class QualityRepairLoop:
         for block_idx, (bbox, text) in enumerate(page_blocks):
             if not text or not text.strip():
                 continue
-            conf = self._estimate(text)
+            # F1.8 audit fix: a custom estimator may return None ("I
+            # don't know"). Coerce to 0.0 (worst-case confidence) so
+            # the downstream comparisons stay type-safe and the
+            # block is processed with the most pessimistic score.
+            estimated = self._estimate(text)
+            conf: float = 0.0 if estimated is None else estimated
             if conf >= opts.target:
                 confidences.append(conf)
                 continue
@@ -130,7 +135,11 @@ class QualityRepairLoop:
                     )
                     break
 
-                new_conf = self._estimate(new_text)
+                new_estimated = self._estimate(new_text)
+                new_conf: float = 0.0 if new_estimated is None else new_estimated
+                # F1.8 audit fix: a custom estimator may return None
+                # for "I don't know"; treating None as 0.0 here keeps
+                # the stall guard from crashing on None ordering.
                 if new_conf <= conf:
                     break  # stall guard: keep the best text seen so far
                 page_blocks[block_idx] = (bbox, new_text.strip())

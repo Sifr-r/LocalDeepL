@@ -9,6 +9,7 @@ over (LLM lines, detected boxes). Skipping Surya's recognition step is
 
 import io
 import logging
+import math
 import threading
 
 from omniscribe.utils import tqdm_patch
@@ -151,14 +152,37 @@ class HybridAligner:
             all_boxes: list[list[BBox]] = []
             for (img_w, img_h), pred in pairs:
                 boxes: list[BBox] = []
+                # F1.6 audit fix: Surya occasionally returns NaN/inf
+                # for bbox coordinates. Previously these slipped
+                # through ``_clamp`` (NaN propagates; inf expands to a
+                # full-page box), and the silent drop was invisible
+                # to operators. We now count and log per page so a
+                # Surya regression surfaces in the server log.
+                nan_count = 0
+                inf_count = 0
                 for bbox in pred.bboxes or []:
                     x0, y0, x1, y1 = bbox.bbox
+                    if any(math.isnan(v) for v in (x0, y0, x1, y1)):
+                        nan_count += 1
+                        continue
+                    if any(math.isinf(v) for v in (x0, y0, x1, y1)):
+                        inf_count += 1
+                        continue
                     cx0 = _clamp(x0 / img_w)
                     cy0 = _clamp(y0 / img_h)
                     cx1 = _clamp(x1 / img_w)
                     cy1 = _clamp(y1 / img_h)
                     if cx1 > cx0 and cy1 > cy0:
                         boxes.append((cx0, cy0, cx1, cy1))
+                if nan_count or inf_count:
+                    logger.warning(
+                        "Surya returned %d NaN and %d inf bboxes for image "
+                        "%sx%s; dropped",
+                        nan_count,
+                        inf_count,
+                        img_w,
+                        img_h,
+                    )
                 # Stable row-major default. The actual reading-order choice for
                 # the DP happens inside align_text, which tries both row-major
                 # and column-major orderings and picks the lower-cost result.
@@ -314,6 +338,17 @@ class HybridAligner:
 
 
 def _clamp(v: float) -> float:
+    """Clamp ``v`` to ``[0, 1]``.
+
+    NaN is treated as ``0`` so the downstream ``cx1 > cx0`` / ``cy1 > cy0``
+    check in :func:`get_detected_boxes_batch` drops the box rather than
+    propagating NaN into the DP. ``inf`` is clamped to ``1`` by ``max(0,
+    min(1, v))``; we also explicitly drop boxes with any inf coordinate
+    upstream of this function so a single inf doesn't expand to a
+    full-page box.
+    """
+    if math.isnan(v):
+        return 0.0
     return max(0.0, min(1.0, v))
 
 

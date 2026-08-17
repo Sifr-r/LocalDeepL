@@ -532,3 +532,47 @@ class TestChunkFramesChaptersSchema:
             chapters=chapters,
         )
         assert frame["chapters"] == chapters
+
+
+class TestRepairNoneConfidence:
+    """F1.8 audit fix (HIGH): a custom confidence estimator may return
+    ``None`` ("I don't know"). The repair loop must coerce ``None`` to
+    ``0.0`` (worst-case confidence) rather than crashing on
+    ``None <= conf`` ordering.
+
+    The protocol type now allows ``Callable[[str], float | None]``;
+    both the outer estimate and the per-attempt estimate get
+    coerced. The loop must still drive the page through repair and
+    emit a summary without raising.
+    """
+
+    async def test_repair_loop_with_none_returning_estimator_does_not_crash(
+        self,
+    ) -> None:
+        # Custom estimator that returns None for "I don't know".
+        def none_estimator(_text: str) -> float | None:
+            return None
+
+        async def re_ocr(_block_idx: int, _bbox: tuple) -> str:
+            return "irrelevant"
+
+        loop = QualityRepairLoop(
+            options=RepairOptions(target=0.98, max_retries=2),
+            confidence_estimator=none_estimator,
+        )
+        page_blocks = [
+            ((0.1, 0.1, 0.9, 0.2), "low quality text"),
+        ]
+        summary = await loop.repair_page(
+            page_idx=0,
+            page_blocks=page_blocks,
+            re_ocr=re_ocr,
+        )
+        # The page was processed without raising; the block counts.
+        assert summary.block_count == 1
+        # ``None`` was coerced to 0.0 (worst case), so the block is
+        # below target and ``below_target_count`` is 1.
+        assert summary.below_target_count == 1
+        # ``repaired_count`` is 0 because the loop never produced a
+        # higher-confidence replacement (every estimate was 0.0).
+        assert summary.repaired_count == 0

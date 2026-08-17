@@ -327,6 +327,39 @@ async def test_shared_client_reused_across_calls() -> None:
     await multi_format_client.aclose_shared_client()
 
 
+async def test_shared_client_recreated_on_loop_change() -> None:
+    """F1.4 audit fix (HIGH): httpx.AsyncClient is bound to the event loop
+    on which it is first awaited. If a different loop later reuses the
+    cache (tests, Celery tasks, multi-worker servers), the cache is
+    invalidated and a new client is created for the current loop.
+
+    The old client is GC'd; the new one is bound to the current loop
+    and shares the connection pool from then on.
+    """
+    from omniscribe.core.ocr import multi_format_client
+
+    # Reset to a clean state.
+    await multi_format_client.aclose_shared_client()
+
+    # First call: lazy-init the client bound to the current loop.
+    c1 = multi_format_client._get_shared_client()
+    assert multi_format_client._shared_client_loop is not None
+
+    # Simulate a "different loop" by clearing the cached loop
+    # reference (the same effect as a Celery worker re-using the
+    # process from a fresh loop). The next call must produce a
+    # NEW client — not reuse the loop-A-bound one.
+    multi_format_client._shared_client_loop = object()  # type: ignore[assignment]
+    c2 = multi_format_client._get_shared_client()
+
+    assert c1 is not c2, (
+        "shared client must be recreated when the cached loop "
+        "changes; otherwise httpx raises 'bound to a different "
+        "event loop' on every await in the new loop."
+    )
+    await multi_format_client.aclose_shared_client()
+
+
 async def test_openai_system_prompt_prepended_to_messages(
     openai_config: ProviderConfig,
 ) -> None:

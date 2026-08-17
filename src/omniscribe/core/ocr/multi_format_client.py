@@ -26,6 +26,15 @@ logger = logging.getLogger(__name__)
 _DEFAULT_CLIENT_TIMEOUT_S = 60.0
 _client_lock = threading.Lock()
 _shared_client: httpx.AsyncClient | None = None
+# httpx.AsyncClient is bound to the event loop on which it is first
+# awaited. If a different loop later reuses the cache (tests run on
+# a fresh loop, Celery tasks, multi-worker servers), the old client
+# raises ``RuntimeError: ... bound to a different event loop`` on
+# every await. Track the loop we created the client on; on mismatch,
+# invalidate the cache and lazily create a new client for the
+# current loop. The abandoned client is GC'd (its sockets eventually
+# close via httpx's transport teardown).
+_shared_client_loop: asyncio.AbstractEventLoop | None = None
 
 
 def _get_shared_client() -> httpx.AsyncClient:
@@ -35,21 +44,46 @@ def _get_shared_client() -> httpx.AsyncClient:
     which is the only reason this exists — a fresh ``AsyncClient`` per call
     re-handshakes TCP+TLS to LM Studio on every page. Timeout is set on the
     pool to a safe default; per-request overrides are passed to ``post()``.
+
+    F1.4 audit fix: the client is bound to the event loop on which it is
+    first awaited. If a different loop later reuses the cache (tests,
+    Celery tasks, multi-worker servers), the cache is invalidated and
+    a new client is created for the current loop.
     """
-    global _shared_client
-    if _shared_client is not None:
+    global _shared_client, _shared_client_loop
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # Not inside an async context (e.g. sync helper at startup).
+        # Pass ``None`` so the cache check below treats this as
+        # "definitely a different loop" if a client was created in a
+        # previous async context.
+        current_loop = None
+
+    if (
+        _shared_client is not None
+        and _shared_client_loop is current_loop
+        and not _shared_client.is_closed
+    ):
         return _shared_client
+
     with _client_lock:
-        if _shared_client is None:  # double-checked
+        if (
+            _shared_client is None
+            or _shared_client_loop is not current_loop
+            or _shared_client.is_closed
+        ):
             _shared_client = httpx.AsyncClient(timeout=_DEFAULT_CLIENT_TIMEOUT_S)
+            _shared_client_loop = current_loop
     return _shared_client
 
 
 async def aclose_shared_client() -> None:
     """Close the shared client (call on FastAPI shutdown to release sockets)."""
-    global _shared_client
+    global _shared_client, _shared_client_loop
     client = _shared_client
     _shared_client = None
+    _shared_client_loop = None
     if client is not None:
         await client.aclose()
 
