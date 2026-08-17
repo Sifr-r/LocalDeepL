@@ -98,6 +98,7 @@
         {@const active = ($configStore.document_processors || []).includes(proc.value)}
         <button
           type="button"
+          aria-pressed={active}
           on:click={() => toggleProcessor(proc.value)}
           class={[
             'inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium',
