@@ -51,13 +51,14 @@ assert process_translation_task.__name__ == "process_translation_task"
     assert result.returncode == 0, result.stderr
 
 
-def test_optional_extras_split_chromadb_into_memory():
+def test_optional_extras_split_lexicon_rag_dependencies():
     """The ``async-translation`` extra MUST stay light.
 
     Regression guard: future "I'll just add this here" PRs are easy
-    to write; this test makes sure ChromaDB + sentence-transformers
-    stay parked in the separate ``memory`` extra and don't bloat the
-    async-translation install.
+    to write; this test makes sure lancedb + sentence-transformers
+    stay parked in the separate ``lexicon`` (formerly ``memory``) extra
+    and don't bloat the async-translation install. See
+    ``docs/lexicon-migration-spec.md`` §10 for the rename.
     """
     import tomllib
     from pathlib import Path
@@ -67,21 +68,21 @@ def test_optional_extras_split_chromadb_into_memory():
     extras = data["project"]["optional-dependencies"]
 
     assert "async-translation" in extras, "async-translation extra is required"
-    assert "memory" in extras, (
-        "memory extra is required (it owns chromadb + sentence-transformers)"
+    assert "lexicon" in extras, (
+        "lexicon extra is required (it owns lancedb + sentence-transformers)"
     )
 
     async_deps = " ".join(extras["async-translation"])
-    for heavy in ("chromadb", "sentence-transformers"):
+    for heavy in ("lancedb", "sentence-transformers", "chromadb"):
         assert heavy not in async_deps, (
             f"{heavy!r} must not appear in the async-translation extra; "
-            f"it belongs in the 'memory' extra"
+            f"it belongs in the 'lexicon' extra"
         )
 
-    memory_deps = " ".join(extras["memory"])
-    for required in ("chromadb", "sentence-transformers"):
-        assert required in memory_deps, (
-            f"{required!r} is missing from the 'memory' extra"
+    lexicon_deps = " ".join(extras["lexicon"])
+    for required in ("lancedb", "sentence-transformers", "pyarrow"):
+        assert required in lexicon_deps, (
+            f"{required!r} is missing from the 'lexicon' extra"
         )
 
 

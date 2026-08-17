@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from functools import lru_cache
-from pathlib import Path
 from typing import Any, TypedDict
 
 from omniscribe.core.llm_client import call_llm
@@ -20,12 +18,6 @@ from omniscribe.core.translation_config import (
 from omniscribe.utils.prompt_safety import sanitize_prompt_input
 
 logger = logging.getLogger(__name__)
-
-# Resolve the ChromaDB directory once. Default lives next to the package root
-# (legacy layout); override with `OMNISCRIBE_CHROMA_DB` for embedded use.
-_DEFAULT_CHROMA_DB = Path(__file__).resolve().parent.parent.parent / "chroma_db"
-CHROMA_COLLECTION_NAME = "lanes_lexicon"
-EMBEDDING_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
 
 # Bumped when the user-facing prompt body changes.
 PROMPT_VERSION = "2026-08-15.v1"
@@ -68,6 +60,13 @@ LEXICON_RESULT_COUNT = 3
 class TranslationState(TypedDict, total=False):
     source_chunk: str
     target_language: str
+    # Optional language codes for hybrid lexicon filtering (spec §8.1).
+    # When present, the lexicon query filters by source_lang/target_lang
+    # so a glossary scoped to en→fr doesn't bleed into a de→es request.
+    # Populated by the translation route when known (request field, OCR
+    # document metadata, or inference).
+    source_lang: str
+    target_lang: str
     rag_context: list[str]
     translated_chunk: str
     evaluation_score: float
@@ -92,88 +91,45 @@ def _optional_dependency_message(package: str) -> str:
     )
 
 
-def _chroma_db_path() -> Path:
-    override = os.getenv("OMNISCRIBE_CHROMA_DB")
-    return Path(override).expanduser().resolve() if override else _DEFAULT_CHROMA_DB
-
-
-def _get_chroma_modules() -> tuple[Any, Any] | None:
-    try:
-        import chromadb
-        from chromadb.utils import embedding_functions
-    except ImportError:
-        return None
-    return chromadb, embedding_functions
-
-
-@lru_cache(maxsize=1)
-def _chroma_client() -> Any | None:
-    """Lazy-built persistent ChromaDB client. Cached for the process lifetime."""
-    modules = _get_chroma_modules()
-    if modules is None:
-        return None
-    chromadb, _embedding_functions = modules
-
-    db_path = _chroma_db_path()
-    if not db_path.exists():
-        return None
-
-    try:
-        return chromadb.PersistentClient(path=str(db_path))
-    except Exception as exc:
-        logger.warning("Unable to open ChromaDB at %s: %s", db_path, exc)
-        return None
-
-
-@lru_cache(maxsize=1)
-def _chroma_embedding_fn() -> Any | None:
-    """Lazy-built sentence-transformer embedding function. Cached for lifetime."""
-    modules = _get_chroma_modules()
-    if modules is None:
-        return None
-    _chromadb, embedding_functions = modules
-    try:
-        return embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name=EMBEDDING_MODEL_NAME
-        )
-    except Exception as exc:
-        logger.warning(
-            "Unable to load embedding model %s: %s", EMBEDDING_MODEL_NAME, exc
-        )
-        return None
-
-
-def get_chroma_collection() -> Any | None:
-    """Return the cached ChromaDB collection, or None if unavailable."""
-    client = _chroma_client()
-    emb_fn = _chroma_embedding_fn()
-    if client is None or emb_fn is None:
-        return None
-    try:
-        return client.get_collection(
-            name=CHROMA_COLLECTION_NAME, embedding_function=emb_fn
-        )
-    except Exception as exc:
-        logger.warning("Unable to load translation lexicon from ChromaDB: %s", exc)
-        return None
-
-
 def retrieve_lexicon_context(state: TranslationState) -> dict[str, list[str]]:
-    """Retrieves terminology from ChromaDB."""
-    collection = get_chroma_collection()
-    context: list[str] = []
+    """Retrieve glossary context for the current chunk via the LexiconStore.
 
-    if collection:
-        try:
-            results = collection.query(
-                query_texts=[state["source_chunk"]], n_results=LEXICON_RESULT_COUNT
+    Replaces the legacy ChromaDB ``lanes_lexicon`` query (Phase 3 of the
+    migration, see ``docs/lexicon-migration-spec.md`` §8). The store is
+    process-lazy and fail-soft: if lancedb is missing, the store is empty,
+    or any error fires, the function returns an empty ``rag_context`` and
+    the graph proceeds without glossary injection.
+    """
+    try:
+        from omniscribe.core.lexicon import LexiconQuery, get_default_store
+    except ImportError:
+        return {"rag_context": []}
+
+    try:
+        store = get_default_store()
+    except Exception as exc:
+        logger.warning("Lexicon store unavailable: %s", exc)
+        return {"rag_context": []}
+
+    settings = _state_settings(state)
+    try:
+        hits = store.hybrid_query(
+            LexiconQuery(
+                source_chunk=state["source_chunk"],
+                source_lang=state.get("source_lang") or None,
+                target_lang=state.get("target_lang") or state.get("target_language"),
+                limit=settings.lexicon_result_count
+                if hasattr(settings, "lexicon_result_count")
+                else LEXICON_RESULT_COUNT,
             )
-            if results and results.get("documents") and results["documents"][0]:
-                context = results["documents"][0]
-        except Exception as exc:
-            logger.warning("Unable to retrieve translation lexicon context: %s", exc)
+        )
+    except Exception as exc:
+        logger.warning("Lexicon hybrid query failed: %s", exc)
+        return {"rag_context": []}
 
-    return {"rag_context": context}
+    return {
+        "rag_context": [h.entry.to_prompt_block_line() for h in hits],
+    }
 
 
 def _state_settings(state: TranslationState) -> TranslationSettings:

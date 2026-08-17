@@ -1,4 +1,17 @@
-"""Persistent named glossary library."""
+"""Persistent named glossary library.
+
+DEPRECATED (Phase 1, 2026-08-17): replaced by
+:mod:`omniscribe.core.lexicon` (LanceDB-backed). This module is kept
+through Phase 5 cleanup for the JSON-on-disk writer of last resort
+and as a fallback for callers that haven't migrated yet.
+
+New code should depend on :class:`omniscribe.core.lexicon.LexiconStore`
+(Protocol) or :class:`omniscribe.core.lexicon.LanceDBLexiconStore`
+(concrete). For legacy API compatibility, use
+:class:`omniscribe.core.lexicon.GlossaryLibraryAdapter`.
+
+See ``docs/lexicon-migration-spec.md`` for the full migration plan.
+"""
 
 from __future__ import annotations
 

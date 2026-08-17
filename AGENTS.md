@@ -117,8 +117,9 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/core/ocr/` | OpenAI/Anthropic/Ollama multi-format client, prompts, limits, filters, and resilience (retry + circuit breaker) |
 | `src/omniscribe/core/ocr_quality/` | OCR Quality Trust Layer (watermark, script detector, hallucination guard, Platt scaling calibration, trust scorer, orchestrator) |
 | `src/omniscribe/core/transcription/` | Speech-to-text audio transcription engines (local & OpenAI-compatible API backends) |
-| `src/omniscribe/core/glossary_library/` | Terminology glossary store and library management |
-| `src/omniscribe/core/glossary_sources/` | Glossary import parsers (TBX, CSV, JSON, URL) |
+| `src/omniscribe/core/lexicon/` | LanceDB-backed canonical glossary / translation lexicon store (Protocol + LanceDB impl + embedding wrapper + legacy `GlossaryLibrary` adapter + one-shot migration core). See `docs/lexicon-migration-spec.md`. |
+| `src/omniscribe/core/glossary_library/` | **DEPRECATED** — JSON-on-disk glossary writer kept as a fallback; new code should use `omniscribe.core.lexicon.LexiconStore` (or the `GlossaryLibraryAdapter` shim for the legacy API). Removed in a future cleanup. |
+| `src/omniscribe/core/glossary_sources/` | Glossary import parsers (TBX, CSV, JSON, URL, SQL, Git, TMX, XLIFF) |
 | `src/omniscribe/core/ocr/resilience.py` | `is_transient_error` classification, `CircuitBreaker` (closed/open/half-open), `CircuitOpenError` |
 | `src/omniscribe/core/pdf/` | PDF/image rasterization (`rasterizer.py`), sandwich PDF embedding (`embedder.py`), and `PDFHandler` facade (`handler.py`) |
 | `src/omniscribe/core/grounded/` | Grounded backends and bbox JSON parsers (retry + circuit breaker on the VLM call) |
@@ -181,7 +182,7 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 ## Web Notes
 
 - Browser translation and structured extraction use synchronous endpoints and do not require Redis.
-- `/api/translate/async` uses Celery, Redis, and LangGraph from the `async-translation` extra. The translation module degrades gracefully when ChromaDB is not installed (no lexicon retrieval); install the separate `memory` extra (ChromaDB + sentence-transformers) for the lexicon-backed RAG feature.
+- `/api/translate/async` uses Celery, Redis, and LangGraph from the `async-translation` extra. The translation module reads glossary context from the LanceDB-backed `LexiconStore`; install the `lexicon` extra (lancedb + pyarrow + pandas + sentence-transformers). The store degrades gracefully when unavailable (empty `rag_context`). The `memory` extra name is kept as a one-release deprecation alias for `lexicon`.
 - `ALLOW_SSRF_LOCAL=true` is the local-development default. Set it to `false` when exposing the server to untrusted users.
 - **Auth**: set `OMNISCRIBE_AUTH_TOKEN` to require `Authorization: Bearer <token>` on every HTTP route (constant-time compare, ASGI middleware). Unset = open (local-desktop default).
 - **VLM resilience**: every LLM call retries transient errors (429/5xx/connection resets) with exponential backoff, and a per-request circuit breaker fails fast after `OMNISCRIBE_CB_FAILURE_THRESHOLD` (default 5) consecutive failures. Tunables: `OMNISCRIBE_LLM_MAX_RETRIES` (default 2), `OMNISCRIBE_LLM_RETRY_BASE_DELAY` (default 1.0s), `OMNISCRIBE_CB_COOLDOWN` (default 30s).

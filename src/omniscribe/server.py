@@ -134,6 +134,12 @@ def create_app() -> ASGIApplication:
 
     @asynccontextmanager
     async def lifespan(_app: Any) -> AsyncIterator[None]:
+        # Phase 4 of the LanceDB migration: auto-migrate legacy state on
+        # first run after the upgrade. Fail-open — a broken migration
+        # never blocks server boot. The user can retry with the
+        # ``omniscribe-migrate-lexicon`` CLI.
+        _run_legacy_lexicon_migration()
+
         await state.ocr_job_queue.start()
         cleanup_task = await _start_artifact_cleanup()
         try:
@@ -303,6 +309,46 @@ def _validate_runtime_settings() -> RuntimeSettings:
 # ---------------------------------------------------------------------------
 # Artifact TTL background sweeper
 # ---------------------------------------------------------------------------
+
+
+def _run_legacy_lexicon_migration() -> None:
+    """One-shot migration of the legacy JSON+ChromaDB glossary store to LanceDB.
+
+    Runs at server startup (Phase 4 of the LanceDB migration, see
+    ``docs/lexicon-migration-spec.md`` §6.1). Fail-open: any error is
+    logged but does not prevent the server from booting. The user can
+    retry with the explicit ``omniscribe-migrate-lexicon`` CLI.
+    """
+    try:
+        from omniscribe.api.routers import state as router_state
+        from omniscribe.core.lexicon.migration import auto_migrate_if_needed
+    except ImportError:
+        # [lexicon] extra not installed; nothing to do.
+        return
+
+    artifact_dir = getattr(router_state, "_artifact_dir", None)
+    if artifact_dir is None:
+        return
+    try:
+        report = auto_migrate_if_needed(artifact_dir)
+    except Exception as exc:  # pragma: no cover — defensive
+        _LOGGER.warning("Auto-migration raised unexpectedly: %s", exc)
+        return
+
+    if report.error:
+        _LOGGER.warning(
+            "Auto-migration failed: %s. Run `omniscribe-migrate-lexicon` to retry.",
+            report.error,
+        )
+    elif report.ran:
+        _LOGGER.info(
+            "Auto-migrated %d glossaries (%d entries) from legacy store to LanceDB; "
+            "backup at %s",
+            report.glossaries_migrated,
+            report.entries_migrated,
+            report.backup_dir,
+        )
+    # else: skipped (no legacy state) — nothing to log.
 
 
 def _artifact_cleanup_interval_s() -> float:

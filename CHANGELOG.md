@@ -8,6 +8,34 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **LanceDB-backed lexicon store (replaces JSON + ChromaDB)** — the
+  canonical glossary / translation lexicon is now a single embedded
+  columnar vector database (`omniscribe.core.lexicon.LanceDBLexiconStore`)
+  with native hybrid (vector + SQL filter) queries. Replaces the prior
+  two-system pair of `glossary_library/library.json` (JSON-on-disk) +
+  `chroma_db/lanes_lexicon` (ChromaDB PersistentClient). The new
+  `LexiconStore` Protocol is the single read/write surface; legacy
+  callers route through `GlossaryLibraryAdapter`. Translation lookup
+  is now a one-query hybrid (similar terms, in this language pair, in
+  this domain, in this user's enabled glossaries) instead of a
+  ChromaDB semantic search + a JSON side-lookup. Spec:
+  `docs/lexicon-migration-spec.md`.
+
+- **`omniscribe-migrate-lexicon` CLI** — explicit one-shot migration
+  script for users who prefer a manual upgrade path. Supports
+  `--dry-run` (plan without writing), `--verify-only` (read-only
+  check of an existing migration), and `--artifact-dir <path>`. The
+  server also auto-migrates on first run after the upgrade
+  (fail-open — a broken migration never blocks boot; the user can
+  retry with the explicit CLI).
+
+- **Optional `source_lang` / `target_lang` on `TranslationState`** —
+  the LangGraph translation flow now carries language pair hints
+  through to the lexicon query so a glossary scoped to `en→fr` does
+  not bleed into a `de→es` request. Populated by the translation
+  route when known (request field, OCR document metadata, or
+  inference); missing is fine — the store just skips the filter.
+
 - **Whitespace recall booster (default ON)** — the hybrid pipeline now
   runs a secondary whitespace-masking discovery pass
   (`core/text_recall.py`) after Surya layout detection: binarize +
@@ -20,12 +48,14 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`[memory]` extra renamed to `[lexicon]`** — the `chromadb` dependency
+  is removed; the new extra installs `lancedb + pyarrow + pandas +
+  sentence-transformers` instead. The `[memory]` name is kept as a
+  one-release deprecation alias that installs the same set, so existing
+  `omniscribe[memory]` users upgrade transparently. After this release
+  the alias is dropped.
+
 - **Install paths now include the `preprocessing` extra** —
-  `Dockerfile`, `install.ps1`, `Makefile setup`, and the README /
-  AGENTS.md / DEPLOYMENT.md quick-start commands all add
-  `--extra preprocessing`, so the default-on whitespace recall pass
-  is actually active in Docker and one-click installs instead of
-  silently degrading. `tests/test_repo_hygiene.py` pins the new flag.
 
 - **Windows quick-start robustness (install.ps1 + start_app.vbs)** —
   the Windows one-click launcher no longer silently fails on

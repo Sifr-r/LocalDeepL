@@ -61,8 +61,23 @@ async-translation = [
     "langgraph>=0.1.0",
 ]
 memory = [
-    # Optional lexicon-backed RAG store and embeddings for translation.
-    "chromadb>=0.5.0",
+    # DEPRECATED: alias for the `lexicon` extra. The LanceDB migration
+    # (see `docs/lexicon-migration-spec.md` §10) renames this extra. Kept
+    # as a one-release compatibility shim so existing `omniscribe[memory]`
+    # installs keep working. The `chromadb` dependency was removed in
+    # Phase 5; if you have a `chroma_db/` directory on disk, the migration
+    # CLI will back it up but no longer read it.
+    "lancedb>=0.5.0",
+    "pyarrow>=15.0.0",
+    "pandas>=2.0.0",
+    "sentence-transformers>=5.5.1",
+]
+# Canonical lexicon store (LanceDB). Replaces the legacy `[memory]`
+# ChromaDB-backed extra. Install with `uv sync --extra lexicon`.
+lexicon = [
+    "lancedb>=0.5.0",
+    "pyarrow>=15.0.0",
+    "pandas>=2.0.0",
     "sentence-transformers>=5.5.1",
 ]
 
@@ -107,6 +122,7 @@ glossary = [
 
 [project.scripts]
 omniscribe-server = "omniscribe.server:main"
+omniscribe-migrate-lexicon = "omniscribe.cli.migrate_lexicon:main"
 
 [project.urls]
 Homepage = "https://github.com/Sifr-r/OmniScribe"

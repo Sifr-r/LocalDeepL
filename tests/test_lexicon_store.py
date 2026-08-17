@@ -1,0 +1,497 @@
+"""Tests for the new LanceDB-backed lexicon store (Phase 1 of the migration).
+
+Acceptance: reading from `LexiconStore` returns equivalent results to the
+legacy read path (round-trip test) AND all existing API routes still pass.
+
+These tests cover:
+
+- The ``LexiconStore`` Protocol is satisfied by ``LanceDBLexiconStore``.
+- ``save_glossary`` + ``get_glossary`` + ``list_glossaries`` round-trip.
+- ``toggle_glossary`` flips the ``enabled`` flag everywhere.
+- ``reorder_glossaries`` rewrites priorities.
+- ``delete_glossary`` removes all rows for a glossary.
+- ``hybrid_query`` returns semantically relevant results.
+- ``exact_lookup`` matches case-insensitively.
+- ``GlossaryLibraryAdapter`` preserves the legacy ``GlossaryLibrary`` API.
+- ``merged_enabled_glossary`` and ``preview`` composition helpers work.
+- ``health()`` returns the expected metadata.
+- The Protocol/structural-typing check passes.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from omniscribe.core.glossary import Glossary
+from omniscribe.core.lexicon import (
+    GlossaryLibraryAdapter,
+    LanceDBLexiconStore,
+    LexiconHit,
+    LexiconQuery,
+    LexiconStore,
+    merged_enabled_glossary,
+    preview,
+)
+from omniscribe.core.lexicon.embedding import (
+    EMBEDDING_DIM,
+    EmbeddingModel,
+)
+
+# ---------------------------------------------------------------------------
+# Test doubles — a tiny deterministic embedding model for fast tests.
+# ---------------------------------------------------------------------------
+
+
+class _FakeEmbeddingModel:
+    """Deterministic, hash-based fake embedding model.
+
+    Maps each text to a 384-dim unit vector derived from the text hash. Two
+    texts with the same source produce the same vector; similar prefixes
+    produce somewhat-similar vectors (hash-bucketed). Not a real semantic
+    model — just enough surface for the store to exercise vector search.
+    """
+
+    dim = EMBEDDING_DIM
+    model_name = "fake-test-model"
+
+    def embed(self, text: str) -> list[float]:
+        return self.embed_batch([text])[0]
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        import hashlib
+
+        vectors: list[list[float]] = []
+        for t in texts:
+            digest = hashlib.sha256(t.encode("utf-8")).digest()
+            # Stretch the 32 bytes into 384 dims by repeating + position-mixing.
+            base = [b / 255.0 for b in digest] * 12
+            vec = base[:EMBEDDING_DIM]
+            # Normalize to unit length
+            norm = sum(x * x for x in vec) ** 0.5 or 1.0
+            vec = [x / norm for x in vec]
+            vectors.append(vec)
+        return vectors
+
+
+@pytest.fixture
+def fake_model() -> EmbeddingModel:
+    return _FakeEmbeddingModel()
+
+
+@pytest.fixture
+def store(tmp_path: Path, fake_model: EmbeddingModel) -> LanceDBLexiconStore:
+    artifact = tmp_path / "lexicon.lance"
+    return LanceDBLexiconStore(path=artifact, embedding_model=fake_model)
+
+
+# ---------------------------------------------------------------------------
+# Protocol conformance
+# ---------------------------------------------------------------------------
+
+
+def test_lancedb_store_satisfies_protocol(store: LanceDBLexiconStore) -> None:
+    """The concrete implementation must satisfy the runtime-checkable Protocol."""
+    assert isinstance(store, LexiconStore)
+
+
+# ---------------------------------------------------------------------------
+# Round-trip
+# ---------------------------------------------------------------------------
+
+
+def test_save_and_get_glossary(store: LanceDBLexiconStore) -> None:
+    meta = store.save_glossary(
+        name="Legal EN→FR",
+        format="csv",
+        entries=[
+            {"source": "agreement", "target": "accord"},
+            {"source": "contract", "target": "contrat"},
+            {"source": "liability", "target": "responsabilité"},
+        ],
+        source_uri="inline",
+        encoding="utf-8",
+        group="legal",
+        priority=10,
+    )
+    assert meta.id
+    assert meta.name == "Legal EN→FR"
+    assert meta.entry_count == 3
+    assert meta.group == "legal"
+    assert meta.priority == 10
+    assert meta.enabled is True
+
+    fetched = store.get_glossary(meta.id)
+    assert fetched is not None
+    assert fetched.id == meta.id
+    assert fetched.entry_count == 3
+    assert fetched.name == "Legal EN→FR"
+
+
+def test_list_glossaries_sorted_by_priority(store: LanceDBLexiconStore) -> None:
+    low = store.save_glossary(
+        name="Low",
+        format="json_pairs",
+        entries=[{"source": "a", "target": "A"}],
+        priority=0,
+    )
+    high = store.save_glossary(
+        name="High",
+        format="json_pairs",
+        entries=[{"source": "b", "target": "B"}],
+        priority=100,
+    )
+    mid = store.save_glossary(
+        name="Mid",
+        format="json_pairs",
+        entries=[{"source": "c", "target": "C"}],
+        priority=50,
+    )
+    metas = store.list_glossaries()
+    assert [m.id for m in metas] == [high.id, mid.id, low.id]
+
+
+def test_save_rejects_empty_name(store: LanceDBLexiconStore) -> None:
+    with pytest.raises(ValueError, match="name is required"):
+        store.save_glossary(
+            name="   ", format="json_pairs", entries=[{"source": "a", "target": "A"}]
+        )
+
+
+def test_save_rejects_empty_entries(store: LanceDBLexiconStore) -> None:
+    with pytest.raises(ValueError, match="at least one valid entry"):
+        store.save_glossary(name="Empty", format="json_pairs", entries=[])
+
+
+def test_save_rejects_invalid_priority(store: LanceDBLexiconStore) -> None:
+    with pytest.raises(ValueError, match="priority must be an integer"):
+        store.save_glossary(
+            name="X",
+            format="json_pairs",
+            entries=[{"source": "a", "target": "A"}],
+            priority="not-a-number",  # type: ignore[arg-type]
+        )
+
+
+# ---------------------------------------------------------------------------
+# Toggle / reorder / delete
+# ---------------------------------------------------------------------------
+
+
+def test_toggle_glossary(store: LanceDBLexiconStore) -> None:
+    meta = store.save_glossary(
+        name="Toggle me", format="json_pairs", entries=[{"source": "a", "target": "A"}]
+    )
+    assert store.get_glossary(meta.id).enabled is True
+    updated = store.toggle_glossary(meta.id, enabled=False)
+    assert updated.enabled is False
+    # Round-trip back
+    updated2 = store.toggle_glossary(meta.id, enabled=True)
+    assert updated2.enabled is True
+
+
+def test_toggle_missing_glossary_raises(store: LanceDBLexiconStore) -> None:
+    with pytest.raises(KeyError):
+        store.toggle_glossary("nonexistent", enabled=False)
+
+
+def test_reorder_glossaries(store: LanceDBLexiconStore) -> None:
+    a = store.save_glossary(
+        name="A",
+        format="json_pairs",
+        entries=[{"source": "a", "target": "A"}],
+        priority=0,
+    )
+    b = store.save_glossary(
+        name="B",
+        format="json_pairs",
+        entries=[{"source": "b", "target": "B"}],
+        priority=0,
+    )
+    c = store.save_glossary(
+        name="C",
+        format="json_pairs",
+        entries=[{"source": "c", "target": "C"}],
+        priority=0,
+    )
+    # Order: c first (highest priority), a second, b last
+    store.reorder_glossaries([c.id, a.id, b.id])
+    metas = store.list_glossaries()
+    assert [m.id for m in metas] == [c.id, a.id, b.id]
+
+
+def test_reorder_unknown_id_raises(store: LanceDBLexiconStore) -> None:
+    a = store.save_glossary(
+        name="A", format="json_pairs", entries=[{"source": "a", "target": "A"}]
+    )
+    with pytest.raises(KeyError):
+        store.reorder_glossaries([a.id, "bogus"])
+
+
+def test_delete_glossary(store: LanceDBLexiconStore) -> None:
+    a = store.save_glossary(
+        name="A", format="json_pairs", entries=[{"source": "a", "target": "A"}]
+    )
+    b = store.save_glossary(
+        name="B", format="json_pairs", entries=[{"source": "b", "target": "B"}]
+    )
+    assert store.delete_glossary(a.id) is True
+    assert store.get_glossary(a.id) is None
+    # The other glossary is untouched
+    assert store.get_glossary(b.id) is not None
+    # Deleting again is a no-op
+    assert store.delete_glossary(a.id) is False
+
+
+# ---------------------------------------------------------------------------
+# Read API
+# ---------------------------------------------------------------------------
+
+
+def test_hybrid_query_returns_relevant_hits(store: LanceDBLexiconStore) -> None:
+    store.save_glossary(
+        name="Animals",
+        format="json_pairs",
+        entries=[
+            {"source": "dog", "target": "perro"},
+            {"source": "cat", "target": "gato"},
+            {"source": "bird", "target": "pájaro"},
+        ],
+    )
+    # Use a near-identical source for the query so the fake embedding model
+    # returns a vector close to the matched term.
+    hits = store.hybrid_query(LexiconQuery(source_chunk="dog", limit=2))
+    assert len(hits) >= 1
+    assert all(isinstance(h, LexiconHit) for h in hits)
+    # Top hit should be the exact "dog" entry
+    assert hits[0].entry.source_text == "dog"
+    assert hits[0].entry.target_text == "perro"
+
+
+def test_hybrid_query_filters_disabled(store: LanceDBLexiconStore) -> None:
+    meta = store.save_glossary(
+        name="Animals",
+        format="json_pairs",
+        entries=[{"source": "dog", "target": "perro"}],
+    )
+    store.toggle_glossary(meta.id, enabled=False)
+    # With enabled_only=True (default), the disabled glossary's terms are skipped
+    hits = store.hybrid_query(LexiconQuery(source_chunk="dog", limit=5))
+    assert all(h.entry.glossary_id != meta.id for h in hits)
+    # With enabled_only=False, they show up again
+    hits2 = store.hybrid_query(
+        LexiconQuery(source_chunk="dog", limit=5, enabled_only=False)
+    )
+    assert any(h.entry.glossary_id == meta.id for h in hits2)
+
+
+def test_hybrid_query_filters_by_glossary_ids(store: LanceDBLexiconStore) -> None:
+    g1 = store.save_glossary(
+        name="G1", format="json_pairs", entries=[{"source": "a", "target": "A"}]
+    )
+    g2 = store.save_glossary(
+        name="G2", format="json_pairs", entries=[{"source": "a", "target": "A2"}]
+    )
+    _ = g2  # silence F841 — referenced only to keep the glossary alive
+    hits = store.hybrid_query(
+        LexiconQuery(source_chunk="a", limit=10, glossary_ids=[g1.id])
+    )
+    assert all(h.entry.glossary_id == g1.id for h in hits)
+
+
+def test_exact_lookup_case_insensitive(store: LanceDBLexiconStore) -> None:
+    store.save_glossary(
+        name="Mixed",
+        format="json_pairs",
+        entries=[
+            {"source": "Apple", "target": "Pomme"},
+            {"source": "Banana", "target": "Banane"},
+        ],
+    )
+    found = store.exact_lookup("APPLE", source_lang="", target_lang="")
+    assert len(found) == 1
+    assert found[0].target_text == "Pomme"
+    found2 = store.exact_lookup("banana", source_lang="", target_lang="")
+    assert len(found2) == 1
+    assert found2[0].target_text == "Banane"
+
+
+def test_list_entries(store: LanceDBLexiconStore) -> None:
+    store.save_glossary(
+        name="Numbers",
+        format="json_pairs",
+        entries=[
+            {"source": "one", "target": "un"},
+            {"source": "two", "target": "deux"},
+            {"source": "three", "target": "trois"},
+        ],
+    )
+    metas = store.list_glossaries()
+    entries = store.list_entries(metas[0].id)
+    assert len(entries) == 3
+    assert {e.source_text for e in entries} == {"one", "two", "three"}
+
+
+# ---------------------------------------------------------------------------
+# Health
+# ---------------------------------------------------------------------------
+
+
+def test_health_returns_expected_keys(store: LanceDBLexiconStore) -> None:
+    store.save_glossary(
+        name="G", format="json_pairs", entries=[{"source": "a", "target": "A"}]
+    )
+    h = store.health()
+    assert h["row_count"] == 1
+    assert h["glossary_count"] == 1
+    assert h["embedding_dim"] == EMBEDDING_DIM
+    assert h["embedding_model"] == "fake-test-model"
+    assert "path" in h
+    assert "index_spec" in h
+
+
+# ---------------------------------------------------------------------------
+# Legacy adapter
+# ---------------------------------------------------------------------------
+
+
+def test_adapter_items_returns_stored_glossary_shape(
+    store: LanceDBLexiconStore,
+) -> None:
+    store.save_glossary(
+        name="G",
+        format="json_pairs",
+        entries=[{"source": "hello", "target": "bonjour"}],
+    )
+    adapter = GlossaryLibraryAdapter(store)
+    items = adapter.items()
+    assert len(items) == 1
+    item = items[0]
+    assert item.name == "G"
+    assert item.format == "json_pairs"
+    assert item.enabled is True
+    assert len(item.entries) == 1
+    assert item.entries[0]["source"] == "hello"
+    assert item.entries[0]["target"] == "bonjour"
+
+
+def test_adapter_round_trip_matches_legacy_behavior(
+    store: LanceDBLexiconStore,
+) -> None:
+    """Reading from LexiconStore returns equivalent results to the legacy read path."""
+    from omniscribe.core.glossary_library import GlossaryLibrary
+
+    # New store
+    saved = store.save_glossary(
+        name="Round-trip",
+        format="json_pairs",
+        entries=[
+            {"source": "agreement", "target": "accord"},
+            {"source": "contract", "target": "contrat"},
+        ],
+        source_uri="inline",
+        encoding="utf-8",
+        group="legal",
+        priority=42,
+    )
+    adapter = GlossaryLibraryAdapter(store)
+    via_adapter = adapter.get(saved.id)
+
+    # Legacy library with the same data
+    legacy_dir = store._path.parent / "legacy"
+    legacy_dir.mkdir(parents=True, exist_ok=True)
+    lib = GlossaryLibrary(artifact_dir=legacy_dir)
+    legacy_saved = lib.save(
+        name="Round-trip",
+        format="json_pairs",
+        entries=[
+            {"source": "agreement", "target": "accord"},
+            {"source": "contract", "target": "contrat"},
+        ],
+        source_uri="inline",
+        encoding="utf-8",
+        group="legal",
+        priority=42,
+    )
+    via_legacy = lib.get(legacy_saved.id)
+
+    # Compare the user-visible shape
+    assert via_adapter is not None and via_legacy is not None
+    assert via_adapter.name == via_legacy.name == "Round-trip"
+    assert via_adapter.format == via_legacy.format == "json_pairs"
+    assert via_adapter.source_uri == via_legacy.source_uri == "inline"
+    assert via_adapter.encoding == via_legacy.encoding == "utf-8"
+    assert via_adapter.priority == via_legacy.priority == 42
+    assert via_adapter.group == via_legacy.group == "legal"
+    assert via_adapter.enabled == via_legacy.enabled is True
+    assert len(via_adapter.entries) == len(via_legacy.entries) == 2
+    assert via_adapter.entries[0]["source"] == via_legacy.entries[0]["source"]
+    assert via_adapter.entries[0]["target"] == via_legacy.entries[0]["target"]
+
+
+def test_merged_enabled_glossary_helper(store: LanceDBLexiconStore) -> None:
+    store.save_glossary(
+        name="Low",
+        format="json_pairs",
+        entries=[{"source": "cat", "target": "gato"}],
+        priority=0,
+    )
+    store.save_glossary(
+        name="High",
+        format="json_pairs",
+        entries=[{"source": "cat", "target": "chat"}],  # overrides Low
+        priority=10,
+    )
+    merged = merged_enabled_glossary(store)
+    assert isinstance(merged, Glossary)
+    cats = [e for e in merged.entries if e.source == "cat"]
+    assert len(cats) == 1
+    # Higher-priority glossary wins
+    assert cats[0].target == "chat"
+
+
+def test_preview_helper(store: LanceDBLexiconStore) -> None:
+    store.save_glossary(
+        name="A",
+        format="json_pairs",
+        entries=[{"source": "bank", "target": "banque"}],
+    )
+    store.save_glossary(
+        name="B",
+        format="json_pairs",
+        entries=[{"source": "bank", "target": "rive"}],
+    )
+    p = preview(store)
+    assert p["count"] == 2
+    assert len(p["conflicts"]) == 1
+    conflict = p["conflicts"][0]
+    assert conflict["source"] == "bank"
+    assert set(conflict["targets"]) == {"banque", "rive"}
+
+
+# ---------------------------------------------------------------------------
+# Persistence — re-open the store and confirm data survives.
+# ---------------------------------------------------------------------------
+
+
+def test_persistence_across_instances(
+    tmp_path: Path, fake_model: EmbeddingModel
+) -> None:
+    artifact = tmp_path / "lexicon.lance"
+    s1 = LanceDBLexiconStore(path=artifact, embedding_model=fake_model)
+    saved = s1.save_glossary(
+        name="Persisted",
+        format="json_pairs",
+        entries=[{"source": "hi", "target": "salut"}],
+    )
+    s1.close()
+
+    s2 = LanceDBLexiconStore(path=artifact, embedding_model=fake_model)
+    metas = s2.list_glossaries()
+    assert len(metas) == 1
+    assert metas[0].id == saved.id
+    assert metas[0].name == "Persisted"
+    entries = s2.list_entries(saved.id)
+    assert entries[0].source_text == "hi"
+    assert entries[0].target_text == "salut"

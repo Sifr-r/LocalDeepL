@@ -54,7 +54,8 @@ and each pass logs one INFO run summary per job.
 | `src/omniscribe/core/ocr/` | OpenAI/Anthropic/Ollama multi-format VLM client, prompts, response filters, limits, exceptions, retry, and circuit-breaker resilience; `__init__.py` preserves the public import surface |
 | `src/omniscribe/core/ocr_quality/` | OCR Quality Trust Layer — watermark detection, script detection, hallucination guard, Platt scaling calibration fit/eval, trust scorer, and orchestrator |
 | `src/omniscribe/core/transcription/` | Speech-to-text audio transcription engines (local Whisper & OpenAI-compatible API backends) |
-| `src/omniscribe/core/glossary_library/` | In-memory and persistent terminology glossary terms, library store, and search |
+| `src/omniscribe/core/lexicon/` | LanceDB-backed canonical glossary / translation lexicon store (Protocol + LanceDB impl + embedding wrapper + legacy `GlossaryLibrary` adapter + one-shot migration core). See `docs/lexicon-migration-spec.md`. |
+| `src/omniscribe/core/glossary_library/` | **DEPRECATED** — JSON-on-disk glossary writer kept as a fallback for the legacy API. New code should use `omniscribe.core.lexicon.LexiconStore` (or the `GlossaryLibraryAdapter` shim for the legacy API). |
 | `src/omniscribe/core/glossary_sources/` | Terminology import parsers for TBX, CSV, JSON, and web URLs |
 | `src/omniscribe/core/tree_export.py` | Hierarchical block-tree export builder |
 | `src/omniscribe/core/docx_tree_writer.py` | Hierarchical block-tree to `.docx` converter |
@@ -91,7 +92,7 @@ and each pass logs one INFO run summary per job.
 | `src/omniscribe/api/routers/glossary_imports.py` | Local glossary library and external URL glossary import routes |
 | `src/omniscribe/api/routers/health.py` | Liveness (`/health`, `/healthz`) and readiness (`/ready`, `/readyz`) probe endpoints |
 | `src/omniscribe/api/routers/extraction.py` | `POST /api/extract` — structured data extraction, plus document export routes |
-| `src/omniscribe/api/routers/state.py` | Compatibility aliases over the `LocalStateBackend` singleton, plus the process-local glossary library |
+| `src/omniscribe/api/routers/state.py` | Compatibility aliases over the `LocalStateBackend` singleton, plus the process-local glossary library (now a `GlossaryLibraryAdapter` wrapping the LanceDB `LexiconStore`; the `lexicon_store` alias exposes the raw store) |
 | `src/omniscribe/api/routers/providers.py` | Multi-format provider catalog and provider detail routes |
 | `src/omniscribe/api/routers/common.py` | Shared router helpers: `_stable_server_error`, `_extract_bearer_token`, `_path_exists`, `_cleanup` |
 | `src/omniscribe/api/schemas/__init__.py` | Re-exports the typed request models and StrEnums |
@@ -106,7 +107,7 @@ and each pass logs one INFO run summary per job.
 | `src/omniscribe/api/services/transcription.py` | Audio transcription service boundary, input validation, and provider execution |
 | `src/omniscribe/api/services/tree_artifact.py` | Document tree artifact persistence and retrieval |
 | `src/omniscribe/api/services/http_fetch.py` | SSRF-safe remote document fetcher with redirect and private IP guards |
-| `src/omniscribe/api/services/state_backend.py` | `StateBackend` protocol and process-local `LocalStateBackend`, including artifacts, history, progress, glossary, and OCR queue |
+| `src/omniscribe/api/services/state_backend.py` | `StateBackend` protocol and process-local `LocalStateBackend`, including artifacts, history, progress, OCR queue (the glossary is now in `state.lexicon_store` / `state.glossary_library`, not in `state_backend`) |
 | `src/omniscribe/api/services/state_backend_redis.py` | Redis-backed distributed state backend implementation |
 | `src/omniscribe/api/services/security.py` | API upload validation, stable error constants, temporary-file cleanup, and opaque text artifact IDs |
 | `src/omniscribe/api/services/security_config.py` | `SecuritySettings.from_env()` — env-driven knobs for `OMNISCRIBE_AUTH_TOKEN`, `_CORS_ORIGINS`, `_MAX_UPLOAD_MB`, `_RATE_LIMIT_PER_MIN` |
@@ -169,8 +170,9 @@ instances back the three artifact surfaces:
 | `export_artifacts` | JSON / Markdown / text / Docling / MinerU exports | `X-Document-Export-Artifact-Id` / `X-Document-Export-Artifact-Token` | `GET /api/export/{artifact_id}` |
 
 `job_history` (`JobHistory`), `progress_service` (`ProgressService`),
-`glossary_library` (`GlossaryLibrary`), and `ocr_job_queue` (`OCRJobQueue`) round
-out the process-local state. The store implementation lives in
+`glossary_library` (`GlossaryLibraryAdapter` wrapping a `LanceDBLexiconStore`),
+`lexicon_store` (the raw `LexiconStore` Protocol for new code), and
+`ocr_job_queue` (`OCRJobQueue`) round out the process-local state. The store implementation lives in
 `api/services/artifacts.py` and the token format is the same opaque
 hex-id / bearer-token pair across all three artifact surfaces.
 
