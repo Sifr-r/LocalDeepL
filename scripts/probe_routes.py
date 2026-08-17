@@ -58,7 +58,11 @@ def _expected_probes():
         ("POST /api/process", f"{BASE_URL}/api/process", 422),
         ("POST /process", f"{BASE_URL}/process", 422),
         ("POST /api/process/async", f"{BASE_URL}/api/process/async", 422),
-        ("GET /api/process/status/missing", f"{BASE_URL}/api/process/status/missing", 404),
+        (
+            "GET /api/process/status/missing",
+            f"{BASE_URL}/api/process/status/missing",
+            404,
+        ),
         ("POST /api/jobs/missing/cancel", f"{BASE_URL}/api/jobs/missing/cancel", 404),
         ("GET /api/text/nonexistent", f"{BASE_URL}/api/text/nonexistent", 403),
         (
@@ -112,9 +116,7 @@ def main() -> int:
     with connect(websocket_url, open_timeout=10) as websocket:
         # The token travels in the first frame, not the URL.
         websocket.send(
-            json.dumps(
-                {"type": "auth", "session_token": session["session_token"]}
-            )
+            json.dumps({"type": "auth", "session_token": session["session_token"]})
         )
         websocket.send(json.dumps({"type": "cancel"}))
     print(f"{'WS /ws/{{channel_id}}':<40} {'OK':<10} handshake + cancel frame")

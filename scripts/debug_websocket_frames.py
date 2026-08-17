@@ -63,9 +63,7 @@ async def _capture(
         try:
             async with websockets.connect(ws_url) as ws:
                 # The token travels in the first frame, not the URL.
-                await ws.send(
-                    json.dumps({"type": "auth", "session_token": token})
-                )
+                await ws.send(json.dumps({"type": "auth", "session_token": token}))
                 print(f"[{_now_iso()}] connected", flush=True)
                 deadline = asyncio.get_event_loop().time() + seconds
                 frame_index = 0

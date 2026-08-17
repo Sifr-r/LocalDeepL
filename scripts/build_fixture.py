@@ -68,17 +68,16 @@ async def main() -> None:
         sys.exit(1)
 
     layout = []
-    block_id = 0
-    for b in response.blocks:
+    for block_id, b in enumerate(response.blocks):
         # GroundedBlock.bbox is normalized [nx0, ny0, nx1, ny1].
         nx0, ny0, nx1, ny1 = b.bbox
         pw, ph = response.page_sizes[b.page_index]
         # Fixture format used by digital/hybrid: [y0, x0, y1, x1] in pixels.
         bbox_yx = [
-            int(round(ny0 * ph)),
-            int(round(nx0 * pw)),
-            int(round(ny1 * ph)),
-            int(round(nx1 * pw)),
+            round(ny0 * ph),
+            round(nx0 * pw),
+            round(ny1 * ph),
+            round(nx1 * pw),
         ]
         layout.append(
             {
@@ -90,7 +89,6 @@ async def main() -> None:
                 "score": 1.0,
             }
         )
-        block_id += 1
 
     fixture = {
         "data": {

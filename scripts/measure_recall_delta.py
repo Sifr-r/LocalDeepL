@@ -43,7 +43,9 @@ def grid_coverage(block, boxes, grid: int = 20) -> float:
             px = x0 + (i + 0.5) * (x1 - x0) / grid
             py = y0 + (j + 0.5) * (y1 - y0) / grid
             n += 1
-            if any(bx0 <= px <= bx1 and by0 <= py <= by1 for bx0, by0, bx1, by1 in boxes):
+            if any(
+                bx0 <= px <= bx1 and by0 <= py <= by1 for bx0, by0, bx1, by1 in boxes
+            ):
                 hit += 1
     return hit / n
 
@@ -87,7 +89,9 @@ def main() -> None:
         for idx, p_num in enumerate(page_nums):
             surya = list(surya_all[idx])
             extras = booster.supplement(images[p_num], surya)  # type: ignore[arg-type]
-            blocks = [b.bbox for b in gt_blocks if b.page_index == p_num and b.text.strip()]
+            blocks = [
+                b.bbox for b in gt_blocks if b.page_index == p_num and b.text.strip()
+            ]
             post = len(surya) + len(extras)
             flip = len(surya) <= DENSE_THRESHOLD < post
             missed = recov = junk = 0

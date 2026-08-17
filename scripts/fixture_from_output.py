@@ -49,7 +49,7 @@ def main() -> None:
     block_id = 0
 
     for page_idx, page in enumerate(doc):
-        pw, ph = int(round(page.rect.width)), int(round(page.rect.height))
+        pw, ph = round(page.rect.width), round(page.rect.height)
         page_sizes.append((pw, ph))
         text_dict = page.get_text("dict")
         for block in text_dict.get("blocks", []):
@@ -63,10 +63,10 @@ def main() -> None:
                         {
                             "block_content": text,
                             "bbox": [
-                                int(round(y0)),
-                                int(round(x0)),
-                                int(round(y1)),
-                                int(round(x1)),
+                                round(y0),
+                                round(x0),
+                                round(y1),
+                                round(x1),
                             ],
                             "block_id": block_id,
                             "page_index": page_idx,

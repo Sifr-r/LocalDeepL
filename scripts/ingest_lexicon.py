@@ -1,9 +1,9 @@
 import argparse
 import os
 import sys
+
 # NB: do NOT import xml.etree.ElementTree here; it is not XXE-safe.
 # Use scripts.ingest_lexicon._parse_xml for any external XML.
-
 import requests
 
 # Fix for Windows console unicode printing
@@ -24,6 +24,7 @@ def _parse_xml(content: str):
     rejects these at the expat level before expansion.
     """
     import defusedxml.ElementTree as DET
+
     return DET.fromstring(content)
 
 
