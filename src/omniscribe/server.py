@@ -83,7 +83,11 @@ def create_app() -> ASGIApplication:
     # opt into via the ``OMNISCRIBE_PLUGIN_CONTEXT`` env var. During
     # the migration window the existing ``state.ocr_job_queue`` singleton
     # is also the registered provider, so the two paths share state.
-    from omniscribe.api.plugin import PluginContext, local_job_queue_provider
+    from omniscribe.api.plugin import (
+        PluginContext,
+        in_memory_session_log_provider,
+        local_job_queue_provider,
+    )
     from omniscribe.api.plugin.recorders import audit_log_recorder
     from omniscribe.api.plugin.runtime import set_plugin_context
     from omniscribe.api.routers import (
@@ -114,6 +118,13 @@ def create_app() -> ASGIApplication:
     # flag only gates consumer behavior; the provider is registered
     # unconditionally so the seam is wired at boot.
     plugin_ctx.mount(local_job_queue_provider(queue=state.ocr_job_queue, name="local"))
+    # Phase 3b: mount the in-memory session log. The context's
+    # ``emit`` automatically appends to this log if it is
+    # registered, so the log becomes the canonical record of every
+    # event. A future SQLite / JSONL provider can register under
+    # the same ``"memory"`` slot name (or a new one) without
+    # changing any consumer.
+    plugin_ctx.mount(in_memory_session_log_provider(name="memory"))
     # Phase 2: mount the audit log recorder so every ``ctx.emit()`` call
     # from the request handlers lands in the application log. The
     # recorder is the default consumer; future recorders (telemetry,

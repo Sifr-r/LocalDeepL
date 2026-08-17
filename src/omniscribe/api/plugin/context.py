@@ -48,6 +48,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from contextlib import suppress
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
@@ -295,9 +296,17 @@ class PluginContext:
         registration order. Listeners with other modes are skipped.
         Return values (if any) are discarded.
 
+        If a :class:`~omniscribe.api.plugin.SessionLog` is registered
+        in this context, the event is also appended to the log as
+        the very first step — so the session log is the canonical
+        record of every emit. Use :meth:`emit_silent` to skip the
+        log append (rare; mostly for internal log-draining
+        notifications).
+
         Raises :class:`ContextDisposedError` if the context has been disposed.
         """
         self._assert_not_disposed("emit")
+        self._maybe_log_event(event, payload)
         for entry in self._iter_listeners(event):
             if entry.mode is EventMode.EMIT:
                 entry.listener(**payload)
@@ -313,6 +322,7 @@ class PluginContext:
         Raises :class:`ContextDisposedError` if the context has been disposed.
         """
         self._assert_not_disposed("parallel")
+        self._maybe_log_event(event, payload)
         for entry in self._iter_listeners(event):
             if entry.mode is EventMode.PARALLEL:
                 entry.listener(**payload)
@@ -330,6 +340,7 @@ class PluginContext:
         Raises :class:`ContextDisposedError` if the context has been disposed.
         """
         self._assert_not_disposed("serial")
+        self._maybe_log_event(event, {"initial": initial, **payload})
         current = initial
         first = True
         for entry in self._iter_listeners(event):
@@ -375,6 +386,12 @@ class PluginContext:
         Raises :class:`ContextDisposedError` if the context has been disposed.
         """
         self._assert_not_disposed("waterfall")
+        self._maybe_log_event(
+            event,
+            # ``waterfall`` carries its initial value positionally; the
+            # log gets a flat payload with ``initial`` for traceability.
+            {"initial": args[0] if args else None, **kwargs},
+        )
         chain = list(self._iter_listeners(event))
         if not chain:
             return args[0] if len(args) == 1 else (args if args else None)
@@ -472,6 +489,44 @@ class PluginContext:
             return event
         # NewType("EventName", str) — at runtime the value is a str.
         return str(event)
+
+    def _maybe_log_event(self, event: str | EventName, payload: dict[str, Any]) -> None:
+        """If a :class:`SessionLog` is registered, append this dispatch as a log event.
+
+        Fan-out: when multiple :class:`SessionLog` providers are
+        registered under different names (``"memory"``,
+        ``"sqlite"``, etc.), every event is appended to every
+        log. The canonical record is whatever the operator
+        reads first; the fan-out is deliberate so a transient
+        in-memory log does not lose events when a persistent
+        one is added later.
+
+        Lazy-imported so the import graph stays free of cycles
+        (the context module is imported by ``session_log``'s
+        dependencies).
+        """
+        # Cheap fast path: no services at all, no logs possible.
+        if not self._services:
+            return
+        from omniscribe.api.plugin.seams import SessionLog
+
+        # Find every (definition, name) key whose definition is
+        # SessionLog. The cost is O(N registered services), but
+        # in practice N is tiny (a handful of providers).
+        log_keys = [key for key in self._services if key[0] is SessionLog]
+        if not log_keys:
+            return
+        from omniscribe.api.plugin.session_log import LogEvent
+
+        envelope = LogEvent(
+            kind=self._normalize_event_name(event),
+            # Deep-copy so a later mutation of the dispatcher's
+            # local payload dict (including nested structures)
+            # cannot affect the recorded event.
+            payload=deepcopy(payload),
+        )
+        for definition, name in log_keys:
+            self._services[(definition, name)].append(envelope)
 
 
 # Sentinel used by waterfall() to distinguish "no value passed to next()"

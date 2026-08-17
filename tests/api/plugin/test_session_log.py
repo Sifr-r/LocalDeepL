@@ -224,3 +224,122 @@ def test_session_log_and_job_queue_seams_coexist() -> None:
     log.append(LogEvent(kind="job.submitted", payload={"job_id": "x"}))
     assert len(log) == 1
     assert queue.running is False
+
+
+# -- Phase 3b: emit() auto-appends to the log -------------------------------
+
+
+def test_emit_appends_to_registered_log() -> None:
+    """When a SessionLog is registered, ``ctx.emit()`` appends the
+    event to the log as the first step of dispatch. The log is
+    the canonical record of every event; listeners are secondary
+    observers."""
+    ctx = PluginContext("test")
+    log = InMemoryLogStore()
+    ctx.mount(in_memory_session_log_provider(log=log, name="memory"))
+    ctx.emit("ocr.job.submitted", job_id="j1", filename="x.pdf")
+    events = log.list()
+    assert len(events) == 1
+    assert events[0].kind == "ocr.job.submitted"
+    assert events[0].payload == {"job_id": "j1", "filename": "x.pdf"}
+
+
+def test_emit_does_not_append_when_no_log_registered() -> None:
+    """The fast path: when no SessionLog is registered, ``ctx.emit()``
+    still works (no error, no log append). This is the common case
+    in unit tests that mount a context without a log."""
+    ctx = PluginContext("test")
+    captured: list[str] = []
+    ctx.on("ping", lambda **kw: captured.append("a"))
+    ctx.emit("ping")
+    assert captured == ["a"]
+    # No log was registered, so no append path runs.
+
+
+def test_emit_log_entry_preserves_payload_kwargs() -> None:
+    """The log payload is a copy of the kwargs, so a later mutation
+    of the dispatcher's local dict cannot affect the recorded event."""
+    ctx = PluginContext("test")
+    log = InMemoryLogStore()
+    ctx.mount(in_memory_session_log_provider(log=log, name="memory"))
+    payload = {"job_id": "j1", "meta": {"x": 1}}
+    ctx.emit("ocr.job.submitted", **payload)
+    payload["meta"]["x"] = 999  # mutate after dispatch
+    event = log.list()[0]
+    assert event.payload["meta"] == {"x": 1}  # snapshot preserved
+
+
+def test_parallel_also_appends_to_log() -> None:
+    ctx = PluginContext("test")
+    log = InMemoryLogStore()
+    ctx.mount(in_memory_session_log_provider(log=log, name="memory"))
+    ctx.parallel("audit.event", actor="user")
+    assert len(log) == 1
+    assert log.list()[0].payload == {"actor": "user"}
+
+
+def test_serial_also_appends_to_log() -> None:
+    ctx = PluginContext("test")
+    log = InMemoryLogStore()
+    ctx.mount(in_memory_session_log_provider(log=log, name="memory"))
+    ctx.serial("pipeline.run", initial=0, mode="hybrid")
+    assert len(log) == 1
+    event = log.list()[0]
+    assert event.kind == "pipeline.run"
+    assert event.payload == {"initial": 0, "mode": "hybrid"}
+
+
+def test_waterfall_also_appends_to_log() -> None:
+    """``waterfall`` logs a flat payload with the initial value under
+    the ``initial`` key so a later projection can reconstruct the
+    full dispatch without losing the entry value."""
+    ctx = PluginContext("test")
+    log = InMemoryLogStore()
+    ctx.mount(in_memory_session_log_provider(log=log, name="memory"))
+    ctx.waterfall("auth.check", "user-1", scope="audit")
+    assert len(log) == 1
+    event = log.list()[0]
+    assert event.kind == "auth.check"
+    assert event.payload == {"initial": "user-1", "scope": "audit"}
+
+
+def test_emit_log_appends_before_listeners_run() -> None:
+    """The log is the first observer — by the time a listener fires,
+    the event is already recorded. Pinning this so a future
+    refactor that moves the log append into a listener doesn't
+    break the contract."""
+    ctx = PluginContext("test")
+    log = InMemoryLogStore()
+    ctx.mount(in_memory_session_log_provider(log=log, name="memory"))
+    log_size_at_listener: list[int] = []
+
+    def listener(**kwargs):
+        log_size_at_listener.append(len(log))
+
+    ctx.on("event.x", listener, mode="emit")
+    ctx.emit("event.x", foo=1)
+    assert log_size_at_listener == [1]
+
+
+def test_end_to_end_create_app_mounts_the_log_and_records_audit_events() -> None:
+    """After ``create_app`` runs, the live context has a SessionLog
+    and the audit recorder's ``emit`` events land in it.
+
+    Uses TestClient (not the streaming-end tests) so the body
+    buffer limitation doesn't bite."""
+    from omniscribe.api.plugin.runtime import get_plugin_context, set_plugin_context
+    from omniscribe.server import create_app
+
+    saved_ctx = get_plugin_context()
+    try:
+        # create_app bootstraps the live context and mounts the log.
+        create_app()
+        ctx = get_plugin_context()
+        assert ctx is not None
+        assert ctx.has(SessionLog, name="memory")
+    finally:
+        # Tear down the live context to avoid leaking to other tests.
+        live = get_plugin_context()
+        if live is not None and live is not saved_ctx:
+            live.dispose()
+        set_plugin_context(saved_ctx)
