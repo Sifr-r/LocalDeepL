@@ -14,19 +14,24 @@ This package holds the Service Definitions. Concrete providers live in
 :mod:`omniscribe.api.plugin.providers`; consumers live in the routers and
 services that previously imported the legacy singletons by name.
 
-Phase 1 introduces the OCR job queue seam; subsequent phases add the
-remaining capability seams (auth, document export, glossary import,
-provider manager, telemetry, etc.).
+Phase 1 introduces the OCR job queue seam; Phase 3 introduces the
+session log seam; subsequent phases add the remaining capability seams
+(auth, document export, glossary import, provider manager, telemetry,
+etc.).
 """
 
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+from omniscribe.api.plugin.session_log import SessionLog as _SessionLog
 from omniscribe.api.services.ocr_jobs import (
     OCRJobRecord,
     OCRJobRunner,
 )
+
+# Re-export so consumers can `from omniscribe.api.plugin.seams import SessionLog`.
+SessionLog = _SessionLog
 
 
 @runtime_checkable
@@ -86,4 +91,4 @@ class JobQueue(Protocol):
         ...
 
 
-__all__ = ["JobQueue"]
+__all__ = ["JobQueue", "SessionLog"]

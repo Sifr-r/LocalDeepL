@@ -31,9 +31,17 @@ from omniscribe.api.plugin.errors import (
     ServiceNotFoundError,
 )
 from omniscribe.api.plugin.events import EventMode, EventName
-from omniscribe.api.plugin.providers import local_job_queue_provider
-from omniscribe.api.plugin.seams import JobQueue
+from omniscribe.api.plugin.providers import (
+    in_memory_session_log_provider,
+    local_job_queue_provider,
+)
+from omniscribe.api.plugin.seams import JobQueue, SessionLog
 from omniscribe.api.plugin.service import Plugin, ServiceDefinition
+from omniscribe.api.plugin.session_log import (
+    InMemoryLogStore,
+    LogEvent,
+    SessionLogQuery,
+)
 
 __all__ = [
     "ContextDisposedError",
@@ -41,12 +49,17 @@ __all__ = [
     "EventMode",
     "EventModeMismatchError",
     "EventName",
+    "InMemoryLogStore",
     "JobQueue",
+    "LogEvent",
     "Plugin",
     "PluginContext",
     "PluginError",
     "ServiceAlreadyRegisteredError",
     "ServiceDefinition",
     "ServiceNotFoundError",
+    "SessionLog",
+    "SessionLogQuery",
+    "in_memory_session_log_provider",
     "local_job_queue_provider",
 ]
