@@ -118,13 +118,23 @@ class TranslationRequestedEvent:
 
 @dataclass(frozen=True)
 class ArtifactCreatedEvent:
-    """A new text / metadata / export artifact was created."""
+    """A new text / metadata / export artifact was created.
+
+    The :class:`ArtifactStoreProjection` (Phase 3d) folds these
+    events into a read-only "list recent artifacts" view that
+    matches the legacy :class:`TextArtifactStore` access path.
+    ``path`` and ``expires_at`` are captured here so the projection
+    can reconstruct a :class:`TextArtifactHandle`-shaped dict
+    without going back to the in-memory store.
+    """
 
     event_name: str = "artifact.created"
     artifact_id: str = ""
     kind: str = ""  # "text" | "metadata" | "export" | "docx"
     token: str = ""
     created_at: str = field(default_factory=_utc_now_iso)
+    path: str = ""
+    expires_at: float = 0.0  # wall-clock seconds (time.time())
 
 
 # -- Provider events ---------------------------------------------------------

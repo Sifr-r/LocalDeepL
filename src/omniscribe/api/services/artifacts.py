@@ -76,6 +76,7 @@ class TextArtifactStore:
         max_entries: int = DEFAULT_MAX_ARTIFACT_ENTRIES,
         clock: Clock = time.time,
         artifact_dir: str | os.PathLike[str] | None = None,
+        kind: str = "text",
     ) -> None:
         if ttl_seconds <= 0:
             raise ValueError("ttl_seconds must be positive.")
@@ -87,6 +88,12 @@ class TextArtifactStore:
         self._clock = clock
         self._artifact_dir = Path(artifact_dir or tempfile.gettempdir()).resolve()
         self._entries: OrderedDict[str, _TextArtifactEntry] = OrderedDict()
+        # ``kind`` is propagated into every ``ArtifactCreatedEvent``
+        # this store emits (Phase 3d dual-write shim). Defaults to
+        # ``"text"`` so the parameter is optional for ad-hoc test
+        # stores; the three state-level stores pass the appropriate
+        # value (``"text"`` / ``"metadata"`` / ``"export"``).
+        self._kind = kind
 
     @property
     def artifact_dir(self) -> Path:
@@ -141,12 +148,55 @@ class TextArtifactStore:
             expires_at=expires_at,
         )
         self._evict_overflow()
-        return TextArtifactHandle(
+        handle = TextArtifactHandle(
             artifact_id=artifact_id,
             token=token,
             path=str(artifact_path),
             expires_at=expires_at,
         )
+        # Phase 3d — dual-write shim. Every successful put also
+        # emits an :class:`ArtifactCreatedEvent` to the plugin
+        # context so the session log records the handle. The
+        # :class:`ArtifactStoreProjection` (Phase 3d) reads the log
+        # to expose a "list recent artifacts" view. Errors during
+        # the emit are swallowed; a broken recorder must never
+        # block the actual artifact storage.
+        self._emit_artifact_created(handle)
+        return handle
+
+    def _emit_artifact_created(self, handle: TextArtifactHandle) -> None:
+        """Emit an :class:`ArtifactCreatedEvent` for the just-stored handle.
+
+        Best-effort: a missing plugin context, a disposed context,
+        or a listener that raises all fall through silently so the
+        primary write (the in-memory ``_entries`` dict + the
+        backing file) is never affected.
+        """
+        try:
+            from omniscribe.api.plugin.events_catalog import (
+                ArtifactCreatedEvent,
+            )
+            from omniscribe.api.plugin.runtime import get_plugin_context
+
+            ctx = get_plugin_context()
+            if ctx is not None:
+                ctx.emit(
+                    "artifact.created",
+                    **ArtifactCreatedEvent(
+                        artifact_id=handle.artifact_id,
+                        kind=self._kind,
+                        token=handle.token,
+                        path=handle.path,
+                        expires_at=handle.expires_at,
+                    ).__dict__,
+                )
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).exception(
+                "audit: failed to emit ArtifactCreatedEvent for artifact_id=%s",
+                handle.artifact_id,
+            )
 
     async def get(self, artifact_id: str, token: str) -> str:
         entry = self._require_entry(artifact_id, token)

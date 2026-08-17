@@ -31,7 +31,10 @@ from omniscribe.api.plugin.errors import (
     ServiceNotFoundError,
 )
 from omniscribe.api.plugin.events import EventMode, EventName
-from omniscribe.api.plugin.projections import JobHistoryProjection
+from omniscribe.api.plugin.projections import (
+    ArtifactStoreProjection,
+    JobHistoryProjection,
+)
 from omniscribe.api.plugin.providers import (
     in_memory_session_log_provider,
     local_job_queue_provider,
@@ -45,6 +48,7 @@ from omniscribe.api.plugin.session_log import (
 )
 
 __all__ = [
+    "ArtifactStoreProjection",
     "ContextDisposedError",
     "EffectScope",
     "EventMode",

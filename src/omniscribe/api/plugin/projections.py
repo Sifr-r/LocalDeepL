@@ -95,6 +95,28 @@ def _iso_from_monotonic(ts: float, *, now_fn: Callable[[], datetime]) -> str:
     return now_fn().astimezone(UTC).isoformat()
 
 
+def _sort_newest_first(
+    records: list[dict[str, Any]], sort_key: str
+) -> list[dict[str, Any]]:
+    """Stable newest-first sort, breaking ties by insertion position.
+
+    The log uses :func:`time.monotonic` for ``event.timestamp``;
+    events appended in the same monotonic tick (common in fast
+    tests, possible in real bursts) get identical stamps, which
+    would make a plain :func:`sorted` non-deterministic. The
+    position is stamped during fold (insertion order of the
+    per-id accumulator) and used as a secondary key so the
+    newest-by-insertion tiebreaker is stable.
+    """
+    for pos, r in enumerate(records):
+        r["__position"] = pos
+    records.sort(
+        key=lambda r: (r[sort_key], r["__position"]),
+        reverse=True,
+    )
+    return records
+
+
 class JobHistoryProjection:
     """Read-only projection of OCR job events into legacy ``JobRecord``-shaped dicts.
 
@@ -272,4 +294,108 @@ class JobHistoryProjection:
             rec.setdefault("duration_s", 0.0)
 
 
-__all__ = ["JobHistoryProjection"]
+class ArtifactStoreProjection:
+    """Read-only projection of ``artifact.created`` events into ``TextArtifactHandle``-shaped dicts.
+
+    The legacy :class:`TextArtifactStore` is access-oriented: a
+    caller must know both the artifact id AND the bearer token to
+    fetch the file. The projection adds a *metadata* view: given
+    only the id, a consumer can recover the handle (including the
+    token) from the log. This is the read-side complement to the
+    :class:`TextArtifactStore` write path; the legacy store still
+    owns the file access.
+
+    Output shape (a single record)::
+
+        {
+            "artifact_id": str,
+            "kind": str,         # "text" | "metadata" | "export" | "docx"
+            "token": str,        # bearer token, mirrors the legacy handle
+            "path": str,         # absolute path on disk
+            "expires_at": float, # wall-clock seconds (time.time() base)
+            "created_at": str,   # ISO-8601 UTC, from the event
+        }
+
+    The :attr:`TextArtifactHandle` fields (``artifact_id``,
+    ``token``, ``path``, ``expires_at``) are all preserved, so a
+    caller that already holds a :class:`TextArtifactHandle` can
+    swap one for the other without code changes. The ``kind`` and
+    ``created_at`` fields are additive — they come from the event
+    payload and are useful for "list recent artifacts" views.
+    """
+
+    def __init__(self, log: SessionLog) -> None:
+        self._log = log
+
+    def list(self) -> list[dict[str, Any]]:
+        """Return every ``artifact.created`` event as a dict, newest first.
+
+        Unlike :class:`JobHistoryProjection` there is no cap; the
+        legacy store has its own eviction policy
+        (``max_entries`` + TTL) but the projection is purely a
+        read view, so the caller decides whether to apply one.
+        """
+        records = list(self._fold_all().values())
+        _sort_newest_first(records, "__sort_key")
+        return [{k: v for k, v in r.items() if not k.startswith("__")} for r in records]
+
+    def get(self, artifact_id: str) -> dict[str, Any] | None:
+        """Return the artifact handle for ``artifact_id``, or ``None`` if unknown.
+
+        This is the projection's answer to "what's the token for
+        this id?" — a use case the legacy
+        :meth:`TextArtifactStore.get` does not support (it
+        requires the token to be supplied).
+        """
+        rec = self._fold_all().get(artifact_id)
+        if rec is None:
+            return None
+        return {k: v for k, v in rec.items() if not k.startswith("__")}
+
+    def _fold_all(self) -> dict[str, dict[str, Any]]:
+        """Walk the log once and build a per-id accumulator dict.
+
+        The accumulator uses the event's monotonic timestamp as
+        the sort key and the insertion position as the tiebreaker
+        (see :func:`_sort_newest_first`). Because ``put`` is
+        idempotent against the legacy store (a same-id re-put
+        overwrites the previous entry and emits a new event),
+        the projection naturally reflects the latest event for
+        each artifact id.
+        """
+        by_id: dict[str, dict[str, Any]] = {}
+        query = SessionLogQuery(kinds=frozenset({"artifact.created"}))
+        for event in self._log.list(query):
+            self._apply(by_id, event)
+        return by_id
+
+    @staticmethod
+    def _apply(by_id: dict[str, dict[str, Any]], event: LogEvent) -> None:
+        """Fold one ``artifact.created`` event into the accumulator.
+
+        Each event fully describes the handle, so the fold is a
+        straight copy: the per-id dict is replaced by a new dict
+        built from the latest event for that id (this is the
+        behaviour the legacy :meth:`TextArtifactStore.put` has
+        when called twice with the same id — the second put
+        overwrites the first).
+        """
+        artifact_id = _payload_str(event.payload, "artifact_id")
+        if not artifact_id:
+            return
+        rec: dict[str, Any] = {
+            "artifact_id": artifact_id,
+            "kind": _payload_str(event.payload, "kind", default="text"),
+            "token": _payload_str(event.payload, "token"),
+            "path": _payload_str(event.payload, "path"),
+            "expires_at": _payload_float(event.payload, "expires_at") or 0.0,
+            "created_at": _payload_str(event.payload, "created_at"),
+            # Internal: monotonic timestamp for stable newest-first
+            # sort. Stripped from the output by ``list()`` / ``get``
+            # before returning.
+            "__sort_key": event.timestamp,
+        }
+        by_id[artifact_id] = rec
+
+
+__all__ = ["ArtifactStoreProjection", "JobHistoryProjection"]

@@ -134,12 +134,14 @@ class LocalStateBackend:
             resolved = Path(
                 os.getenv("OMNISCRIBE_ARTIFACT_DIR", tempfile.gettempdir())
             ).resolve()
-        self.text_artifacts = text_artifacts or TextArtifactStore(artifact_dir=resolved)
+        self.text_artifacts = text_artifacts or TextArtifactStore(
+            artifact_dir=resolved, kind="text"
+        )
         self.metadata_artifacts = metadata_artifacts or TextArtifactStore(
-            artifact_dir=resolved
+            artifact_dir=resolved, kind="metadata"
         )
         self.export_artifacts = export_artifacts or TextArtifactStore(
-            artifact_dir=resolved
+            artifact_dir=resolved, kind="export"
         )
         self.job_history = job_history or JobHistory()
         self.progress_service = progress_service or ProgressService()
