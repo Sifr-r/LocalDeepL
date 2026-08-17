@@ -205,7 +205,6 @@ target-version = "py311"
 extend-exclude = [
     ".opencode/tmp/**",
     ".mavis/**",
-    "scripts/**",
 ]
 
 [tool.ruff.lint]

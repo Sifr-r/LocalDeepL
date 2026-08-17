@@ -471,3 +471,22 @@ def test_state_module_is_singleton_boundary():
             f"state.{name} must be the same instance as state.backend.{name} "
             "so a backend swap stays transparent to all consumers"
         )
+
+
+def test_scripts_are_in_ruff_scope():
+    """``scripts/**`` must stay inside the Ruff lint surface.
+
+    The P0 XXE in ``scripts/ingest_lexicon.py`` slipped through because
+    ``pyproject.toml`` excluded the whole ``scripts/`` tree from Ruff
+    (P2 audit #16). Re-introducing that exclude — even by accident —
+    would re-open the gap. Pin the invariant.
+    """
+    pyproject = _read(ROOT / "pyproject.toml")
+    m = re.search(
+        r"extend-exclude\s*=\s*\[[^\]]*\]", pyproject, re.MULTILINE | re.DOTALL
+    )
+    assert m, "pyproject.toml must have an extend-exclude list"
+    assert '"scripts/**"' not in m.group(0) and "'scripts/**'" not in m.group(0), (
+        "scripts/** must NOT be in extend-exclude — Ruff should lint scripts "
+        "so future bugs (like the P0 XXE in ingest_lexicon.py) are caught at lint time"
+    )
