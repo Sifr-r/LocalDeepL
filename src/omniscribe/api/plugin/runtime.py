@@ -11,6 +11,26 @@ The legacy singleton-backed access path (``state.ocr_job_queue`` etc.)
 remains the source of truth until every consumer has been migrated;
 during the migration window a consumer that wants to verify the new
 path can branch on :data:`PLUGIN_CONTEXT_ENABLED`.
+
+Phase 7 — typed lookup helpers
+------------------------------
+
+This module also ships a small set of typed lookup helpers
+(:func:`get_job_queue`, :func:`get_session_log`, etc.) that
+consolidate the "look up by Protocol, fall back to None" pattern
+every consumer in the migration window needs. The helpers return
+``None`` when the context isn't bootstrapped or the slot is
+empty, so the call site reads::
+
+    progress = get_progress_service()
+    if progress is not None:
+        percent = progress.stage_to_percent(...)
+    else:
+        percent = state.progress_service.stage_to_percent(...)
+
+A consumer that uses the helper is one search-and-replace away
+from the legacy singleton — the seam becomes the primary code
+path, the legacy alias stays for any code that hasn't migrated.
 """
 
 from __future__ import annotations
@@ -93,10 +113,97 @@ def get_service(definition: type, *, name: str = "default") -> Any:
     return ctx.get(definition, name=name)
 
 
+# ---------------------------------------------------------------------------
+# Phase 7 — typed lookup helpers for the five Protocol-based services.
+# ---------------------------------------------------------------------------
+#
+# Each helper returns the registered impl for the default (or named)
+# slot, or ``None`` if the context isn't bootstrapped or the slot is
+# empty. The shape is deliberately "returns None" rather than "raises"
+# so the call site is a one-liner with an ``if x is not None:`` branch
+# on the legacy path. A future tightening can change the contract to
+# "raise" once every consumer has dropped its legacy fallback.
+#
+# All five helpers import the Protocol class lazily so the import
+# order is safe even before :mod:`omniscribe.api.plugin.seams` has
+# been fully resolved (e.g. from test modules that stub the
+# bootstrap).
+
+
+def get_job_queue(*, name: str = "local") -> Any | None:
+    """Return the registered :class:`JobQueue`, or ``None``.
+
+    The default name matches the in-process provider; a future
+    ``"celery"`` provider would register under its own name and
+    be reachable via ``get_job_queue(name="celery")``.
+    """
+    from omniscribe.api.plugin import JobQueue
+
+    ctx = get_plugin_context()
+    if ctx is None or not ctx.has(JobQueue, name=name):
+        return None
+    return ctx.get(JobQueue, name=name)
+
+
+def get_session_log(*, name: str = "memory") -> Any | None:
+    """Return the registered :class:`SessionLog`, or ``None``.
+
+    The default name matches the in-process provider; a future
+    ``"sqlite"`` provider would register under its own name.
+    """
+    from omniscribe.api.plugin import SessionLog
+
+    ctx = get_plugin_context()
+    if ctx is None or not ctx.has(SessionLog, name=name):
+        return None
+    return ctx.get(SessionLog, name=name)
+
+
+def get_progress_service(*, name: str = "default") -> Any | None:
+    """Return the registered :class:`ProgressService`, or ``None``."""
+    from omniscribe.api.plugin import ProgressService
+
+    ctx = get_plugin_context()
+    if ctx is None or not ctx.has(ProgressService, name=name):
+        return None
+    return ctx.get(ProgressService, name=name)
+
+
+def get_config_store(*, name: str = "default") -> Any | None:
+    """Return the registered :class:`ConfigStore`, or ``None``."""
+    from omniscribe.api.plugin import ConfigStore
+
+    ctx = get_plugin_context()
+    if ctx is None or not ctx.has(ConfigStore, name=name):
+        return None
+    return ctx.get(ConfigStore, name=name)
+
+
+def get_text_artifact_store(*, name: str = "default") -> Any | None:
+    """Return the registered :class:`TextArtifactStore`, or ``None``.
+
+    The three legacy stores register under their canonical names:
+    ``"text"``, ``"metadata"``, ``"export"``. Pass the right name
+    to reach the right store. The default ``"default"`` slot is
+    also accepted for tests and ad-hoc consumers.
+    """
+    from omniscribe.api.plugin import TextArtifactStore
+
+    ctx = get_plugin_context()
+    if ctx is None or not ctx.has(TextArtifactStore, name=name):
+        return None
+    return ctx.get(TextArtifactStore, name=name)
+
+
 __all__ = [
     "PLUGIN_CONTEXT_ENABLED",
+    "get_config_store",
+    "get_job_queue",
     "get_plugin_context",
+    "get_progress_service",
     "get_service",
+    "get_session_log",
+    "get_text_artifact_store",
     "is_plugin_context_enabled",
     "set_plugin_context",
     "set_plugin_context_enabled",

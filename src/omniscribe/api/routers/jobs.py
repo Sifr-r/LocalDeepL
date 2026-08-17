@@ -7,11 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse, JSONResponse
 
-from omniscribe.api.plugin import JobQueue
-from omniscribe.api.plugin.runtime import (
-    PLUGIN_CONTEXT_ENABLED,
-    get_plugin_context,
-)
+from omniscribe.api.plugin.runtime import get_job_queue
 from omniscribe.api.routers import state
 from omniscribe.api.routers.common import get_access_token
 from omniscribe.api.services.ocr_jobs import OCRJobStatus
@@ -34,19 +30,19 @@ def _result_download_filename(filename: str | None, job_id: str) -> str:
 
 
 def _get_job_queue():
-    """Return the OCR job queue, honouring the OMNISCRIBE_PLUGIN_CONTEXT flag.
+    """Return the OCR job queue.
 
-    When the flag is on AND a live plugin context is available, the
-    :class:`JobQueue` provider registered in the context is used. In all
-    other cases the legacy ``state.ocr_job_queue`` singleton is
-    returned. The two paths share the same underlying instance during
-    the migration window because :func:`omniscribe.api.server.create_app`
-    registers ``state.ocr_job_queue`` into the context.
+    Primary path (Phase 7): the :class:`JobQueue` seam via the
+    plugin context. Falls back to the legacy
+    ``state.ocr_job_queue`` singleton when the context is not
+    bootstrapped or the slot is empty — the two paths share the
+    same underlying instance because
+    :func:`omniscribe.api.server.create_app` registers the
+    StateBackend's queue into the context.
     """
-    if PLUGIN_CONTEXT_ENABLED:
-        ctx = get_plugin_context()
-        if ctx is not None and ctx.has(JobQueue):
-            return ctx.get(JobQueue)
+    queue = get_job_queue()
+    if queue is not None:
+        return queue
     return state.ocr_job_queue
 
 
