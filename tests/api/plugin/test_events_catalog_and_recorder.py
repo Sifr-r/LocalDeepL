@@ -26,6 +26,7 @@ from omniscribe.api.plugin.events_catalog import (
     ArtifactCreatedEvent,
     JobCancelledEvent,
     JobCompletedEvent,
+    JobStartedEvent,
     JobSubmittedEvent,
     ProviderSwitchedEvent,
     RequestReceivedEvent,
@@ -50,6 +51,7 @@ def test_all_event_payloads_carry_their_event_name() -> None:
     surfaces as a test failure."""
     expected = {
         JobSubmittedEvent: "ocr.job.submitted",
+        JobStartedEvent: "ocr.job.started",
         JobCompletedEvent: "ocr.job.completed",
         JobCancelledEvent: "ocr.job.cancelled",
         TranslationRequestedEvent: "translation.requested",

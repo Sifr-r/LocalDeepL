@@ -127,6 +127,10 @@ def _record_job(
     duration_s: float,
     status: JobStatus,
     failed_pages: Sequence[int] = (),
+    *,
+    log_job_id: str | None = None,
+    text_artifact_id: str | None = None,
+    error: str | None = None,
 ) -> None:
     """Append a validated job record to the capped in-memory history.
 
@@ -135,6 +139,18 @@ def _record_job(
     isolation boundary. Empty in the common case — the job history
     omits the field from the serialized record when it's empty so
     existing clients see the same shape as before.
+
+    ``log_job_id`` is the canonical job identifier used for the audit
+    log emit (Phase 3c). It defaults to ``job_id`` for the simple
+    case (async path) but the sync path passes the UUID-hex job id
+    while still recording the artifact id as the legacy ``JobRecord.id``
+    — two stores, two id schemes, kept independent during the
+    migration window.
+
+    ``text_artifact_id`` and ``error`` flow into the
+    :class:`JobCompletedEvent` payload so the Phase 3c projection has
+    enough context to fold a complete record (the projection reads
+    these from the audit event, not the legacy record).
     """
     state.job_history.record(
         job_id=job_id,
@@ -145,10 +161,14 @@ def _record_job(
         duration_s=duration_s,
         status=status,
         failed_pages=failed_pages,
+        text_artifact_id=text_artifact_id,
     )
-    # Phase 2: emit the completion audit event through the plugin
-    # context. Errors during the emit are swallowed so a broken recorder
-    # never blocks the job-history append.
+    # Phase 3c: emit the completion audit event through the plugin
+    # context. The log auto-records it via the session log fan-out
+    # (Phase 3b); the audit recorder also observes it. Errors during
+    # the emit are swallowed so a broken recorder never blocks the
+    # job-history append.
+    canonical_id = log_job_id or job_id
     try:
         from omniscribe.api.plugin.events_catalog import JobCompletedEvent
         from omniscribe.api.plugin.runtime import get_plugin_context
@@ -158,16 +178,77 @@ def _record_job(
             ctx.emit(
                 "ocr.job.completed",
                 **JobCompletedEvent(
-                    job_id=job_id,
+                    job_id=canonical_id,
                     filename=filename,
                     status=str(status),
                     duration_s=duration_s,
+                    text_artifact_id=text_artifact_id,
+                    error=error,
+                    failed_pages=list(failed_pages) if failed_pages else [],
                 ).__dict__,
             )
     except Exception:
         logger.exception(
-            "audit: failed to emit JobCompletedEvent for job_id=%s", job_id
+            "audit: failed to emit JobCompletedEvent for job_id=%s", canonical_id
         )
+
+
+def _emit_job_submitted(job_id: str, filename: str) -> None:
+    """Phase 3c — emit a ``JobSubmittedEvent`` for the log.
+
+    Mirrors the emit hooks already in :mod:`routers.jobs`. Errors
+    are swallowed; a broken recorder must never block job submission.
+    """
+    try:
+        from omniscribe.api.plugin.events_catalog import JobSubmittedEvent
+        from omniscribe.api.plugin.runtime import get_plugin_context
+
+        ctx = get_plugin_context()
+        if ctx is not None:
+            ctx.emit(
+                "ocr.job.submitted",
+                **JobSubmittedEvent(job_id=job_id, filename=filename).__dict__,
+            )
+    except Exception:
+        logger.exception(
+            "audit: failed to emit JobSubmittedEvent for job_id=%s", job_id
+        )
+
+
+def _emit_job_started(
+    job_id: str,
+    *,
+    model: str,
+    pipeline_mode: str,
+    pages: str | None,
+) -> None:
+    """Phase 3c — emit a ``JobStartedEvent`` for the log.
+
+    Fired when the worker actually picks the job up (sync path: right
+    before the pipeline runs; async path: at the top of the queue
+    worker's runner). Carries the per-request config (model,
+    pipeline_mode, page-range) so the
+    :class:`JobHistoryProjection` has enough context to fold a
+    complete record. Errors swallowed for the same reason as the
+    other emit helpers.
+    """
+    try:
+        from omniscribe.api.plugin.events_catalog import JobStartedEvent
+        from omniscribe.api.plugin.runtime import get_plugin_context
+
+        ctx = get_plugin_context()
+        if ctx is not None:
+            ctx.emit(
+                "ocr.job.started",
+                **JobStartedEvent(
+                    job_id=job_id,
+                    model=model,
+                    pipeline_mode=pipeline_mode,
+                    pages=pages,
+                ).__dict__,
+            )
+    except Exception:
+        logger.exception("audit: failed to emit JobStartedEvent for job_id=%s", job_id)
 
 
 async def _run_ocr_pipeline(
@@ -519,11 +600,27 @@ async def process_pdf(
     )
     output_path = os.path.join(tempfile.gettempdir(), f"output_{uuid.uuid4()}.pdf")
     text_path: str | None = None
-    job_id = uuid.uuid4().hex
+    # Phase 3c — the canonical job id is the UUID hex we mint here.
+    # It stays the same across submitted/started/completed log events
+    # (so the ``JobHistoryProjection`` can fold a complete record) and
+    # is the id we pass to ``_record_job(log_job_id=...)``. The legacy
+    # ``JobHistory`` record below still uses the artifact id as its
+    # ``id`` field for backward compatibility with the existing
+    # ``/api/jobs`` shape (the frontend only displays the value as
+    # text — no logic depends on the choice).
+    canonical_job_id = uuid.uuid4().hex
+    legacy_job_id_holder: dict[str, str] = {}  # populated after pipeline run
+    _emit_job_submitted(canonical_job_id, file.filename or "unknown")
     t_start = time.monotonic()
 
     try:
         await manager.send_progress(progress_target, "Initializing...", 5, stage="init")
+        _emit_job_started(
+            canonical_job_id,
+            model=settings.model,
+            pipeline_mode=settings.pipeline_mode,
+            pages=settings.pages,
+        )
 
         (
             pipeline,
@@ -537,11 +634,11 @@ async def process_pdf(
             output_path=output_path,
             progress_target=progress_target,
         )
-        job_id = artifact_handle.artifact_id
+        legacy_job_id_holder["id"] = artifact_handle.artifact_id
 
         duration_s = time.monotonic() - t_start
         _record_job(
-            job_id=job_id,
+            job_id=legacy_job_id_holder["id"],
             filename=file.filename or "unknown",
             model=settings.model,
             pipeline_mode=settings.pipeline_mode,
@@ -549,6 +646,8 @@ async def process_pdf(
             duration_s=duration_s,
             status="complete",
             failed_pages=failed_pages,
+            log_job_id=canonical_job_id,
+            text_artifact_id=artifact_handle.artifact_id,
         )
 
         if failed_pages:
@@ -581,13 +680,15 @@ async def process_pdf(
     except ValueError as ve:
         duration_s = time.monotonic() - t_start
         _record_job(
-            job_id=job_id,
+            job_id=legacy_job_id_holder.get("id", canonical_job_id),
             filename=file.filename or "unknown",
             model=settings.model,
             pipeline_mode=settings.pipeline_mode,
             pages=settings.pages,
             duration_s=duration_s,
             status="error",
+            log_job_id=canonical_job_id,
+            error=str(ve),
         )
         logger.warning("OCR processing rejected invalid input: %s", ve)
         await manager.send_progress(progress_target, "Invalid input.", 0, stage="error")
@@ -597,7 +698,7 @@ async def process_pdf(
         )
 
     except asyncio.CancelledError:
-        logger.info("OCR request cancelled by client: job_id=%s", job_id)
+        logger.info("OCR request cancelled by client: job_id=%s", canonical_job_id)
         await asyncio.to_thread(_cleanup, input_path, output_path, text_path)
         raise
 
@@ -613,7 +714,30 @@ async def process_pdf(
         # wider than the current API surface and adding a new
         # value would force every consumer to special-case it.
         # The cancel shows up in the application log instead.
-        logger.info("OCR run cancelled by client before completion: job_id=%s", job_id)
+        # Phase 3c — the projection still needs a marker so a future
+        # ``/api/jobs`` view (driven by the log, not the deque) can
+        # show the cancel. Emit ``ocr.job.cancelled`` so the
+        # ``JobHistoryProjection`` can fold it; the legacy deque is
+        # intentionally untouched.
+        try:
+            from omniscribe.api.plugin.events_catalog import JobCancelledEvent
+            from omniscribe.api.plugin.runtime import get_plugin_context
+
+            ctx = get_plugin_context()
+            if ctx is not None:
+                ctx.emit(
+                    "ocr.job.cancelled",
+                    **JobCancelledEvent(job_id=canonical_job_id).__dict__,
+                )
+        except Exception:
+            logger.exception(
+                "audit: failed to emit JobCancelledEvent for job_id=%s",
+                canonical_job_id,
+            )
+        logger.info(
+            "OCR run cancelled by client before completion: job_id=%s",
+            canonical_job_id,
+        )
         await asyncio.to_thread(_cleanup, input_path, output_path, text_path)
         await manager.send_progress(progress_target, "Cancelled.", 0, stage="cancelled")
         return JSONResponse(
@@ -624,16 +748,18 @@ async def process_pdf(
             },
         )
 
-    except Exception:
+    except Exception as exc:
         duration_s = time.monotonic() - t_start
         _record_job(
-            job_id=job_id,
+            job_id=legacy_job_id_holder.get("id", canonical_job_id),
             filename=file.filename or "unknown",
             model=settings.model,
             pipeline_mode=settings.pipeline_mode,
             pages=settings.pages,
             duration_s=duration_s,
             status="error",
+            log_job_id=canonical_job_id,
+            error=str(exc) or type(exc).__name__,
         )
         logger.exception("OCR processing failed")
         await manager.send_progress(
@@ -753,6 +879,16 @@ async def process_pdf_async(
             await manager.send_progress(
                 progress_target, "Initializing...", 5, stage="init"
             )
+            # Phase 3c — emit JobStartedEvent when the worker actually
+            # picks the job up (not at submit time; the queue may have
+            # backed up). The JobHistoryProjection needs this for
+            # model + pipeline_mode + pages.
+            _emit_job_started(
+                job_id,
+                model=settings.model,
+                pipeline_mode=settings.pipeline_mode,
+                pages=settings.pages,
+            )
             (
                 _pipeline,
                 artifact_handle,
@@ -774,6 +910,7 @@ async def process_pdf_async(
                 duration_s=time.monotonic() - started_at,
                 status="complete",
                 failed_pages=failed_pages,
+                text_artifact_id=artifact_handle.artifact_id,
             )
             await manager.send_progress(progress_target, "Done!", 100, stage="complete")
             succeeded = True
@@ -792,12 +929,27 @@ async def process_pdf_async(
             # queue worker surfaces the failure to the polling
             # client. ``_cleanup`` runs in the ``finally`` block
             # below and drops the input/output/text paths.
+            # Phase 3c — emit the cancelled event for the projection.
+            try:
+                from omniscribe.api.plugin.events_catalog import JobCancelledEvent
+                from omniscribe.api.plugin.runtime import get_plugin_context
+
+                ctx = get_plugin_context()
+                if ctx is not None:
+                    ctx.emit(
+                        "ocr.job.cancelled",
+                        **JobCancelledEvent(job_id=job_id).__dict__,
+                    )
+            except Exception:
+                logger.exception(
+                    "audit: failed to emit JobCancelledEvent for job_id=%s", job_id
+                )
             logger.info("Async OCR run cancelled by client: job_id=%s", job_id)
             await manager.send_progress(
                 progress_target, "Cancelled.", 0, stage="cancelled"
             )
             raise
-        except Exception:
+        except Exception as exc:
             _record_job(
                 job_id=job_id,
                 filename=filename,
@@ -806,6 +958,7 @@ async def process_pdf_async(
                 pages=settings.pages,
                 duration_s=time.monotonic() - started_at,
                 status="error",
+                error=str(exc) or type(exc).__name__,
             )
             raise
         finally:
@@ -815,23 +968,10 @@ async def process_pdf_async(
             await asyncio.to_thread(_cleanup, *cleanup_paths)
 
     await state.ocr_job_queue.submit(job_id, filename, runner)
-    # Phase 2: emit the audit event through the plugin context so the
-    # mounted recorders (default: log) observe the submission. The
+    # Phase 2 + 3c: emit the audit event through the plugin context so
+    # the mounted recorders (default: log) observe the submission. The
     # legacy code path is unchanged; the emit is a side effect.
-    try:
-        from omniscribe.api.plugin.events_catalog import JobSubmittedEvent
-        from omniscribe.api.plugin.runtime import get_plugin_context
-
-        ctx = get_plugin_context()
-        if ctx is not None:
-            ctx.emit(
-                "ocr.job.submitted",
-                **JobSubmittedEvent(job_id=job_id, filename=filename).__dict__,
-            )
-    except Exception:
-        logger.exception(
-            "audit: failed to emit JobSubmittedEvent for job_id=%s", job_id
-        )
+    _emit_job_submitted(job_id, filename)
     return {"job_id": job_id, "status": "pending"}
 
 

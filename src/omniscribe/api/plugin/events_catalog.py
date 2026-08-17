@@ -53,6 +53,27 @@ class JobSubmittedEvent:
 
 
 @dataclass(frozen=True)
+class JobStartedEvent:
+    """A queued OCR job was picked up by the worker.
+
+    Carries the per-request config (model, pipeline_mode,
+    page-range) that the worker reads from the ``ProcessSettings``
+    the request handler validated. The :class:`JobHistoryProjection`
+    (Phase 3c) folds this together with the
+    :class:`JobSubmittedEvent` and :class:`JobCompletedEvent` to
+    reconstruct a :class:`JobRecord` without a parallel in-memory
+    store.
+    """
+
+    event_name: str = "ocr.job.started"
+    job_id: str = ""
+    model: str = ""
+    pipeline_mode: str = ""
+    pages: str | None = None
+    started_at: str = field(default_factory=_utc_now_iso)
+
+
+@dataclass(frozen=True)
 class JobCompletedEvent:
     """An OCR job finished (success or error)."""
 
@@ -63,6 +84,7 @@ class JobCompletedEvent:
     duration_s: float | None = None
     text_artifact_id: str | None = None
     error: str | None = None
+    failed_pages: list[int] = field(default_factory=list)
     completed_at: str = field(default_factory=_utc_now_iso)
 
 
@@ -142,6 +164,7 @@ class RequestReceivedEvent:
 
 ALL_EVENT_TYPES: tuple[type, ...] = (
     JobSubmittedEvent,
+    JobStartedEvent,
     JobCompletedEvent,
     JobCancelledEvent,
     TranslationRequestedEvent,
@@ -156,6 +179,7 @@ __all__ = [
     "ArtifactCreatedEvent",
     "JobCancelledEvent",
     "JobCompletedEvent",
+    "JobStartedEvent",
     "JobSubmittedEvent",
     "ProviderSwitchedEvent",
     "RequestReceivedEvent",

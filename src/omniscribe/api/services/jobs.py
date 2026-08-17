@@ -46,6 +46,13 @@ class JobRecord:
     searchable text on the failed pages, so the rest of the document
     is still useful. The list is omitted from :meth:`to_dict` when empty
     to preserve the wire format for the common no-failure case.
+
+    ``text_artifact_id`` is the token-bound text artifact created by
+    the OCR run (added in Phase 3c). It is omitted from
+    :meth:`to_dict` when absent so the wire format for jobs that did
+    not produce a text artifact (e.g. validation rejections) is
+    unchanged. The text artifact is independently retrievable via
+    ``/api/text/{artifact_id}`` with the per-artifact bearer token.
     """
 
     id: str
@@ -57,6 +64,7 @@ class JobRecord:
     timestamp: str
     status: JobStatus
     failed_pages: tuple[int, ...] = ()
+    text_artifact_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -71,6 +79,8 @@ class JobRecord:
         }
         if self.failed_pages:
             payload["failed_pages"] = list(self.failed_pages)
+        if self.text_artifact_id is not None:
+            payload["text_artifact_id"] = self.text_artifact_id
         return payload
 
 
@@ -103,6 +113,7 @@ class JobHistory:
         duration_s: float,
         status: JobStatus,
         failed_pages: Sequence[int] = (),
+        text_artifact_id: str | None = None,
     ) -> JobRecord:
         record = JobRecord(
             id=_clean_required_text(job_id, "job_id"),
@@ -114,6 +125,11 @@ class JobHistory:
             timestamp=_current_timestamp(self._now),
             status=_clean_status(status),
             failed_pages=_clean_failed_pages(failed_pages),
+            text_artifact_id=(
+                _clean_optional_text(text_artifact_id, "text_artifact_id")
+                if text_artifact_id is not None
+                else None
+            ),
         )
         self._records.append(record)
         return record

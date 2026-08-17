@@ -31,6 +31,7 @@ from omniscribe.api.plugin.errors import (
     ServiceNotFoundError,
 )
 from omniscribe.api.plugin.events import EventMode, EventName
+from omniscribe.api.plugin.projections import JobHistoryProjection
 from omniscribe.api.plugin.providers import (
     in_memory_session_log_provider,
     local_job_queue_provider,
@@ -50,6 +51,7 @@ __all__ = [
     "EventModeMismatchError",
     "EventName",
     "InMemoryLogStore",
+    "JobHistoryProjection",
     "JobQueue",
     "LogEvent",
     "Plugin",
