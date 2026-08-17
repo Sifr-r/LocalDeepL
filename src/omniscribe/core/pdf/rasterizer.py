@@ -18,6 +18,7 @@ import base64
 import io
 import logging
 import os
+import threading
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -39,21 +40,20 @@ _DEFAULT_RASTERIZER_WORKERS = max(
 )
 
 # E5: this flag guards the one-shot PyMuPDF AGPL notice. The read-modify-
-# write sequence in ``_emit_pymupdf_agpl_notice`` is intentionally NOT
-# protected by a lock — two concurrent workers could each see ``False``,
-# each emit the notice, and each flip the flag. The duplicate log line is
-# purely cosmetic (the notice is informational; nothing depends on its
-# being emitted exactly once), so the race is documented rather than
-# synchronised. If we ever need strict single-emission semantics, wrap
-# the body in a module-level ``threading.Lock`` — the cost is negligible.
+# write sequence in ``_emit_pymupdf_agpl_notice`` is protected by a
+# ``threading.Lock`` so concurrent first-use across workers emits the
+# notice at most once per process. The log call itself is OUTSIDE the
+# lock so the lock isn't held during I/O.
 _PYMUPDF_AGPL_NOTICE_EMITTED = False
+_AGPL_NOTICE_LOCK = threading.Lock()
 
 
 def _emit_pymupdf_agpl_notice() -> None:
     global _PYMUPDF_AGPL_NOTICE_EMITTED
-    if _PYMUPDF_AGPL_NOTICE_EMITTED:
-        return
-    _PYMUPDF_AGPL_NOTICE_EMITTED = True
+    with _AGPL_NOTICE_LOCK:
+        if _PYMUPDF_AGPL_NOTICE_EMITTED:
+            return
+        _PYMUPDF_AGPL_NOTICE_EMITTED = True
     _LOGGER.warning(
         "OmniScribe is built on PyMuPDF (Artifex Software). PyMuPDF is "
         "AGPL-3.0; if you distribute this binary or a non-AGPL derivative "
