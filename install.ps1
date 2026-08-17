@@ -24,7 +24,13 @@ if (!(Get-Command "uv" -ErrorAction SilentlyContinue)) {
     if (!$installed) {
         $uvInstaller = Join-Path -Path $env:TEMP -ChildPath "uv-install.ps1"
         try {
-            Invoke-RestMethod -Uri "https://astral.sh/uv/install.ps1" -OutFile $uvInstaller
+            # Audit P2-15: pin the uv installer to the same version
+            # the Dockerfile uses (UV_VERSION=0.11.16), so the fallback
+            # path here matches the canonical supply-chain pin and a
+            # silently-republished latest can't surprise this script.
+            # Bump the Dockerfile in lockstep when bumping this.
+            $uvVersion = "0.11.16"
+            Invoke-RestMethod -Uri "https://astral.sh/uv/${uvVersion}/install.ps1" -OutFile $uvInstaller
             # Sanity check: a truncated/empty or non-script payload must
             # never reach the interpreter.
             $content = Get-Content -Path $uvInstaller -Raw -ErrorAction SilentlyContinue

@@ -209,6 +209,52 @@ def test_install_scripts_avoid_elevation_and_blind_remote_execution():
     )
 
 
+def test_install_ps1_pins_uv_version():
+    """The astral.sh fallback in ``install.ps1`` must pin a specific uv
+    version.
+
+    The winget-first path on line 20 already installs a versioned
+    package, but the ``Invoke-RestMethod`` fallback at the original
+    line 27 used to download ``https://astral.sh/uv/install.ps1`` with
+    no version segment -- a moving supply-chain target (audit P2-15).
+    The pin is kept in lockstep with the Dockerfile's ``UV_VERSION``
+    arg so a single bump covers both surfaces; the regex below mirrors
+    the Dockerfile test above.
+
+    Accepts either a literal version segment in the URL or a
+    PowerShell variable interpolation (``${uvVersion}``) that the
+    next assertion then proves is assigned a pinned ``0.x.y`` value.
+    A bare ``astral.sh/uv/install.ps1`` (no version segment) is
+    rejected by both branches.
+    """
+    ps1 = _read(ROOT / "install.ps1")
+    m = re.search(
+        r"astral\.sh/uv/(?P<pin>\d+\.\d+\.\d+|\$\{uvVersion\})/install\.ps1",
+        ps1,
+    )
+    assert m, (
+        "install.ps1 must pin a specific uv version in the "
+        "astral.sh fallback URL (e.g. https://astral.sh/uv/0.11.16/install.ps1 "
+        "or https://astral.sh/uv/${uvVersion}/install.ps1 with a pinned "
+        "$uvVersion). Unversioned downloads are a moving supply-chain target."
+    )
+    # When the URL uses a variable, prove the variable is assigned a
+    # pinned 0.x.y version. (For the literal-version branch this
+    # assertion is a no-op on the same URL and still passes because
+    # we already extracted a 0.x.y string from the URL above.)
+    pin = m.group("pin")
+    if pin.startswith("${"):
+        var_match = re.search(r'\$uvVersion\s*=\s*"(?P<ver>\d+\.\d+\.\d+)"', ps1)
+        assert var_match, (
+            "install.ps1 references ${uvVersion} in the astral.sh URL "
+            "but never assigns a pinned version to $uvVersion. "
+            'Add e.g. `$uvVersion = "0.11.16"` above the Invoke-RestMethod.'
+        )
+        assert var_match.group("ver").startswith("0."), (
+            f"$uvVersion is {var_match.group('ver')!r}; expected a 0.x.y release"
+        )
+
+
 def test_pyproject_has_no_duplicate_deps_across_extras():
     """A package pinned in the base deps must not be re-declared in an
     extra (audit backlog: duplicated declarations drifted across

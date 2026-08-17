@@ -111,20 +111,18 @@ jobs:
       # `security.yml`.
       security-events: write
     steps:
-      # Action refs are SHA-pinned (audit P3-12); bump with
-      # `gh api repos/<owner>/<repo>/git/ref/tags/<tag>`.
-      # NOTE: docker/* and aquasecurity/trivy-action below use tag refs
-      # because the SHAs for those repos were not yet pinned in this
-      # repo. Pin them with the same `gh api .../git/ref/tags/<tag>`
-      # lookup before this workflow ships -- tag refs are a moving
-      # supply-chain target.
+      # Action refs are SHA-pinned (audit P3-12 / P2-15); bump with
+      # `gh api repos/<owner>/<repo>/git/ref/tags/<tag>`. The
+      # docker/* and aquasecurity/trivy-action pins below are part of
+      # that same contract; the trailing `# v3` / `# v6` / `# 0.28.0`
+      # comments are the human-readable tag the SHA resolves to.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Build image (load into local daemon for scanning)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           # `load: true` puts the built image into the runner's local
@@ -140,7 +138,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Run Trivy vulnerability scanner (HIGH,CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # 0.28.0
         with:
           image-ref: omniscribe:scan
           format: sarif
