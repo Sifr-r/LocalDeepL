@@ -117,6 +117,51 @@ async def test_non_200_raises_llm_call_error(openai_config: ProviderConfig) -> N
         assert "400" in str(exc_info.value)
 
 
+async def test_missing_model_raises_llm_call_error() -> None:
+    """F1.3 audit fix (P0): defensive fail-fast when neither ``model`` arg nor
+    ``provider_config.models`` resolves a target.
+
+    Previously the code silently fell back to the literal string ``"gpt-4o"``,
+    which is meaningless to a non-OpenAI host and can route requests to a
+    cloud provider the user never intended to call.
+    """
+    config = ProviderConfig(
+        id="test-no-model",
+        display_name="Test No Model",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        api_url="http://mock-llm.local/v1",
+        api_key="test-sk-key",
+        models=[],
+    )
+
+    with pytest.raises(LLMCallError, match="Cannot resolve target model"):
+        await complete_vlm_prompt(
+            config,
+            prompt="OCR prompt text",
+            image_base64="aW1hZ2VfZGF0YQ==",
+        )
+
+
+async def test_whitespace_only_model_raises_llm_call_error() -> None:
+    """F1.3 sibling: a whitespace-only model arg should not be treated as a valid model."""
+    config = ProviderConfig(
+        id="test-ws-model",
+        display_name="Test WS Model",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        api_url="http://mock-llm.local/v1",
+        api_key="test-sk-key",
+        models=[],
+    )
+
+    with pytest.raises(LLMCallError, match="Cannot resolve target model"):
+        await complete_vlm_prompt(
+            config,
+            prompt="OCR prompt text",
+            image_base64="aW1hZ2VfZGF0YQ==",
+            model="   ",
+        )
+
+
 async def test_call_vlm_wrapper(openai_config: ProviderConfig) -> None:
     expected_resp = {"choices": [{"message": {"content": "VLM wrapper output"}}]}
 

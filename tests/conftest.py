@@ -87,3 +87,8 @@ def stub_ocr():
 def make_stub_ocr():
     """Factory fixture for tests that need a customised stub."""
     return _StubOCR
+
+
+# F4.2 audit fix (P0): exclude the Phase 0/1 debug shelf from pytest collection.
+# These are throwaway FastAPI scaffolds for environment bring-up, not production tests.
+collect_ignore_glob = ["_diag/*"]

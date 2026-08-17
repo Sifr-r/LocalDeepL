@@ -99,11 +99,21 @@ async def complete_vlm_prompt(
         else str(provider_config.format)
     )
 
-    target_model = (
-        model.strip()
-        if model and model.strip()
-        else (provider_config.models[0] if provider_config.models else "gpt-4o")
-    )
+    if model and model.strip():
+        target_model = model.strip()
+    elif provider_config.models:
+        target_model = provider_config.models[0]
+    else:
+        # F1.3 audit fix (P0): defensive fail-fast. Silently defaulting to a
+        # specific cloud model id (e.g. "gpt-4o") would route requests to a
+        # model the local endpoint doesn't serve, or worse, hit a cloud
+        # provider the user never intended to call.
+        raise LLMCallError(
+            f"Cannot resolve target model for provider '{provider_config.id}': "
+            f"no model passed and provider_config.models is empty. "
+            f"Set the model argument, list a default under the provider config, "
+            f"or set OMNISCRIBE_MODEL."
+        )
 
     api_url = provider_config.api_url.rstrip("/")
     if provider_config.base_path:
