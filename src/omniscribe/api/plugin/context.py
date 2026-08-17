@@ -197,6 +197,60 @@ class PluginContext:
         self._assert_not_disposed("unregister")
         return self._services.pop((definition, name), None) is not None
 
+    def swap(
+        self,
+        definition: type,
+        impl: Any,
+        *,
+        name: str = "default",
+    ) -> Disposer:
+        """Replace a service and return a disposer that restores the previous state.
+
+        Phase 4 primitive that backs the :class:`Patch` abstraction:
+        unlike :meth:`register` (which raises on duplicate, or
+        overwrites with a non-restoring disposer when ``replace=True``),
+        :meth:`swap` snapshots whatever is currently registered for
+        ``(definition, name)`` before installing ``impl`` and restores
+        the snapshot on dispose.
+
+        If nothing was previously registered, the disposer removes
+        the swapped impl (same as :meth:`register`). The
+        :class:`ServiceAlreadyRegisteredError` does NOT fire here —
+        the whole point of ``swap`` is to overwrite cleanly.
+
+        The structural isinstance check mirrors :meth:`register`: if
+        the protocol is ``@runtime_checkable`` and the impl doesn't
+        satisfy it, a :class:`TypeError` is raised before the swap.
+        """
+        self._assert_not_disposed("swap")
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"Service name must be a non-empty string, got {name!r}")
+        if (
+            hasattr(definition, "_is_runtime_protocol")
+            and definition._is_runtime_protocol
+            and not isinstance(impl, definition)
+        ):
+            raise TypeError(
+                f"Implementation {type(impl).__name__!r} does not "
+                f"satisfy the {definition.__name__!r} protocol."
+            )
+        key = (definition, name)
+        previous = self._services.get(key)
+        self._services[key] = impl
+
+        def _restore() -> None:
+            current = self._services.get(key)
+            # Only restore if the current impl is the one we installed.
+            # If the user later swapped or unregistered the patched impl,
+            # we leave whatever they put there alone.
+            if current is impl:
+                if previous is None:
+                    self._services.pop(key, None)
+                else:
+                    self._services[key] = previous
+
+        return self._effects.effect(_restore)
+
     def require(
         self,
         *definitions: type,
