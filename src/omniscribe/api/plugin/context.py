@@ -1,0 +1,480 @@
+"""PluginContext — a Cordis-inspired typed repository of services and events.
+
+The :class:`PluginContext` is the "everything is a plugin" container. A
+running OmniScribe server owns one :class:`PluginContext`; every capability
+is registered as a service (Protocol + impl) or an event listener. Consumers
+look up services by Protocol class instead of importing the concrete
+implementation, which is what makes the seam replaceable.
+
+Five things the context does
+----------------------------
+
+1. **Service registry** — :meth:`register` adds a (Protocol, name) -> impl
+   entry; :meth:`get` looks one up; :meth:`has` checks; the returned
+   disposer removes it. Multiple impls of the same Protocol can coexist
+   under different names (e.g. ``JobQueue`` with ``"local"`` and ``"celery"``).
+
+2. **Event listener registry** — :meth:`on` registers a listener under a
+   named event with one of four :class:`EventMode` dispatch modes
+   (``emit`` / ``waterfall`` / ``serial`` / ``parallel``).
+
+3. **Event dispatch** — :meth:`emit`, :meth:`parallel`, :meth:`serial`,
+   :meth:`waterfall` invoke the listeners for an event. Listeners that
+   are not registered with the mode the dispatcher uses are skipped.
+
+4. **Reversible effects** — :meth:`effect` registers a disposer that is
+   called on :meth:`dispose`; :meth:`mount` does the same for a whole
+   :class:`Plugin`.
+
+5. **Teardown** — :meth:`dispose` unwinds every effect, listener, and
+   service in reverse mount order. After dispose the context is final;
+   any further operation raises :class:`ContextDisposedError`.
+
+Thread safety
+-------------
+
+Phase 0 does NOT lock the context. The context is designed to be created
+once at server boot, mutated only during boot, and queried from many
+request handlers. If a Phase 0 caller mutates the context concurrently
+(from two worker threads, for example) the behavior is undefined; the
+expected pattern is "mount during boot, dispatch during request handling,
+dispose at shutdown."
+
+A later phase will add a ``threading.RLock`` wrapper for the rare case of
+runtime plugin reloading.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable
+from contextlib import suppress
+from dataclasses import dataclass
+from typing import Any
+
+from omniscribe.api.plugin.effects import EffectScope
+from omniscribe.api.plugin.errors import (
+    ContextDisposedError,
+    EventModeMismatchError,
+    ServiceAlreadyRegisteredError,
+    ServiceNotFoundError,
+)
+from omniscribe.api.plugin.events import EventMode, EventName
+
+# A disposer is a zero-arg callable that unwinds a single effect.
+Disposer = Callable[[], None]
+
+
+@dataclass
+class _ListenerEntry:
+    """Internal record of a registered listener.
+
+    The dataclass is used (not a tuple) so :meth:`list.remove` can match
+    by identity, which is robust against duplicate callable objects.
+    """
+
+    mode: EventMode
+    listener: Callable[..., Any]
+
+
+# Type alias for the listener signature. The ``Any`` payloads reflect that
+# Python lacks declaration merging — the type check happens at the call
+# site (the listener's actual signature).
+Listener = Callable[..., Any]
+
+
+class PluginContext:
+    """A typed repository of services and event listeners.
+
+    Parameters
+    ----------
+    name:
+        Human-readable name for diagnostics. Default ``"root"``. Nested
+        contexts (created by a parent plugin) typically pass a dotted
+        path like ``"root.web.ocr"``.
+    """
+
+    def __init__(self, name: str = "root") -> None:
+        self._name = name
+        self._services: dict[tuple[type, str], Any] = {}
+        self._listeners: dict[str, list[_ListenerEntry]] = {}
+        self._effects = EffectScope()
+        self._disposed = False
+
+    # -- Introspection ----------------------------------------------------
+
+    @property
+    def name(self) -> str:
+        """Human-readable name for diagnostics."""
+        return self._name
+
+    @property
+    def disposed(self) -> bool:
+        """True after :meth:`dispose` has been called."""
+        return self._disposed
+
+    def __repr__(self) -> str:
+        service_count = len(self._services)
+        listener_count = sum(len(v) for v in self._listeners.values())
+        return (
+            f"PluginContext(name={self._name!r}, "
+            f"services={service_count}, listeners={listener_count}, "
+            f"disposed={self._disposed})"
+        )
+
+    # -- Service registry -------------------------------------------------
+
+    def register(
+        self,
+        definition: type,
+        impl: Any,
+        *,
+        name: str = "default",
+        replace: bool = False,
+    ) -> Disposer:
+        """Register a service implementation.
+
+        Parameters
+        ----------
+        definition:
+            The :class:`Protocol` class that declares the service interface.
+            Used as the registry key.
+        impl:
+            The implementation. Must structurally satisfy ``definition``;
+            a duck-type check is performed via ``isinstance`` when
+            ``definition`` is ``@runtime_checkable``.
+        name:
+            Slot name for multiple implementations of the same Protocol.
+            Defaults to ``"default"``.
+        replace:
+            If True, an existing impl under the same key is silently
+            replaced. If False (default), a duplicate raises
+            :class:`ServiceAlreadyRegisteredError`.
+
+        Returns
+        -------
+        A disposer that un-registers the service when called.
+        """
+        self._assert_not_disposed("register")
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"Service name must be a non-empty string, got {name!r}")
+        # Best-effort structural check. The Protocol must be runtime_checkable
+        # for isinstance() to do anything; if it isn't, the check passes
+        # through and we rely on duck typing at the call site.
+        if (
+            hasattr(definition, "_is_runtime_protocol")
+            and definition._is_runtime_protocol
+            and not isinstance(impl, definition)
+        ):
+            raise TypeError(
+                f"Implementation {type(impl).__name__!r} does not "
+                f"satisfy the {definition.__name__!r} protocol."
+            )
+        key = (definition, name)
+        if key in self._services and not replace:
+            raise ServiceAlreadyRegisteredError(definition, name)
+        self._services[key] = impl
+        return self._effects.effect(lambda: self._services.pop(key, None))
+
+    def get(self, definition: type, *, name: str = "default") -> Any:
+        """Fetch a registered service implementation.
+
+        Raises :class:`ServiceNotFoundError` if no impl exists.
+        """
+        self._assert_not_disposed("get")
+        key = (definition, name)
+        try:
+            return self._services[key]
+        except KeyError:
+            raise ServiceNotFoundError(definition, name) from None
+
+    def has(self, definition: type, *, name: str = "default") -> bool:
+        """True if an impl exists for the (Protocol, name) key."""
+        return (definition, name) in self._services
+
+    def unregister(self, definition: type, *, name: str = "default") -> bool:
+        """Remove a service implementation. Returns True if it existed."""
+        self._assert_not_disposed("unregister")
+        return self._services.pop((definition, name), None) is not None
+
+    def require(
+        self,
+        *definitions: type,
+        name: str = "default",
+    ) -> None:
+        """Assert that every named definition is registered.
+
+        Convenience for plugin boot: ``ctx.require(JobQueue, ProgressService)``
+        raises :class:`ServiceNotFoundError` listing the first missing
+        dependency if any are absent. Phase 0 does not block-wait; later
+        phases may add an async ``require_async`` for the dynamic-mount case.
+        """
+        self._assert_not_disposed("require")
+        for definition in definitions:
+            if not self.has(definition, name=name):
+                raise ServiceNotFoundError(definition, name)
+
+    def service_names(self, definition: type) -> list[str]:
+        """List every registered name for a given definition.
+
+        Useful for diagnostics and for picking among multiple impls.
+        """
+        return [n for (d, n) in self._services if d is definition]
+
+    # -- Event listener registry ------------------------------------------
+
+    def on(
+        self,
+        event: str | EventName,
+        listener: Listener,
+        *,
+        mode: str | EventMode = EventMode.EMIT,
+        prepend: bool = False,
+    ) -> Disposer:
+        """Register an event listener and return its disposer.
+
+        Parameters
+        ----------
+        event:
+            Either a string event name or an :class:`EventName` constant.
+        listener:
+            The callable to invoke. Signature is mode-dependent; see the
+            :meth:`emit` / :meth:`parallel` / :meth:`serial` / :meth:`waterfall`
+            dispatchers for the expected shape.
+        mode:
+            One of :class:`EventMode`. Default ``emit`` (observe only).
+        prepend:
+            If True, the listener is registered *before* the existing
+            listeners of the same event so it runs first. Default False
+            (append).
+        """
+        self._assert_not_disposed("on")
+        if not callable(listener):
+            raise TypeError(f"Listener must be callable, got {type(listener).__name__}")
+        event_mode = EventMode(mode) if not isinstance(mode, EventMode) else mode
+        event_name = self._normalize_event_name(event)
+        entry = _ListenerEntry(mode=event_mode, listener=listener)
+        bucket = self._listeners.setdefault(event_name, [])
+        if prepend:
+            bucket.insert(0, entry)
+        else:
+            bucket.append(entry)
+        return self._effects.effect(lambda: self._remove_listener(event_name, entry))
+
+    def off(self, event: str | EventName, listener: Listener) -> bool:
+        """Remove a specific listener. Returns True if it was found."""
+        self._assert_not_disposed("off")
+        event_name = self._normalize_event_name(event)
+        bucket = self._listeners.get(event_name, [])
+        for entry in bucket:
+            if entry.listener is listener:
+                bucket.remove(entry)
+                return True
+        return False
+
+    def _remove_listener(self, event_name: str, entry: _ListenerEntry) -> None:
+        """Internal helper: remove a listener entry by identity. Used by the
+        disposer returned by :meth:`on`."""
+        bucket = self._listeners.get(event_name)
+        if not bucket:
+            return
+        with suppress(ValueError):
+            bucket.remove(entry)
+        if not bucket:
+            self._listeners.pop(event_name, None)
+
+    def listeners(self, event: str | EventName) -> list[_ListenerEntry]:
+        """Return a snapshot of registered listeners for an event (introspection)."""
+        return list(self._listeners.get(self._normalize_event_name(event), ()))
+
+    # -- Event dispatch ---------------------------------------------------
+
+    def emit(self, event: str | EventName, **payload: Any) -> None:
+        """Observe-only dispatch.
+
+        All listeners registered with :attr:`EventMode.EMIT` run in
+        registration order. Listeners with other modes are skipped.
+        Return values (if any) are discarded.
+
+        Raises :class:`ContextDisposedError` if the context has been disposed.
+        """
+        self._assert_not_disposed("emit")
+        for entry in self._iter_listeners(event):
+            if entry.mode is EventMode.EMIT:
+                entry.listener(**payload)
+
+    def parallel(self, event: str | EventName, **payload: Any) -> None:
+        """Parallel dispatch.
+
+        All listeners registered with :attr:`EventMode.PARALLEL` receive
+        the same payload. Phase 0 runs them sequentially in registration
+        order; a later phase will detect async listeners and schedule
+        them with ``asyncio.gather``.
+
+        Raises :class:`ContextDisposedError` if the context has been disposed.
+        """
+        self._assert_not_disposed("parallel")
+        for entry in self._iter_listeners(event):
+            if entry.mode is EventMode.PARALLEL:
+                entry.listener(**payload)
+
+    def serial(
+        self, event: str | EventName, initial: Any = None, **payload: Any
+    ) -> Any:
+        """Ordered dispatch.
+
+        The first listener receives ``initial``; each subsequent listener
+        receives the previous listener's return value. The chain's final
+        return is the dispatch's return. Listeners not registered with
+        :attr:`EventMode.SERIAL` are skipped.
+
+        Raises :class:`ContextDisposedError` if the context has been disposed.
+        """
+        self._assert_not_disposed("serial")
+        current = initial
+        first = True
+        for entry in self._iter_listeners(event):
+            if entry.mode is not EventMode.SERIAL:
+                continue
+            if first:
+                current = (
+                    entry.listener(initial, **payload)
+                    if payload
+                    else entry.listener(initial)
+                )
+                first = False
+            else:
+                current = (
+                    entry.listener(current, **payload)
+                    if payload
+                    else entry.listener(current)
+                )
+        return current
+
+    def waterfall(
+        self,
+        event: str | EventName,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        """Around-middleware dispatch.
+
+        The first listener receives the initial value as its first
+        positional argument and a ``next`` keyword argument. Calling
+        ``next(value)`` delegates to the next listener (optionally
+        replacing the accumulated value). Returning without calling
+        ``next`` short-circuits the chain and that value is the
+        dispatch's return.
+
+        All listeners in the chain must be registered with
+        :attr:`EventMode.WATERFALL`; a non-waterfall listener in the
+        chain raises :class:`EventModeMismatchError` when reached.
+
+        If no listeners are registered, the first positional argument
+        is returned (or ``None`` if no args were given).
+
+        Raises :class:`ContextDisposedError` if the context has been disposed.
+        """
+        self._assert_not_disposed("waterfall")
+        chain = list(self._iter_listeners(event))
+        if not chain:
+            return args[0] if len(args) == 1 else (args if args else None)
+
+        initial = args[0] if args else None
+        # Extra args/kwargs (besides initial and next) are forwarded to
+        # every listener. This matches Cordis's around-middleware pattern.
+        forwarded_kwargs = dict(kwargs)
+
+        def build_next(idx: int) -> Callable[..., Any]:
+            def next_(value: Any = _SENTINEL) -> Any:
+                if idx >= len(chain):
+                    return value if value is not _SENTINEL else initial
+                entry = chain[idx]
+                if entry.mode is not EventMode.WATERFALL:
+                    raise EventModeMismatchError(
+                        event=str(event), expected="waterfall", got=entry.mode.value
+                    )
+                # If the listener calls next() with no value, pass through the
+                # current accumulated value.
+                inner_next = build_next(idx + 1)
+                forwarded = dict(forwarded_kwargs)
+                forwarded["next"] = inner_next
+                if value is _SENTINEL:
+                    return entry.listener(initial, **forwarded)
+                return entry.listener(value, **forwarded)
+
+            return next_
+
+        return build_next(0)()
+
+    # -- Reversible effects -----------------------------------------------
+
+    def effect(self, disposer: Disposer) -> Disposer:
+        """Register a reversible effect and return its disposer.
+
+        The effect is invoked during :meth:`dispose` (in LIFO order
+        across all effects registered on this context, including
+        effects added implicitly by :meth:`register` / :meth:`on`).
+        """
+        self._assert_not_disposed("effect")
+        return self._effects.effect(disposer)
+
+    def mount(self, plugin: Any) -> Disposer:
+        """Mount a :class:`Plugin` into this context.
+
+        The plugin callable is invoked with ``self`` as its argument;
+        the callable is expected to register services/listeners/effects
+        via the context and return a top-level disposer that unwinds
+        everything. The returned disposer is also registered with the
+        context's effect scope so it is called during :meth:`dispose`.
+        """
+        self._assert_not_disposed("mount")
+        if not callable(plugin):
+            raise TypeError(f"Plugin must be callable, got {type(plugin).__name__}")
+        plugin_disposer = plugin(self)
+        if not callable(plugin_disposer):
+            raise TypeError(
+                f"Plugin {plugin!r} must return a callable disposer, "
+                f"got {type(plugin_disposer).__name__}"
+            )
+        return self._effects.effect(plugin_disposer)
+
+    # -- Teardown ---------------------------------------------------------
+
+    def dispose(self) -> None:
+        """Unwind every registered effect, listener, and service.
+
+        Idempotent: a second call is a no-op. After dispose the context
+        is final; any further operation raises
+        :class:`ContextDisposedError`.
+        """
+        if self._disposed:
+            return
+        self._disposed = True
+        # Unwind effects in LIFO order. The EffectScope handles this.
+        self._effects.dispose()
+        # Drop the registries so any accidental access after dispose is
+        # caught by the disposed check rather than returning a stale ref.
+        self._services.clear()
+        self._listeners.clear()
+
+    # -- Internal helpers -------------------------------------------------
+
+    def _assert_not_disposed(self, operation: str) -> None:
+        if self._disposed:
+            raise ContextDisposedError(operation)
+
+    def _iter_listeners(self, event: str | EventName) -> Iterable[_ListenerEntry]:
+        return iter(self._listeners.get(self._normalize_event_name(event), ()))
+
+    @staticmethod
+    def _normalize_event_name(event: str | EventName) -> str:
+        if isinstance(event, str):
+            return event
+        # NewType("EventName", str) — at runtime the value is a str.
+        return str(event)
+
+
+# Sentinel used by waterfall() to distinguish "no value passed to next()"
+# from "next() called with explicit None". Lives at module scope so the
+# inner closure can reference it without capturing the outer frame.
+_SENTINEL: Any = object()
