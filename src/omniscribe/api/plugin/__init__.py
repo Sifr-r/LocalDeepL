@@ -37,10 +37,20 @@ from omniscribe.api.plugin.projections import (
     JobHistoryProjection,
 )
 from omniscribe.api.plugin.providers import (
+    config_store_provider,
     in_memory_session_log_provider,
     local_job_queue_provider,
+    progress_service_provider,
+    text_artifact_store_provider,
 )
-from omniscribe.api.plugin.seams import JobQueue, SessionLog
+from omniscribe.api.plugin.seams import (
+    ConfigStore,
+    JobQueue,
+    ProgressChannel,
+    ProgressService,
+    SessionLog,
+    TextArtifactStore,
+)
 from omniscribe.api.plugin.service import Plugin, ServiceDefinition
 from omniscribe.api.plugin.session_log import (
     InMemoryLogStore,
@@ -51,6 +61,7 @@ from omniscribe.api.plugin.session_log import (
 __all__ = [
     "ArtifactStoreProjection",
     "Bundle",
+    "ConfigStore",
     "ContextDisposedError",
     "EffectScope",
     "EventMode",
@@ -65,11 +76,17 @@ __all__ = [
     "PluginContext",
     "PluginError",
     "Profile",
+    "ProgressChannel",
+    "ProgressService",
     "ServiceAlreadyRegisteredError",
     "ServiceDefinition",
     "ServiceNotFoundError",
     "SessionLog",
     "SessionLogQuery",
+    "TextArtifactStore",
+    "config_store_provider",
     "in_memory_session_log_provider",
     "local_job_queue_provider",
+    "progress_service_provider",
+    "text_artifact_store_provider",
 ]

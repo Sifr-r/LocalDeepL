@@ -19,9 +19,23 @@ from collections.abc import Callable
 # the top-level ``omniscribe.api.plugin`` package's __init__ (which re-exports
 # the providers for convenience).
 from omniscribe.api.plugin.context import PluginContext
-from omniscribe.api.plugin.seams import JobQueue, SessionLog
+from omniscribe.api.plugin.seams import (
+    ConfigStore,
+    JobQueue,
+    ProgressService,
+    SessionLog,
+    TextArtifactStore,
+)
 from omniscribe.api.plugin.session_log import InMemoryLogStore
+from omniscribe.api.services.artifacts import TextArtifactStore as _TextArtifactStore
+from omniscribe.api.services.config_store import (
+    ConfigStore as _ConfigStore,
+)
+from omniscribe.api.services.config_store import (
+    InMemoryConfigStore,
+)
 from omniscribe.api.services.ocr_jobs import OCRJobQueue
+from omniscribe.api.services.progress import ProgressService as _ProgressService
 
 logger = logging.getLogger(__name__)
 
@@ -88,4 +102,141 @@ def in_memory_session_log_provider(
     return _plugin
 
 
-__all__ = ["in_memory_session_log_provider", "local_job_queue_provider"]
+def progress_service_provider(
+    service: _ProgressService | None = None,
+    *,
+    name: str = "default",
+) -> Callable[[PluginContext], Callable[[], None]]:
+    """Return a :class:`Plugin` that registers a :class:`ProgressService`.
+
+    The default :class:`~omniscribe.api.services.progress.ProgressService`
+    is stateless (every method is a pure function of its arguments)
+    so the same instance can be shared by every consumer — the
+    provider just wraps the existing ``state.progress_service``
+    singleton and registers it under the seam Protocol.
+
+    Parameters
+    ----------
+    service:
+        Pre-built service. ``None`` (default) constructs a fresh
+        :class:`ProgressService`. Tests pass a stub to assert
+        consumer behaviour without standing up the real math.
+    name:
+        Provider name. Defaults to ``"default"``; a future
+        ``"telemetry"`` provider (e.g. one that streams frames
+        to an OpenTelemetry exporter) would register under its
+        own name so a profile can run both side by side.
+    """
+    impl = service if service is not None else _ProgressService()
+
+    def _plugin(ctx: PluginContext) -> Callable[[], None]:
+        disposer = ctx.register(ProgressService, impl, name=name)
+        logger.info(
+            "Registered ProgressService provider name=%r (%s)",
+            name,
+            type(impl).__name__,
+        )
+        return disposer
+
+    return _plugin
+
+
+def config_store_provider(
+    store: _ConfigStore | None = None,
+    *,
+    name: str = "default",
+) -> Callable[[PluginContext], Callable[[], None]]:
+    """Return a :class:`Plugin` that registers a :class:`ConfigStore`.
+
+    The :class:`ConfigStore` Protocol already lives in
+    :mod:`omniscribe.api.services.config_store`; this provider
+    just bridges the existing ``state.config_store`` singleton
+    into the plugin context. The three concrete implementations
+    (:class:`InMemoryConfigStore` / :class:`SQLiteConfigStore`
+    / :class:`RedisConfigStore`) all satisfy the Protocol, so
+    swapping the active store only requires passing a different
+    instance to this provider — no consumer code changes.
+
+    Parameters
+    ----------
+    store:
+        Pre-built store. ``None`` (default) constructs a fresh
+        :class:`InMemoryConfigStore`. Production callers pass
+        the same instance the StateBackend owns so the
+        ``/api/config`` handler and the seam see one source of
+        truth.
+    name:
+        Provider name. Defaults to ``"default"``.
+    """
+    impl = store if store is not None else InMemoryConfigStore()
+
+    def _plugin(ctx: PluginContext) -> Callable[[], None]:
+        disposer = ctx.register(ConfigStore, impl, name=name)
+        logger.info(
+            "Registered ConfigStore provider name=%r (%s)", name, type(impl).__name__
+        )
+        return disposer
+
+    return _plugin
+
+
+def text_artifact_store_provider(
+    store: _TextArtifactStore,
+    *,
+    name: str = "default",
+) -> Callable[[PluginContext], Callable[[], None]]:
+    """Return a :class:`Plugin` that registers a :class:`TextArtifactStore`.
+
+    The legacy :mod:`~omniscribe.api.routers.state` module owns
+    three :class:`TextArtifactStore` instances (``text_artifacts``
+    / ``metadata_artifacts`` / ``export_artifacts``). Phase 5
+    registers each one under a distinct name so a consumer can
+    request the metadata store explicitly:
+
+    - ``ctx.get(TextArtifactStore, name="text")`` — the canonical
+      per-page OCR text artifacts
+    - ``ctx.get(TextArtifactStore, name="metadata")`` — the
+      document-processor metadata reports
+    - ``ctx.get(TextArtifactStore, name="export")`` — the export
+      pipeline outputs (HTML / DOCX / tree)
+
+    The default name is ``"default"`` to match the rest of the
+    registration API; the server boot wiring passes the
+    right name explicitly.
+
+    Parameters
+    ----------
+    store:
+        Pre-built store. The provider does not construct a
+        default — the constructor requires an ``artifact_dir``
+        and Phase 5 has no opinion about the default location
+        (the StateBackend picks one).
+    name:
+        Provider name. Production wiring uses ``"text"``,
+        ``"metadata"``, or ``"export"``.
+    """
+    if not isinstance(store, _TextArtifactStore):
+        raise TypeError(
+            f"text_artifact_store_provider requires a TextArtifactStore "
+            f"instance, got {type(store).__name__!r}"
+        )
+
+    def _plugin(ctx: PluginContext) -> Callable[[], None]:
+        disposer = ctx.register(TextArtifactStore, store, name=name)
+        logger.info(
+            "Registered TextArtifactStore provider name=%r (%s)",
+            name,
+            type(store).__name__,
+        )
+        return disposer
+
+    return _plugin
+
+
+__all__ = [
+    "config_store_provider",
+    "in_memory_session_log_provider",
+    "local_job_queue_provider",
+    "progress_service_provider",
+    "text_artifact_store_provider",
+]

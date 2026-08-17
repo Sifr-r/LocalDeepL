@@ -114,7 +114,26 @@ async def _create_document_metadata_artifact(
 
 
 def stage_to_percent(stage: str, current: int, total: int) -> int:
-    """Map a pipeline stage + sub-progress into a 0-100 overall percent."""
+    """Map a pipeline stage + sub-progress into a 0-100 overall percent.
+
+    Looks the :class:`ProgressService` up from the live plugin
+    context (Phase 5) and falls back to ``state.progress_service``
+    when the context is not bootstrapped. The fallback keeps
+    every existing call site working unchanged through the
+    migration window; Phase 7 will drop the fallback when the
+    legacy ``state`` singleton is retired.
+    """
+    try:
+        from omniscribe.api.plugin import ProgressService
+        from omniscribe.api.plugin.runtime import get_plugin_context
+
+        ctx = get_plugin_context()
+        if ctx is not None and ctx.has(ProgressService):
+            return ctx.get(ProgressService).stage_to_percent(stage, current, total)
+    except Exception:
+        # Plugin context unavailable or service not registered;
+        # fall through to the legacy singleton.
+        pass
     return state.progress_service.stage_to_percent(stage, current, total)
 
 
