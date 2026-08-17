@@ -9,6 +9,25 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from omniscribe.core.document import DenseMode, PipelineMode, SpellcheckMode
 from omniscribe.core.ocr_quality import OCrQualitySettings
+from omniscribe.core.provider_config import (
+    ProviderConfig as _CoreProviderConfig,
+)
+from omniscribe.core.provider_config import (
+    ProviderFormatEnum,
+)
+
+# Re-export the core-owned ProviderConfig and ProviderFormatEnum so existing
+# imports (`from omniscribe.api.schemas.requests import ProviderConfig`)
+# continue to work. The core types are the canonical definition; this alias
+# is the only definition. See ``omniscribe.core.provider_config`` for the
+# layering rationale.
+#
+# Field names and types are stable. Note: the previous API version used
+# ``extra="forbid"``; the core version uses ``extra="ignore"`` (lenient)
+# so the API can pass a Pydantic-validated instance carrying extra fields
+# without the core layer rejecting it. HTTP request validation is enforced
+# separately by ``ProviderCreateRequest`` (request body) — see below.
+ProviderConfig = _CoreProviderConfig
 
 
 class DocumentProcessorName(StrEnum):
@@ -696,29 +715,9 @@ class TranscriptionRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Provider schemas
 # ---------------------------------------------------------------------------
-
-
-class ProviderFormatEnum(StrEnum):
-    OPENAI_COMPATIBLE = "openai_compatible"
-    ANTHROPIC_COMPATIBLE = "anthropic_compatible"
-    OLLAMA_COMPATIBLE = "ollama_compatible"
-
-
-class ProviderConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: str
-    display_name: str
-    format: ProviderFormatEnum
-    api_url: str
-    base_path: str = ""
-    api_key: str | None = None
-    models: list[str] = Field(default_factory=list, max_length=100)
-    headers: dict[str, str] = Field(default_factory=dict)
-    supports_streaming: bool = True
-    requires_auth: bool = True
-    configured: bool = False
-    enabled: bool = True
+# ``ProviderConfig`` and ``ProviderFormatEnum`` are re-exported from
+# ``omniscribe.core.provider_config`` (see top of file). The core types are
+# the canonical definition; the API module never redefines them.
 
 
 class ProviderTemplate(BaseModel):

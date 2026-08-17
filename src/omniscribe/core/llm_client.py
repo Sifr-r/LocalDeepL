@@ -7,14 +7,51 @@ and multi_format_client for completion dispatch across OpenAI, Anthropic, and Ol
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from omniscribe.api.schemas import ProviderConfig
-
+from omniscribe.core.ocr.exceptions import LLMCallError
 from omniscribe.core.ocr.multi_format_client import complete_vlm_prompt
+from omniscribe.core.provider_config import ProviderConfig, ProviderFormatEnum
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_provider_config(
+    provider_config: ProviderConfig | None,
+    api_base: str | None,
+    api_key: str | None,
+    model: str | None,
+) -> ProviderConfig:
+    """Build a ``ProviderConfig`` for the in-process LLM call.
+
+    The API layer is responsible for resolving the active provider via
+    ``ProviderManager`` before calling this module. Core never reaches
+    upward into ``omniscribe.api`` to look up provider state.
+
+    If the caller passes an explicit ``api_base`` we construct a
+    one-shot OPENAI_COMPATIBLE config so the OCR pipeline can run
+    end-to-end without touching the API layer (tests, embedded
+    workflows, CLI use).
+
+    If neither is provided we fail fast with ``LLMCallError`` — the
+    caller must pass ``provider_config`` or ``api_base``.
+    """
+    if provider_config is not None:
+        return provider_config
+    if api_base:
+        return ProviderConfig(
+            id="custom",
+            display_name="Custom",
+            format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+            api_url=api_base,
+            api_key=api_key,
+            models=[model] if model else [],
+        )
+    raise LLMCallError(
+        "call_llm / call_vlm requires either `provider_config` or `api_base`. "
+        "Resolve the active provider at the API layer via ProviderManager "
+        "before calling the core OCR pipeline."
+    )
 
 
 def _extract_prompt_and_image(
@@ -91,23 +128,7 @@ async def call_vlm(
     system_prompt: str | None = None,
 ) -> str:
     """Make an asynchronous VLM call using active ProviderManager configuration or explicit settings."""
-    if provider_config is None:
-        if api_base:
-            from omniscribe.api.schemas import ProviderConfig, ProviderFormatEnum
-
-            provider_config = ProviderConfig(
-                id="custom",
-                display_name="Custom",
-                format=ProviderFormatEnum.OPENAI_COMPATIBLE,
-                api_url=api_base,
-                api_key=api_key,
-                models=[model] if model else [],
-            )
-        else:
-            from omniscribe.api.services.provider_manager import get_provider_manager
-
-            mgr = get_provider_manager()
-            provider_config = mgr.get_active_provider()
+    provider_config = _resolve_provider_config(provider_config, api_base, api_key, model)
 
     return await complete_vlm_prompt(
         provider_config=provider_config,
@@ -149,23 +170,7 @@ async def call_llm(
         image_base64=image_base64,
     )
 
-    if provider_config is None:
-        if api_base:
-            from omniscribe.api.schemas import ProviderConfig, ProviderFormatEnum
-
-            provider_config = ProviderConfig(
-                id="custom",
-                display_name="Custom",
-                format=ProviderFormatEnum.OPENAI_COMPATIBLE,
-                api_url=api_base,
-                api_key=api_key,
-                models=[model] if model else [],
-            )
-        else:
-            from omniscribe.api.services.provider_manager import get_provider_manager
-
-            mgr = get_provider_manager()
-            provider_config = mgr.get_active_provider()
+    provider_config = _resolve_provider_config(provider_config, api_base, api_key, model)
 
     return await complete_vlm_prompt(
         provider_config=provider_config,

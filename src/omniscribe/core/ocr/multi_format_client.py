@@ -9,15 +9,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import httpx
 
-if TYPE_CHECKING:
-    from omniscribe.api.schemas import ProviderConfig
-
 from omniscribe.core.ocr.exceptions import LLMCallError
 from omniscribe.core.ocr.resilience import RETRYABLE_STATUS_CODES, is_transient_error
+from omniscribe.core.provider_config import ProviderConfig, ProviderFormatEnum
 
 logger = logging.getLogger(__name__)
 
@@ -100,8 +98,6 @@ async def complete_vlm_prompt(
     Raises:
         LLMCallError: On non-200 responses, permanent API errors, or unrecoverable transient errors.
     """
-    from omniscribe.api.schemas import ProviderFormatEnum
-
     fmt = (
         provider_config.format.value
         if isinstance(provider_config.format, ProviderFormatEnum)
