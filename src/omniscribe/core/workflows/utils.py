@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 from PIL import Image
 
+from omniscribe.core.pdf.page_range import parse_page_range as _parse_page_range_spec
+
 if TYPE_CHECKING:
     from omniscribe.core.workflows.base import PageBoxes
 
@@ -56,25 +58,26 @@ DETECT_CHUNK_SIZE = 10
 
 
 def parse_page_range(page_str: str, total_pages: int) -> list[int]:
-    """Parse a 1-indexed range like '1-3,5,7-9' into sorted 0-indexed pages."""
+    """Parse a 1-indexed range like '1-3,5,7-9' into sorted 0-indexed pages.
+
+    Thin wrapper over the leaf parser in
+    :mod:`omniscribe.core.pdf.page_range` that adds the ``total_pages``
+    clamp and the ``ValueError`` on invalid input. Kept as a wrapper
+    (rather than a re-export of the leaf function) so the public
+    ``parse_page_range`` symbol exposed via ``omniscribe.core.workflows``
+    and ``omniscribe.parse_page_range`` retains the
+    ``(page_str, total_pages) -> list[int]`` contract that
+    :func:`omniscribe.core.workflows.hybrid.HybridEngine.execute` and
+    the existing tests depend on.
+    """
+    ranges = _parse_page_range_spec(page_str)
+    if ranges is None:
+        raise ValueError(f"Invalid page range syntax: '{page_str}'")
     pages: set[int] = set()
-    try:
-        for part in page_str.split(","):
-            part = part.strip()
-            if not part:
-                continue
-            if "-" in part:
-                start_s, end_s = part.split("-", 1)
-                start, end = int(start_s), int(end_s)
-                for p in range(start, end + 1):
-                    if 1 <= p <= total_pages:
-                        pages.add(p - 1)
-            else:
-                p = int(part)
-                if 1 <= p <= total_pages:
-                    pages.add(p - 1)
-    except ValueError as e:
-        raise ValueError(f"Invalid page range syntax: '{page_str}'") from e
+    for start, end in ranges:
+        for p in range(start, end + 1):
+            if 1 <= p <= total_pages:
+                pages.add(p - 1)
     return sorted(pages)
 
 

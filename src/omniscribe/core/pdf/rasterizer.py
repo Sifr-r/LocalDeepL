@@ -25,6 +25,8 @@ from pathlib import Path
 import fitz  # PyMuPDF
 from PIL import Image, ImageSequence
 
+from omniscribe.core.pdf.page_range import parse_page_range as _parse_page_range_spec
+
 _LOGGER = logging.getLogger(__name__)
 
 # Worker count for parallel page rasterization. PyMuPDF is C-bound so
@@ -188,30 +190,23 @@ def _images_from_image_file(path: str | Path, max_image_dim: int) -> dict[int, s
 def _parse_page_range_local(page_str: str, total_pages: int) -> list[int]:
     """Parse a 1-indexed range like '1-3,5,7-9' into sorted 0-indexed pages.
 
-    Locally scoped (not imported from ``workflows.utils``) to break a
-    circular-import chain: rasterizer -> workflows.utils -> workflows
-    package init -> hybrid -> pdf, which deadlocked the ``import omniscribe
-    .core.pdf`` entry point. Mirrors the canonical implementation in
-    :func:`omniscribe.core.workflows.utils.parse_page_range`.
+    Thin wrapper over the leaf parser in
+    :mod:`omniscribe.core.pdf.page_range` that adds the ``total_pages``
+    clamp and the ``ValueError`` on invalid input. The wrapper keeps the
+    rasterizer self-contained (it cannot import from
+    ``omniscribe.core.workflows.utils`` without re-introducing the
+    ``rasterizer -> workflows.utils -> workflows -> hybrid -> pdf``
+    cycle), so the parser logic lives in a sibling leaf module that
+    both this file and ``workflows.utils`` can reach.
     """
+    ranges = _parse_page_range_spec(page_str)
+    if ranges is None:
+        raise ValueError(f"Invalid page range syntax: '{page_str}'")
     pages: set[int] = set()
-    try:
-        for part in page_str.split(","):
-            part = part.strip()
-            if not part:
-                continue
-            if "-" in part:
-                start_s, end_s = part.split("-", 1)
-                start, end = int(start_s), int(end_s)
-                for p in range(start, end + 1):
-                    if 1 <= p <= total_pages:
-                        pages.add(p - 1)
-            else:
-                p = int(part)
-                if 1 <= p <= total_pages:
-                    pages.add(p - 1)
-    except ValueError as e:
-        raise ValueError(f"Invalid page range syntax: '{page_str}'") from e
+    for start, end in ranges:
+        for p in range(start, end + 1):
+            if 1 <= p <= total_pages:
+                pages.add(p - 1)
     return sorted(pages)
 
 
