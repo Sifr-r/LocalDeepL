@@ -146,6 +146,28 @@ def _record_job(
         status=status,
         failed_pages=failed_pages,
     )
+    # Phase 2: emit the completion audit event through the plugin
+    # context. Errors during the emit are swallowed so a broken recorder
+    # never blocks the job-history append.
+    try:
+        from omniscribe.api.plugin.events_catalog import JobCompletedEvent
+        from omniscribe.api.plugin.runtime import get_plugin_context
+
+        ctx = get_plugin_context()
+        if ctx is not None:
+            ctx.emit(
+                "ocr.job.completed",
+                **JobCompletedEvent(
+                    job_id=job_id,
+                    filename=filename,
+                    status=str(status),
+                    duration_s=duration_s,
+                ).__dict__,
+            )
+    except Exception:
+        logger.exception(
+            "audit: failed to emit JobCompletedEvent for job_id=%s", job_id
+        )
 
 
 async def _run_ocr_pipeline(
@@ -793,6 +815,23 @@ async def process_pdf_async(
             await asyncio.to_thread(_cleanup, *cleanup_paths)
 
     await state.ocr_job_queue.submit(job_id, filename, runner)
+    # Phase 2: emit the audit event through the plugin context so the
+    # mounted recorders (default: log) observe the submission. The
+    # legacy code path is unchanged; the emit is a side effect.
+    try:
+        from omniscribe.api.plugin.events_catalog import JobSubmittedEvent
+        from omniscribe.api.plugin.runtime import get_plugin_context
+
+        ctx = get_plugin_context()
+        if ctx is not None:
+            ctx.emit(
+                "ocr.job.submitted",
+                **JobSubmittedEvent(job_id=job_id, filename=filename).__dict__,
+            )
+    except Exception:
+        logger.exception(
+            "audit: failed to emit JobSubmittedEvent for job_id=%s", job_id
+        )
     return {"job_id": job_id, "status": "pending"}
 
 

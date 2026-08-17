@@ -72,6 +72,17 @@ async def cancel_job(job_id: str):
         return JSONResponse(
             status_code=HTTPStatus.NOT_FOUND, content={"error": "Job not found"}
         )
+    # Phase 2: audit event for the cancellation. The plugin context may
+    # not be bootstrapped (legacy mode), in which case the emit is a no-op.
+    try:
+        from omniscribe.api.plugin.events_catalog import JobCancelledEvent
+        from omniscribe.api.plugin.runtime import get_plugin_context
+
+        ctx = get_plugin_context()
+        if ctx is not None:
+            ctx.emit("ocr.job.cancelled", **JobCancelledEvent(job_id=job_id).__dict__)
+    except Exception:
+        pass
     return {"status": "cancelled", "job_id": job_id}
 
 
