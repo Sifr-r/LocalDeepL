@@ -78,9 +78,17 @@ def create_app() -> ASGIApplication:
     fastapi = _load_optional_module("fastapi")
     staticfiles = _load_optional_module("fastapi.staticfiles")
 
+    # Phase 1: bootstrap the live plugin context. The context holds the
+    # capability-seam providers (e.g. ``JobQueue``) that consumers can
+    # opt into via the ``OMNISCRIBE_PLUGIN_CONTEXT`` env var. During
+    # the migration window the existing ``state.ocr_job_queue`` singleton
+    # is also the registered provider, so the two paths share state.
+    from omniscribe.api.plugin import PluginContext, local_job_queue_provider
+    from omniscribe.api.plugin.runtime import set_plugin_context
     from omniscribe.api.routers import (
         artifacts,
         config,
+        events,
         extraction,
         glossary_imports,
         health,
@@ -99,6 +107,14 @@ def create_app() -> ASGIApplication:
         RateLimitMiddleware,
     )
 
+    plugin_ctx = PluginContext("omniscribe")
+    # Always mount the local job queue provider so the seam is available
+    # to consumers that opt in via ``OMNISCRIBE_PLUGIN_CONTEXT``. The
+    # flag only gates consumer behavior; the provider is registered
+    # unconditionally so the seam is wired at boot.
+    plugin_ctx.mount(local_job_queue_provider(queue=state.ocr_job_queue, name="local"))
+    set_plugin_context(plugin_ctx)
+
     @asynccontextmanager
     async def lifespan(_app: Any) -> AsyncIterator[None]:
         await state.ocr_job_queue.start()
@@ -113,6 +129,11 @@ def create_app() -> ASGIApplication:
             from omniscribe.core.ocr.multi_format_client import aclose_shared_client
 
             await aclose_shared_client()
+            # Dispose the plugin context last so any disposers that need
+            # to talk to the live queue (or any other registered service)
+            # still see a working state.
+            set_plugin_context(None)
+            plugin_ctx.dispose()
 
     web_app = fastapi.FastAPI(lifespan=lifespan)
     security = SecuritySettings.from_env()
@@ -160,6 +181,11 @@ def create_app() -> ASGIApplication:
     web_app.include_router(config.router)
     web_app.include_router(ocr.router)
     web_app.include_router(websocket.router)
+    # SSE progress stream (audit P2 #11). Mounted before the
+    # websocket router so the new event path is the documented
+    # public surface; the WebSocket router remains until task
+    # 7.4 deletes its progress fan-out.
+    web_app.include_router(events.router)
     web_app.include_router(jobs.router)
     web_app.include_router(artifacts.router)
     web_app.include_router(translation.router)

@@ -9,6 +9,8 @@ composable API extensions:
 - :class:`EventMode` — one of four dispatch modes for typed events
   (``emit`` / ``waterfall`` / ``serial`` / ``parallel``).
 - :class:`EffectScope` — group reversible effects under a single disposer.
+- :mod:`omniscribe.api.plugin.seams` — Service Definitions for swappable capabilities.
+- :mod:`omniscribe.api.plugin.providers` — concrete Service Providers.
 
 Existing OmniScribe code continues to work unchanged; the plugin context is
 additive infrastructure. Subsequent refactor phases convert the legacy
@@ -29,6 +31,8 @@ from omniscribe.api.plugin.errors import (
     ServiceNotFoundError,
 )
 from omniscribe.api.plugin.events import EventMode, EventName
+from omniscribe.api.plugin.providers import local_job_queue_provider
+from omniscribe.api.plugin.seams import JobQueue
 from omniscribe.api.plugin.service import Plugin, ServiceDefinition
 
 __all__ = [
@@ -37,10 +41,12 @@ __all__ = [
     "EventMode",
     "EventModeMismatchError",
     "EventName",
+    "JobQueue",
     "Plugin",
     "PluginContext",
     "PluginError",
     "ServiceAlreadyRegisteredError",
     "ServiceDefinition",
     "ServiceNotFoundError",
+    "local_job_queue_provider",
 ]
