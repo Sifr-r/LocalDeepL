@@ -535,3 +535,61 @@ class TestProcessorSystemPromptWiring:
         await proc.perform_ocr_on_crop(image_base64="aW1hZ2U=", dual_engine=True)
         assert all(sp is None for sp in captured)
         assert captured  # at least one chat call happened
+
+
+class TestChatRetrySingleLayer:
+    """F1.2 audit fix (P0): single retry layer for the OCR pipeline.
+
+    The previous design had two independent retry loops — one in
+    ``OCRProcessor._chat`` (outer, ``MAX_RETRIES + 1``) and one in
+    ``complete_vlm_prompt`` (inner, env-driven ``OMNISCRIBE_LLM_MAX_RETRIES``).
+    Worst-case they multiplied to ``(MAX_RETRIES+1) * (max_retries+1)`` VLM
+    calls per page on a dead endpoint (default 3 * 3 = 9).
+
+    After the fix, ``complete_vlm_prompt`` defaults to ``max_retries=0``
+    (single POST). ``OCRProcessor._chat`` is the single retry authority
+    for the OCR pipeline. Total VLM calls = ``MAX_RETRIES + 1`` (default 3).
+    """
+
+    @pytest.mark.asyncio
+    async def test_chat_does_not_multiply_retries(self) -> None:
+        """End-to-end: mock at the httpx layer and count VLM POSTs.
+
+        With the layered-retry bug, this test would observe 9 calls
+        (3 outer × 3 inner) for a transient 503; the fix yields 3.
+        """
+        from unittest.mock import patch
+
+        import httpx
+
+        from omniscribe.core.ocr import LLMCallError
+
+        proc = OCRProcessor(
+            api_base="http://localhost:1/v1", api_key="x", model="qwen/qwen3-vl-8b"
+        )
+        # Keep the backoff loop fast — the test asserts the *count*, not
+        # the timing.
+        proc.RETRY_BASE_DELAY_S = 0.001
+
+        call_count = 0
+
+        async def mock_post(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(503, text="Service Unavailable")
+
+        with patch("httpx.AsyncClient.post", side_effect=mock_post):
+            with pytest.raises(LLMCallError):
+                await proc._chat(
+                    prompt="OCR this",
+                    image_base64="aW1hZ2U=",
+                    timeout=60.0,
+                    max_tokens=4096,
+                )
+
+        expected = proc.MAX_RETRIES + 1
+        assert call_count == expected, (
+            f"Expected {expected} VLM calls (MAX_RETRIES+1), got {call_count}. "
+            f"Layered retries between _chat and complete_vlm_prompt "
+            f"multiplied attempts (CWE-400)."
+        )

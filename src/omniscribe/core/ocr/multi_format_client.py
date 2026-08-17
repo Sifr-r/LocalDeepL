@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import threading
 from typing import TYPE_CHECKING, Any
 
@@ -66,6 +65,8 @@ async def complete_vlm_prompt(
     max_tokens: int = 4096,
     timeout: float | None = None,
     system_prompt: str | None = None,
+    max_retries: int = 0,
+    retry_base_delay: float = 1.0,
 ) -> str:
     """Execute asynchronous LLM completion based on provider configuration format.
 
@@ -84,6 +85,14 @@ async def complete_vlm_prompt(
             before the user turn. Kept separate from the user prompt so
             OlmOCR-2's RL-trained prompt string stays a pure user message
             (do not set this for the canonical OLMOCR_PAGE_PROMPT).
+        max_retries: Number of retry attempts on transient errors (5xx,
+            429, connection resets). Defaults to ``0`` (single POST) — the
+            caller owns the retry policy. ``OCRProcessor._chat`` is the
+            single retry authority for the OCR pipeline; it sets
+            ``self.MAX_RETRIES`` on its outer loop. Direct callers that want
+            retries must opt in explicitly.
+        retry_base_delay: Base delay in seconds for exponential backoff
+            between retries. Only used when ``max_retries > 0``.
 
     Returns:
         Generated text completion.
@@ -221,8 +230,9 @@ async def complete_vlm_prompt(
     else:
         raise LLMCallError(f"Unsupported provider format: '{provider_config.format}'")
 
-    max_retries = int(os.getenv("OMNISCRIBE_LLM_MAX_RETRIES", "2"))
-    retry_base_delay = float(os.getenv("OMNISCRIBE_LLM_RETRY_BASE_DELAY", "1.0"))
+    max_retries = max(0, int(max_retries))
+    if max_retries > 0 and retry_base_delay < 0:
+        retry_base_delay = 0.0
 
     client = _get_shared_client()
     request_timeout: float = (

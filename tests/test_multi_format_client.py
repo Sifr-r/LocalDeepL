@@ -162,6 +162,57 @@ async def test_whitespace_only_model_raises_llm_call_error() -> None:
         )
 
 
+async def test_default_no_retries_on_5xx(openai_config: ProviderConfig) -> None:
+    """F1.2 audit fix (P0): single retry layer.
+
+    ``complete_vlm_prompt`` defaults to ``max_retries=0`` so the inner retry
+    loop is bypassed; ``OCRProcessor._chat`` is the single retry authority
+    for the OCR pipeline. Previously the default of 2 inner retries
+    multiplied with the processor's outer ``MAX_RETRIES+1`` to produce up
+    to 9 VLM calls per page on a dead endpoint.
+    """
+    call_count = 0
+
+    async def mock_post(url: str, json: dict, headers: dict, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return httpx.Response(503, text="Service Unavailable")
+
+    with patch("httpx.AsyncClient.post", side_effect=mock_post):
+        with pytest.raises(LLMCallError) as exc_info:
+            await complete_vlm_prompt(openai_config, prompt="Hello")
+        assert "503" in str(exc_info.value)
+    assert call_count == 1, (
+        f"Expected 1 attempt with default max_retries=0, got {call_count}"
+    )
+
+
+async def test_explicit_max_retries_triggers_retry(openai_config: ProviderConfig) -> None:
+    """F1.2: explicit ``max_retries=N`` does ``N+1`` attempts with backoff.
+
+    Direct callers that want retries opt in explicitly. The inner loop is
+    preserved for backward compatibility with non-OCR callers.
+    """
+    call_count = 0
+
+    async def mock_post(url: str, json: dict, headers: dict, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return httpx.Response(503, text="Service Unavailable")
+
+    with patch("httpx.AsyncClient.post", side_effect=mock_post):
+        with pytest.raises(LLMCallError):
+            await complete_vlm_prompt(
+                openai_config,
+                prompt="Hello",
+                max_retries=2,
+                retry_base_delay=0.001,
+            )
+    assert call_count == 3, (
+        f"Expected 3 attempts with max_retries=2, got {call_count}"
+    )
+
+
 async def test_call_vlm_wrapper(openai_config: ProviderConfig) -> None:
     expected_resp = {"choices": [{"message": {"content": "VLM wrapper output"}}]}
 
