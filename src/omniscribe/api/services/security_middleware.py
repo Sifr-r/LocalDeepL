@@ -353,19 +353,17 @@ class BearerAuthMiddleware:
         elif group == "transcription" and tokens["transcription"] is not None:
             acceptable_tokens = [tokens["transcription"]]
         elif tokens["global"] is not None:
+            # F2.2 audit fix: the global token is the ONLY token that
+            # satisfies management routes (``/api/jobs/*``,
+            # ``/api/providers/*``, ``/api/progress/*``,
+            # ``/api/config/*``). The previous design accepted ANY
+            # subsystem token for management routes, which let an
+            # OCR-token holder switch the LLM provider, cancel any
+            # job, or clear another namespace's token via
+            # ``POST /api/config/{translation,transcription}/auth``.
+            # Operators who want management access must set the
+            # global token (the recommended production posture).
             acceptable_tokens = [tokens["global"]]
-        elif _is_management_route(normalized):
-            subsystem_tokens = [
-                t
-                for t in (
-                    tokens["ocr"],
-                    tokens["translation"],
-                    tokens["transcription"],
-                )
-                if t is not None
-            ]
-            if subsystem_tokens:
-                acceptable_tokens = subsystem_tokens
 
         if not acceptable_tokens:
             await self.app(scope, receive, send)

@@ -324,6 +324,35 @@ class SecuritySettings:
         if rate == 0:
             rate = None
 
+        # F2.1 audit fix: when some auth tokens are set but not all,
+        # the unset namespaces are unprotected. Warn the operator at
+        # boot so the "I set one token and expected everything to be
+        # locked" footgun is loud. The default dev mode (no token
+        # set) is silent. The "all four set" case is also silent.
+        _token_state: list[tuple[str, str | None]] = [
+            ("OMNISCRIBE_AUTH_TOKEN (global)", token),
+            ("OMNISCRIBE_OCR_AUTH_TOKEN", ocr_token),
+            ("OMNISCRIBE_TRANSLATION_AUTH_TOKEN", translation_token),
+            ("OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN", transcription_token),
+        ]
+        _set = [name for name, value in _token_state if value is not None]
+        _unset = [name for name, value in _token_state if value is None]
+        if _set and _unset:
+            _LOGGER.warning(
+                "Mixed auth configuration: %s are set but %s are unset. "
+                "The unset namespaces will be OPEN (no auth required "
+                "for any route in that group, including the related "
+                "data routes). To lock every route, set "
+                "OMNISCRIBE_AUTH_TOKEN (the global token) or set a "
+                "token for every namespace. Management routes "
+                "(/api/jobs/*, /api/providers/*, /api/progress/*, "
+                "/api/config/*) only accept the global token, not "
+                "per-namespace tokens, regardless of which "
+                "namespaces are locked.",
+                ", ".join(_set),
+                ", ".join(_unset),
+            )
+
         return SecuritySettings(
             auth_token=token,
             ocr_auth_token=ocr_token,

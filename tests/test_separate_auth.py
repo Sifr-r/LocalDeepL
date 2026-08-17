@@ -861,3 +861,193 @@ async def test_non_ascii_path_rejected_even_with_no_token() -> None:
     assert inner.calls == 0
     assert send.status == 400
     assert send.body_json == {"error": "Invalid path"}
+
+
+# ---------------------------------------------------------------------------
+# F2.2 audit fix: management routes accept ONLY the global token, not
+# per-namespace tokens. This prevents an OCR-token holder from
+# switching the LLM provider, cancelling any job, or clearing another
+# namespace's token via /api/config/{other}/auth.
+# ---------------------------------------------------------------------------
+
+
+async def test_ocr_token_does_not_unlock_jobs_cancel_management_route() -> None:
+    """An OCR token must NOT unlock ``/api/jobs/{id}/cancel``.
+
+    The OCR token unlocks the OCR data routes (e.g. ``/api/process``)
+    but the management route is cross-namespace; only the global
+    token satisfies it.
+    """
+    middleware = BearerAuthMiddleware(
+        app=_MarkerApp(),
+        expected_token="global-secret",
+        ocr_token="ocr-secret",
+    )
+
+    inner, send = await _invoke(
+        middleware,
+        path="/api/jobs/abc/cancel",
+        authorization="Bearer ocr-secret",
+    )
+
+    assert inner.calls == 0
+    assert send.status == 401
+
+
+async def test_ocr_token_does_not_unlock_providers_active_management_route() -> None:
+    """An OCR token must NOT unlock ``POST /api/providers/active``.
+
+    Switching the active LLM provider is a cross-namespace action.
+    """
+    middleware = BearerAuthMiddleware(
+        app=_MarkerApp(),
+        expected_token="global-secret",
+        ocr_token="ocr-secret",
+    )
+
+    inner, send = await _invoke(
+        middleware,
+        path="/api/providers/active",
+        authorization="Bearer ocr-secret",
+    )
+
+    assert inner.calls == 0
+    assert send.status == 401
+
+
+async def test_ocr_token_does_not_unlock_translation_auth_management_route() -> None:
+    """An OCR token must NOT unlock ``POST /api/config/translation/auth``.
+
+    The previous design let an OCR-token holder clear the translation
+    token by sending ``{"auth_token": null}`` — locking out the
+    translation namespace. Now management routes require the
+    global token.
+    """
+    middleware = BearerAuthMiddleware(
+        app=_MarkerApp(),
+        expected_token="global-secret",
+        ocr_token="ocr-secret",
+    )
+
+    inner, send = await _invoke(
+        middleware,
+        path="/api/config/translation/auth",
+        authorization="Bearer ocr-secret",
+    )
+
+    assert inner.calls == 0
+    assert send.status == 401
+
+
+async def test_global_token_unlocks_jobs_cancel_management_route() -> None:
+    """The global token satisfies every protected route, including management."""
+    middleware = BearerAuthMiddleware(
+        app=_MarkerApp(),
+        expected_token="global-secret",
+        ocr_token="ocr-secret",
+    )
+
+    inner, send = await _invoke(
+        middleware,
+        path="/api/jobs/abc/cancel",
+        authorization="Bearer global-secret",
+    )
+
+    assert inner.calls == 1
+    assert send.status == 200
+
+
+async def test_no_token_means_management_routes_open() -> None:
+    """Dev default: when no token is set, every route (including management) is open.
+
+    The F2.2 fix removed the subsystem-token branch; it did not
+    introduce a requirement that a global token be set. Operators
+    who want to lock down management must set the global token
+    explicitly.
+    """
+    middleware = BearerAuthMiddleware(app=_MarkerApp(), expected_token=None)
+
+    inner, send = await _invoke(middleware, path="/api/jobs/abc/cancel")
+
+    assert inner.calls == 1
+    assert send.status == 200
+
+
+# ---------------------------------------------------------------------------
+# F2.1 audit fix: SecuritySettings.from_env() warns at startup when some
+# auth tokens are set but not all. The unset namespaces are unprotected
+# and a misconfigured operator may believe they have locked everything.
+# The warning makes the gap loud.
+# ---------------------------------------------------------------------------
+
+
+def test_from_env_warns_when_only_some_namespace_tokens_set(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Mixed auth configuration: only OCR is set, translation/transcription unset.
+
+    The startup warning names the unset namespaces and points the
+    operator at the global token as the lock-everything knob.
+    """
+    import logging
+
+    monkeypatch.delenv("OMNISCRIBE_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("OMNISCRIBE_TRANSLATION_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN", raising=False)
+    monkeypatch.setenv(
+        "OMNISCRIBE_OCR_AUTH_TOKEN", "ocr-secret-with-sufficient-length-32"
+    )
+
+    with caplog.at_level(logging.WARNING, logger="omniscribe.api.services.security_config"):
+        SecuritySettings.from_env()
+
+    warnings = [r for r in caplog.records if "Mixed auth configuration" in r.message]
+    assert len(warnings) == 1
+    msg = warnings[0].message
+    assert "OMNISCRIBE_OCR_AUTH_TOKEN" in msg
+    assert "OMNISCRIBE_TRANSLATION_AUTH_TOKEN" in msg
+    assert "OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN" in msg
+
+
+def test_from_env_silent_when_all_tokens_set(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """No mixed-config warning when all four tokens are set (or none)."""
+    import logging
+
+    # All four set: no warning.
+    monkeypatch.setenv("OMNISCRIBE_AUTH_TOKEN", "global-secret-with-sufficient-length-32")
+    monkeypatch.setenv("OMNISCRIBE_OCR_AUTH_TOKEN", "ocr-secret-with-sufficient-length-32")
+    monkeypatch.setenv(
+        "OMNISCRIBE_TRANSLATION_AUTH_TOKEN", "translation-secret-with-sufficient-length"
+    )
+    monkeypatch.setenv(
+        "OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN", "transcription-secret-with-sufficient-len"
+    )
+
+    with caplog.at_level(logging.WARNING, logger="omniscribe.api.services.security_config"):
+        SecuritySettings.from_env()
+
+    warnings = [r for r in caplog.records if "Mixed auth configuration" in r.message]
+    assert warnings == []
+
+
+def test_from_env_silent_when_no_tokens_set(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Dev default: no tokens at all is the legacy open mode and is silent."""
+    import logging
+
+    for v in (
+        "OMNISCRIBE_AUTH_TOKEN",
+        "OMNISCRIBE_OCR_AUTH_TOKEN",
+        "OMNISCRIBE_TRANSLATION_AUTH_TOKEN",
+        "OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN",
+    ):
+        monkeypatch.delenv(v, raising=False)
+
+    with caplog.at_level(logging.WARNING, logger="omniscribe.api.services.security_config"):
+        SecuritySettings.from_env()
+
+    warnings = [r for r in caplog.records if "Mixed auth configuration" in r.message]
+    assert warnings == []
