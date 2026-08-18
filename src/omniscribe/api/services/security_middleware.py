@@ -57,6 +57,7 @@ _UNAUTHORIZED: Final[dict[str, str]] = {"error": "Unauthorized"}
 _INVALID_PATH: Final[dict[str, str]] = {"error": "Invalid path"}
 _TOO_LARGE: Final[dict[str, str]] = {"error": "Upload exceeds maximum size"}
 _TOO_MANY_REQUESTS: Final[dict[str, str]] = {"error": "Rate limit exceeded"}
+_DEADLINE_EXCEEDED: Final[dict[str, str]] = {"error": "Upload deadline exceeded"}
 
 
 class _UploadGuard(TypedDict):
@@ -65,6 +66,7 @@ class _UploadGuard(TypedDict):
     sent_rejection: bool
     envelope: dict[str, str] | None
     status: int | None
+    deadline_exceeded: bool
 
 
 async def _send_json(
@@ -260,8 +262,24 @@ class BearerAuthMiddleware:
                 cfg.get("transcription_auth_token")
             )
             dynamic_global = _normalize_token(cfg.get("auth_token"))
-        except Exception:
-            pass
+        except Exception as exc:
+            # F2.5 audit fix: the previous bare ``except Exception:
+            # pass`` silently downgraded to env-only tokens on any
+            # config-store read failure (Redis outage, SQLite lock
+            # contention, JSON corruption, missing module after a
+            # hot-reload, ...). Operators would see "I set the OCR
+            # token via the API yesterday and the server still uses
+            # the env value" with no log line to point at. The
+            # fallback itself is fine — env tokens are a valid
+            # boot-time-only auth — but the operator deserves to
+            # know the dynamic store was unreachable. We log the
+            # exception (with traceback) and continue.
+            _LOGGER.warning(
+                "BearerAuthMiddleware: failed to read tokens from "
+                "config store; falling back to env-only tokens. %s",
+                exc,
+                exc_info=True,
+            )
 
         return {
             "global": dynamic_global
@@ -408,14 +426,37 @@ class MaxUploadSizeMiddleware:
       ``max_bytes``. The downstream app still runs against the
       truncated body so its own cleanup logic sees the boundary.
 
+    F2.3 audit fix: the chunked path now also enforces a per-request
+    deadline (``deadline_s``, default 120s). Pre-fix, a slow client
+    could keep streaming 1-byte-per-second chunks indefinitely —
+    the byte cap never triggered, but the connection held a worker
+    open for hours. The deadline rejects with a 408 Request Timeout
+    envelope the moment the wall-clock exceeds the budget,
+    regardless of cumulative bytes. ``save_validated_upload`` also
+    has its own deadline; the middleware cap is the first line of
+    defense, the saved-file deadline is the second. Either firing
+    is a clean 408/413 exit, no half-parsed bytes left in the
+    downstream app.
+
     The 413 envelope is ``{"error": "Upload exceeds maximum size",
     "limit_bytes": ..., "limit_bytes_mb": ..., "hint": ...}`` so the
-    Settings tab can render an operator-friendly hint.
+    Settings tab can render an operator-friendly hint. The 408
+    envelope is the standard ``{"error": "Upload deadline exceeded",
+    "deadline_s": ..., "hint": ...}`` shape.
     """
 
-    def __init__(self, app, max_bytes: int) -> None:
+    # F2.3: default 120s. Tuned for the 100 GB hard ceiling — a
+    # legitimate upload at 100 MB/s finishes in 17 minutes, so a
+    # 2-minute budget is plenty for a healthy client. A slow
+    # trickle attacker burns the budget in seconds.
+    DEFAULT_DEADLINE_S: float = 120.0
+
+    def __init__(
+        self, app, max_bytes: int, deadline_s: float = DEFAULT_DEADLINE_S
+    ) -> None:
         self.app = app
         self.max_bytes = max_bytes
+        self.deadline_s = float(deadline_s)
 
     @staticmethod
     def _envelope(max_bytes: int) -> dict[str, str]:
@@ -428,6 +469,20 @@ class MaxUploadSizeMiddleware:
                 "Raise OMNISCRIBE_MAX_UPLOAD_MB (current cap "
                 f"{limit_mb} MB) and restart the server to accept "
                 "larger uploads."
+            ),
+        }
+
+    @staticmethod
+    def _deadline_envelope(deadline_s: float) -> dict[str, str]:
+        """Build the 408 envelope returned when a request exceeds the per-request budget."""
+        return {
+            **_DEADLINE_EXCEEDED,
+            "deadline_s": str(deadline_s),
+            "hint": (
+                "The upload took longer than the per-request budget. "
+                "Check the client network, then retry. The cap can be "
+                "raised by setting OMNISCRIBE_UPLOAD_DEADLINE_S at "
+                "server startup (default 120s)."
             ),
         }
 
@@ -460,12 +515,15 @@ class MaxUploadSizeMiddleware:
         # total crosses the cap. The downstream app still runs against
         # the truncated body so it can do its own cleanup.
         max_bytes = self.max_bytes
+        deadline_s = self.deadline_s
+        started_at = time.monotonic()
         guard: _UploadGuard = {
             "total": 0,
             "rejected": False,
             "sent_rejection": False,
             "envelope": None,
             "status": None,
+            "deadline_exceeded": False,
         }
 
         async def _guarded_receive():
@@ -491,10 +549,30 @@ class MaxUploadSizeMiddleware:
                     "body": b"",
                     "more_body": False,
                 }
+            # F2.3 audit fix: per-request wall-clock budget. A slow
+            # trickle attacker that stays just under the byte cap can
+            # still hold a worker open indefinitely; the deadline
+            # forces a 408 the moment the wall-clock crosses the
+            # budget, regardless of cumulative bytes. The cap and the
+            # deadline are complementary — either one fires a clean
+            # 413/408 exit; the operator's only tuning knob is the
+            # budget. We do not enforce the deadline when ``body`` is
+            # empty (a keep-alive ``more_body=False`` trailer) so the
+            # final handshake is never penalised.
+            if (time.monotonic() - started_at) > deadline_s:
+                guard["envelope"] = self._deadline_envelope(deadline_s)
+                guard["status"] = 408
+                guard["rejected"] = True
+                guard["deadline_exceeded"] = True
+                return {
+                    "type": "http.request",
+                    "body": b"",
+                    "more_body": False,
+                }
             return msg
 
         async def _guarded_send(event):
-            # Once we've emitted the 413 envelope, every further
+            # Once we've emitted the rejection envelope, every further
             # downstream send call must be dropped silently. The ASGI
             # spec only allows one ``http.response.start`` per request;
             # forwarding the inner app's body event after our own body
@@ -504,19 +582,20 @@ class MaxUploadSizeMiddleware:
                 return
             # While the request is rejected, any non-``start`` event
             # the inner app tries to send is dropped on the floor. The
-            # middleware will synthesize its own 413 start + body the
-            # first time it sees a start event; the inner app's own
-            # body event would otherwise follow our body and produce a
-            # second response completion.
+            # middleware will synthesize its own rejection start + body
+            # the first time it sees a start event; the inner app's
+            # own body event would otherwise follow our body and
+            # produce a second response completion.
             if guard["rejected"] and event.get("type") != "http.response.start":
                 return
             if event.get("type") == "http.response.start" and guard["rejected"]:
                 envelope = guard.get("envelope") or self._envelope(max_bytes)
+                status = guard.get("status") or 413
                 envelope_body = json.dumps(envelope).encode("utf-8")
                 guard["sent_rejection"] = True
                 event = {
                     **event,
-                    "status": 413,
+                    "status": status,
                     "headers": [
                         (b"content-type", b"application/json"),
                         (
@@ -642,7 +721,16 @@ class RateLimitMiddleware:
         return candidate
 
     async def __call__(self, scope, receive, send) -> None:
-        if scope["type"] != "http":
+        # F2.4 audit fix: the per-IP bucket used to short-circuit on
+        # ``scope["type"] != "http"`` so WebSocket upgrade floods were
+        # bounded only by the 10 s ``verify_minted`` auth-frame
+        # timeout. The ASGI peer is the same for the HTTP upgrade
+        # request and the upgraded WebSocket, so we can apply the
+        # bucket to the upgrade itself and let the inner app accept
+        # frames freely. Lifespan (``scope["type"] == "lifespan"``)
+        # and unknown types still pass through — the bucket is keyed
+        # to per-client network identity, not server housekeeping.
+        if scope["type"] not in ("http", "websocket"):
             await self.app(scope, receive, send)
             return
 

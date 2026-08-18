@@ -163,12 +163,23 @@ def create_app() -> ASGIApplication:
 
     if security.cors_origins:
         cors = _load_optional_module("fastapi.middleware.cors")
+        # F2.8 audit fix: explicit method + header allowlist. The
+        # previous ``["*"]`` wildcards are wider than necessary —
+        # with ``allow_credentials=False`` the classic
+        # ``Access-Control-Allow-Credentials`` + wildcard-origin
+        # misconfig is blocked, but the wildcard surface still lets
+        # any allow-listed origin send any verb or any custom
+        # header cross-origin. The defaults in
+        # ``SecuritySettings`` are the minimum surface the
+        # OmniScribe workstation UI needs; operators can extend
+        # them via ``OMNISCRIBE_CORS_ALLOWED_METHODS`` /
+        # ``OMNISCRIBE_CORS_ALLOWED_HEADERS``.
         web_app.add_middleware(
             cors.CORSMiddleware,
             allow_origins=security.cors_origins,
             allow_credentials=False,
-            allow_methods=["*"],
-            allow_headers=["*"],
+            allow_methods=security.cors_allowed_methods,
+            allow_headers=security.cors_allowed_headers,
         )
 
     # Security middlewares wrap the inner app. Starlette applies them
@@ -182,7 +193,11 @@ def create_app() -> ASGIApplication:
             per_minute=security.rate_limit_per_minute,
             trusted_proxies=security.trusted_proxies,
         )
-    web_app.add_middleware(MaxUploadSizeMiddleware, max_bytes=security.max_upload_bytes)
+    web_app.add_middleware(
+        MaxUploadSizeMiddleware,
+        max_bytes=security.max_upload_bytes,
+        deadline_s=security.upload_deadline_s,
+    )
     # Per-service auth tokens (OCR / translation / transcription) take precedence over
     # the global ``auth_token`` for the matching route group. When a
     # per-service token is configured, the global token does NOT unlock

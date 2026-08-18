@@ -103,6 +103,25 @@ PLACEHOLDER_AUTH_TOKENS: Final[frozenset[str]] = frozenset(
 # Pydantic layer before the custom denylist runs.
 MIN_AUTH_TOKEN_LENGTH: Final[int] = 32
 
+# F2.8 audit fix: explicit CORS surface. The previous code used
+# ``allow_methods=["*"], allow_headers=["*"]`` with the wildcard
+# always-on. With ``allow_credentials=False`` the classic CORS
+# misconfig is blocked (the spec refuses ``Allow-Credentials: true``
+# with a wildcard origin), but the wildcard surface is still wider
+# than necessary: an attacker that already has an allow-listed origin
+# can put any verb or any custom header into a cross-origin request
+# and the server will answer it. The defaults below are the minimum
+# surface the OmniScribe workstation UI needs. Operators can
+# override per-deployment via ``OMNISCRIBE_CORS_ALLOWED_METHODS`` /
+# ``OMNISCRIBE_CORS_ALLOWED_HEADERS`` (comma-separated) without
+# touching the source.
+DEFAULT_CORS_ALLOWED_METHODS: Final[frozenset[str]] = frozenset(
+    {"GET", "POST", "PUT", "DELETE", "OPTIONS"}
+)
+DEFAULT_CORS_ALLOWED_HEADERS: Final[frozenset[str]] = frozenset(
+    {"Authorization", "Content-Type", "X-Requested-With"}
+)
+
 
 def _legacy_name(name: str) -> str:
     if name.startswith("OMNISCRIBE_"):
@@ -132,6 +151,24 @@ def _env_int(name: str, default: int) -> int:
     except ValueError:
         _LOGGER.warning("Ignoring invalid integer environment value for %s", name)
         return default
+
+
+def _env_float(name: str, default: float) -> float | None:
+    """Read a float env var. Returns ``None`` on parse error so the caller can warn + fallback.
+
+    The historical int helper falls back to the default silently;
+    floats need a separate signal so the caller can distinguish
+    "unset" (default) from "set but unparseable" (warn + default).
+    """
+    value = os.getenv(name)
+    if value is None and name != _legacy_name(name):
+        value = os.getenv(_legacy_name(name))
+    if value is None:
+        return default
+    try:
+        return float(value.strip())
+    except ValueError:
+        return None
 
 
 def _env_list_csv(name: str) -> list[str]:
@@ -170,27 +207,50 @@ def _env_cidr_list(name: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Netw
     return networks
 
 
+def _redact_token(value: str) -> str:
+    """Return ``<redacted length=N first=… last=…>`` for use in error messages.
+
+    F2.7 audit fix: the previous formatter embedded the offending
+    token in the startup ``RuntimeError`` (both the too-short and the
+    placeholder branches). A misconfigured ``.env`` + a log
+    aggregator / Sentry / cloud log sink is enough to leak the
+    credential. We log only the *shape* of the value — its length
+    and the first / last character — so an operator can correlate
+    against the env var they typed, but a log scraper cannot
+    recover the secret.
+    """
+    if not value:
+        return "<empty>"
+    first = value[0]
+    last = value[-1]
+    return f"<redacted length={len(value)} first={first!r} last={last!r}>"
+
+
 def _validate_auth_token(env_name: str, token: str | None) -> str | None:
     """Trim and fail-fast on well-known placeholder values or short tokens.
 
     Returns the trimmed token (or None for unset/whitespace). Raises
     ``RuntimeError`` if the supplied value is a known placeholder or shorter
     than ``MIN_AUTH_TOKEN_LENGTH`` so a copy-pasted ``.env`` never lets the
-    server come up with an attacker-guessable credential.
+    server come up with an attacker-guessable credential. The error
+    message embeds the *shape* of the offending value (length, first
+    and last character) but never the value itself, so a log scraper
+    cannot recover the secret.
     """
     if token is None:
         return None
     trimmed = token.strip()
     if not trimmed:
         return None
+    redacted = _redact_token(trimmed)
     if len(trimmed) < MIN_AUTH_TOKEN_LENGTH:
         raise RuntimeError(
-            f"{env_name}={token!r} is too short (length {len(trimmed)}); "
+            f"{env_name}={redacted} is too short (length {len(trimmed)}); "
             f"refusing to boot. Auth tokens must be at least {MIN_AUTH_TOKEN_LENGTH} characters."
         )
     if trimmed.lower() in PLACEHOLDER_AUTH_TOKENS:
         raise RuntimeError(
-            f"{env_name}={token!r} is a well-known placeholder auth token; "
+            f"{env_name}={redacted} is a well-known placeholder auth token; "
             "refusing to boot. Set a real, high-entropy secret (>= "
             f"{MIN_AUTH_TOKEN_LENGTH} chars)."
         )
@@ -206,7 +266,14 @@ class SecuritySettings:
     translation_auth_token: str | None = None
     transcription_auth_token: str | None = None
     cors_origins: list[str] = field(default_factory=list)
+    cors_allowed_methods: list[str] = field(
+        default_factory=lambda: sorted(DEFAULT_CORS_ALLOWED_METHODS)
+    )
+    cors_allowed_headers: list[str] = field(
+        default_factory=lambda: sorted(DEFAULT_CORS_ALLOWED_HEADERS)
+    )
     max_upload_bytes: int = DEFAULT_MAX_UPLOAD_MB * 1024 * 1024
+    upload_deadline_s: float = 120.0
     rate_limit_per_minute: int | None = None
     trusted_proxies: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = field(
         default_factory=list
@@ -292,7 +359,60 @@ class SecuritySettings:
             _env_str("OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN"),
         )
         origins = _env_list_csv("OMNISCRIBE_CORS_ORIGINS")
+        # F2.8 audit fix: explicit CORS surface. We accept operator
+        # overrides via ``OMNISCRIBE_CORS_ALLOWED_METHODS`` /
+        # ``OMNISCRIBE_CORS_ALLOWED_HEADERS`` (comma-separated, case
+        # preserved) and fall back to the documented defaults above.
+        # We deliberately drop ``"*"`` if the operator copy-pastes the
+        # previous code's wildcard — the whole point of the audit fix
+        # is to keep that off the wire. HTTP method names are
+        # upper-cased per RFC 7230 §3.1.1; header names are passed
+        # through and the middleware itself is case-insensitive on
+        # match.
+        raw_methods = _env_list_csv("OMNISCRIBE_CORS_ALLOWED_METHODS")
+        if raw_methods:
+            cors_methods = [m for m in raw_methods if m != "*"]
+            if not cors_methods:
+                _LOGGER.warning(
+                    "OMNISCRIBE_CORS_ALLOWED_METHODS contained only '*'; "
+                    "falling back to defaults %s",
+                    sorted(DEFAULT_CORS_ALLOWED_METHODS),
+                )
+                cors_methods = sorted(DEFAULT_CORS_ALLOWED_METHODS)
+            else:
+                cors_methods = [m.upper() for m in cors_methods]
+        else:
+            cors_methods = sorted(DEFAULT_CORS_ALLOWED_METHODS)
+        raw_headers = _env_list_csv("OMNISCRIBE_CORS_ALLOWED_HEADERS")
+        if raw_headers:
+            cors_headers = [h for h in raw_headers if h != "*"]
+            if not cors_headers:
+                _LOGGER.warning(
+                    "OMNISCRIBE_CORS_ALLOWED_HEADERS contained only '*'; "
+                    "falling back to defaults %s",
+                    sorted(DEFAULT_CORS_ALLOWED_HEADERS),
+                )
+                cors_headers = sorted(DEFAULT_CORS_ALLOWED_HEADERS)
+            else:
+                cors_headers = list(cors_headers)
+        else:
+            cors_headers = sorted(DEFAULT_CORS_ALLOWED_HEADERS)
         max_mb = _env_int("OMNISCRIBE_MAX_UPLOAD_MB", DEFAULT_MAX_UPLOAD_MB)
+        # F2.3 audit fix: per-request wall-clock budget for chunked
+        # uploads. Default 120s (see ``MaxUploadSizeMiddleware``). A
+        # legitimate 100 GB upload at 100 MB/s finishes in ~17
+        # minutes, so the 2-minute default has comfortable headroom
+        # for healthy clients; a slow-trickle attacker burns the
+        # budget in seconds. Operators can extend the budget for
+        # known-slow network paths via
+        # ``OMNISCRIBE_UPLOAD_DEADLINE_S``.
+        upload_deadline_s = _env_float("OMNISCRIBE_UPLOAD_DEADLINE_S", 120.0)
+        if upload_deadline_s is None or upload_deadline_s <= 0:
+            _LOGGER.warning(
+                "OMNISCRIBE_UPLOAD_DEADLINE_S=%r is invalid; falling back to 120s",
+                upload_deadline_s,
+            )
+            upload_deadline_s = 120.0
         if max_mb < 1:
             _LOGGER.warning(
                 "OMNISCRIBE_MAX_UPLOAD_MB=%d is below 1; clamping to 1",
@@ -359,7 +479,10 @@ class SecuritySettings:
             translation_auth_token=translation_token,
             transcription_auth_token=transcription_token,
             cors_origins=origins,
+            cors_allowed_methods=cors_methods,
+            cors_allowed_headers=cors_headers,
             max_upload_bytes=max_mb * 1024 * 1024,
+            upload_deadline_s=upload_deadline_s,
             rate_limit_per_minute=rate,
             trusted_proxies=_env_cidr_list("OMNISCRIBE_TRUSTED_PROXIES"),
         )

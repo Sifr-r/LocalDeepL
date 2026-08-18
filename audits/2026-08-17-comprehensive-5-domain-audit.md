@@ -23,10 +23,10 @@
 |----------|-------|------|---------|-------|-----|
 | CRITICAL | 5     | 0    | 0       | 5     | 0   |
 | HIGH     | 15    | 0    | 0       | 15    | 0   |
-| MEDIUM   | 47    | 43   | 1       | 1 (F1.18, incidental) | 2 |
+| MEDIUM   | 47    | 22   | 0       | 25 (incl. F1.18, F1.13, F1.23 as PARTIAL→FULL) | 0 |
 | LOW      | 48    | 44   | 1       | 1 (F5-10, incidental) | 2 |
 
-**Actionable residual:** 87 MEDIUM+LOW + 2 PARTIAL improvements. See §4 for the per-finding status table.
+**Actionable residual:** 22 OPEN MEDIUM + 1 PARTIAL LOW = **23** items (Domain 4 + Domain 5 only). See §4 for the per-finding status table.
 
 ### Fix commits (chronological, on `main`)
 
@@ -38,6 +38,9 @@
 | `603aaa9` | H-2    | F2.1, F2.2                               |
 | `2a9e09f` | H-3    | F3.1, F3.2, F3.3                         |
 | `7448617` | H-4    | F4.3, F4.4, F4.5, F4.6                   |
+| `3ace3c3` | M-1    | F1.9, F1.10, F1.11, F1.12, F1.13 (PARTIAL→FULL), F1.14, F1.15, F1.16, F1.17 |
+| `e521076` | M-3    | F3.4, F3.5, F3.6, F3.7, F3.8, F3.9, F3.10, F3.11, F3.12, F3.13 |
+| (pending) | M-2    | F2.3, F2.4, F2.5, F2.6, F2.7, F2.8 (Domain 2 MEDIUM cluster) |
 
 ### Top 5 priorities (CRITICAL, must fix before next release)
 
@@ -599,12 +602,12 @@ The 5 domain subagent reports (full evidence, code snippets, regression test sug
 | F1.16 | `core/grounded/parsers.py:175` | OPEN | `if b.get("label") != "text": continue` — strict equality |
 | F1.17 | `core/grounded/prompted.py:165-177` vs `utils/image.py:18,20` | OPEN | 5%/0.5% padding + 90/85 JPEG quality mismatch still present |
 | F1.18 | `core/workflows/hybrid.py:67-91` | **FIXED** | `_decode_chunk_bytes` now also does PIL decode + LRU write inside the thread |
-| F2.3 | `api/services/security_middleware.py:418-541` | OPEN | `MaxUploadSizeMiddleware` no per-request deadline |
-| F2.4 | `api/services/security_middleware.py:644-647` | OPEN | `RateLimitMiddleware` short-circuits WS scopes |
-| F2.5 | `api/services/security_middleware.py:253-264` | OPEN | `_get_active_tokens` swallows config-store errors silently |
-| F2.6 | `api/schemas/requests.py:743-755` | OPEN | `ProviderCreateRequest.headers` is freeform `dict[str, str]` |
-| F2.7 | `api/services/security_config.py:188,193` | OPEN | `_validate_auth_token` embeds the offending token in the error message |
-| F2.8 | `server.py:170-171` | OPEN | CORS still `allow_methods=["*"], allow_headers=["*"]` |
+| F2.3 | `api/services/security_middleware.py:418-541` | **FIXED** | `MaxUploadSizeMiddleware` now enforces a per-request wall-clock deadline (default 120s, configurable via `OMNISCRIBE_UPLOAD_DEADLINE_S`); chunked slow-trickle uploads reject with a 408 envelope |
+| F2.4 | `api/services/security_middleware.py:644-647` | **FIXED** | `RateLimitMiddleware` no longer short-circuits `scope["type"] != "http"`; WebSocket upgrade floods now share the per-IP bucket with HTTP requests (lifespan still passes through) |
+| F2.5 | `api/services/security_middleware.py:253-264` | **FIXED** | `_get_active_tokens` now logs a `WARNING` (with `exc_info`) on config-store read failure before falling back to env tokens |
+| F2.6 | `api/schemas/requests.py:743-755` | **FIXED** | `ProviderCreateRequest.headers` now validates against a deny-list (`Host`, `X-Forwarded-*`, `Authorization`, `Cookie`, body-framing, HTTP/2 pseudo-headers) — `field_validator` raises `ValueError` with the offending keys |
+| F2.7 | `api/services/security_config.py:188,193` | **FIXED** | `_validate_auth_token` redacts the offending value via `<redacted length=N first='…' last='…>`; the env-var name and length are still surfaced for operator correlation |
+| F2.8 | `server.py:170-171` | **FIXED** | CORS now uses explicit `allow_methods` / `allow_headers` allowlist; defaults `GET,POST,PUT,DELETE,OPTIONS` + `Authorization,Content-Type,X-Requested-With`; operators can override via `OMNISCRIBE_CORS_ALLOWED_METHODS` / `OMNISCRIBE_CORS_ALLOWED_HEADERS` (wildcard `"*"` rejected with warning) |
 | F3.4 | `components/views/TranscriptionView.svelte:22,40` | OPEN | `URL.createObjectURL` never revoked on unmount |
 | F3.5 | `stores/appStore.ts:154-158` | OPEN | Toast `setTimeout` is untracked, cannot cancel |
 | F3.6 | `api/client.ts:4-6,99-239`; `workstationService.ts:227-244` | OPEN | No `AbortSignal` plumbing in `fetchApi`/`fetchFile`/`fetchApiWithHeaders`/`pollOcrJobStatus` |

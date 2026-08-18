@@ -753,3 +753,62 @@ class ProviderCreateRequest(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict)
     supports_streaming: bool = True
     requires_auth: bool = True
+
+    @field_validator("headers")
+    @classmethod
+    def _validate_headers(cls, value: dict[str, str]) -> dict[str, str]:
+        """Reject routing-affecting or auth-override keys in custom headers.
+
+        F2.6 audit fix: the previous freeform ``dict[str, str]`` let a
+        token-bearing caller override ``Host`` / ``X-Forwarded-Host`` /
+        ``X-Forwarded-For`` / ``X-Real-IP`` (route to a different host
+        than ``api_url`` advertises), set ``Authorization`` (bypass the
+        ``api_key`` field audit trail and let a third-party user later
+        inherit the per-call credentials), or push a content-length /
+        transfer-encoding pair (HTTP request smuggling). The deny-list
+        is the standard set for an outbound HTTP client: keys that
+        affect routing, that carry credentials, or that the underlying
+        ``httpx`` library is going to set itself. ``Authorization``
+        is special — we already have a dedicated ``api_key`` field on
+        the same model; rejecting the header forces the audit trail
+        through that field.
+        """
+        if not value:
+            return value
+        forbidden: frozenset[str] = frozenset(
+            {
+                # Routing-affecting
+                "host",
+                "x-forwarded-host",
+                "x-forwarded-for",
+                "x-forwarded-proto",
+                "x-real-ip",
+                "forwarded",
+                ":authority",  # HTTP/2 pseudo-header
+                ":scheme",  # HTTP/2 pseudo-header
+                ":method",  # HTTP/2 pseudo-header
+                ":path",  # HTTP/2 pseudo-header
+                # Body framing
+                "content-length",
+                "transfer-encoding",
+                # Credentials (use the dedicated ``api_key`` field)
+                "authorization",
+                "proxy-authorization",
+                "cookie",
+                "set-cookie",
+            }
+        )
+        bad: list[str] = []
+        for key in value:
+            # Header names are case-insensitive; normalise before
+            # comparing so ``Host`` and ``host`` are both rejected.
+            if key.lower() in forbidden:
+                bad.append(key)
+        if bad:
+            raise ValueError(
+                "ProviderCreateRequest.headers contains routing- or "
+                "auth-affecting keys that are not allowed: "
+                f"{sorted(bad)}. Use the dedicated api_key field "
+                "for credentials, and configure routing via api_url."
+            )
+        return value
