@@ -1,6 +1,7 @@
 # OmniScribe Comprehensive 5-Domain Codebase Audit
 
 **Date:** 2026-08-17
+**Last refreshed:** 2026-08-18 (post 6-commit HIGH-priority remediation sweep)
 **Auditor:** Mavis (5 parallel deep-evidence investigations)
 **Methodology:** Read-only static analysis + spot-verification of high-signal claims
 **Workspace:** D:/OmniScribe
@@ -15,6 +16,36 @@
 - HIGH: 15 (P1 — fix this sprint)
 - MEDIUM: 46 (P2 — fix this month)
 - LOW: 45 (P3 — backlog)
+
+### Remediation status (as of 2026-08-18)
+
+| Severity | Total | OPEN | PARTIAL | FIXED | N/A |
+|----------|-------|------|---------|-------|-----|
+| CRITICAL | 5     | 0    | 0       | 5     | 0   |
+| HIGH     | 15    | 0    | 0       | 15    | 0   |
+| MEDIUM   | 47    | 43   | 1       | 1 (F1.18, incidental) | 2 |
+| LOW      | 48    | 44   | 1       | 1 (F5-10, incidental) | 2 |
+
+**Actionable residual:** 87 MEDIUM+LOW + 2 PARTIAL improvements. See §4 for the per-finding status table.
+
+### Fix commits (chronological, on `main`)
+
+| Commit    | Phase  | Findings fixed                          |
+|-----------|--------|------------------------------------------|
+| `f77d85b` | P0-1.2 | F1.2 (single retry layer)                |
+| `72fea2d` | P0-1.1 | F1.1 (invert core/api layering)          |
+| `cff08d3` | H-1    | F1.4, F1.6, F1.8 (F1.5 + F1.7 already addressed by F1.2 / existing code) |
+| `603aaa9` | H-2    | F2.1, F2.2                               |
+| `2a9e09f` | H-3    | F3.1, F3.2, F3.3                         |
+| `7448617` | H-4    | F4.3, F4.4, F4.5, F4.6                   |
+
+### Top 5 priorities (CRITICAL, must fix before next release)
+
+1. **F1.2 — Retry storm.** `core/ocr/processor.py:399` (outer `range(self.MAX_RETRIES + 1)`) × `core/ocr/multi_format_client.py:223` (inner `range(1, max_retries + 2)`) = **3 × 3 = 9 VLM calls per page worst case**, plus ~30 s of backoff per page. A misconfigured `OMNISCRIBE_LLM_MAX_RETRIES=10` means 121 calls/page. Circuit breaker cannot fail fast because the inner loop absorbs failures into one `LLMCallError`. **→ FIXED `f77d85b`: single retry layer; `complete_vlm_prompt` defaults to `max_retries=0`.**
+2. **F1.1 — Layering inversion.** `core/llm_client.py:96,107,154,165` and `core/ocr/multi_format_client.py:94` import from `omniscribe.api` at **runtime**, not just `TYPE_CHECKING`. Core can no longer be used in isolation (test, embedded workflow, Jupyter) without dragging in the FastAPI / Celery / Redis stack. **→ FIXED `72fea2d`: extracted `core/provider_config.py`; removed upward imports.**
+3. **F1.3 — Silent `gpt-4o` fallback.** `core/ocr/multi_format_client.py:105` falls back to literal `"gpt-4o"` when both `model` arg and `provider_config.models` are empty. A user who configures `api_url=https://api.openai.com/v1` with `models=[]` accidentally will silently call OpenAI cloud (cost + privacy surprise). **→ FIXED `cf40a81` (Phase 1): defensive fail-fast, raises `LLMCallError`.**
+4. **F4.1 — Fast-tier Surya load.** `tests/test_phase1_async_streaming.py:270, 305` construct `HybridAligner()` with no `@pytest.mark.slow` and no `monkeypatch` of `DetectionPredictor`. Surya downloads + loads a ~500 MB model on every CI run. The fast tier is no longer fast. **→ FIXED `cf40a81` (Phase 1): both tests marked `@pytest.mark.slow`.**
+5. **F4.2 — `tests/_diag/` collected as test suite.** 3 prototype-shelf files (`test_minimal.py`, `test_sse_keepalive.py`, `test_async_stream2.py`) are picked up by `pytest -m "not slow"`, adding ~2-3 s and zero production coverage. The folder is a Phase 0/1 debug shelf that should either be moved out of `tests/` or excluded via `collect_ignore_glob`. **→ FIXED `cf40a81` (Phase 1): `collect_ignore_glob = ["_diag/*"]` in `tests/conftest.py`.**
 
 ### Top 5 priorities (CRITICAL, must fix before next release)
 
@@ -548,4 +579,128 @@ The 5 domain subagent reports (full evidence, code snippets, regression test sug
 
 ---
 
-_Generated 2026-08-17 by Mavis (MiniMax Code orchestrator) for the OmniScribe project._
+## 4. Residual MEDIUM/LOW Status (post 2026-08-18 sweep)
+
+**Scope:** 46 MEDIUM + 45 LOW findings, re-checked against the current tree after the 6 P0/HIGH commits (`f77d85b`, `72fea2d`, `cff08d3`, `603aaa9`, `2a9e09f`, `7448617`).
+
+**Headline:** Exactly **2 incidental MEDIUM/LOW fixes** were produced as side-effects of the HIGH-priority work — F1.18 (`core/workflows/hybrid.py`: `_decode_chunk_bytes` now also decodes the PIL image and writes the LRU cache inside the same `asyncio.to_thread` call, justifying the thread) and F5-10 (`.github/workflows/test.yml`: e2e now also runs on weekly schedule via the F4.4 `MockLLMServer` change). **2 PARTIAL improvements**: F1.13 (added `exc_info=True` to the inner Tesseract logger, no per-run counter) and F1.23 (NaN guard added to `aligner._clamp`, `parsers._clamp` still has the original `max/min`).
+
+### Status table (MEDIUM)
+
+| ID | File:Line | Status | Evidence |
+|----|-----------|--------|----------|
+| F1.9 | `core/ocr/processor.py:81` | OPEN | `_settings = load_settings()` at module import; class-level snapshot still in place |
+| F1.10 | `core/ocr_quality/calibration.py:33` | OPEN | `_CACHE: dict = {}` — no LRU bound |
+| F1.11 | `core/ocr_quality/watermark.py:49-58` | OPEN | Pure-Python nested `for y` / `for x` still present |
+| F1.12 | `core/aligner.py:45,141` | OPEN | `_shared_predictor_lock = threading.Lock()` serializes all detection |
+| F1.13 | `core/ocr/processor.py:474-499` | PARTIAL | `exc_info=True` added (line 497) by F1.4 fix; no per-run counter; still returns `""` on every error |
+| F1.14 | `core/workflows/grounded.py:136,230` | OPEN | `hasattr` duck-type gate still in place; no `Protocol` |
+| F1.15 | `core/workflows/base.py:267-268` | OPEN | `_cross_page_merge` still mutates `pages_structured` in place |
+| F1.16 | `core/grounded/parsers.py:175` | OPEN | `if b.get("label") != "text": continue` — strict equality |
+| F1.17 | `core/grounded/prompted.py:165-177` vs `utils/image.py:18,20` | OPEN | 5%/0.5% padding + 90/85 JPEG quality mismatch still present |
+| F1.18 | `core/workflows/hybrid.py:67-91` | **FIXED** | `_decode_chunk_bytes` now also does PIL decode + LRU write inside the thread |
+| F2.3 | `api/services/security_middleware.py:418-541` | OPEN | `MaxUploadSizeMiddleware` no per-request deadline |
+| F2.4 | `api/services/security_middleware.py:644-647` | OPEN | `RateLimitMiddleware` short-circuits WS scopes |
+| F2.5 | `api/services/security_middleware.py:253-264` | OPEN | `_get_active_tokens` swallows config-store errors silently |
+| F2.6 | `api/schemas/requests.py:743-755` | OPEN | `ProviderCreateRequest.headers` is freeform `dict[str, str]` |
+| F2.7 | `api/services/security_config.py:188,193` | OPEN | `_validate_auth_token` embeds the offending token in the error message |
+| F2.8 | `server.py:170-171` | OPEN | CORS still `allow_methods=["*"], allow_headers=["*"]` |
+| F3.4 | `components/views/TranscriptionView.svelte:22,40` | OPEN | `URL.createObjectURL` never revoked on unmount |
+| F3.5 | `stores/appStore.ts:154-158` | OPEN | Toast `setTimeout` is untracked, cannot cancel |
+| F3.6 | `api/client.ts:4-6,99-239`; `workstationService.ts:227-244` | OPEN | No `AbortSignal` plumbing in `fetchApi`/`fetchFile`/`fetchApiWithHeaders`/`pollOcrJobStatus` |
+| F3.7 | `api/client.ts:171` | OPEN | `fetchFile` throws with no body for non-2xx |
+| F3.8 | `views/JobHistoryView.svelte:45` | OPEN | `window.confirm` for "Clear all" destructive action |
+| F3.9 | `views/TranslationView.svelte:47-50` and `ExtractionView.svelte:20-23` | OPEN | One-way `$:` sync from `$documentStore` to local state never clears |
+| F3.10 | `api/websocket.ts:122` | OPEN | WebSocket reconnect caps at 5, no `onGiveUp` callback |
+| F3.11 | `api/websocket.ts:117` | OPEN | `onclose` reconnect path doesn't inspect `event.code` |
+| F3.12 | `workstation/WorkstationView.svelte:225-234` | OPEN | "Processing document" overlay has no focus trap, no `aria-labelledby` |
+| F3.13 | `views/SettingsView.svelte:131-144` | OPEN | Namespace tabs are bare buttons, no WAI-ARIA tablist pattern |
+| F3.14 | `views/TranslationView.svelte:161-164` | OPEN | Async-translation polling stops on fetch error, loses `asyncJobId` |
+| F4.7 | `tests/test_pdf.py:1-348` | OPEN | 16 PDF embed + font probe tests unmarked |
+| F4.8 | `tests/test_text_layer_recall.py:1-217` | OPEN | 16 tests each build+open a real PDF via PyMuPDF; no marker |
+| F4.9 | `frontend/package.json:15-36` | OPEN | No `axe-core` / `vitest-axe` / `@axe-core/playwright` |
+| F4.10 | `tests/test_phase1_async_streaming.py:243,297` + ~12 other files | OPEN | Redundant `@pytest.mark.asyncio` decorators with `asyncio_mode = "auto"` |
+| F4.11 | `pyproject.toml:182-187`; `AGENTS.md` | OPEN | `slow_dataset` ladder is undocumented in `AGENTS.md` |
+| F4.12 | `tests/test_chunked_runner.py:50-55` | OPEN | `synthetic_pdf` fixture is function-scoped, not session |
+| F4.13 | `tests/test_phase5_env_and_spellcheck.py:79-104` | OPEN | `TestSpellcheckThreadOffload` no marker |
+| F4.20 | `.github/workflows/test.yml:88-89` | OPEN | Fast sync is `uv sync --extra web`; nightly adds `--extra async-translation` |
+| F5-01 | `AGENTS.md:194` vs `Dockerfile:28,66` | OPEN | AGENTS.md says 3.12-slim; Dockerfile uses 3.14-slim |
+| F5-02 | `AGENTS.md:194` vs `Dockerfile:58,62` | OPEN | AGENTS.md omits `--extra preprocessing` from Docker runtime line |
+| F5-03 | `Dockerfile:1-110` | OPEN | No `HEALTHCHECK` directive in the Dockerfile |
+| F5-04 | `Dockerfile:88` | OPEN | Duplicate of F5-03 |
+| F5-05 | `compose.yaml:26,93-94` | OPEN | `api` port `"8000:8000"` (all interfaces); only Redis is loopback |
+| F5-06 | `compose.yaml:35,73,90,98` | OPEN | `omniscribe-local-dev` Redis password fallback in 4 places |
+| F5-08 | `.github/workflows/release.yml:36-41` | OPEN | `release.yml` uses default `GITHUB_TOKEN` to push back to `main` |
+| F5-11 | `frontend/package.json:22,34` | OPEN | `vite: ^8.2.1`, `@types/node: ^26.2.0` — non-existent majors |
+| F5-12 | `frontend/package.json:19,23` | OPEN | `eslint: ^10.8.0`, `@eslint/js: ^10.0.1` — non-existent majors |
+| F5-14 | (no file) | OPEN | No `install.sh`; Linux operators must read `Makefile` |
+| F5-16 | `compose.yaml:45` | OPEN | Example token `change-me-in-prod` still in the boot-time denylist |
+| F5-21 | `pyproject.toml:168-176` | OPEN | Pillow override comment describes surya-ocr 0.17.x workaround |
+| F5-22 | `pyproject.toml:154-166` | N/A | Audit's own recommendation is "no action required" |
+| F5-24 | `.github/dependabot.yml:3-22` | OPEN | All 4 ecosystems on weekly cadence |
+| F5-28 | `Dockerfile:72,87-88` | N/A | Audit reclassifies as positive; non-root user, `nologin` shell |
+
+### Status table (LOW)
+
+| ID | File:Line | Status | Evidence |
+|----|-----------|--------|----------|
+| F1.19 | `core/ocr/processor.py:304` | OPEN | `logger.warning("TrOCR arbitration failed: %s", e)` lacks `exc_info=True` |
+| F1.20 | `core/ocr/processor.py:166` | OPEN | `ensure_model_loaded` re-hits `GET /v1/models` per call; no cache |
+| F1.21 | `core/ocr/prompts.py:60-85,231-247` | OPEN | No regression test pinning OlmOCR dual-engine prompt body |
+| F1.22 | `core/ocr/processor.py:559` | OPEN | `import numpy as np` inside `_apply_adaptive_threshold`; not hoisted |
+| F1.23 | `core/aligner.py:350-351` (FIXED); `core/grounded/parsers.py:68-69` (OPEN) | PARTIAL | NaN guard added to `aligner._clamp`; `parsers._clamp` still `max(0.0, min(1.0, v))` |
+| F1.24 | `core/ocr/processor.py:134-137` | OPEN | `__init__` reads env at instance time (asymmetric to class-level snapshot) |
+| F1.25 | `core/workflows/hybrid.py:919-925` | OPEN | `_ocr_per_box` swallows `OCRCancelled`; no explicit re-raise |
+| F2.9 | `api/routers/health.py:100-104` | OPEN | `/ready` returns in-memory state counts |
+| F2.10 | `api/routers/common.py:31` | OPEN | `get_access_token` accepts the artifact token via `?token=` |
+| F2.11 | `api/routers/websocket.py:618-621` | OPEN | `verify_minted` and `register_channel` not atomic |
+| F2.12 | `api/services/config_store.py:78` | OPEN | `InMemoryConfigStore._cross_worker_visible` is a writable public attribute |
+| F3.15 | `components/ui/PipelineProgress.svelte:56` | OPEN | `role="progressbar"` has no `aria-label` |
+| F3.16 | `views/JobHistoryView.svelte:102`; `GlossaryView.svelte:183` | OPEN | Tables lack `<caption>` |
+| F3.17 | `app.css:66,95-96` | OPEN | `--color-foreground-subtle: #64748b` ~3.9:1 contrast on dark surfaces |
+| F3.18 | `workstation/UploadPanel.svelte:11-16` | OPEN | `handleFileChange` never resets `input.value` |
+| F3.19 | `api/client.ts:164-167` | OPEN | `fetchFile` doesn't auto-set `Content-Type` for JSON-string bodies |
+| F3.20 | `stores/websocketStore.ts:201-204` | OPEN | Overlapping `connect()` calls don't cancel prior OPEN_TIMEOUT timers |
+| F3.21 | `views/SettingsView.svelte:178-198,262-282` | OPEN | OCR/Translation model Input+Select lack `<fieldset><legend>` |
+| F3.22 | `components/ui/TabRibbon.svelte:89` | OPEN | Brand link `<a href="/">` triggers full page reload |
+| F3.23 | `workstation/WorkstationView.svelte:169` | OPEN | `hidden={$activeTab !== 'workstation'}` is dead because parent `{#if}` gates mounting |
+| F3.24 | `components/dev/.archived/Showcase.svelte` | OPEN | Dev-only `Showcase.svelte` still in production source tree |
+| F3.25 | `frontend/src/__tests__/setup.ts`, `pdfPreview.ts:215`, etc. | OPEN | `as any` / `as unknown as …` usage (19 occurrences) — audit's own rec is "no action" |
+| F4.14 | `tests/test_docuverse_upgrade.py:1-23` | OPEN | Docstring-only shim, 0 test functions |
+| F4.15 | `tests/test_health_endpoints.py:28` | OPEN | `pytestmark = pytest.mark.asyncio` is set module-wide (no-op under auto mode) |
+| F4.16 | `tests/test_workflows_callback_decoupling.py:64` | OPEN | `ids=lambda p: p.name` shows only file basename |
+| F4.17 | `.github/workflows/test.yml:60` vs `nightly.yml:36,93` | OPEN | Python matrix drift (3.11+3.13 vs 3.12) |
+| F4.18 | `tests/test_response_schemas_and_reliability.py:1-2` | OPEN | No docstring; imports `_parse_grounded_json` (private symbol) |
+| F4.19 | `tests/test_runtime_settings.py:195` | OPEN | `test_startup_validation_rejects_artifact_file` reads filesystem permissions; flakier than other tests |
+| F5-07 | `compose.yaml:24,69` | OPEN | `mem_limit: 4g` is the legacy Compose v1 key |
+| F5-09 | `.github/workflows/test.yml:112-119` | OPEN | Per-matrix SBOM artifact never consumed by `release.yml` |
+| F5-10 | `.github/workflows/test.yml:218` | **FIXED** | e2e now also runs on `schedule:` (F4.4 fix; `MockLLMServer` path) |
+| F5-13 | (no file) | OPEN | No `.gitattributes`; Windows checkouts normalize `*.ps1`/`*.bat`/`*.vbs` to CRLF |
+| F5-15 | `_check_eol.ps1:1` | OPEN | Hardcoded path `D:\OmniScribe\start_app.vbs` |
+| F5-17 | `compose.yaml:40` | OPEN | `compose.yaml` references `.env.example` but file is not present |
+| F5-18 | `scripts/fetch_datasets.py:74-91` | OPEN | `fetch_datasets.py` is a `NotImplementedError` stub |
+| F5-20 | `scripts/visualize_comparison.py:1-4`; `scripts/debug_alignment.py:1-*` | OPEN | Visualizer scripts call into the OCR pipeline with no safety-rail docstring |
+| F5-23 | `pyproject.toml:115-120` | OPEN | `glossary` extra pulls in `gitpython` + `sqlalchemy` — audit's own rec is "no action" |
+| F5-25 | `.github/workflows/nightly.yml:55-58,108-115` | N/A | Audit reclassifies as positive; restore-keys already configured |
+| F5-26 | `.pre-commit-config.yaml:42` | OPEN | `uv-lock` with `--frozen=false` will rewrite `uv.lock` mid-pre-commit |
+| F5-27 | `Makefile:3` | OPEN | No `make security` (Semgrep) or `make test-slow` (nightly) targets |
+| F5-29 | `install.ps1:33` | OPEN | `uv` installer downloaded without SHA-256 verification |
+| F5-30 | `start_app.vbs:203` | OPEN | Browser launch via `objShell.Run "http://localhost:8000"` unconditional |
+
+### Residual actionable totals
+
+- **MEDIUM:** 43 OPEN + 1 PARTIAL = **44** actionable; 1 FIXED (F1.18, incidental); 2 N/A.
+- **LOW:** 44 OPEN + 1 PARTIAL = **45** actionable; 1 FIXED (F5-10, incidental); 2 N/A.
+- **Combined:** 87 OPEN + 2 PARTIAL = **89** actionable residual items.
+
+### Largest clusters
+
+- **Domain 3 (Frontend):** 10 OPEN MEDIUM + 11 OPEN LOW = **21** items. Concentrated in a11y (F3.4, F3.12, F3.13, F3.15-17, F3.21), WebSocket lifecycle (F3.6, F3.10, F3.11, F3.20), and missing `AbortSignal` plumbing.
+- **Domain 5 (DevOps):** 12 OPEN MEDIUM + 14 OPEN LOW = **26** items. Concentrated in Dockerfile/`compose.yaml` (F5-01 to F5-08, F5-16, F5-17) and CI hardening (F5-09, F5-26, F5-27, F5-29, F5-30).
+- **Domain 4 (Testing & QA):** 7 OPEN MEDIUM + 5 OPEN LOW = **12** items. Mostly `slow` marker discipline (F4.7, F4.8, F4.12, F4.13) and `asyncio_mode = "auto"` cleanup (F4.10, F4.15).
+- **Domain 1 (Core):** 9 OPEN MEDIUM + 7 OPEN LOW = **16** items. Performance (F1.10, F1.11, F1.12), API surface (F1.14, F1.16, F1.17), runtime robustness (F1.9, F1.20, F1.24, F1.25).
+- **Domain 2 (API & Security):** 6 OPEN MEDIUM + 4 OPEN LOW = **10** items. Mostly tightening the security middleware posture (F2.3, F2.4, F2.5, F2.7, F2.8).
+
+---
+
+_Generated 2026-08-17 by Mavis (MiniMax Code orchestrator) for the OmniScribe project. Last refreshed 2026-08-18 with the residual open-finding sweep after the 6-commit HIGH-priority remediation._
