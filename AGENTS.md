@@ -34,7 +34,10 @@ cd frontend && npm run check && npm test && npm run build
 
 - `pytest-asyncio` uses auto mode. Write `async def test_...` without decorators.
 - Slow tests load Surya and may download its model on the first run.
-- Markers are `slow` and `live_llm`. Run `live_llm` tests manually with `uv run pytest -m live_llm` against a local LM Studio instance (`http://localhost:1234/v1`).
+- Markers are `slow`, `live_llm`, and `slow_dataset`:
+  - `slow` — loads the Surya detection predictor (~5s first run, ~500 MB model weight).
+  - `live_llm` — hits a real LLM endpoint; run manually with `uv run pytest -m live_llm` against a local LM Studio instance (`http://localhost:1234/v1`).
+  - `slow_dataset` — exercises the full OCR-Quality / KIE-HVQA regression fixtures (`tests/fixtures/datasets/ocr_quality_full.json`, `kie_hvqa_full.json`); only meaningful once `scripts/fetch_datasets.py` has the upstream license review cleared and downloads the real datasets. Today the marker is a no-op skip (the fixtures don't ship); the marker exists so the next test author can land tests that need the full data without remembering the right `xfail` shape.
 - Pre-commit hooks run ruff (check + format) and mypy automatically on every commit. Install with `uv tool run pre-commit install`.
 
 ## Core Paths
@@ -204,6 +207,7 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 - `pages_structured` legacy dict is still the working format inside `HybridEngine`; `DocumentResult` is built at finalize. The output boundary now supports the lossless rich path (`DocumentResultWriter`), but intermediate stages still convert.
 - `dense.pdf` and `notes.pdf` ground-truth fixtures are bootstrapped from hybrid output (regression baseline, not absolute quality).
 - `surya-ocr 0.17.x` imports `requests` in `surya/common/s3.py` without declaring it. `pyproject.toml` includes a `requests>=2.31` workaround dependency; track for cleanup once `surya-ocr` updates upstream.
+- **Frontend accessibility (a11y) test infrastructure is not in CI.** The Svelte 5 component layer relies on a mix of `axe-core` recommendations and manual review; there is no `vitest-axe` or `@axe-core/playwright` dependency and no Playwright a11y spec in the `test.yml::e2e` job. The `F4.9` audit (Domain 4) flagged this; closing it is a separate track. Today, a button losing its accessible name silently lands without a regression test.
 
 ## Product-Planning Notes (scout plans, not code)
 

@@ -23,10 +23,10 @@
 |----------|-------|------|---------|-------|-----|
 | CRITICAL | 5     | 0    | 0       | 5     | 0   |
 | HIGH     | 15    | 0    | 0       | 15    | 0   |
-| MEDIUM   | 47    | 8    | 0       | 31 (incl. F1.18, F1.13, F1.23 as PARTIAL→FULL) | 8 |
-| LOW      | 48    | 24   | 1       | 4 (incl. F5-10, F5-17, F5-25 as N/A) | 19 |
+| MEDIUM   | 47    | 0    | 0       | 35 (incl. F1.18, F1.13, F1.23 as PARTIAL→FULL; F4.7, F4.8, F4.13, F4.19 as N/A) | 12 |
+| LOW      | 48    | 14   | 1       | 14 (incl. F5-10, F5-17, F5-25, F4.7, F4.8, F4.13, F4.19 as N/A) | 19 |
 
-**Actionable residual:** 8 OPEN MEDIUM + 24 OPEN LOW + 1 PARTIAL LOW = **33** items. See §4 for the per-finding status table.
+**Actionable residual:** 0 OPEN MEDIUM + 14 OPEN LOW + 1 PARTIAL LOW = **15** items. See §4 for the per-finding status table.
 
 ### Fix commits (chronological, on `main`)
 
@@ -42,6 +42,7 @@
 | `e521076` | M-3    | F3.4, F3.5, F3.6, F3.7, F3.8, F3.9, F3.10, F3.11, F3.12, F3.13 |
 | (pending) | M-2    | F2.3, F2.4, F2.5, F2.6, F2.7, F2.8 (Domain 2 MEDIUM cluster) |
 | (pending) | M-5    | F5-01..F5-30 (Domain 5 cluster — 30 items, of which 8 N/A positives, 22 fixed) |
+| (pending) | M-4    | F4.7..F4.20 (Domain 4 cluster — 12 items, of which 4 N/A positives, 8 fixed) |
 
 ### Top 5 priorities (CRITICAL, must fix before next release)
 
@@ -639,6 +640,20 @@ The 5 domain subagent reports (full evidence, code snippets, regression test sug
 | F5-28 | `Dockerfile:72,87-88` | **N/A** | Positive — non-root runtime user, no home dir, `nologin` shell; audit self-confirmed |
 | F5-29 | `install.ps1:33-40` | **FIXED** | uv installer fallback now downloads the matching `install.ps1.sha256` sidecar and verifies the bytes against it via `Get-FileHash -Algorithm SHA256`; mismatch aborts install |
 | F5-30 | `start_app.vbs:202-203` | **FIXED** | `DEPLOYMENT.md` "Windows Troubleshooting" section now documents the unconditional browser launch and the override for multi-user / kiosk hosts |
+| F4.7 | `tests/test_pdf.py` (22 tests) | **N/A** | Per-test wall-clock ≤0.30s on the slowest test (verified via `pytest --durations=0`); audit's "add @pytest.mark.slow" recommendation would be wrong. Total file wall-clock ≈ 12.8s for 22 tests — well within the fast tier budget. |
+| F4.8 | `tests/test_text_layer_recall.py` (31 tests) | **N/A** | Per-test wall-clock ≤0.03s (PyMuPDF imports are amortised by the test runner). Total file wall-clock ≈ 7-9s for 31 tests — fast tier budget met. |
+| F4.9 | `frontend/` | **FIXED (documented)** | AGENTS.md "Known Tech Debt" section now records the a11y test-infrastructure gap; adding `vitest-axe` / `@axe-core/playwright` is a separate track |
+| F4.10 | 8 active test files | **FIXED** | Redundant `@pytest.mark.asyncio` decorators removed from `test_chunked_runner.py` (6), `test_processor_ab.py` (2), `test_transcription.py` (3), `test_ocr.py` (8), `test_phase1_async_streaming.py` (2), `test_live_llm.py` (11), and the module-level `pytestmark` from `test_health_endpoints.py` (F4.15). Regression test in `tests/test_audit_medium_d4.py` catches re-introductions. |
+| F4.11 | `AGENTS.md:35-37` vs `pyproject.toml:182-187` | **FIXED** | AGENTS.md now documents the three-tier marker ladder (`slow`, `live_llm`, `slow_dataset`) with per-marker semantics and the `uv run pytest -m …` command for each |
+| F4.12 | `tests/test_chunked_runner.py:50-55` | **FIXED** | `synthetic_pdf` fixture moved from function scope to session scope; backed by a new autouse `_session_tmp_path` helper that initialises a session-scoped temp dir via `PathFactory` (since `tmp_path` is function-scoped). One PyMuPDF build per pytest run instead of one per test. |
+| F4.13 | `tests/test_phase5_env_and_spellcheck.py:79-104` | **N/A** | `TestSpellcheckThreadOffload` uses a `_FakeProcessor` / `_SpyProcessor` that does not load the real pyspellchecker dictionary; the test runs in 0.08s. Audit's "real dictionary load" assumption was incorrect. |
+| F4.14 | `tests/test_docuverse_upgrade.py:1-33` | **FIXED** | Renamed to `tests/docuverse_split_history.md` (non-`test_*.py`) so pytest collection skips it; the docstring content is preserved as historical context |
+| F4.15 | `tests/test_health_endpoints.py:28` | **FIXED** | Removed the redundant module-level `pytestmark = pytest.mark.asyncio`; `asyncio_mode = "auto"` already covers every `async def test_*` in the file |
+| F4.16 | `tests/test_workflows_callback_decoupling.py:64` | **FIXED** | `ids=lambda p: p.name` replaced with `ids=lambda p: str(p.relative_to("src/omniscribe/core"))` so two modules sharing a basename get distinct test IDs |
+| F4.17 | `.github/workflows/test.yml:53-66` | **FIXED** | Inline comment in the matrix block documents the test.yml (3.11+3.13) vs nightly (3.12) drift and the rationale (matrix size) |
+| F4.18 | `tests/test_response_schemas_and_reliability.py:1-2` | **FIXED** | Module now carries a docstring that describes the response-schema + reliability contract and explains the underscore-prefixed private-symbol import |
+| F4.19 | `tests/test_runtime_settings.py:195` | **N/A** | `test_startup_validation_rejects_artifact_file` is a directory-vs-file structural check (writes a file at the artifact dir path, expects the validator to raise because the path is a file, not a directory); no `chmod` / `os.access` / permission bits involved. Platform-independent and runs identically on Unix + Windows. |
+| F4.20 | `.github/workflows/test.yml:97-98` | **FIXED** | Inline comment on the `Sync deps (CLI + web extras)` step now documents why the fast tier omits `--extra async-translation` (Celery + Redis + LangGraph) — nightly catches async regressions |
 | F3.4 | `components/views/TranscriptionView.svelte:22,40` | OPEN | `URL.createObjectURL` never revoked on unmount |
 | F3.5 | `stores/appStore.ts:154-158` | OPEN | Toast `setTimeout` is untracked, cannot cancel |
 | F3.6 | `api/client.ts:4-6,99-239`; `workstationService.ts:227-244` | OPEN | No `AbortSignal` plumbing in `fetchApi`/`fetchFile`/`fetchApiWithHeaders`/`pollOcrJobStatus` |

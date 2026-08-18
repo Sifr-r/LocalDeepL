@@ -1,3 +1,16 @@
+"""Response schema conformance + reliability tests.
+
+Pins the JSON shape that ``api/schemas/responses.py`` returns for every
+public router. The reliability half covers transient-failure handling
+on the response-build path (catches regressions where a schema field
+moves or is renamed without updating the tests).
+
+The module imports ``_parse_grounded_json`` (private symbol) for the
+grounded-backend tests; that's intentional — the public surface is
+``omniscribe.core.grounded.parsers.parse_grounded_json`` and the
+underscore-prefixed helper is the canonical pre-validation step the
+schema layer uses to extract JSON from a VLM response.
+"""
 import logging
 from unittest.mock import MagicMock
 

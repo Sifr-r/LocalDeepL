@@ -418,7 +418,6 @@ class TestProcessorSystemPromptWiring:
         # path; OlmOCR-specific cases have their own tests below.
         return OCRProcessor(api_base="http://localhost:1/v1", api_key="x", model=model)
 
-    @pytest.mark.asyncio
     async def test_olmocr_page_path_sends_no_system_message(self):
         # Qwen model + OLMOCR canonical page prompt → no system message
         # because the prompt itself is the RL-trained distribution.
@@ -435,7 +434,6 @@ class TestProcessorSystemPromptWiring:
         await proc.perform_ocr(image_base64="aW1hZ2U=")
         assert captured["system_prompt"] is None
 
-    @pytest.mark.asyncio
     async def test_handwriting_page_path_sends_handwriting_system_message(self):
         proc = self._make_processor(model="qwen/qwen3-vl-8b")
         proc.handwriting_mode = True
@@ -451,7 +449,6 @@ class TestProcessorSystemPromptWiring:
         await proc.perform_ocr(image_base64="aW1hZ2U=")
         assert captured["system_prompt"] is HANDWRITING_OCR_SYSTEM_MESSAGE
 
-    @pytest.mark.asyncio
     async def test_crop_path_sends_ocr_system_message(self):
         proc = self._make_processor(model="qwen/qwen3-vl-8b")
         captured: dict = {}
@@ -466,7 +463,6 @@ class TestProcessorSystemPromptWiring:
         await proc.perform_ocr_on_crop(image_base64="aW1hZ2U=")
         assert captured["system_prompt"] is OCR_SYSTEM_MESSAGE
 
-    @pytest.mark.asyncio
     async def test_dual_engine_crop_path_sends_dual_engine_system_message(self):
         proc = self._make_processor(model="qwen/qwen3-vl-8b")
         captured: list = []
@@ -485,7 +481,6 @@ class TestProcessorSystemPromptWiring:
         assert all(sp is DUAL_ENGINE_OCR_SYSTEM_MESSAGE for sp in captured)
         assert captured  # at least one chat call happened
 
-    @pytest.mark.asyncio
     async def test_olmocr_model_drops_system_message_on_handwriting_path(self):
         # OlmOCR-2 + handwriting mode → no system message. This is
         # the bug from the field report: LM Studio + OlmOCR-2 fails
@@ -505,7 +500,6 @@ class TestProcessorSystemPromptWiring:
         await proc.perform_ocr(image_base64="aW1hZ2U=")
         assert captured["system_prompt"] is None
 
-    @pytest.mark.asyncio
     async def test_olmocr_model_drops_system_message_on_crop_path(self):
         proc = self._make_processor(model="allenai/olmocr-2-7b")
         captured: dict = {}
@@ -520,7 +514,6 @@ class TestProcessorSystemPromptWiring:
         await proc.perform_ocr_on_crop(image_base64="aW1hZ2U=")
         assert captured["system_prompt"] is None
 
-    @pytest.mark.asyncio
     async def test_olmocr_model_drops_system_message_on_dual_engine_path(self):
         proc = self._make_processor(model="allenai/olmocr-2-7b")
         captured: list = []
@@ -551,7 +544,6 @@ class TestChatRetrySingleLayer:
     for the OCR pipeline. Total VLM calls = ``MAX_RETRIES + 1`` (default 3).
     """
 
-    @pytest.mark.asyncio
     async def test_chat_does_not_multiply_retries(self) -> None:
         """End-to-end: mock at the httpx layer and count VLM POSTs.
 

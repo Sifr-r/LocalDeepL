@@ -61,7 +61,17 @@ _CORE_FILES_TO_CHECK = [
 ]
 
 
-@pytest.mark.parametrize("path", _CORE_FILES_TO_CHECK, ids=lambda p: p.name)
+@pytest.mark.parametrize(
+    "path",
+    _CORE_FILES_TO_CHECK,
+    # F4.16 audit fix: show ``processors/section.py`` instead of
+    # ``section.py`` so two modules that share a basename
+    # (e.g. ``layout.py`` under ``core/processors/`` and under
+    # another tree) don't collide in the test ID. The leading
+    # ``src/omniscribe/core/`` prefix is dropped because every
+    # entry in ``_CORE_FILES_TO_CHECK`` carries it identically.
+    ids=lambda p: str(p.relative_to("src/omniscribe/core")),
+)
 def test_core_file_does_not_import_from_api(path: Path):
     """core/* must not import from api/* — the dependency direction
     is one-way. Pre-Phase-B this caught `hybrid.py` importing

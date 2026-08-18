@@ -83,7 +83,6 @@ def test_factory_get_transcription_engine():
     assert api_engine.api_key == TEST_FAKE_API_KEY
 
 
-@pytest.mark.asyncio
 async def test_generic_audio_api_engine_transcribe_mock():
     engine = GenericAudioAPIEngine(
         model=TEST_DUMMY_MODEL, api_base="http://fake-api/v1", api_key=TEST_FAKE_API_KEY
@@ -263,7 +262,6 @@ def test_whisper_local_engine_missing_dependency():
         assert "transcription" in str(exc_info.value).lower()
 
 
-@pytest.mark.asyncio
 async def test_whisper_local_engine_mock_transcribe():
     """Mock faster_whisper transcription returns segment text and language."""
     engine = WhisperLocalEngine(model_size_or_path="base", device="cpu")
@@ -294,7 +292,6 @@ async def test_whisper_local_engine_mock_transcribe():
     assert result.segments[0].words[0]["word"] == "OmniScribe"
 
 
-@pytest.mark.asyncio
 async def test_whisper_local_engine_temp_file_unlinked_in_finally():
     """Verify temp files created during transcription are deleted in finally block."""
     engine = WhisperLocalEngine(model_size_or_path="base")

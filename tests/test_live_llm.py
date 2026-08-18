@@ -78,7 +78,6 @@ def _create_sample_crop_base64(text: str = "OmniScribe Live OCR Test") -> str:
 
 
 @pytest.mark.live_llm
-@pytest.mark.asyncio
 async def test_live_vlm_crop_ocr(ensure_live_endpoint: str):
     """Test single crop OCR against live VLM endpoint."""
     api_base = ensure_live_endpoint
@@ -210,7 +209,6 @@ class TestPromptFormatContract:
     only catch by accident on a manual LM Studio run.
     """
 
-    @pytest.mark.asyncio
     async def test_crop_ocr_sends_user_role_image_url(
         self, vlm_mock: _VLMRecorder
     ) -> None:
@@ -251,7 +249,6 @@ class TestPromptFormatContract:
         # Image is sent as a data URL with the base64 payload inlined.
         assert image_parts[0]["image_url"]["url"] == "data:image/jpeg;base64,aW1hZ2U="
 
-    @pytest.mark.asyncio
     async def test_crop_ocr_sends_ocr_system_message_for_qwen(
         self, vlm_mock: _VLMRecorder
     ) -> None:
@@ -274,7 +271,6 @@ class TestPromptFormatContract:
         assert messages[0]["content"] == OCR_SYSTEM_MESSAGE
         assert messages[1]["role"] == "user"
 
-    @pytest.mark.asyncio
     async def test_olmocr_page_path_drops_system_message(
         self, vlm_mock: _VLMRecorder
     ) -> None:
@@ -300,7 +296,6 @@ class TestPromptFormatContract:
         text_parts = [p for p in content if p.get("type") == "text"]
         assert text_parts[0]["text"] == OLMOCR_PAGE_PROMPT
 
-    @pytest.mark.asyncio
     async def test_handwriting_page_path_sends_handwriting_system_message_for_qwen(
         self, vlm_mock: _VLMRecorder
     ) -> None:
@@ -322,7 +317,6 @@ class TestPromptFormatContract:
         text_parts = [p for p in messages[1]["content"] if p.get("type") == "text"]
         assert text_parts[0]["text"] == HANDWRITING_PAGE_PROMPT
 
-    @pytest.mark.asyncio
     async def test_handwriting_crop_path_uses_handwriting_crop_prompt(
         self, vlm_mock: _VLMRecorder
     ) -> None:
@@ -343,7 +337,6 @@ class TestPromptFormatContract:
         text_parts = [p for p in messages[1]["content"] if p.get("type") == "text"]
         assert text_parts[0]["text"] == HANDWRITING_CROP_PROMPT
 
-    @pytest.mark.asyncio
     async def test_dual_engine_crop_path_sends_dual_engine_system_message(
         self, vlm_mock: _VLMRecorder
     ) -> None:
@@ -375,7 +368,6 @@ class TestResponseParsingContract:
     result without crashing the OCR pipeline.
     """
 
-    @pytest.mark.asyncio
     async def test_empty_choices_returns_empty_string(self) -> None:
         """An empty ``choices`` array is treated as a blank response
         (the OCR pipeline returns ``""`` from ``perform_ocr_on_crop``
@@ -392,7 +384,6 @@ class TestResponseParsingContract:
             rec.stop()
         assert result == ""
 
-    @pytest.mark.asyncio
     async def test_yaml_front_matter_is_stripped(self) -> None:
         """A response with the canonical OlmOCR YAML front matter
         (rotation / language / is_table flags) is stripped before
@@ -425,7 +416,6 @@ class TestResponseParsingContract:
         assert "Document Title" in joined
         assert "Body paragraph" in joined
 
-    @pytest.mark.asyncio
     async def test_hallucination_fallback_is_dropped(self) -> None:
         """The OlmOCR-2 fallback phrase (``The quick brown fox...``)
         is recognised and dropped to ``""`` from the crop path."""
@@ -474,7 +464,6 @@ class TestPreFlightModelCheck:
 
         monkeypatch.setattr("openai.resources.models.AsyncModels.list", fake_list)
 
-    @pytest.mark.asyncio
     async def test_ensure_model_loaded_passes_when_model_listed(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -486,7 +475,6 @@ class TestPreFlightModelCheck:
         )
         await proc.ensure_model_loaded()  # should not raise
 
-    @pytest.mark.asyncio
     async def test_ensure_model_loaded_raises_when_model_missing(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

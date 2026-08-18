@@ -25,7 +25,12 @@ from omniscribe.api.services.security_middleware import BearerAuthMiddleware
 # test_separate_auth.py so the assertions match the rest of the suite.
 from tests.test_separate_auth import _CollectSend, _MarkerApp
 
-pytestmark = pytest.mark.asyncio
+# F4.15 audit fix: ``pytestmark = pytest.mark.asyncio`` is redundant
+# under ``asyncio_mode = "auto"`` (set in pyproject.toml). The
+# mode already treats every ``async def test_*`` as an asyncio
+# test, so the module-level marker is a no-op. Drop it; the
+# regression test in ``test_audit_medium_d4.py`` catches a
+# re-introduction.
 
 
 # ---------------------------------------------------------------------------

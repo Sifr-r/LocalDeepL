@@ -55,6 +55,15 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      # F4.17 audit fix (documented): the matrix intentionally
+      # covers Python 3.11 (the floor in ``pyproject.toml``) on
+      # both ubuntu + windows, plus 3.13 on ubuntu. The nightly
+      # workflow adds 3.12 to the slow tier so the production
+      # window (3.12+) gets a Surya-path regression run nightly;
+      # the fast tier stays at 3.11 + 3.13 so the matrix doesn't
+      # quadruple in size. The drift is documented here so a
+      # future "why doesn't nightly match test.yml?" question has
+      # the answer in-tree.
       matrix:
         os: [ubuntu-latest]
         python: ["3.11", "3.13"]
@@ -86,6 +95,15 @@ jobs:
           python-version: ${{ matrix.python }}
 
       - name: Sync deps (CLI + web extras)
+        # F4.20 audit fix (documented): the fast tier intentionally
+        # does NOT install ``--extra async-translation`` (Celery +
+        # Redis + LangGraph). The async translation path is
+        # exercised in the nightly workflow where a real Redis
+        # container is available. The fast tier stays under
+        # ~2 minutes by skipping the async extras; the nightly
+        # tier catches async regressions. ``uv sync`` resolves
+        # the core + web extra, which is what the fast
+        # ``pytest -m "not slow"`` collection needs.
         run: uv sync --extra web
 
       - name: Run Ruff check

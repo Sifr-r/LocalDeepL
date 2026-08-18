@@ -15,8 +15,6 @@ the fast tier.
 
 from __future__ import annotations
 
-import pytest
-
 from omniscribe.core.document import DocumentBlock, DocumentPage, DocumentResult
 from omniscribe.core.processors.base import (
     LOCAL_DOCUMENT_PROCESSOR_NAMES,
@@ -81,7 +79,6 @@ def _run_processor(processor) -> DocumentResult:
     return _make_doc_result()
 
 
-@pytest.mark.asyncio
 async def test_quality_analysis_is_annotate_only_and_emits_metadata() -> None:
     """QualityAnalysis declares ANNOTATE_ONLY and must not change blocks/order.
 
@@ -116,7 +113,6 @@ async def test_quality_analysis_is_annotate_only_and_emits_metadata() -> None:
     assert quality_meta["block_count"] == len(control.pages[0].blocks)
 
 
-@pytest.mark.asyncio
 async def test_reading_order_may_reorder_blocks() -> None:
     """ReadingOrder may reorder blocks but must not drop or create them.
 

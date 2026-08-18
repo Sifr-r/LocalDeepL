@@ -47,12 +47,56 @@ def _build_synthetic_pdf(path: Path, page_count: int) -> None:
         doc.close()
 
 
-@pytest.fixture
-def synthetic_pdf(tmp_path: Path) -> Path:
-    """A 60-page PDF — forces ≥2 chunks at the default 25-page chunk size."""
-    path = tmp_path / "synthetic_60.pdf"
-    _build_synthetic_pdf(path, 60)
-    return path
+@pytest.fixture(scope="session")
+def synthetic_pdf() -> Path:
+    """A 60-page PDF — forces ≥2 chunks at the default 25-page chunk size.
+
+    F4.12 audit fix: the fixture is now ``scope="session"`` so the
+    60-page PDF is built once per pytest run instead of once per
+    test. With ~10 tests using the fixture, the function-scoped
+    build was burning a few hundred ms of PyMuPDF + ``fitz.save``
+    work on every test; the session-scoped build pays it once and
+    the per-test cost drops to a copy. The path comes from the
+    ``_session_tmp_path`` autouse helper below; we cannot
+    ``tmp_path`` directly because it's function-scoped (and the
+    parameter name ``tmp_path`` would shadow pytest's built-in).
+    """
+    session_tmp = PathFactory.get() / "synthetic_60.pdf"
+    _build_synthetic_pdf(session_tmp, 60)
+    return session_tmp
+
+
+class PathFactory:
+    """Helper for session-scoped fixtures that need a stable temp path.
+
+    pytest's ``tmp_path`` is function-scoped, so a session-scoped
+    fixture cannot depend on it. ``PathFactory.get()`` returns the
+    session-scoped temp directory (set by the ``_session_tmp_path``
+    fixture below). The class-level indirection lets us swap the
+    storage strategy in a test override without changing the
+    fixture signature.
+    """
+
+    _root: Path | None = None
+
+    @classmethod
+    def get(cls) -> Path:
+        if cls._root is None:
+            raise RuntimeError(
+                "_session_tmp_path fixture must be initialised before "
+                "PathFactory.get() is called"
+            )
+        return cls._root
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _session_tmp_path() -> Path:
+    """Initialise the session-scoped temp dir used by ``synthetic_pdf``."""
+    import tempfile
+
+    root = Path(tempfile.mkdtemp(prefix="omniscribe-chunked-"))
+    PathFactory._root = root
+    return root
 
 
 def _settings(chunk_pages: int | None = None) -> Any:
@@ -293,7 +337,6 @@ def _make_chunk_pipeline_stub(synthetic_pdf: Path):
     return stub_run_ocr_pipeline, counter
 
 
-@pytest.mark.asyncio
 async def test_run_ocr_in_chunks_emits_one_frame_per_chunk(
     synthetic_pdf: Path, tmp_path: Path, monkeypatch
 ):
@@ -347,7 +390,6 @@ async def test_run_ocr_in_chunks_emits_one_frame_per_chunk(
     assert chunk_frames[2]["page_range"] == "51-60"
 
 
-@pytest.mark.asyncio
 async def test_run_ocr_in_chunks_merges_output_pdf_and_text(
     synthetic_pdf: Path, tmp_path: Path, monkeypatch
 ):
@@ -401,7 +443,6 @@ async def test_run_ocr_in_chunks_merges_output_pdf_and_text(
     )
 
 
-@pytest.mark.asyncio
 async def test_run_ocr_in_chunks_small_doc_falls_through_to_single_shot(
     synthetic_pdf: Path, tmp_path: Path, monkeypatch
 ):
@@ -460,7 +501,6 @@ async def test_run_ocr_in_chunks_small_doc_falls_through_to_single_shot(
     assert [kind for kind, _ in manager.frames if kind == "chunk_complete"] == []
 
 
-@pytest.mark.asyncio
 async def test_run_ocr_in_chunks_continues_after_chunk_failure(
     synthetic_pdf: Path, tmp_path: Path, monkeypatch
 ):
@@ -538,7 +578,6 @@ async def test_run_ocr_in_chunks_continues_after_chunk_failure(
         assert doc.page_count == 35  # 25 + 10
 
 
-@pytest.mark.asyncio
 async def test_run_ocr_in_chunks_honors_cancel_between_chunks(
     synthetic_pdf: Path, tmp_path: Path, monkeypatch
 ):
@@ -581,7 +620,6 @@ async def test_run_ocr_in_chunks_honors_cancel_between_chunks(
     assert failed_pages == list(range(26, 61))
 
 
-@pytest.mark.asyncio
 async def test_run_ocr_in_chunks_drops_per_chunk_text_artifacts(
     synthetic_pdf: Path, tmp_path: Path, monkeypatch
 ):

@@ -240,7 +240,6 @@ def test_convert_batches_peak_memory_is_bounded_by_batch_size(
 
 
 @pytest.mark.slow
-@pytest.mark.asyncio
 async def test_hybrid_engine_convert_pages_uses_batched_streaming(
     example_pdfs: dict[str, Path], stub_ocr
 ):
@@ -294,7 +293,6 @@ async def test_hybrid_engine_convert_pages_uses_batched_streaming(
 
 
 @pytest.mark.slow
-@pytest.mark.asyncio
 async def test_hybrid_engine_convert_pages_rasterize_batch_size_override(
     example_pdfs: dict[str, Path], stub_ocr
 ):
