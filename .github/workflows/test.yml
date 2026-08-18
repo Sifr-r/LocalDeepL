@@ -15,6 +15,30 @@ on:
   push:
     branches: [main]
   pull_request:
+  # F4.4 audit fix: weekly Playwright e2e (Sun 04:00 UTC) against the
+  # in-process ``MockLLMServer`` so the smoke no longer requires a
+  # self-hosted runner. Picked 04:00 UTC Sunday to clear the
+  # 02:00 UTC Semgrep (``security.yml``) and 03:00 UTC Surya
+  # (``nightly.yml``) windows.
+  schedule:
+    - cron: "0 4 * * 0"
+  # Manual dispatch path: maintainer can supply a real LLM endpoint
+  # via the inputs below. Without an ``llm_api_base`` input the
+  # ``e2e`` job falls back to the in-process ``MockLLMServer``
+  # started by the ``Start mock LLM server (scheduled runs)`` step
+  # (which uses the ``if: env.LLM_API_BASE == '' || …`` guard).
+  workflow_dispatch:
+    inputs:
+      llm_api_base:
+        description: "LLM API base URL (e.g. http://localhost:1234/v1). Leave blank to use the in-process mock server."
+        required: false
+        type: string
+        default: ""
+      llm_model:
+        description: "Model id (e.g. allenai/olmocr-2-7b). Defaults to 'mock-vlm' when llm_api_base is blank."
+        required: false
+        type: string
+        default: ""
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -179,16 +203,19 @@ jobs:
   # and would block unrelated work on a flaky OCR roundtrip. Mirrors
   # the `container-scan` decision above.
   #
-  # Trigger: `workflow_dispatch` only. The smoke exercises the full
-  # OCR path (Surya detect + VLM OCR + DP align + embed), which needs
-  # an OpenAI-compatible endpoint with a real model loaded -- neither
-  # of which lives on a default GHA runner. The job is therefore
-  # opt-in: a maintainer dispatches it manually (or wires it to a
-  # self-hosted runner with LM Studio on `localhost:1234/v1`). It does
-  # not affect the required PR status checks.
+  # F4.4 audit fix: the e2e now also runs on a weekly schedule with
+  # a ``MockLLMServer`` (``scripts/mock_llm_server.py``) so the
+  # Playwright run no longer requires a real LM Studio / Ollama /
+  # OpenAI-compatible endpoint. The mock server speaks just enough
+  # of the OpenAI chat-completion protocol to drive the OCR pipeline
+  # through to completion; the e2e asserts UI behaviour, not OCR
+  # quality. Manual ``workflow_dispatch`` runs still work and
+  # continue to require the maintainer to provide a real
+  # ``LLM_API_BASE`` env var (the mock server is not started in that
+  # path -- see the ``if [ -z "$LLM_API_BASE" ]`` branch below).
   e2e:
     name: e2e (playwright, headless chromium)
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -230,13 +257,71 @@ jobs:
         # libxkbcommon, fonts, ...).
         run: uv run --with playwright playwright install --with-deps chromium
 
+      - name: Propagate dispatch inputs to env
+        # F4.4 audit fix: ``workflow_dispatch.inputs.*`` is not
+        # automatically exposed as an env var; copy the two that
+        # the server needs (``LLM_API_BASE`` and ``LLM_MODEL``) so
+        # the next steps can use the same ``$LLM_API_BASE``
+        # expression whether the run came in via dispatch or
+        # schedule. Empty values are skipped so the
+        # ``env.LLM_API_BASE == ''`` guard in the mock-server
+        # start step still works for unscheduled dispatch.
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          LLM_API_BASE_INPUT: ${{ inputs.llm_api_base }}
+          LLM_MODEL_INPUT: ${{ inputs.llm_model }}
+        run: |
+          if [ -n "$LLM_API_BASE_INPUT" ]; then
+            echo "LLM_API_BASE=$LLM_API_BASE_INPUT" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$LLM_MODEL_INPUT" ]; then
+            echo "LLM_MODEL=$LLM_MODEL_INPUT" >> "$GITHUB_ENV"
+          fi
+
+      - name: Start mock LLM server (scheduled runs)
+        # F4.4 audit fix: weekly scheduled runs do not have access
+        # to a real LLM endpoint, so this job stands up
+        # ``scripts/mock_llm_server.py`` on port 8001 and points
+        # ``omniscribe-server`` at it via ``LLM_API_BASE``. Manual
+        # ``workflow_dispatch`` runs that set ``LLM_API_BASE`` in
+        # the GitHub UI skip this step and use the real endpoint.
+        if: env.LLM_API_BASE == '' || github.event_name == 'schedule'
+        run: |
+          nohup uv run python scripts/mock_llm_server.py --port 8001 > mock_llm.log 2>&1 &
+          echo $! > mock_llm.pid
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8001/healthz > /dev/null; then
+              echo "Mock LLM server ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Mock LLM server failed to become healthy within 30s"
+          cat mock_llm.log
+          exit 1
+
+      - name: Set LLM_API_BASE for scheduled runs
+        # When the maintainer did not supply ``LLM_API_BASE`` via
+        # the dispatch UI (or this is a scheduled run), point the
+        # server at the local mock. ``LLM_MODEL=mock-vlm`` matches
+        # the ``--model`` default in ``scripts/mock_llm_server.py``.
+        if: env.LLM_API_BASE == '' || github.event_name == 'schedule'
+        run: |
+          echo "LLM_API_BASE=http://localhost:8001/v1" >> "$GITHUB_ENV"
+          echo "LLM_MODEL=mock-vlm" >> "$GITHUB_ENV"
+          echo "LLM_API_KEY=mock-key" >> "$GITHUB_ENV"
+
       - name: Start omniscribe-server
         # Background server for the Playwright run. `nohup` +
         # `&` detaches the process from the step so the next
         # command can poll the readiness probe; the redirect
         # captures the startup log so a connection-refused
         # error is debuggable from the Actions run page.
+        # ``LLM_API_BASE`` is set by the previous step on
+        # scheduled runs; on manual dispatches that override it,
+        # the value comes through unchanged.
         run: |
+          echo "Using LLM_API_BASE=${LLM_API_BASE:-<unset>}"
           nohup uv run omniscribe-server --port 8000 > server.log 2>&1 &
           echo $! > server.pid
           for i in $(seq 1 60); do
@@ -267,11 +352,12 @@ jobs:
           path: |
             screenshot.png
             server.log
+            mock_llm.log
           if-no-files-found: ignore
 
-      - name: Stop omniscribe-server
+      - name: Stop servers
         if: always()
-        # Clean up the detached server even when the test
+        # Clean up the detached servers even when the test
         # step above failed; the workflow runner otherwise
         # SIGKILLs the whole process tree on job exit, but
         # stopping here keeps the Actions log tidy and
@@ -282,3 +368,8 @@ jobs:
             kill "$(cat server.pid)" 2>/dev/null || true
             rm -f server.pid
           fi
+          if [ -f mock_llm.pid ]; then
+            kill "$(cat mock_llm.pid)" 2>/dev/null || true
+            rm -f mock_llm.pid
+          fi
+

@@ -196,6 +196,7 @@ def test_convert_batches_handles_image_input(tmp_path: Path):
         assert isinstance(b64, str) and len(b64) > 100
 
 
+@pytest.mark.slow
 def test_convert_batches_peak_memory_is_bounded_by_batch_size(
     example_pdfs: dict[str, Path],
 ):

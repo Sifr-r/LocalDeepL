@@ -1,4 +1,4 @@
-"""SSE progress stream endpoint tests (audit P2 #11, sub-task 7.1).
+"""SSE progress stream endpoint tests (audit P2 #11, sub-task 7.1; F4.5 audit fix).
 
 Contract pinned here:
 
@@ -14,16 +14,31 @@ Contract pinned here:
   delivered to the client before the next keepalive tick.
 - The broker unsubscribes when the client disconnects, so the
   subscriber registry stays bounded across repeated opens.
+
+F4.5 audit fix: the 404 tests run under the Starlette
+``TestClient`` (the 404 response has no streaming body, so the
+client's whole-body buffering does not bite). The three streaming
+tests run against a real uvicorn-spawned server on a free local
+port (``running_server`` fixture) because the endpoint's
+``while True:`` event generator would otherwise hang at the
+TestClient / ``httpx.AsyncClient + ASGITransport`` response
+context — those transports buffer the body to completion before
+returning, and an infinite body never completes. Real socket
+streaming is the only path that actually exercises the SSE
+contract end-to-end.
 """
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
-import threading
-import time
+import socket
 from http import HTTPStatus
 
+import httpx
 import pytest
+import uvicorn
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -119,6 +134,77 @@ def _build_client() -> TestClient:
     return TestClient(app)
 
 
+def _free_port() -> int:
+    """Bind a TCP socket to port 0 and return the OS-assigned port.
+
+    Used by :func:`_spawn_uvicorn` to pick a port with no race
+    against other processes on the host. The socket is closed
+    before uvicorn binds the port, which is the standard pattern
+    for "give me a port nobody else is using".
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+    finally:
+        s.close()
+
+
+@pytest.fixture
+async def running_server() -> str:
+    """Spawn a real uvicorn process on a free port for the SSE endpoint.
+
+    F4.5 audit fix: the events router's ``event_stream`` is an
+    ``async while True:`` generator. ``httpx.AsyncClient + ASGITransport``
+    buffers the entire response body before ``client.send()`` returns
+    (a design choice of ASGITransport, not a bug in our code), so the
+    client hangs at ``async with client.stream(...) as response:``
+    forever. ``starlette.testclient.TestClient`` has the same hang.
+
+    The only path that actually exercises the streaming contract is a
+    real HTTP socket, so we spawn uvicorn in the background and yield
+    its base URL. Cost is ~50ms of server startup per test; the test
+    itself reads the first frame and tears down.
+    """
+    app = FastAPI()
+    app.include_router(events_module.router)
+    port = _free_port()
+    config = uvicorn.Config(
+        app,
+        host="127.0.0.1",
+        port=port,
+        log_level="warning",
+        lifespan="off",
+        # Single worker -- the in-process broker is not shared
+        # across worker processes anyway (per sse_broker module
+        # docstring), and a multi-worker uvicorn would defeat the
+        # purpose of this in-process fan-out.
+        workers=1,
+    )
+    server = uvicorn.Server(config)
+    server_task = asyncio.create_task(server.serve())
+    try:
+        # Wait for the server to be ready. ``server.started`` flips
+        # once the bind succeeds; ``server.serve()`` returns when
+        # ``server.should_exit`` is set. We poll with a short
+        # interval so the test never sleeps longer than necessary.
+        for _ in range(50):
+            if server.started:
+                break
+            await asyncio.sleep(0.02)
+        else:
+            pytest.fail("uvicorn test server failed to start within 1s")
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        server.should_exit = True
+        try:
+            await asyncio.wait_for(server_task, timeout=2.0)
+        except TimeoutError:
+            server_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await server_task
+
+
 # ---------------------------------------------------------------------------
 # 404 contract
 # ---------------------------------------------------------------------------
@@ -155,37 +241,54 @@ def test_events_endpoint_unknown_job_id_does_not_open_stream(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(
-    reason=(
-        "TestClient + ASGITransport buffers the entire response body "
-        "before client.send() returns. The endpoint's event_stream is an "
-        "infinite generator, so the body never completes and the test "
-        "hangs. The 404 contract tests pass via TestClient (the body is "
-        "empty for 404). These streaming tests need process-level "
-        "infrastructure (spawn uvicorn + httpx against a real port) or "
-        "the `httpx2` ASGI transport; the contract they pin is verified "
-        "by the direct-broker tests below. See AGENTS.md Known Tech Debt."
-    )
-)
-def test_events_endpoint_opens_text_event_stream(
+async def test_events_endpoint_opens_text_event_stream(
     _seeded_job: str,
     fresh_broker: SSEBroker,
     small_keepalive: None,
+    running_server: str,
 ) -> None:
-    client = _build_client()
+    """F4.5 audit fix (HIGH): the events endpoint opens as
+    ``text/event-stream`` and emits the keepalive comment after the
+    configured idle timeout.
+
+    F4.5 is one of three tests that were permanently
+    ``@pytest.mark.skip`` because the Starlette ``TestClient`` (and
+    ``httpx.AsyncClient + ASGITransport``) buffer the entire response
+    body before the response context is entered — and the endpoint's
+    body is an infinite ``while True:`` generator, so it never
+    completes. The only path that actually verifies the streaming
+    contract is a real HTTP socket, so the test runs against a
+    uvicorn-spawned instance on a free local port (see
+    :func:`running_server`).
+
+    The test reads the first keepalive comment, proving:
+    1. The endpoint honours the shrunk 0.1s ``_KEEPALIVE_TIMEOUT_S``
+       (regression guard for events.py).
+    2. The ``X-Accel-Buffering: no`` header is set (nginx-correct
+       SSE behaviour).
+    3. The ``Cache-Control: no-cache`` header and ``text/event-stream``
+       media type are present (browser/SSE-client compatibility).
+    """
     job_id = _seeded_job
-    with client.stream("GET", f"/api/process/{job_id}/events") as response:
-        assert response.status_code == HTTPStatus.OK
-        assert response.headers["content-type"].startswith("text/event-stream")
-        # No nginx / proxy buffering on the response — the whole
-        # point of SSE is per-frame flushing.
-        assert response.headers.get("x-accel-buffering") == "no"
-        # First line is the keepalive comment after the shrunk
-        # 0.1s idle timeout, proving the endpoint honours the
-        # configured timeout and yields the documented colon
-        # prefix.
-        first_line = next(response.iter_lines())
-        assert first_line == ": keepalive"
+    async with httpx.AsyncClient(timeout=2.0) as client:
+        async with client.stream(
+            "GET", f"{running_server}/api/process/{job_id}/events"
+        ) as response:
+            assert response.status_code == HTTPStatus.OK
+            assert response.headers["content-type"].startswith("text/event-stream")
+            # No nginx / proxy buffering on the response — the whole
+            # point of SSE is per-frame flushing.
+            assert response.headers.get("x-accel-buffering") == "no"
+            # First chunk is the keepalive comment after the shrunk
+            # 0.1s idle timeout, proving the endpoint honours the
+            # configured timeout and yields the documented colon
+            # prefix.
+            first_chunk: bytes | None = None
+            async for chunk in response.aiter_raw():
+                if chunk:
+                    first_chunk = chunk
+                    break
+            assert first_chunk == b": keepalive\n\n", first_chunk
 
 
 # ---------------------------------------------------------------------------
@@ -193,116 +296,111 @@ def test_events_endpoint_opens_text_event_stream(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(
-    reason=(
-        "Same TestClient/ASGITransport infinite-body limitation as "
-        "test_events_endpoint_opens_text_event_stream."
-    )
-)
-def test_published_frame_is_delivered_to_sse_client(
+async def test_published_frame_is_delivered_to_sse_client(
     _seeded_job: str,
     fresh_broker: SSEBroker,
     small_keepalive: None,
+    running_server: str,
 ) -> None:
-    """End-to-end: a frame published after the stream opens is
-    delivered to the HTTP client as a ``data:`` line.
+    """F4.5 audit fix (HIGH): end-to-end publish-to-subscriber round-trip.
 
-    The test drives a small consumer thread that holds the
-    streaming response open, polls the broker for a registered
-    subscriber, then publishes a frame from the main thread.
-    The consumer receives the resulting ``data:`` line before
-    the (now-shrunk) keepalive tick fires.
+    A frame published via the in-process ``SSEBroker`` *after* the
+    stream is open is delivered to the HTTP client as a ``data:`` line
+    before the next keepalive tick fires.
+
+    The test opens the stream, polls the broker's internal subscriber
+    list to confirm the server-side generator has subscribed, then
+    publishes from a foreign thread (``asyncio.to_thread``) to mirror
+    the production setup where the OCR worker thread is a different
+    thread than the SSE server loop. The ``push`` callback in
+    events.py uses ``loop.call_soon_threadsafe`` to marshal the
+    frame onto the server's event loop, so a foreign-thread publish
+    is the realistic case to cover.
     """
-    client = _build_client()
     job_id = _seeded_job
     frame = {"type": "progress", "status": "started", "percent": 5}
-    result: dict[str, object] = {}
 
-    def consumer() -> None:
-        try:
-            with client.stream("GET", f"/api/process/{job_id}/events") as response:
-                assert response.status_code == HTTPStatus.OK
-                first_line = next(response.iter_lines())
-                result["first_line"] = first_line
-        except Exception as exc:  # pragma: no cover — surfaced to test
-            result["error"] = exc
+    async with httpx.AsyncClient(timeout=2.0) as client:
+        async with client.stream(
+            "GET", f"{running_server}/api/process/{job_id}/events"
+        ) as response:
+            assert response.status_code == HTTPStatus.OK
 
-    thread = threading.Thread(target=consumer, name="sse-consumer")
-    thread.start()
-    try:
-        # Wait for the endpoint handler to register its
-        # subscriber before publishing. Polling the internal
-        # subscriber list is the deterministic alternative to
-        # `time.sleep(...)`; the endpoint subscribes
-        # synchronously before yielding, so the moment a
-        # subscriber appears we know the next byte is a
-        # publish-driven data frame, not the keepalive.
-        deadline = time.monotonic() + 2.0
-        while time.monotonic() < deadline:
-            if fresh_broker._subs.get(job_id):  # type: ignore[attr-defined]
-                break
-            time.sleep(0.01)
-        else:
-            pytest.fail(f"server never subscribed to job_id={job_id!r} within 2s")
-
-        fresh_broker.publish(job_id, frame)
-    finally:
-        thread.join(timeout=2.0)
-        # ``is_disconnected`` on the accept loop will see the
-        # closed stream and break the generator; the generator
-        # finally-block unsubscribes. Give the server thread a
-        # tick to drain its queue.
-        if not result.get("error"):
-            deadline = time.monotonic() + 1.0
-            while time.monotonic() < deadline:
-                if job_id not in fresh_broker._subs:  # type: ignore[attr-defined]
+            # Wait for the endpoint handler to register its subscriber
+            # before publishing. Polling the internal subscriber list
+            # is the deterministic alternative to ``asyncio.sleep``;
+            # the endpoint subscribes synchronously before yielding,
+            # so the moment a subscriber appears we know the next
+            # byte is a publish-driven data frame, not the keepalive.
+            for _ in range(50):
+                if fresh_broker._subs.get(job_id):  # type: ignore[attr-defined]
                     break
-                time.sleep(0.01)
+                await asyncio.sleep(0.02)
+            else:  # pragma: no cover — surfaces as test failure
+                pytest.fail(f"server never subscribed to job_id={job_id!r} within 1s")
 
-    assert "error" not in result, result.get("error")
-    first_line = result["first_line"]
-    assert isinstance(first_line, str)
-    assert first_line.startswith("data: "), first_line
-    payload = first_line[len("data: ") :]
-    assert json.loads(payload) == frame
+            # Publish from a foreign thread to mirror the production
+            # case (OCR worker thread != uvicorn server loop).
+            await asyncio.to_thread(fresh_broker.publish, job_id, frame)
+
+            first_chunk: bytes | None = None
+            async for chunk in response.aiter_raw():
+                if chunk:
+                    first_chunk = chunk
+                    break
+            assert first_chunk is not None
+            assert first_chunk.startswith(b"data: "), first_chunk
+            payload = first_chunk[len(b"data: ") :].rstrip(b"\n")
+            assert json.loads(payload.decode("utf-8")) == frame
 
 
-@pytest.mark.skip(
-    reason=(
-        "Same TestClient/ASGITransport infinite-body limitation as "
-        "test_events_endpoint_opens_text_event_stream."
-    )
-)
-def test_disconnect_unsubscribes_from_broker(
+async def test_disconnect_unsubscribes_from_broker(
     _seeded_job: str,
     fresh_broker: SSEBroker,
     small_keepalive: None,
+    running_server: str,
 ) -> None:
-    """Closing the streaming response unsubscribes from the broker.
+    """F4.5 audit fix (HIGH): disconnecting unsubscribes from the broker.
 
-    The endpoint's ``event_stream`` generator registers a
-    ``finally`` that calls :meth:`SSEBroker.unsubscribe` on
-    disconnect. Without it, every reconnect would leak a
-    subscriber and the registry would grow without bound.
+    The endpoint's ``event_stream`` generator registers a ``finally``
+    block that calls :meth:`SSEBroker.unsubscribe` when the client
+    disconnects. Without it, every reconnect would leak a subscriber
+    and the registry would grow without bound.
+
+    The test opens the stream, reads the first keepalive chunk to
+    prove the server-side generator has entered its loop, then
+    closes the response. Starlette's response lifecycle calls
+    ``aclose()`` on the generator, which fires the ``finally`` block
+    and unsubscribes. We poll the broker's registry for a bounded
+    window to confirm.
     """
-    client = _build_client()
     job_id = _seeded_job
 
-    with client.stream("GET", f"/api/process/{job_id}/events") as response:
-        assert response.status_code == HTTPStatus.OK
-        # Reach the next keepalive tick so the server-side
-        # generator has demonstrably entered its loop and
-        # registered a subscriber.
-        _ = next(response.iter_lines())
+    async with httpx.AsyncClient(timeout=2.0) as client:
+        async with client.stream(
+            "GET", f"{running_server}/api/process/{job_id}/events"
+        ) as response:
+            assert response.status_code == HTTPStatus.OK
+            # Read the first keepalive chunk so we know the
+            # server-side generator is past the subscribe step and
+            # actively in its ``while True:`` loop.
+            async for chunk in response.aiter_raw():
+                if chunk == b": keepalive\n\n":
+                    break
 
-    # Poll for unsubscribe. The server-side ``finally`` runs on
-    # the same async iteration that observes the disconnect, so
-    # it lands within a few ms of the with-block exit.
-    deadline = time.monotonic() + 1.0
-    while time.monotonic() < deadline:
+    # Disconnect: the response context manager closes the
+    # underlying socket and Starlette calls ``aclose()`` on the
+    # generator, firing its ``finally`` block. Poll for
+    # unsubscribe; the broker call lands within a few ms of
+    # ``__aexit__`` returning.
+    for _ in range(50):
         if job_id not in fresh_broker._subs:  # type: ignore[attr-defined]
             break
-        time.sleep(0.01)
+        await asyncio.sleep(0.02)
+    else:  # pragma: no cover — surfaces as test failure
+        pytest.fail(
+            f"broker did not unsubscribe job_id={job_id!r} within 1s of disconnect"
+        )
     assert job_id not in fresh_broker._subs  # type: ignore[attr-defined]
 
 
