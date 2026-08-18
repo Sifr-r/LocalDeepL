@@ -40,7 +40,13 @@
   }
 </script>
 
-<div class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-md pointer-events-none">
+<div
+  class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-md pointer-events-none"
+  role="region"
+  aria-label="Notifications"
+  aria-live="polite"
+  aria-relevant="additions"
+>
   {#each $toastStore as toast (toast.id)}
     {@const styles = getLevelStyles(toast.level)}
     <div

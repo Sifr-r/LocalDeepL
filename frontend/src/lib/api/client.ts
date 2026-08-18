@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { authStore, toastStore } from '../stores/appStore';
+import { authRequired, authStore, toastStore } from '../stores/appStore';
 
 export interface FetchOptions extends RequestInit {
   silent?: boolean;
@@ -123,7 +123,16 @@ export async function fetchApi<T = unknown>(path: string, options: FetchOptions 
 
     if (!res.ok) {
       const errorMessage = extractErrorMessage(data, res.status);
-      if (!silent) {
+      // F3.3 audit fix: a 401 means the configured bearer token is
+      // missing or wrong. Flip the persistent ``authRequired`` flag
+      // so the global banner can link the user to the Settings
+      // auth tab. We intentionally suppress the toast on 401 so
+      // the user is not spammed with a fresh error toast on every
+      // poll (TabRibbon health, JobHistory load, model refresh) —
+      // the banner is the persistent indicator.
+      if (res.status === 401) {
+        authRequired.set(true);
+      } else if (!silent) {
         toastStore.pushToast('error', errorMessage);
       }
       throw new FetchError(errorMessage, res.status, data);
@@ -215,7 +224,12 @@ export async function fetchApiWithHeaders<T = unknown>(
 
   if (!res.ok) {
     const errorMessage = extractErrorMessage(body, res.status);
-    if (!silent) {
+    // F3.3 audit fix: same 401 branch as ``fetchApi`` — set the
+    // persistent ``authRequired`` flag and suppress the toast so
+    // the banner is the single source of truth.
+    if (res.status === 401) {
+      authRequired.set(true);
+    } else if (!silent) {
       toastStore.pushToast('error', errorMessage);
     }
     throw new FetchError(errorMessage, res.status, body);

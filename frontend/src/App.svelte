@@ -26,6 +26,7 @@
   import { onMount } from 'svelte';
   import { activeTab, loadAppConfig, themeStore } from '$lib/stores/appStore';
   import TabRibbon from '$lib/components/ui/TabRibbon.svelte';
+  import AuthRequiredBanner from '$lib/components/ui/AuthRequiredBanner.svelte';
   import ToastContainer from '$lib/components/ui/ToastContainer.svelte';
   import WorkstationView from '$lib/components/workstation/WorkstationView.svelte';
   import TranslationView from '$lib/components/views/TranslationView.svelte';
@@ -69,6 +70,11 @@
 
   <!-- Top App Navigation Ribbon (Preserves app-tab-btn-* IDs) -->
   <TabRibbon />
+
+  <!-- F3.3 audit fix: persistent banner shown when the API has
+       rejected a request with a 401. Deep-links to the Settings
+       view's auth tab. -->
+  <AuthRequiredBanner />
 
   <!-- Main View Area (Preserves view-* IDs; only the active view is mounted) -->
   <main class="flex-1 flex flex-col min-h-0 relative z-10 overflow-y-auto">

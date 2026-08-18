@@ -35,6 +35,16 @@ const STORAGE_KEYS = {
   AUTH: 'omniscribe.auth.v1',
 };
 
+/**
+ * F3.3 audit fix: tracks whether the API client has recently seen a
+ * 401 response (the user is likely missing a bearer token, or the
+ * one they configured is wrong). A persistent banner uses this flag
+ * to deep-link to the Settings auth tab. Set to ``true`` on the
+ * first 401; cleared by user dismiss or by the user editing the
+ * auth tokens in the Settings view.
+ */
+export const authRequired = writable<boolean>(false);
+
 // 1. activeTab Store
 const initialTab = loadJson<ActiveTab>(STORAGE_KEYS.ACTIVE_TAB, 'workstation');
 export const activeTab = writable<ActiveTab>(initialTab);

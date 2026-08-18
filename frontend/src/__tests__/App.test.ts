@@ -61,6 +61,9 @@ vi.mock('$lib/stores/appStore', () => {
     activeTab,
     themeStore: writable('dark'),
     authStore: writable({}),
+    // F3.3 audit fix: persistent banner uses this flag. Default to
+    // false so the banner stays out of the App.svelte mounting test.
+    authRequired: writable(false),
     defaultJobState,
     defaultDocumentModel,
     documentStore: writable({ ...defaultDocumentModel, filename: null }),
@@ -132,6 +135,16 @@ vi.mock('$lib/components/ui/TabRibbon.svelte', async () => {
 });
 vi.mock('$lib/components/ui/ToastContainer.svelte', async () => {
   const mod = await import('./fixtures/MockChromeToast.svelte');
+  return { default: mod.default };
+});
+vi.mock('$lib/components/ui/AuthRequiredBanner.svelte', async () => {
+  // F3.3 mock: the auth-required banner is conditional on the
+  // ``$authRequired`` store flag. The App.svelte mounting test
+  // defaults the flag to false, so the banner is a no-op chrome
+  // element here. A dedicated AuthRequiredBanner.test.ts would
+  // exercise the ``{#if $authRequired}`` branch by writing to
+  // the store; that test belongs in a follow-up.
+  const mod = await import('./fixtures/MockChromeAuthBanner.svelte');
   return { default: mod.default };
 });
 vi.mock('$lib/components/modals/ProviderModal.svelte', async () => {
@@ -224,15 +237,20 @@ describe('App.svelte view mounting (L8)', () => {
     app = mount(App, { target });
     await tick();
 
-    // All four chrome pieces must be present from the start.
+    // All five chrome pieces must be present from the start:
+    // TabRibbon, ToastContainer, ProviderModal, ExportModal, and
+    // the F3.3 AuthRequiredBanner (conditional on the
+    // ``$authRequired`` store flag, mocked here as a no-op chrome
+    // element so the count is stable).
     expect(target.querySelector('[data-chrome="tab-ribbon"]')).not.toBeNull();
     expect(target.querySelector('[data-chrome="toast"]')).not.toBeNull();
     expect(target.querySelector('[data-chrome="provider-modal"]')).not.toBeNull();
     expect(target.querySelector('[data-chrome="export-modal"]')).not.toBeNull();
+    expect(target.querySelector('[data-chrome="auth-banner"]')).not.toBeNull();
 
     // And must still be present after a tab switch.
     activeTab.set('jobs');
     await tick();
-    expect(target.querySelectorAll('[data-chrome]').length).toBe(4);
+    expect(target.querySelectorAll('[data-chrome]').length).toBe(5);
   });
 });
