@@ -23,14 +23,44 @@ if (!(Get-Command "uv" -ErrorAction SilentlyContinue)) {
     }
     if (!$installed) {
         $uvInstaller = Join-Path -Path $env:TEMP -ChildPath "uv-install.ps1"
+        $uvInstallerSha = Join-Path -Path $env:TEMP -ChildPath "uv-install.ps1.sha256"
         try {
             # Audit P2-15: pin the uv installer to the same version
             # the Dockerfile uses (UV_VERSION=0.11.16), so the fallback
             # path here matches the canonical supply-chain pin and a
             # silently-republished latest can't surprise this script.
             # Bump the Dockerfile in lockstep when bumping this.
+            #
+            # F5-29 audit fix: download the installer's
+            # ``install.ps1.sha256`` sidecar and verify the bytes
+            # we just pulled match the published hash before
+            # executing. The previous code only sanity-checked the
+            # payload length (>= 1000 bytes); that catches a
+            # truncated/empty file but not a same-length attacker
+            # payload. The SHA-256 sidecar is published by
+            # astral-sh alongside the installer and is the same
+            # primitive the .deb / .msi installers use. We do NOT
+            # pin the expected hash inline (it changes every uv
+            # release) — the sidecar IS the pin, and a compromised
+            # sidecar would also need to compromise the installer's
+            # CDN to land a matching payload, which raises the
+            # bar without coupling the script to a specific
+            # release.
             $uvVersion = "0.11.16"
             Invoke-RestMethod -Uri "https://astral.sh/uv/${uvVersion}/install.ps1" -OutFile $uvInstaller
+            try {
+                Invoke-RestMethod -Uri "https://astral.sh/uv/${uvVersion}/install.ps1.sha256" -OutFile $uvInstallerSha
+            } catch {
+                throw "Failed to download uv installer SHA-256 sidecar: $_"
+            }
+            $expectedHash = (Get-Content -Path $uvInstallerSha -Raw -ErrorAction SilentlyContinue).Trim().Split(' ')[0]
+            if ([string]::IsNullOrWhiteSpace($expectedHash)) {
+                throw "Downloaded uv installer SHA-256 sidecar is empty or malformed."
+            }
+            $actualHash = (Get-FileHash -Path $uvInstaller -Algorithm SHA256).Hash.ToLower()
+            if ($actualHash -ne $expectedHash.ToLower()) {
+                throw "uv installer SHA-256 mismatch: expected $expectedHash, got $actualHash."
+            }
             # Sanity check: a truncated/empty or non-script payload must
             # never reach the interpreter.
             $content = Get-Content -Path $uvInstaller -Raw -ErrorAction SilentlyContinue
@@ -45,6 +75,7 @@ if (!(Get-Command "uv" -ErrorAction SilentlyContinue)) {
             exit 1
         } finally {
             Remove-Item -Path $uvInstaller -ErrorAction SilentlyContinue
+            Remove-Item -Path $uvInstallerSha -ErrorAction SilentlyContinue
         }
     }
     # Refresh PATH so the just-installed uv is visible to the rest of this script.

@@ -21,9 +21,29 @@ services:
       context: .
       dockerfile: Dockerfile
     image: omniscribe:app
-    mem_limit: 4g
+    # F5-07 audit fix: migrate from the legacy v1 ``mem_limit`` key
+    # to the modern ``deploy.resources.limits`` block. Same 4 GB
+    # ceiling, but the modern form is supported by both Compose
+    # v2+ and Swarm-mode deploys. The ``deploy:`` block is a
+    # no-op for plain ``docker compose up`` (only consulted when
+    # the stack is deployed via ``docker stack deploy``), so the
+    # memory cap is informational here — the runtime still respects
+    # cgroup limits from any host-side orchestrator.
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+    # F5-05 audit fix: the API now binds to loopback on the host
+    # by default (``127.0.0.1:8000:8000`` instead of ``8000:8000``).
+    # The previous wildcard publish meant a plain ``docker compose
+    # up`` on a LAN-facing host handed anyone reachable the OCR
+    # API. Loopback is the safe default; operators who need LAN
+    # exposure should change to ``"8000:8000"`` *after* setting
+    # ``OMNISCRIBE_AUTH_TOKEN`` (the F2.1 hardening is the only
+    # auth gate). The Redis service was already loopback-only and
+    # is unchanged.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       # Hosts running the LM Studio / Ollama endpoint should override
       # ``LLM_API_BASE`` (and ``LLM_API_KEY`` if needed). The default
@@ -31,8 +51,20 @@ services:
       # exposes the LM Studio server on.
       LLM_API_BASE: http://host.docker.internal:1234/v1
       # Broker/backend for the async-translation and redis state paths.
-      # Password matches the redis service below (audit P1-6).
-      REDIS_URL: redis://:${REDIS_PASSWORD:-omniscribe-local-dev}@redis:6379/0
+      # F5-06 audit fix: the previous ``omniscribe-local-dev`` default
+      # password was a *known* string and was the same fallback at every
+      # site that referenced ``REDIS_PASSWORD`` (4 places). Anyone who
+      # could reach the Redis port (loopback-only in our setup, but a
+      # default is still a default) had a credential. The new contract:
+      #   * ``.env`` (gitignored) is the only place a real password lives.
+      #   * When ``.env`` is absent, Compose refuses to start the stack
+      #     (no silent fallback to a known string). The .env.example
+      #     ships a generator one-liner so the operator can create a
+      #     strong password in a single command.
+      # The ``REDIS_URL`` and ``requirepass`` lines below read the same
+      # var, so the env-var contract is symmetric — one password, four
+      # uses, all sourced from ``.env`` or rejected at startup.
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env (see .env.example)}@redis:6379/0
       # Recommended security defaults. See README "Security" section.
       # 10240 MB (10 GB) matches ``SecuritySettings.DEFAULT_MAX_UPLOAD_MB``
       # in ``src/omniscribe/api/services/security_config.py`` and the
@@ -41,8 +73,13 @@ services:
       # only after sizing disk + memory to honour it.
       OMNISCRIBE_MAX_UPLOAD_MB: "10240"
       OMNISCRIBE_RATE_LIMIT_PER_MIN: "60"
-      # Uncomment and regenerate a strong secret to enable auth.
-      # OMNISCRIBE_AUTH_TOKEN: change-me-in-prod
+      # F5-16 audit fix: the previous example token ``change-me-in-prod``
+      # is in the boot-time denylist (``security_config.PLACEHOLDER_AUTH_TOKENS``)
+      # and would *refuse* to start. The example now points operators
+      # at an openssl-rand one-liner so copy-paste always lands on a
+      # real, high-entropy secret. See .env.example for the same hint
+      # in a more discoverable spot.
+      # OMNISCRIBE_AUTH_TOKEN: <generate with: openssl rand -hex 32>
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -66,11 +103,17 @@ services:
       context: .
       dockerfile: Dockerfile
     image: omniscribe:app
-    mem_limit: 4g
+    # Same ``mem_limit`` → ``deploy.resources.limits`` migration as
+    # the ``api`` service (F5-07). 4 GB is the same ceiling the
+    # legacy v1 key applied.
+    deploy:
+      resources:
+        limits:
+          memory: 4g
     command: ["celery", "-A", "omniscribe.api.tasks", "worker", "--loglevel=info", "--pool=solo"]
     environment:
       LLM_API_BASE: http://host.docker.internal:1234/v1
-      REDIS_URL: redis://:${REDIS_PASSWORD:-omniscribe-local-dev}@redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env (see .env.example)}@redis:6379/0
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -85,9 +128,11 @@ services:
     # single-host personal stack, ``--save ""`` (no snapshots) is fine
     # and avoids disk pressure. Override with command: when needed.
     # ``--requirepass`` closes the unauthenticated-Redis hole (audit
-    # P1-6); override ``REDIS_PASSWORD`` in the environment or a
-    # ``.env`` file for anything beyond a personal workstation.
-    command: ["redis-server", "--appendonly", "no", "--save", "", "--requirepass", "${REDIS_PASSWORD:-omniscribe-local-dev}"]
+    # P1-6); ``REDIS_PASSWORD`` MUST be set in .env (see .env.example)
+    # — Compose's ``:?`` substitution aborts startup with a clear error
+    # when it's missing, so a misconfigured stack can never silently
+    # come up with the old ``omniscribe-local-dev`` known password.
+    command: ["redis-server", "--appendonly", "no", "--save", "", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env (see .env.example)}"]
     # Loopback-only publish: api/worker reach redis over the compose
     # network, so the host port is only for local inspection tools.
     ports:
@@ -95,7 +140,10 @@ services:
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-omniscribe-local-dev}", "--no-auth-warning", "ping"]
+      # Same ``REDIS_PASSWORD:?`` substitution — the healthcheck
+      # command must use the same var or the password mismatch will
+      # silently make the probe always fail.
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env (see .env.example)}", "--no-auth-warning", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5

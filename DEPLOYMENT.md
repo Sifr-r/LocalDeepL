@@ -182,6 +182,17 @@ to a blank page or never opens:
   `uv run --extra web uvicorn omniscribe.server:app --port 8000`
   directly to see uvicorn's traceback.
 
+> **F5-30 audit note — browser launch is unconditional.**
+> `start_app.vbs:202-203` calls `objShell.Run "http://localhost:8000"`
+> once the server's `/` returns 2xx/3xx/4xx. It does **not** check
+> whether the user already has a browser open, whether the default
+> browser is configured, or whether the operator is on a headless
+> host. The behaviour is intentional for a single-user desktop
+> install — the script is the documented happy path — but a
+> multi-user or kiosk host should edit that line to either
+> `WScript.Quit 0` (no browser) or a configurable URL.
+
+
 ## Backup & Recovery
 
 OmniScribe keeps all job artifacts in process memory

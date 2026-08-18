@@ -89,6 +89,20 @@ USER app
 
 EXPOSE 8000
 
+# F5-03 / F5-04 audit fix: ``HEALTHCHECK`` is set at the Dockerfile
+# level (not just in ``compose.yaml``) so non-Compose orchestrators
+# (Kubernetes liveness probes, plain Docker ``--health-cmd``,
+# Nomad, ECS task definitions) can detect a half-broken process.
+# The probe hits ``/health`` — the cheap no-I/O endpoint in
+# ``src/omniscribe/api/routers/health.py`` — and uses Python's
+# stdlib ``urllib`` so no extra apt packages are needed (matches
+# the same probe the ``compose.yaml`` ``api`` service uses).
+# ``--start-period`` is generous (30s) because the first request
+# to a cold container pays the model-load + import-graph setup
+# cost on the synchronous OCR path.
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=30s \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')" || exit 1
+
 # Default: bind on all interfaces so the container is reachable from
 # the host on non-loopback adapters. Use ``--host 127.0.0.1`` when
 # running behind a reverse proxy that does not need LAN exposure.

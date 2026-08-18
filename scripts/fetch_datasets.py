@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Fetch the OCR-Quality and KIE-HVQA datasets for Phase 3 regression tests.
 
-This is a placeholder. The actual download URLs are gated behind the
-license review described in
+**F5-18 audit fix — this module is a deliberate STUB.**
+
+The actual download URLs are gated behind the license review described in
 ``docs/superpowers/specs/2026-08-10-ocr-quality-trust-layer-design.md``
 §9 (Dataset license check). Until the license review completes:
 
@@ -44,6 +45,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -129,6 +131,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    # F5-18 audit fix: loud, single-line stub warning so an operator
+    # running this on the assumption it will fetch real data cannot
+    # miss that it's a placeholder. The per-dataset NotImplementedError
+    # below is the actual gate; this is the surface-level reminder.
+    print(
+        "WARNING: scripts/fetch_datasets.py is a license-gated STUB. "
+        "Real fetching is blocked pending the review in "
+        "docs/superpowers/specs/2026-08-10-ocr-quality-trust-layer-design.md §9.",
+        file=sys.stderr,
+    )
     args = parse_args(argv)
     try:
         fetch(args.dataset, dry_run=args.dry_run)

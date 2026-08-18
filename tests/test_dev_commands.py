@@ -7,15 +7,22 @@ from types import ModuleType
 
 ROOT = Path(__file__).parents[1]
 DEV_SCRIPT = ROOT / "scripts" / "dev.py"
+# F5-27 audit fix: ``test-slow`` and ``security`` are now first-class
+# Makefile targets (Surya + Semgrep respectively). The set is exact
+# equality with what the Makefile documents, so any new target must
+# land here as well — the test is the contract that the developer
+# command surface and the test awareness stay in lockstep.
 REQUIRED_TARGETS = {
     "help",
     "setup",
     "build-frontend",
     "run",
     "test",
+    "test-slow",
     "lint",
     "typecheck",
     "audit",
+    "security",
     "clean",
     "doctor",
 }

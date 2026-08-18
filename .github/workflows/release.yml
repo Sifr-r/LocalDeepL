@@ -36,9 +36,17 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-          # Use the default GITHUB_TOKEN; if main is branch-protected,
-          # configure a "bypass" rule for github-actions[bot] OR swap to a
-          # PAT/app token here. See the "Branch protection" note in the README.
+          # F5-08 audit fix: this workflow runs with
+          # ``permissions: contents: write`` and pushes back to ``main``
+          # (README-pin commit + tag). On a branch-protected ``main``,
+          # the default ``GITHUB_TOKEN`` is rejected by the protection
+          # rule — the recommended posture is to set up a dedicated
+          # "Release" GitHub App with branch-protection bypass rules
+          # scoped to the auto-generated ``github-actions[bot]``
+          # author, OR provide a fine-grained PAT via a release-only
+          # secret. The README's "Branch protection" section links to
+          # the upstream docs for both options. With no protection
+          # rule the default GITHUB_TOKEN works as-is.
 
       - name: Read version + check tag uniqueness
         id: ver

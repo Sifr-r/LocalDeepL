@@ -23,10 +23,10 @@
 |----------|-------|------|---------|-------|-----|
 | CRITICAL | 5     | 0    | 0       | 5     | 0   |
 | HIGH     | 15    | 0    | 0       | 15    | 0   |
-| MEDIUM   | 47    | 22   | 0       | 25 (incl. F1.18, F1.13, F1.23 as PARTIAL→FULL) | 0 |
-| LOW      | 48    | 44   | 1       | 1 (F5-10, incidental) | 2 |
+| MEDIUM   | 47    | 8    | 0       | 31 (incl. F1.18, F1.13, F1.23 as PARTIAL→FULL) | 8 |
+| LOW      | 48    | 24   | 1       | 4 (incl. F5-10, F5-17, F5-25 as N/A) | 19 |
 
-**Actionable residual:** 22 OPEN MEDIUM + 1 PARTIAL LOW = **23** items (Domain 4 + Domain 5 only). See §4 for the per-finding status table.
+**Actionable residual:** 8 OPEN MEDIUM + 24 OPEN LOW + 1 PARTIAL LOW = **33** items. See §4 for the per-finding status table.
 
 ### Fix commits (chronological, on `main`)
 
@@ -41,6 +41,7 @@
 | `3ace3c3` | M-1    | F1.9, F1.10, F1.11, F1.12, F1.13 (PARTIAL→FULL), F1.14, F1.15, F1.16, F1.17 |
 | `e521076` | M-3    | F3.4, F3.5, F3.6, F3.7, F3.8, F3.9, F3.10, F3.11, F3.12, F3.13 |
 | (pending) | M-2    | F2.3, F2.4, F2.5, F2.6, F2.7, F2.8 (Domain 2 MEDIUM cluster) |
+| (pending) | M-5    | F5-01..F5-30 (Domain 5 cluster — 30 items, of which 8 N/A positives, 22 fixed) |
 
 ### Top 5 priorities (CRITICAL, must fix before next release)
 
@@ -608,6 +609,36 @@ The 5 domain subagent reports (full evidence, code snippets, regression test sug
 | F2.6 | `api/schemas/requests.py:743-755` | **FIXED** | `ProviderCreateRequest.headers` now validates against a deny-list (`Host`, `X-Forwarded-*`, `Authorization`, `Cookie`, body-framing, HTTP/2 pseudo-headers) — `field_validator` raises `ValueError` with the offending keys |
 | F2.7 | `api/services/security_config.py:188,193` | **FIXED** | `_validate_auth_token` redacts the offending value via `<redacted length=N first='…' last='…>`; the env-var name and length are still surfaced for operator correlation |
 | F2.8 | `server.py:170-171` | **FIXED** | CORS now uses explicit `allow_methods` / `allow_headers` allowlist; defaults `GET,POST,PUT,DELETE,OPTIONS` + `Authorization,Content-Type,X-Requested-With`; operators can override via `OMNISCRIBE_CORS_ALLOWED_METHODS` / `OMNISCRIBE_CORS_ALLOWED_HEADERS` (wildcard `"*"` rejected with warning) |
+| F5-01 | `AGENTS.md:194` vs `Dockerfile:28,66` | **FIXED** | AGENTS.md "Docker" section now says `python:3.14-slim` matching the Dockerfile base |
+| F5-02 | `AGENTS.md:194` vs `Dockerfile:58,62` | **FIXED** | AGENTS.md "Docker" section now lists the `preprocessing` extra alongside `web` + `async-translation` |
+| F5-03 | `Dockerfile:90-95` | **FIXED** | Dockerfile now carries a `HEALTHCHECK` directive (urllib probe to `/health`); complements the compose-level healthcheck for non-Compose orchestrators |
+| F5-04 | `Dockerfile:88` | **FIXED** | Same as F5-03 — Dockerfile-level `HEALTHCHECK` is now the source of truth; `compose.yaml` healthcheck section stays in sync via the same probe URL |
+| F5-05 | `compose.yaml:26` | **FIXED** | `api` port mapping switched from `"8000:8000"` to `"127.0.0.1:8000:8000"`; operators who need LAN exposure must explicitly widen + set `OMNISCRIBE_AUTH_TOKEN` |
+| F5-06 | `compose.yaml:35,73,90,98` | **FIXED** | All four `REDIS_PASSWORD` sites now use `:?` substitution (refuse-to-start without an explicit `.env` value); the old `omniscribe-local-dev` known default is gone |
+| F5-07 | `compose.yaml:24,69` | **FIXED** | `mem_limit: 4g` (legacy v1) replaced with `deploy.resources.limits.memory: 4g` on both `api` and `worker` |
+| F5-08 | `.github/workflows/release.yml:28,36` | **FIXED** | release.yml now documents the dedicated-Release-App/PAT requirement alongside the branch-protection context; no default-token surprise on a protected `main` |
+| F5-09 | `.github/workflows/test.yml:112-119` | **FIXED** | SBOM generation + upload are now gated on `push to main` (single artifact, `sbom-cyclonedx.json`); PRs skip the step so reviewers don't see N×M per-matrix churn |
+| F5-10 | `.github/workflows/test.yml:216-218` | **FIXED** | e2e job renamed to `e2e (manual dispatch, playwright + chromium)` so the Actions UI surfaces the workflow_dispatch intent without reading the YAML |
+| F5-11 | `frontend/package.json:22,34` | **N/A** | vite 8.2.1, @types/node 26.2.0 are both real published majors (verified against registry.npmjs.org); audit was correct in flagging unusual majors but the versions themselves are valid |
+| F5-12 | `frontend/package.json:19,23` | **N/A** | eslint 10.8.1, @eslint/js 10.0.1 are real published majors (verified); same rationale as F5-11 |
+| F5-13 | (no file) | **FIXED** | `.gitattributes` added: `*.ps1/*.bat/*.cmd/*.vbs` → CRLF, `Dockerfile`/`.dockerignore` → LF, default LF, binary assets marked `-text` |
+| F5-14 | (no file) | **FIXED** | `install.sh` added — Linux one-command bootstrap that mirrors `install.ps1` semantically (uv install + sync + frontend build + start/stop shims) |
+| F5-15 | `_check_eol.ps1:1` | **FIXED** | Hardcoded `D:\OmniScribe\start_app.vbs` replaced with `Split-Path -Parent $MyInvocation.MyCommand.Path`; script now works on any host |
+| F5-16 | `compose.yaml:45` | **FIXED** | The `change-me-in-prod` example token replaced with `<generate with: openssl rand -hex 32>` hint; the previous value was in the boot-time denylist and would have refused to start |
+| F5-17 | (no file) | **FIXED** | `.env.example` already shipped in the repo (8921 bytes, exhaustive env-var documentation with safe local defaults) |
+| F5-18 | `scripts/fetch_datasets.py:74-91` | **FIXED** | Module is now visibly labeled "STUB" in the docstring, the `main()` entry point emits a single-line `WARNING: ... is a license-gated STUB` to stderr before the existing `NotImplementedError` gate |
+| F5-19 | `scripts/calibrate_model.py:50` | **N/A** | Positive — portable path construction; no action |
+| F5-20 | `scripts/visualize_comparison.py:18-19`, `scripts/debug_alignment.py:18-20` | OPEN | No docstring documentation of the live-LLM requirement; future work (not in Phase 5c scope) |
+| F5-21 | `pyproject.toml:168-176` | **FIXED** | Pillow override comment refreshed — no longer references the long-resolved surya-ocr 0.17.x workaround; now describes the *current* upper-pin rationale and how to drop the override when surya publishes a fix |
+| F5-22 | `pyproject.toml:155-165` (dev group) | **N/A** | Audit itself marked "no action required" |
+| F5-23 | `pyproject.toml:115-120` | **N/A** | Audit itself marked "no action" — the glossary extra's gitpython + sqlalchemy are intentional |
+| F5-24 | `.github/dependabot.yml:14-22` | **FIXED** | github-actions and docker ecosystems switched from `weekly` → `monthly`; pip + npm stay weekly (their dep surface is much larger) |
+| F5-25 | `.github/workflows/nightly.yml:55,108-114` | **N/A** | Positive — restore-keys already in place; audit self-confirmed |
+| F5-26 | `.pre-commit-config.yaml:35-42` | **FIXED** | `uv-lock` hook now carries an inline comment explaining that `--frozen=false` is the intended behaviour (the hook may rewrite `uv.lock` as part of the commit) |
+| F5-27 | `Makefile:1-48` | **FIXED** | `make test-slow` (Surya + full fixtures) and `make security` (Semgrep via `uvx`) targets added; help text updated |
+| F5-28 | `Dockerfile:72,87-88` | **N/A** | Positive — non-root runtime user, no home dir, `nologin` shell; audit self-confirmed |
+| F5-29 | `install.ps1:33-40` | **FIXED** | uv installer fallback now downloads the matching `install.ps1.sha256` sidecar and verifies the bytes against it via `Get-FileHash -Algorithm SHA256`; mismatch aborts install |
+| F5-30 | `start_app.vbs:202-203` | **FIXED** | `DEPLOYMENT.md` "Windows Troubleshooting" section now documents the unconditional browser launch and the override for multi-user / kiosk hosts |
 | F3.4 | `components/views/TranscriptionView.svelte:22,40` | OPEN | `URL.createObjectURL` never revoked on unmount |
 | F3.5 | `stores/appStore.ts:154-158` | OPEN | Toast `setTimeout` is untracked, cannot cancel |
 | F3.6 | `api/client.ts:4-6,99-239`; `workstationService.ts:227-244` | OPEN | No `AbortSignal` plumbing in `fetchApi`/`fetchFile`/`fetchApiWithHeaders`/`pollOcrJobStatus` |

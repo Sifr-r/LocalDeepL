@@ -11,13 +11,22 @@ updates:
     schedule:
       interval: "weekly"
 
+  # F5-24 audit fix: github-actions bumps are far less frequent than
+  # the underlying action releases — most workflow pinning is by
+  # SHA, so a Dependabot "weekly" churns PRs without producing
+  # meaningful diffs. Monthly keeps the dependency-fresh signal
+  # without spamming reviewers.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
 
   # Dockerfile + compose.yaml base images (audit P1-7).
+  # F5-24 audit fix: same rationale as github-actions — the base
+  # image is also digest-pinned at the Dockerfile level, so a
+  # version-bump Dependabot is informational. Monthly cadence
+  # keeps the signal without the noise.
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"

@@ -110,13 +110,28 @@ jobs:
         run: uv run pip-audit --ignore-vuln PYSEC-2026-311
 
       - name: Generate CycloneDX SBOM
+        # F5-09 audit fix: only generate the SBOM when this run is
+        # part of the release path. The previous unconditional
+        # generation produced N (Python version) × M (OS) artifacts
+        # per fast-tier run, none of which the ``release.yml``
+        # workflow consumed. Gating on ``github.ref == 'refs/heads/main'``
+        # and ``github.event_name != 'pull_request'`` (the matrix
+        # also runs on PRs) keeps the single canonical SBOM that
+        # release artifacts attach to. PRs still build the project
+        # and run the test suite; they just skip the SBOM.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: uv run cyclonedx-py environment --output-format json --output-file sbom.json
 
       - name: Upload CycloneDX SBOM artifact
+        # Same gate as the generation step. The artifact name is
+        # matrix-free because the gated run is a single OS (ubuntu)
+        # + single Python (3.13) when the trigger is push to main.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: sbom-py${{ matrix.python }}-${{ matrix.os }}.json
+          name: sbom-cyclonedx.json
           path: sbom.json
+          if-no-files-found: ignore
 
   # Audit M2: build the production Dockerfile and scan the resulting image
   # for HIGH/CRITICAL CVEs. Findings surface in the GitHub Security tab
@@ -214,7 +229,12 @@ jobs:
   # ``LLM_API_BASE`` env var (the mock server is not started in that
   # path -- see the ``if [ -z "$LLM_API_BASE" ]`` branch below).
   e2e:
-    name: e2e (playwright, headless chromium)
+    # F5-10 audit fix: rename the job to "e2e (manual dispatch)"
+    # so the Actions UI clearly signals that the Playwright run is
+    # maintainer-triggered, not a regression gate. The
+    # ``workflow_dispatch || schedule`` guard below remains the
+    # source of truth — this rename is purely a UI affordance.
+    name: e2e (manual dispatch, playwright + chromium)
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     permissions:

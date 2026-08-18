@@ -39,4 +39,15 @@ repos:
         # Keep ``uv.lock`` and ``pyproject.toml`` consistent. Slow but
         # bounded - the install environment is intentionally empty
         # so the lock step doesn't try to fetch huge optional stacks.
+        #
+        # F5-26 audit fix: ``--frozen=false`` means this hook may
+        # REWRITE ``uv.lock`` as part of the commit. That's the
+        # intended behaviour (``uv-lock`` is the only hook that
+        # mutates a tracked file), but it's surprising on first
+        # contact. A new contributor seeing ``uv.lock`` appear in
+        # ``git status`` after a pre-commit run might think the
+        # hook is broken; it isn't — staging the regenerated
+        # ``uv.lock`` and amending the commit is the right
+        # workflow. The ``Makefile``/``AGENTS.md`` already document
+        # this; this comment is the in-file reminder.
         args: ["--frozen=false"]
