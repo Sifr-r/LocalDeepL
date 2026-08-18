@@ -17,9 +17,20 @@
   let isExtracting = false;
   let extractedData: Record<string, unknown> | null = null;
 
+  // F3.9 audit fix: same pattern as TranslationView. A transition
+  // to falsy in the store would leave the local selection stale;
+  // the next extraction would re-send the old id and the server
+  // would 422. Clear the local state when the store value is
+  // falsy AND a value was previously held.
+  let lastSyncedArtifactId: string | null = null;
   $: if ($documentStore.textArtifactId) {
     selectedArtifactId = $documentStore.textArtifactId;
     selectedArtifactToken = $documentStore.textArtifactToken || '';
+    lastSyncedArtifactId = $documentStore.textArtifactId;
+  } else if (lastSyncedArtifactId) {
+    selectedArtifactId = '';
+    selectedArtifactToken = '';
+    lastSyncedArtifactId = null;
   }
 
   const templates: { value: Template; label: string }[] = [

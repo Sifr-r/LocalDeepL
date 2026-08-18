@@ -6,6 +6,17 @@ export interface FetchOptions extends RequestInit {
 }
 
 /**
+ * F3.6 audit fix: ``RequestInit['signal']`` is the standard way to
+ * abort an in-flight fetch from outside (component unmount, user
+ * cancel, switch-tab). The previous ``FetchOptions`` re-typed the
+ * field by extending ``RequestInit`` but never documented or threaded
+ * it through; callers had no typed surface to plumb an
+ * ``AbortController`` through. The dedicated re-export below keeps
+ * the field obvious at every call site and lets TS narrow it.
+ */
+export type FetchSignal = AbortSignal | null | undefined;
+
+/**
  * Error class for non-2xx responses. Carries the HTTP status and the
  * parsed response body (when the server sent one) so callers can branch
  * on ``err.status`` / ``err.data`` without casting through ``any``.
@@ -140,6 +151,13 @@ export async function fetchApi<T = unknown>(path: string, options: FetchOptions 
 
     return data as T;
   } catch (err: unknown) {
+    // F3.6 audit fix: an abort surfaces as a DOMException whose
+    // name is "AbortError". Re-throw without a toast / auth-banner
+    // side effect — the caller that fired the AbortController knows
+    // they cancelled and a network-error toast would be misleading.
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw err;
+    }
     if (!isFetchError(err) && !silent) {
       const message = err instanceof Error ? err.message : String(err);
       toastStore.pushToast('error', message || 'Network error');
@@ -166,9 +184,29 @@ export async function fetchFile(path: string, options: FetchOptions = {}): Promi
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(url, { ...options, headers });
+  // F3.7 audit fix: read the response body before throwing so the
+  // FetchError carries the server's error payload (parity with
+  // fetchApi's ``extractErrorMessage``). ``fetchFile`` previously
+  // discarded the body and only embedded the statusText, so a
+  // download error like "Access denied — auth required" surfaced as
+  // a generic "Forbidden" with no detail.
+  let res: Response;
+  try {
+    res = await fetch(url, { ...options, headers });
+  } catch (err: unknown) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw err;
+    }
+    throw err;
+  }
   if (!res.ok) {
-    throw new FetchError(`File download failed: ${res.statusText}`, res.status, null);
+    const data = await parseResponseBody(res);
+    const errorMessage = extractErrorMessage(data, res.status);
+    throw new FetchError(
+      errorMessage || `File download failed: ${res.statusText}`,
+      res.status,
+      data
+    );
   }
   return res.blob();
 }
@@ -205,37 +243,44 @@ export async function fetchApiWithHeaders<T = unknown>(
     headers['Content-Type'] = 'application/json';
   }
 
-  const res = await fetch(url, { ...init, headers });
+  try {
+    const res = await fetch(url, { ...init, headers });
 
-  const responseHeaders: Record<string, string> = {};
-  res.headers.forEach((value, key) => {
-    responseHeaders[key.toLowerCase()] = value;
-  });
+    const responseHeaders: Record<string, string> = {};
+    res.headers.forEach((value, key) => {
+      responseHeaders[key.toLowerCase()] = value;
+    });
 
-  const contentType = responseHeaders['content-type'] || '';
-  let body: T;
-  if (contentType.includes('application/json')) {
-    body = (await res.json()) as T;
-  } else if (typeof res.blob === 'function') {
-    body = (await res.blob()) as T;
-  } else {
-    body = null as T;
-  }
-
-  if (!res.ok) {
-    const errorMessage = extractErrorMessage(body, res.status);
-    // F3.3 audit fix: same 401 branch as ``fetchApi`` — set the
-    // persistent ``authRequired`` flag and suppress the toast so
-    // the banner is the single source of truth.
-    if (res.status === 401) {
-      authRequired.set(true);
-    } else if (!silent) {
-      toastStore.pushToast('error', errorMessage);
+    const contentType = responseHeaders['content-type'] || '';
+    let body: T;
+    if (contentType.includes('application/json')) {
+      body = (await res.json()) as T;
+    } else if (typeof res.blob === 'function') {
+      body = (await res.blob()) as T;
+    } else {
+      body = null as T;
     }
-    throw new FetchError(errorMessage, res.status, body);
-  }
 
-  return { body, headers: responseHeaders };
+    if (!res.ok) {
+      const errorMessage = extractErrorMessage(body, res.status);
+      // F3.3 audit fix: same 401 branch as ``fetchApi`` — set the
+      // persistent ``authRequired`` flag and suppress the toast so
+      // the banner is the single source of truth.
+      if (res.status === 401) {
+        authRequired.set(true);
+      } else if (!silent) {
+        toastStore.pushToast('error', errorMessage);
+      }
+      throw new FetchError(errorMessage, res.status, body);
+    }
+
+    return { body, headers: responseHeaders };
+  } catch (err: unknown) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw err;
+    }
+    throw err;
+  }
 }
 
 // Re-exported for callers that read ``err.status`` / ``err.data``

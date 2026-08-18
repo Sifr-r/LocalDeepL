@@ -44,9 +44,26 @@
     clearPolling();
   });
 
+  // F3.9 audit fix: previously this was a one-way sync — when
+  // ``$documentStore.textArtifactId`` was truthy, the local state
+  // was updated, but a transition to falsy (e.g. the user clears
+  // the artifact selection, or switches to a different document
+  // that has no text artifact) was silently ignored. A subsequent
+  // translation request would then re-send the stale id and the
+  // server would 422. The fix: also clear the local state when
+  // the store value is falsy AND a value was previously held.
+  let lastSyncedArtifactId: string | null = null;
   $: if ($documentStore.textArtifactId) {
     selectedArtifactId = $documentStore.textArtifactId;
     selectedArtifactToken = $documentStore.textArtifactToken || '';
+    lastSyncedArtifactId = $documentStore.textArtifactId;
+  } else if (lastSyncedArtifactId) {
+    // The store cleared (e.g. user picked a new doc with no
+    // artifact); clear the local selection so a stale id is
+    // never re-sent.
+    selectedArtifactId = '';
+    selectedArtifactToken = '';
+    lastSyncedArtifactId = null;
   }
 
   async function handleSyncTranslate() {

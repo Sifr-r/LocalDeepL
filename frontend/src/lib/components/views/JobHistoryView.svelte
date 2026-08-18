@@ -6,9 +6,18 @@
   import Card from '../ui/Card.svelte';
   import Button from '../ui/Button.svelte';
   import Badge, { type BadgeVariant } from '../ui/Badge.svelte';
+  import Modal from '../ui/Modal.svelte';
 
   let jobs: JobRecord[] = [];
   let isLoading = false;
+  // F3.8 audit fix: a typed modal confirmation replaces the
+  // global ``window.confirm`` for destructive actions. The native
+  // confirm has no theming, no focus trap, no aria-labelledby, and
+  // is blocked by browser "prevent additional dialogs" settings.
+  // The Modal component is the project's design-system primitive;
+  // it already wires Escape-to-close, focus trap, and click-outside
+  // dismissal.
+  let showClearAllModal = false;
 
   async function loadJobs() {
     isLoading = true;
@@ -41,10 +50,12 @@
     }
   }
 
-  async function clearAllJobs() {
-    if (!confirm('Are you sure you want to clear all past jobs and cached text artifacts?')) {
-      return;
-    }
+  function requestClearAll() {
+    showClearAllModal = true;
+  }
+
+  async function confirmClearAll() {
+    showClearAllModal = false;
     try {
       await fetchApi('/jobs', { method: 'DELETE' });
       jobs = [];
@@ -87,7 +98,7 @@
         </svg>
         <span>Refresh</span>
       </Button>
-      <Button variant="danger" size="sm" disabled={jobs.length === 0} on:click={clearAllJobs}>
+      <Button variant="danger" size="sm" disabled={jobs.length === 0} on:click={requestClearAll}>
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
         </svg>
@@ -170,3 +181,24 @@
     </div>
   </Card>
 </section>
+
+<Modal
+  bind:open={showClearAllModal}
+  title="Clear all job history?"
+  description="This removes every past OCR, Translation, and Extraction job from the local history. Cached text artifacts are also dropped. This action cannot be undone."
+  maxWidth="md"
+>
+  <p class="text-sm text-foreground-muted">
+    A total of <strong class="text-foreground">{jobs.length}</strong>
+    {jobs.length === 1 ? 'job' : 'jobs'} will be removed from the history table.
+    Cached text and metadata are deleted from the server.
+  </p>
+  <div slot="footer" class="flex justify-end gap-2">
+    <Button variant="secondary" size="sm" on:click={() => (showClearAllModal = false)}>
+      Cancel
+    </Button>
+    <Button variant="danger" size="sm" on:click={confirmClearAll}>
+      Clear all
+    </Button>
+  </div>
+</Modal>

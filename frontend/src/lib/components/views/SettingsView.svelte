@@ -12,8 +12,35 @@
   import Badge from '../ui/Badge.svelte';
 
   type Namespace = 'ocr' | 'translation' | 'transcription' | 'auth';
+  const namespaceOrder: Namespace[] = ['ocr', 'translation', 'transcription', 'auth'];
   let activeNamespace: Namespace = 'ocr';
   let isSaving = false;
+
+  // F3.13 audit fix: roving-tabindex keyboard handling for the
+  // WAI-ARIA tablist. Arrow Left/Right move focus through the
+  // tabs in source order; Home/End jump to the first/last. The
+  // focus ring stays on the active tab when navigating, matching
+  // the WAI-ARIA Authoring Practices tablist example.
+  function handleTabKeydown(e: KeyboardEvent, currentId: string) {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') {
+      return;
+    }
+    e.preventDefault();
+    const idx = namespaceOrder.indexOf(currentId as Namespace);
+    if (idx < 0) return;
+    let next = idx;
+    if (e.key === 'ArrowLeft') next = (idx - 1 + namespaceOrder.length) % namespaceOrder.length;
+    else if (e.key === 'ArrowRight') next = (idx + 1) % namespaceOrder.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = namespaceOrder.length - 1;
+    activeNamespace = namespaceOrder[next];
+    // Move focus to the newly-active tab so screen readers
+    // announce the new selection and the focus ring follows.
+    requestAnimationFrame(() => {
+      const btn = document.getElementById(`settings-tab-${namespaceOrder[next]}`);
+      if (btn) btn.focus();
+    });
+  }
 
   // Document processor chips options — mirrors the backend
   // DocumentProcessorName enum and the workstation's ProcessSettings
@@ -121,7 +148,21 @@
   </header>
 
   <!-- Tabs bar -->
-  <div class="flex items-center gap-1 border-b border-border -mb-px">
+  <!-- F3.13 audit fix: WAI-ARIA tablist pattern. Previously the tabs
+       were bare ``<button>`` elements with no list semantics, no
+       role="tab" / role="tablist", no aria-selected, and no arrow-key
+       roving. Screen readers announced them as four independent
+       buttons; keyboard users had to Tab through every other
+       interactive element on the page to reach the next tab. The
+       fix: ``role="tablist"`` on the container, ``role="tab"`` +
+       ``aria-selected`` + ``aria-controls`` on each button, and a
+       roving tabindex (only the selected tab is in the tab order;
+       arrow keys move focus through the others). -->
+  <div
+    class="flex items-center gap-1 border-b border-border -mb-px"
+    role="tablist"
+    aria-label="Settings namespace"
+  >
     {#each [
       { id: 'ocr', label: 'OCR namespace' },
       { id: 'translation', label: 'Translation namespace' },
@@ -130,7 +171,13 @@
     ] as tab (tab.id)}
       <button
         type="button"
+        role="tab"
+        id={`settings-tab-${tab.id}`}
+        aria-selected={activeNamespace === tab.id}
+        aria-controls={`settings-panel-${tab.id}`}
+        tabindex={activeNamespace === tab.id ? 0 : -1}
         on:click={() => activeNamespace = tab.id as Namespace}
+        on:keydown={(e) => handleTabKeydown(e, tab.id)}
         class={[
           'h-9 px-4 text-xs font-medium font-body transition-colors',
           'border-b-2 -mb-px',

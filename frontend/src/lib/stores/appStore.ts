@@ -139,6 +139,19 @@ export const configStore = writable<ConfigResponse>(defaultConfig);
 function createToastStore() {
   const { subscribe, set, update } = writable<Toast[]>([]);
 
+  // F3.5 audit fix: track the per-toast TTL timer so removeToast and
+  // clearToasts can cancel a pending expiry. The previous code stored
+  // no reference to the setTimeout handle, so a manual removeToast
+  // or a clearToasts left the timer running — when it fired, the
+  // update() was a no-op (the toast was already gone), but the
+  // timer still kept a closure alive and prevented the GC from
+  // collecting the message string until the TTL elapsed. The leak
+  // is small per toast (a few KB) but compounds on a page with
+  // long-lived navigation (TabRibbon health polls every 30s, each
+  // generating an error toast on 401, the timer table grows
+  // without bound).
+  const timers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+
   const pushToast = (level: ToastLevel, message: string, ttlMs: number = 5000): string => {
     const id = Math.random().toString(36).substring(2, 9);
     const newToast: Toast = {
@@ -152,19 +165,34 @@ function createToastStore() {
     update((toasts) => [...toasts, newToast]);
 
     if (ttlMs > 0) {
-      setTimeout(() => {
+      const timer = setTimeout(() => {
+        timers.delete(id);
         update((toasts) => toasts.filter((t) => t.id !== id));
       }, ttlMs);
+      timers.set(id, timer);
     }
 
     return id;
   };
 
   const removeToast = (id: string) => {
+    // Cancel the pending expiry timer so the update() below is the
+    // only mutation that removes this toast.
+    const timer = timers.get(id);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      timers.delete(id);
+    }
     update((toasts) => toasts.filter((t) => t.id !== id));
   };
 
   const clearToasts = () => {
+    // Cancel every pending expiry so a 50-toast spam + clearToasts
+    // doesn't leave 50 timers running until their TTL elapses.
+    for (const timer of timers.values()) {
+      clearTimeout(timer);
+    }
+    timers.clear();
     set([]);
   };
 

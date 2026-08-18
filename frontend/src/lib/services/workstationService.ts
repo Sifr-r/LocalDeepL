@@ -210,6 +210,15 @@ export interface PollOcrStatusOptions {
   intervalMs?: number;
   /** Maximum polls before giving up. */
   maxAttempts?: number;
+  /**
+   * F3.6 audit fix: optional AbortSignal. When the user navigates
+   * away from the workstation tab, the component unmounts and
+   * the caller aborts the in-flight poll loop. Without this, a
+   * background poll loop keeps the network channel open until
+   * the job reaches a terminal state — visible as a slowly
+   * growing in-flight counter on the network tab.
+   */
+  signal?: AbortSignal;
   /** Injectable for tests; defaults to the real ``getOcrStatus``. */
   fetchStatus?: (jobId: string) => Promise<OcrJobStatusResponse>;
 }
@@ -231,12 +240,35 @@ export async function pollOcrJobStatus(
   const intervalMs = options.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const maxAttempts = options.maxAttempts ?? DEFAULT_POLL_MAX_ATTEMPTS;
   const fetchStatus = options.fetchStatus ?? getOcrStatus;
+  // F3.6 audit fix: a single AbortController wraps both the in-flight
+  // fetch and the inter-poll wait so the caller can cancel the whole
+  // loop with one ``AbortSignal``. Two separate AbortControllers
+  // (one for the fetch, one for the sleep) would race: the caller
+  // might cancel mid-sleep and miss the next fetch's abort.
+  const signal = options.signal ?? null;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (signal?.aborted) {
+      throw new DOMException('Polling aborted', 'AbortError');
+    }
     const status = await fetchStatus(jobId);
     if (status.status === 'complete' || status.status === 'error') {
       return status;
     }
-    await new Promise((r) => setTimeout(r, intervalMs));
+    await new Promise((r, reject) => {
+      const timer = setTimeout(r, intervalMs);
+      if (signal) {
+        const onAbort = () => {
+          clearTimeout(timer);
+          reject(new DOMException('Polling aborted', 'AbortError'));
+        };
+        // If already aborted, reject immediately.
+        if (signal.aborted) {
+          onAbort();
+        } else {
+          signal.addEventListener('abort', onAbort, { once: true });
+        }
+      }
+    });
   }
   throw new Error(
     `OCR job ${jobId} did not complete within ${(maxAttempts * intervalMs) / 1000}s`

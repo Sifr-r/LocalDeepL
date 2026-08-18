@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { activeTab, refreshModels, pushToast } from '$lib/stores/appStore';
   import { fetchApi } from '$lib/api/client';
   import {
@@ -30,6 +30,19 @@
 
   onMount(() => {
     refreshModels('transcription');
+  });
+
+  // F3.4 audit fix: revoke the object URL on component unmount.
+  // The previous code revoked only when the user picked a new file,
+  // so navigating away while an audio preview was active leaked
+  // the Blob URL until the page session ended. Each leaked URL
+  // holds the entire decoded audio in memory (a 5-minute WAV
+  // is ~50MB; a 30-minute interview can be 300MB+).
+  onDestroy(() => {
+    if (audioUrl) {
+      URL.revokeObjectURL(audioUrl);
+      audioUrl = null;
+    }
   });
 
   function handleAudioFileChange(e: Event) {

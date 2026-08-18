@@ -20,6 +20,33 @@ export interface ConnectProgressSocketOptions {
   maxRetries?: number;
   baseDelayMs?: number;
   maxDelayMs?: number;
+  /**
+   * F3.10 audit fix: callback fired once the reconnect budget is
+   * exhausted. Without it, the controller silently gives up after
+   * ``maxRetries`` attempts and the UI keeps displaying the "live"
+   * progress overlay indefinitely. The workstation uses this to
+   * surface a "Connection lost — refresh to retry" banner and stop
+   * the in-flight job.
+   */
+  onGiveUp?: (info: { reason: string; attempts: number }) => void;
+  /**
+   * F3.11 audit fix: predicate that inspects a CloseEvent and returns
+   * ``true`` when the close was a deliberate client-side action (the
+   * channel token was wrong, the server rejected the auth frame, the
+   * server is shutting down, etc.) and reconnecting would just
+   * thrash. The default predicate covers the close codes we know to
+   * be terminal:
+   *   - ``1008`` Policy Violation (the auth frame was wrong)
+   *   - ``4001-4099`` application-defined codes (the server uses the
+   *     4xxx range to signal auth/channel errors; the exact codes
+   *     are documented in ``api/routers/websocket.py``)
+   *   - ``1012`` Service Restart
+   *   - ``1013`` Try Again Later
+   * The predicate is intentionally pluggable so the workstation can
+   * extend it (e.g. to also bail on a particular server-side
+   * diagnostic frame) without forking the controller.
+   */
+  shouldReconnectOnClose?: (event: { code: number; reason: string }) => boolean;
 }
 
 /**
@@ -44,6 +71,36 @@ export function connectProgressSocket(
   const maxRetries = options?.maxRetries ?? 5;
   const baseDelayMs = options?.baseDelayMs ?? 1000;
   const maxDelayMs = options?.maxDelayMs ?? 30000;
+  // F3.11: default close-code predicate. The set is conservative —
+  // anything we don't recognise gets a reconnect attempt, which is
+  // the right default for transient network blips.
+  const defaultShouldReconnect = (event: { code: number; reason: string }) => {
+    // 1000 Normal Closure, 1001 Going Away, 1006 Abnormal Closure
+    // (no Close frame) all warrant a retry.
+    if (event.code === 1000 || event.code === 1001 || event.code === 1006) {
+      return true;
+    }
+    // 1008 Policy Violation — the auth frame was wrong. Retrying
+    // with the same token would just hit 1008 again. Terminal.
+    if (event.code === 1008) {
+      return false;
+    }
+    // 4xxx — application-defined. The backend uses these for
+    // auth/channel errors. Terminal.
+    if (event.code >= 4000 && event.code < 5000) {
+      return false;
+    }
+    // 1012 Service Restart / 1013 Try Again Later — the server is
+    // mid-restart; a retry will succeed shortly. Transient.
+    if (event.code === 1012 || event.code === 1013) {
+      return true;
+    }
+    // Unknown codes: retry. Better to thrash for a few seconds than
+    // to silently give up on the user's first connection blip.
+    return true;
+  };
+  const shouldReconnect =
+    options?.shouldReconnectOnClose ?? defaultShouldReconnect;
 
   let socket: WebSocket | null = null;
   let retryCount = 0;
@@ -114,12 +171,30 @@ export function connectProgressSocket(
         }
       };
 
-      socket.onclose = () => {
+      socket.onclose = (event: CloseEvent) => {
         if (options?.onClose) {
           options.onClose();
         }
 
-        if (!isManualClose && retryCount < maxRetries) {
+        if (isManualClose) return;
+
+        // F3.11 audit fix: inspect the close code. Auth-class closes
+        // (1008 Policy Violation, server-defined 4xxx) are terminal
+        // — the same auth token would just hit the same code
+        // again. ``shouldReconnect`` is the pluggable predicate so
+        // the workstation can extend the terminal set without
+        // forking this controller.
+        if (!shouldReconnect({ code: event.code, reason: event.reason })) {
+          if (options?.onGiveUp) {
+            options.onGiveUp({
+              reason: `server closed channel (code=${event.code}, reason=${event.reason || '<empty>'})`,
+              attempts: retryCount,
+            });
+          }
+          return;
+        }
+
+        if (retryCount < maxRetries) {
           retryCount++;
           const exponentialDelay = Math.min(
             baseDelayMs * Math.pow(2, retryCount - 1),
@@ -131,6 +206,17 @@ export function connectProgressSocket(
           reconnectTimer = setTimeout(() => {
             connect();
           }, delay);
+        } else {
+          // F3.10 audit fix: reconnect budget exhausted. Surface
+          // this to the caller so the UI can stop the in-flight job
+          // (the server is unreachable, the result will never
+          // arrive) and switch to a "Connection lost" banner.
+          if (options?.onGiveUp) {
+            options.onGiveUp({
+              reason: `reconnect budget exhausted (${maxRetries} attempts)`,
+              attempts: retryCount,
+            });
+          }
         }
       };
     } catch (err) {

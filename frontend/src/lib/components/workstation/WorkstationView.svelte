@@ -35,6 +35,36 @@
 
   $: isProcessing = Boolean($jobStore.isProcessing);
 
+  // F3.12 audit fix: when the "Processing document" overlay opens,
+  // move focus to the dialog so screen-reader users hear the
+  // aria-label and keyboard users can immediately interact with
+  // the cancel button (or Escape out via the dialog's own
+  // handler). When the overlay closes, restore focus to the
+  // element that triggered the upload.
+  let lastFocusedBeforeProcessing: HTMLElement | null = null;
+  $: if (typeof document !== 'undefined') {
+    if (isProcessing) {
+      if (processViewEl && document.activeElement !== processViewEl) {
+        lastFocusedBeforeProcessing =
+          document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+        // Defer so Svelte has time to apply the ``hidden`` class
+        // flip; without the rAF the focus call races the
+        // display: none transition and silently no-ops.
+        requestAnimationFrame(() => {
+          processViewEl?.focus();
+        });
+      }
+    } else if (lastFocusedBeforeProcessing) {
+      const el = lastFocusedBeforeProcessing;
+      lastFocusedBeforeProcessing = null;
+      requestAnimationFrame(() => {
+        if (typeof el.focus === 'function') el.focus();
+      });
+    }
+  }
+
   function handleFileSelect(event: CustomEvent<File | null>) {
     selectedFile = event.detail;
     documentStore.update((d) => ({
@@ -229,6 +259,7 @@
     role="dialog"
     aria-modal="true"
     aria-label="Processing document"
+    tabindex="-1"
   >
     <PipelineProgress on:cancel={handleCancel} />
   </div>
