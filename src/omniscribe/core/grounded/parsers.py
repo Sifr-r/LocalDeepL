@@ -41,6 +41,30 @@ _NON_CONTENT_LABELS = frozenset(
     }
 )
 
+# F1.16 audit fix: structural label set used by the GLM
+# ``parse_glm_layout_details`` path. The prior implementation used a
+# strict-equality allow-list (``b.get("label") != "text"``) which
+# silently dropped any new label the upstream schema added. The
+# Qwen path uses a schema-driven approach (it does not gate on the
+# ``label`` field at all — it reads the ``content`` and bbox keys
+# directly), so the two parsers never agreed on what counts as
+# content. We use a deny-list of GLM's known structural labels here;
+# any new content label (``"text"``, ``"title"``, ``"list_item"``,
+# ``"form_field"``, etc.) flows through and the existing tests stay
+# green because ``"image"`` and ``"figure"`` are still dropped.
+_GLM_STRUCTURAL_LABELS = frozenset(
+    {
+        "image",  # raster region, no text
+        "figure",  # captioned illustration
+        "table",  # tabular region, no inline text
+        "equation",  # math block
+        "chart",  # data viz region
+        "diagram",  # flow chart / org chart
+        "stamp",  # annotation graphic
+        "qrcode",  # machine-readable graphic
+    }
+)
+
 # Accepted bbox/content key aliases — different VLMs use different field
 # names. The first match wins. Keep the canonical (`bbox_2d` / `content`)
 # pair at the top so the common path stays the cheapest.
@@ -172,7 +196,18 @@ def parse_glm_layout_details(
     blocks: list[GroundedBlock] = []
     pw, ph = page_sizes[page_index]
     for b in raw_blocks:
-        if b.get("label") != "text":
+        # F1.16 audit fix: GLM's layout response uses a structural
+        # label set ("text", "image", "table", "equation", ...) and the
+        # old ``b.get("label") != "text"`` filter was a strict-equality
+        # test that silently dropped any new label the upstream schema
+        # added (e.g. "list_item", "form_field", "diagram_node"). We
+        # now deny-list the known structural labels in
+        # :data:`_GLM_STRUCTURAL_LABELS` instead, so any new content
+        # label flows through the parser. A ``label`` field is also
+        # optional (the older fixtures omitted it), so absence is not
+        # a drop signal.
+        label = b.get("label")
+        if label is not None and label in _GLM_STRUCTURAL_LABELS:
             continue
         content = (b.get("content") or "").strip()
         if not content:

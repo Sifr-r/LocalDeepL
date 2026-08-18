@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+from collections import OrderedDict
 from pathlib import Path
 from typing import Final
 
@@ -28,18 +29,44 @@ _CALIBRATION_DIR: Final[Path] = (
     Path(__file__).resolve().parents[2] / "resources" / "calibration"
 )
 
+# F1.10 audit fix: bound the per-process cache. A long-running server
+# processing many distinct model ids (e.g. a multi-tenant deployment
+# or a constant A/B experiment churn) would grow this dict without
+# limit. 1024 entries is a generous cap — model ids are short, so
+# the cache footprint stays in the tens of KB even at saturation.
+# LRU eviction preserves the hot working set.
+_CACHE_MAX_SIZE: Final[int] = 1024
 # Cached params per model id. ``None`` is the identity sentinel —
 # ``calibrate`` returns ``raw`` unchanged without applying Platt.
-_CACHE: dict[str, tuple[float, float] | None] = {}
+_CACHE: OrderedDict[str, tuple[float, float] | None] = OrderedDict()
 _IDENTITY_PARAMS: Final[tuple[float, float] | None] = None
+
+
+def _cache_put(model_id: str, params: tuple[float, float] | None) -> None:
+    """Insert ``params`` for ``model_id`` with LRU eviction at the cap.
+
+    ``OrderedDict.move_to_end`` is the standard idiom for LRU bookkeeping
+    on Python 3.7+ (insertion order is the default iteration order);
+    re-inserting an existing key moves it to the end, and ``popitem``
+    on the front evicts the least-recently-used entry when we hit the
+    cap. No external dependency, no thread-safety cost beyond what the
+    GIL already provides for short dict ops.
+    """
+    if model_id in _CACHE:
+        _CACHE.move_to_end(model_id)
+    _CACHE[model_id] = params
+    while len(_CACHE) > _CACHE_MAX_SIZE:
+        _CACHE.popitem(last=False)
 
 
 def _load_params(model_id: str) -> tuple[float, float] | None:
     started = _now_ms()
     if model_id in _CACHE:
+        # Touch for LRU.
+        _CACHE.move_to_end(model_id)
         return _CACHE[model_id]
     if model_id == "identity":
-        _CACHE[model_id] = None
+        _cache_put(model_id, None)
         return None
     path = _CALIBRATION_DIR / f"{model_id}.json"
     if not path.exists():
@@ -48,7 +75,7 @@ def _load_params(model_id: str) -> tuple[float, float] | None:
             model_id,
             path,
         )
-        _CACHE[model_id] = None
+        _cache_put(model_id, None)
         emit(
             "calibration",
             doc_id=model_id,
@@ -68,7 +95,7 @@ def _load_params(model_id: str) -> tuple[float, float] | None:
             path,
             exc,
         )
-        _CACHE[model_id] = None
+        _cache_put(model_id, None)
         emit(
             "calibration",
             doc_id=model_id,
@@ -78,7 +105,7 @@ def _load_params(model_id: str) -> tuple[float, float] | None:
             fallback_used=True,
         )
         return None
-    _CACHE[model_id] = (a, b)
+    _cache_put(model_id, (a, b))
     return a, b
 
 

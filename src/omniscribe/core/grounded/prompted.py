@@ -153,17 +153,33 @@ def _extract_grounded_crops(
 def _crop_normalized(b64: str, bbox: Sequence[float], w: int, h: int) -> str | None:
     """Crop a normalized ``[x0, y0, x1, y1]`` bbox out of a page JPEG.
 
-    Adds 5% padding so glyph edges are never clipped. Returns ``None``
-    when the (clamped) box degenerates. Runs in a worker thread — PIL
-    decode/crop/encode is blocking CPU work.
+    F1.17 audit fix: the prior implementation used 5% padding and
+    JPEG quality 90, while the hybrid path's
+    :func:`omniscribe.utils.image.crop_for_ocr_from_image` uses 0.5%
+    padding and quality 85. The two values produce measurably
+    different JPEG/PSNR characteristics, which broke the OCR
+    trust-score calibration parity — a block that scored 0.6 on the
+    hybrid path might score 0.4 on the grounded path purely because
+    of the JPEG/PSNR difference, not because the text quality
+    differed. We now import the canonical constants from
+    :mod:`omniscribe.utils.image` and use them here so a future
+    maintainer changing one updates both at once.
+
+    Returns ``None`` when the (clamped) box degenerates. Runs in a
+    worker thread — PIL decode/crop/encode is blocking CPU work.
     """
     import base64 as _b64
     import io
 
     from PIL import Image
 
-    pad_x = 0.05 * max(bbox[2] - bbox[0], 0.0)
-    pad_y = 0.05 * max(bbox[3] - bbox[1], 0.0)
+    from omniscribe.utils.image import (
+        DEFAULT_CROP_PADDING,
+        DEFAULT_CROP_QUALITY,
+    )
+
+    pad_x = DEFAULT_CROP_PADDING * max(bbox[2] - bbox[0], 0.0)
+    pad_y = DEFAULT_CROP_PADDING * max(bbox[3] - bbox[1], 0.0)
     box = (
         max(0, int((bbox[0] - pad_x) * w)),
         max(0, int((bbox[1] - pad_y) * h)),
@@ -174,7 +190,7 @@ def _crop_normalized(b64: str, bbox: Sequence[float], w: int, h: int) -> str | N
         return None
     with Image.open(io.BytesIO(_b64.b64decode(b64))) as img:
         buf = io.BytesIO()
-        img.crop(box).save(buf, format="JPEG", quality=90)
+        img.crop(box).save(buf, format="JPEG", quality=DEFAULT_CROP_QUALITY)
     return _b64.b64encode(buf.getvalue()).decode("ascii")
 
 

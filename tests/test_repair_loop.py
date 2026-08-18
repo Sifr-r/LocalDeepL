@@ -425,8 +425,15 @@ class TestCropNormalizedGeometry:
         out = _crop_normalized(b64, (0.2, 0.2, 0.8, 0.4), 100, 100)
         assert out is not None
         img = Image.open(io.BytesIO(base64.b64decode(out)))
-        # pad_x = 0.05 * 0.6 = 0.03 -> x: 17..83; pad_y = 0.05 * 0.2 = 0.01 -> y: 19..41
-        assert img.size == (66, 22)
+        # F1.17 audit fix: padding is now ``DEFAULT_CROP_PADDING`` (0.5%)
+        # shared with the hybrid path, not 5% (the pre-fix grounded-only
+        # value). With 0.5% padding on this 100x100 image:
+        #   pad_x = 0.005 * 0.6 = 0.003 -> x: 19..80 (width 61)
+        #   pad_y = 0.005 * 0.2 = 0.001 -> y: 19..40 (height 21)
+        # The previous 5% test value was (66, 22). The shape of the
+        # assertion (exact pixel dimensions) is what we want to pin;
+        # the values change with the unified padding.
+        assert img.size == (61, 21)
 
     def test_edge_hugging_bbox_is_clamped(self) -> None:
         from PIL import Image

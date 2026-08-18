@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 ProgressCallback = Callable[[str, int, int, str], Awaitable[None]]
 WarningCallback = Callable[[int, BaseException], Awaitable[None]]
@@ -65,10 +65,45 @@ class GroundedOCRBackend(Protocol):
     ) -> GroundedResponse: ...
 
 
+@runtime_checkable
+class RepairableGroundedBackend(Protocol):
+    """F1.14 audit fix: typed contract for backends that expose a per-crop
+    re-OCR entry point.
+
+    The repair loop in
+    :class:`omniscribe.core.workflows.grounded.GroundedEngine` only runs
+    when a backend can re-OCR a single crop on demand. Before the
+    Protocol existed, the gate was ``hasattr(self.grounded_backend,
+    "ocr_crop")`` with a ``# type: ignore[attr-defined]`` at the
+    call site — a duck-type that the type checker could not see and
+    that a future refactor could silently break. The Protocol lets
+    call sites use ``isinstance(self.grounded_backend,
+    RepairableGroundedBackend)`` so mypy checks the shape at
+    construction time instead of the first repair attempt.
+
+    Backends that cannot repair (e.g. a single-shot VLM with no
+    per-crop mode) do NOT need to match this Protocol; the grounded
+    engine falls back to a no-op repair path.
+
+    `image_base64` is the base64-encoded cropped image, exactly the
+    shape the hybrid path uses for ``OCRProcessor.perform_ocr_on_crop``
+    — backends that delegate to the same VLM client can pass the
+    bytes through unchanged. `bbox` is normalized ``[x0, y0, x1, y1]``
+    in ``0..1`` (page coordinates) for diagnostics / logging.
+    """
+
+    async def ocr_crop(
+        self,
+        image_base64: str,
+        bbox: tuple[float, float, float, float],
+    ) -> str: ...
+
+
 __all__ = [
     "GroundedBlock",
     "GroundedOCRBackend",
     "GroundedResponse",
     "ProgressCallback",
+    "RepairableGroundedBackend",
     "WarningCallback",
 ]

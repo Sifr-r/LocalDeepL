@@ -9,6 +9,7 @@ from omniscribe.core.grounded import (
     GroundedBlock,
     GroundedOCRBackend,
     GroundedResponse,
+    RepairableGroundedBackend,
 )
 from omniscribe.core.ocr.resilience import CircuitOpenError
 from omniscribe.core.ocr_quality import TrustOrchestrator
@@ -127,13 +128,17 @@ class GroundedEngine(EngineBase):
 
         # --- Quality repair (spec §3.2) ---
         # Grounded blocks carry no confidence, so the loop estimates it
-        # from text quality. Only backends that expose ``ocr_crop``
-        # (feature-detected; NOT part of the GroundedOCRBackend protocol)
+        # from text quality. Only backends that match
+        # :class:`RepairableGroundedBackend` (i.e. expose ``ocr_crop``)
         # can be repaired — others skip silently and keep their text.
+        # F1.14 audit fix: replaced the ``hasattr(..., "ocr_crop")``
+        # duck-type + ``# type: ignore[attr-defined]`` at the call site
+        # with a typed ``isinstance`` check against the new Protocol,
+        # so mypy validates the shape at construction time.
         if (
             repair_options is not None
             and repair_options.enabled
-            and hasattr(self.grounded_backend, "ocr_crop")
+            and isinstance(self.grounded_backend, RepairableGroundedBackend)
         ):
             repair_summaries = await self._repair_blocks(
                 input_path=input_path,
@@ -220,14 +225,15 @@ class GroundedEngine(EngineBase):
         Accepted revisions are written back onto the ``GroundedBlock``
         objects so the caller can re-accumulate ``pages_data`` and every
         downstream stage sees the repaired text. The caller must have
-        feature-detected ``ocr_crop`` already (``hasattr`` in ``execute``).
+        feature-detected ``ocr_crop`` already (``isinstance`` check
+        against :class:`RepairableGroundedBackend` in ``execute``).
         """
         loop = QualityRepairLoop(repair_options)
         cb = self.block_callbacks
-        # ``ocr_crop`` exists by construction here (feature-detected by the
-        # caller); the ignore keeps mypy honest since it is not on the
-        # GroundedOCRBackend protocol.
-        crop_ocr = self.grounded_backend.ocr_crop  # type: ignore[attr-defined]
+        # F1.14 audit fix: mypy now sees ``ocr_crop`` because the
+        # ``isinstance(..., RepairableGroundedBackend)`` check in
+        # ``execute`` narrows the type. No ``# type: ignore`` needed.
+        crop_ocr = self.grounded_backend.ocr_crop
 
         by_page: dict[int, list[GroundedBlock]] = {}
         for block in response.blocks:

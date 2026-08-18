@@ -236,20 +236,48 @@ class EngineBase:
         Post-processing step that inspects the end of each page and merges
         trailing sentences without terminal punctuation into the first line of the
         subsequent page.
+
+        F1.15 audit fix: the previous implementation had two bugs.
+
+        1. It mutated the caller's per-page list in place. A second
+           call on the same ``pages_structured`` (e.g. an engine
+           that pre-builds the dict, runs cross-page merge, then
+           re-runs for a downstream stage) would re-merge an
+           *earlier* line of page 1 (now the last non-empty line
+           after the first call's tail was emptied) into page 2 —
+           producing two empty leading lines on page 1. The fix
+           is a shallow-copy + write-back: the outer dict's
+           identity is preserved (callers with a reference still
+           see updates), but each per-page list is replaced
+           wholesale.
+
+        2. The merge is **only** valid when the page-1 last
+           non-empty line is also the literal last item in the
+           per-page list (``last_idx == len(p1_boxes) - 1``). After
+           a previous merge, the trailing empty box is at the end
+           and the *next* non-empty line is somewhere earlier in
+           the page; re-merging that earlier line is a no-op at
+           best, double-empty at worst. The new guard skips the
+           merge unless the candidate line is the actual last box
+           on the page.
         """
         page_list = list(page_nums)
         for i in range(len(page_list) - 1):
             p1 = page_list[i]
             p2 = page_list[i + 1]
 
-            p1_boxes = pages_structured.get(p1, [])
+            # Shallow copy the per-page lists so the write-back below
+            # does not alias the caller's list. The inner tuples are
+            # immutable (bbox tuple, str) so shallow copy is
+            # sufficient — no ``deepcopy`` needed.
+            p1_boxes = list(pages_structured.get(p1, []))
             last_idx = -1
             for idx in range(len(p1_boxes) - 1, -1, -1):
                 if p1_boxes[idx][1].strip():
                     last_idx = idx
                     break
 
-            p2_boxes = pages_structured.get(p2, [])
+            p2_boxes = list(pages_structured.get(p2, []))
             first_idx = -1
             for idx in range(len(p2_boxes)):
                 if p2_boxes[idx][1].strip():
@@ -257,6 +285,12 @@ class EngineBase:
                     break
 
             if last_idx != -1 and first_idx != -1:
+                # Re-entry guard: only merge when the candidate is the
+                # literal last box on page 1. A trailing empty box (the
+                # post-merge state from a previous call) means we have
+                # already merged and should skip.
+                if last_idx != len(p1_boxes) - 1:
+                    continue
                 _last_bbox, last_text = p1_boxes[last_idx]
                 first_bbox, first_text = p2_boxes[first_idx]
 
@@ -266,6 +300,12 @@ class EngineBase:
                     merged_text = last_text_stripped + " " + first_text.strip()
                     p2_boxes[first_idx] = (first_bbox, merged_text)
                     p1_boxes[last_idx] = (_last_bbox, "")
+                # Write the mutated copies back. The dict identity is
+                # preserved (callers with a reference see the change),
+                # but the per-page list is a new object so a re-entry
+                # would see the trailing empty line and skip.
+                pages_structured[p1] = p1_boxes
+                pages_structured[p2] = p2_boxes
 
     async def _emit_page_callbacks(
         self,

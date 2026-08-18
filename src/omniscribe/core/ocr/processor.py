@@ -72,14 +72,6 @@ if TYPE_CHECKING:
 
 load_dotenv()
 
-# Resolve the audit H3 knobs once at import time: prefer the validated
-# ``RuntimeSettings`` values for the four fields it owns (page / crop
-# timeouts, max retries, retry base delay), and fall back to the
-# canonical env-int helper for the two token budgets that don't have a
-# settings field yet. Re-running the module (e.g. from the timeout-env
-# test fixture) re-evaluates these against the current process env.
-_settings = load_settings()
-
 logger = logging.getLogger(__name__)
 
 
@@ -94,6 +86,22 @@ class OCRProcessor:
     budget for paragraph-level content.
     """
 
+    # F1.9 audit fix: the four audit-H3 knobs (page / crop timeouts, max
+    # retries, retry base delay) used to be class-level constants read
+    # from ``_settings`` at module import. A long-running uvicorn worker
+    # that picked up an env-var change after the first request would
+    # never see the new value — the module was already loaded and the
+    # class attribute was already bound. We now expose the resolved
+    # values as **instance** attributes set in ``__init__`` (which runs
+    # at pipeline construction, not at module import), so a fresh
+    # ``OCRProcessor()`` picks up the current ``RuntimeSettings``.
+    #
+    # The class-level defaults below remain so existing call sites that
+    # read ``OCRProcessor.PAGE_TIMEOUT_S`` continue to work; they are
+    # the **fallback** used only when ``__init__`` is bypassed (e.g.
+    # ``__new__`` in tests). Production code always goes through
+    # ``__init__`` and uses the per-instance values.
+
     # Page-level OCR (full image): up to ~4 minutes, ~6k tokens of output.
     # Dense handwritten pages with tables can easily produce 2-3k tokens
     # of markdown, so 6k leaves headroom without enabling endless loops.
@@ -102,7 +110,7 @@ class OCRProcessor:
     # for tail-latency tuning on dense pages (Phase 5). Both flow
     # through :mod:`omniscribe.config` / :mod:`omniscribe.utils.env`
     # (audit H3) — no direct ``os.getenv`` in this module.
-    PAGE_TIMEOUT_S: float = _settings.vlm_page_timeout
+    PAGE_TIMEOUT_S: float = load_settings().vlm_page_timeout
     PAGE_MAX_TOKENS: int = env_int("OMNISCRIBE_VLM_PAGE_MAX_TOKENS", 6144)
 
     # Crop-level OCR (single box): a sentence at most. Capping much
@@ -110,14 +118,14 @@ class OCRProcessor:
     # of hallucinated text into one bbox during the refine stage.
     # Override via ``OMNISCRIBE_VLM_CROP_TIMEOUT`` (audit A-11); token
     # budget via ``OMNISCRIBE_VLM_CROP_MAX_TOKENS`` (Phase 5).
-    CROP_TIMEOUT_S: float = _settings.vlm_crop_timeout
+    CROP_TIMEOUT_S: float = load_settings().vlm_crop_timeout
     CROP_MAX_TOKENS: int = env_int("OMNISCRIBE_VLM_CROP_MAX_TOKENS", 256)
 
     # Retry policy for transient VLM errors (429, 5xx, connection drops).
     # Exponential backoff: base * 2^attempt, capped at MAX. Env overrides:
     # OMNISCRIBE_LLM_MAX_RETRIES, OMNISCRIBE_LLM_RETRY_BASE_DELAY.
-    MAX_RETRIES: int = _settings.llm_max_retries
-    RETRY_BASE_DELAY_S: float = _settings.llm_retry_base_delay
+    MAX_RETRIES: int = load_settings().llm_max_retries
+    RETRY_BASE_DELAY_S: float = load_settings().llm_retry_base_delay
     RETRY_MAX_DELAY_S: float = 8.0
 
     def __init__(
@@ -130,6 +138,22 @@ class OCRProcessor:
         confidence_threshold: float = 0.75,
         circuit_breaker_registry: CircuitBreakerRegistry | None = None,
     ):
+        # F1.9 audit fix: resolve the audit-H3 settings at instance
+        # construction time so runtime ``OMNISCRIBE_*`` overrides take
+        # effect on the next ``OCRProcessor()`` after a settings change
+        # (a common operator workflow: tweak the env, restart the
+        # pipeline, observe the new behaviour). Previously the
+        # ``_settings = load_settings()`` at module import made this
+        # impossible without a process restart.
+        settings = load_settings()
+        self.page_timeout_s: float = settings.vlm_page_timeout
+        self.crop_timeout_s: float = settings.vlm_crop_timeout
+        self.max_retries: int = settings.llm_max_retries
+        self.retry_base_delay_s: float = settings.llm_retry_base_delay
+        self.retry_max_delay_s: float = self.RETRY_MAX_DELAY_S
+        self.page_max_tokens: int = self.PAGE_MAX_TOKENS
+        self.crop_max_tokens: int = self.CROP_MAX_TOKENS
+
         self.api_base: str = (
             api_base or os.getenv("LLM_API_BASE") or "http://localhost:1234/v1"
         )
@@ -148,6 +172,47 @@ class OCRProcessor:
         registry = circuit_breaker_registry or CircuitBreakerRegistry()
         self.circuit_breaker = registry.get_or_create(
             api_base=self.api_base, model=self.model
+        )
+        # F1.13 audit fix (PARTIAL → FULL): track the number of Tesseract
+        # fallback failures over the lifetime of this processor. The
+        # previous code logged the failure (with ``exc_info=True`` after
+        # the F1.4 fix) but had no per-run counter, so an operator
+        # running 200 pages with a broken Tesseract install would see
+        # 200 log lines and have no aggregate. The counter is read by
+        # the API layer for the job-completion summary so a stuck
+        # dual-engine path surfaces in the UI without log scraping.
+        self.tesseract_error_count: int = 0
+
+    def __getattr__(self, name: str) -> object:
+        """F1.9 fallback: resolve the audit-H3 setting attributes that
+        ``__init__`` would normally set, falling back to the
+        class-level constants.
+
+        A few pre-existing tests construct ``OCRProcessor`` via
+        ``OCRProcessor.__new__(OCRProcessor)`` to skip the real
+        ``__init__`` (which would otherwise build an ``AsyncOpenAI``
+        client and load the runtime settings). Those tests still
+        expect ``self.crop_timeout_s`` etc. to resolve to the
+        class-level defaults. This ``__getattr__`` is only invoked
+        when the attribute is missing on the instance, so the
+        ``__init__``-set values still win in production. The fallback
+        list mirrors the attributes ``__init__`` sets.
+        """
+        # Map lowercase instance attr -> class-level default name.
+        _DEFAULTS: dict[str, str] = {
+            "page_timeout_s": "PAGE_TIMEOUT_S",
+            "crop_timeout_s": "CROP_TIMEOUT_S",
+            "max_retries": "MAX_RETRIES",
+            "retry_base_delay_s": "RETRY_BASE_DELAY_S",
+            "retry_max_delay_s": "RETRY_MAX_DELAY_S",
+            "page_max_tokens": "PAGE_MAX_TOKENS",
+            "crop_max_tokens": "CROP_MAX_TOKENS",
+        }
+        class_attr = _DEFAULTS.get(name)
+        if class_attr is not None and hasattr(self.__class__, class_attr):
+            return getattr(self.__class__, class_attr)
+        raise AttributeError(
+            f"{self.__class__.__name__!r} object has no attribute {name!r}"
         )
 
     async def ensure_model_loaded(self) -> None:
@@ -216,8 +281,8 @@ class OCRProcessor:
         text = await self._chat(
             prompt,
             image_base64,
-            timeout=self.PAGE_TIMEOUT_S,
-            max_tokens=self.PAGE_MAX_TOKENS,
+            timeout=self.page_timeout_s,
+            max_tokens=self.page_max_tokens,
             system_prompt=page_system,
         )
         if not text:
@@ -228,8 +293,8 @@ class OCRProcessor:
             text = await self._chat(
                 correction_prompt,
                 image_base64,
-                timeout=self.PAGE_TIMEOUT_S,
-                max_tokens=self.PAGE_MAX_TOKENS,
+                timeout=self.page_timeout_s,
+                max_tokens=self.page_max_tokens,
                 system_prompt=self._resolve_page_system(
                     prompt=correction_prompt,
                     handwriting_mode=handwriting_mode,
@@ -275,8 +340,8 @@ class OCRProcessor:
                 vlm_corrected = await self._chat(
                     correction_prompt,
                     image_base64,
-                    timeout=self.CROP_TIMEOUT_S,
-                    max_tokens=self.CROP_MAX_TOKENS,
+                    timeout=self.crop_timeout_s,
+                    max_tokens=self.crop_max_tokens,
                     system_prompt=self._resolve_crop_system(
                         handwriting_mode=getattr(self, "handwriting_mode", False),
                         dual_engine=True,
@@ -334,8 +399,8 @@ class OCRProcessor:
         text = await self._chat(
             prompt,
             image_base64,
-            timeout=self.CROP_TIMEOUT_S,
-            max_tokens=self.CROP_MAX_TOKENS,
+            timeout=self.crop_timeout_s,
+            max_tokens=self.crop_max_tokens,
             system_prompt=crop_system,
         )
         if not text:
@@ -346,8 +411,8 @@ class OCRProcessor:
             text = await self._chat(
                 correction_prompt,
                 image_base64,
-                timeout=self.CROP_TIMEOUT_S,
-                max_tokens=self.CROP_MAX_TOKENS,
+                timeout=self.crop_timeout_s,
+                max_tokens=self.crop_max_tokens,
                 system_prompt=crop_system,
             )
             if not text:
@@ -396,7 +461,7 @@ class OCRProcessor:
         await self.circuit_breaker.check()
 
         last_exc: Exception | None = None
-        for attempt in range(self.MAX_RETRIES + 1):
+        for attempt in range(self.max_retries + 1):
             if attempt > 0:
                 # Re-check: a prior attempt may have tripped the breaker.
                 # CircuitOpenError propagates directly (not an LLMCallError)
@@ -434,16 +499,16 @@ class OCRProcessor:
 
                 if not is_transient_error(e):
                     break  # permanent failure — do not retry
-                if attempt < self.MAX_RETRIES:
+                if attempt < self.max_retries:
                     delay = min(
-                        self.RETRY_BASE_DELAY_S * (2**attempt),
-                        self.RETRY_MAX_DELAY_S,
+                        self.retry_base_delay_s * (2**attempt),
+                        self.retry_max_delay_s,
                     )
                     logger.warning(
                         "Transient LLM error (attempt %d/%d), retrying in "
                         "%.1fs: %s: %s",
                         attempt + 1,
-                        self.MAX_RETRIES + 1,
+                        self.max_retries + 1,
                         delay,
                         type(e).__name__,
                         e,
@@ -491,6 +556,13 @@ class OCRProcessor:
             # RuntimeError) and any subprocess failure; ``OSError`` covers
             # PIL file errors and tesseract binary-not-found; ``ValueError``
             # covers malformed base64 input.
+            #
+            # F1.13 audit fix: increment the per-instance counter so the
+            # API layer can surface a stuck dual-engine path in the
+            # job-completion summary without log scraping. The counter
+            # is process-local; the API layer aggregates per-job counts
+            # when constructing the summary.
+            self.tesseract_error_count += 1
             logger.warning(
                 "OCR pytesseract fallback failed: %s",
                 exc,

@@ -38,6 +38,7 @@ from omniscribe.core.grounded.models import (
     GroundedOCRBackend,
     GroundedResponse,
     ProgressCallback,
+    RepairableGroundedBackend,
     WarningCallback,
 )
 from omniscribe.core.grounded.parsers import (
@@ -58,6 +59,7 @@ __all__ = [
     "GroundedResponse",
     "PromptedGroundedOCR",
     "ProgressCallback",
+    "RepairableGroundedBackend",
     "WarningCallback",
     # Underscore-prefixed names: still re-exported for tests that
     # lock in the parser contracts directly.

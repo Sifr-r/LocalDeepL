@@ -42,6 +42,38 @@ logger = logging.getLogger(__name__)
 # The predictor is now a process-wide singleton, mirroring the
 # circuit-breaker registry pattern in ``core.ocr.resilience``.
 _shared_predictor: DetectionPredictor | None = None
+# F1.12 audit investigation: this lock is **intentional**, not an
+# accidental bottleneck. The trade-off:
+#
+#   1. Surya's ``DetectionPredictor`` is **not** documented as
+#      thread-safe for concurrent forward passes (it owns a torch
+#      model on a single device; two concurrent passes contend for
+#      the same CUDA stream / MPS queue).
+#   2. A local single-GPU target gains nothing from concurrent
+#      detection — the second pass just queues behind the first and
+#      the wall-clock is dominated by serialised forward time.
+#   3. The lock is process-wide (one shared detector, one shared
+#      lock), so multi-process workers get true parallelism; the
+#      bottleneck only applies to requests hitting the same uvicorn
+#      worker.
+#
+# A future maintainer who wants intra-process parallel detection
+# should:
+#   - Confirm Surya's thread-safety on the target device (CUDA +
+#     PyTorch + a pinned batch size can be safe, but it is *not*
+#     guaranteed by the upstream contract).
+#   - Replace ``_shared_predictor_lock`` with a per-batch lock
+#     (``threading.Semaphore(MAX_CONCURRENT_BATCHES)``), keeping the
+#     init lock for the singleton construction.
+#   - Verify throughput with a regression benchmark before flipping
+#     the default; the audit's worry was that removing the lock
+#     without confirming Surya's thread-safety was a silent
+#     correctness regression.
+#
+# The current behaviour is the safe default. We document it here and
+# pin it with a regression test in ``tests/test_aligner.py`` so a
+# future refactor that "removes the unnecessary lock" lands a test
+# failure rather than a torch device-side race.
 _shared_predictor_lock = threading.Lock()
 
 

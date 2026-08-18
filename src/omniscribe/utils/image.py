@@ -8,17 +8,37 @@ from collections.abc import Sequence
 
 from PIL import Image, ImageStat
 
-__all__ = ["crop_for_ocr_from_image"]
+# F1.17 audit fix: canonical crop parameters shared by the hybrid and
+# grounded paths. The two paths used to disagree (hybrid = 0.5% padding
+# + JPEG quality 85, grounded = 5% padding + JPEG quality 90), which
+# silently broke the OCR trust-score calibration parity — a block that
+# scored 0.6 on the hybrid path might score 0.4 on the grounded path
+# purely because of the JPEG/PSNR difference, not because the text
+# quality differed. Both paths now use the constants below; the
+# grounded backend imports them so a future maintainer changing one
+# updates both at once.
+DEFAULT_CROP_PADDING: float = 0.005
+DEFAULT_CROP_QUALITY: int = 85
+DEFAULT_CROP_MIN_DIM: int = 256
+DEFAULT_CROP_STD_THRESHOLD: float = 12.0
+
+__all__ = [
+    "DEFAULT_CROP_MIN_DIM",
+    "DEFAULT_CROP_PADDING",
+    "DEFAULT_CROP_QUALITY",
+    "DEFAULT_CROP_STD_THRESHOLD",
+    "crop_for_ocr_from_image",
+]
 
 
 def crop_for_ocr_from_image(
     img: Image.Image,
     bbox: Sequence[float],
     *,
-    padding: float = 0.005,
-    min_dim: int = 256,
-    quality: int = 85,
-    std_threshold: float = 12.0,
+    padding: float = DEFAULT_CROP_PADDING,
+    min_dim: int = DEFAULT_CROP_MIN_DIM,
+    quality: int = DEFAULT_CROP_QUALITY,
+    std_threshold: float = DEFAULT_CROP_STD_THRESHOLD,
 ) -> str | None:
     """Crop a bbox region from a pre-decoded PIL Image and return the
     encoded JPEG — or ``None`` if the region is mostly uniform.
