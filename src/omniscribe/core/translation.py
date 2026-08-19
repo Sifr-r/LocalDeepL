@@ -505,29 +505,29 @@ class _Chunker:
     def __init__(self, max_chunk_size: int):
         self.max_chunk_size = max_chunk_size
         self.chunks: list[str] = []
-        self.current_chunk: list[str] = []
-        self.current_len = 0
-        self.current_delim = ""
+        self._current: str = ""
 
     def add(self, text: str, delim: str = "") -> None:
         """Add text to current chunk; flush if exceeds max_chunk_size."""
         if not text:
             return
 
-        est_len = self.current_len + len(text) + len(delim)
-        if est_len > self.max_chunk_size and self.current_chunk:
-            self._flush()
+        if not self._current:
+            self._current = text
+            return
 
-        self.current_chunk.append(text)
-        self.current_len += len(text) + len(delim)
-        self.current_delim = delim
+        candidate = self._current + delim + text
+        if len(candidate) > self.max_chunk_size:
+            self.chunks.append(self._current)
+            self._current = text
+        else:
+            self._current = candidate
 
     def _flush(self) -> None:
         """Flush current chunk to output."""
-        if self.current_chunk:
-            self.chunks.append(self.current_delim.join(self.current_chunk))
-            self.current_chunk = []
-            self.current_len = 0
+        if self._current:
+            self.chunks.append(self._current)
+            self._current = ""
 
     def finalize(self) -> list[str]:
         """Return all chunks and clear state."""

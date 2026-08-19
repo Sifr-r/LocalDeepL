@@ -45,7 +45,9 @@ SYNC_THRESHOLD = 5_000
 
 
 def _library() -> GlossaryLibrary:
-    return state.glossary_library
+    from typing import cast
+
+    return cast(GlossaryLibrary, state.glossary_library)
 
 
 def _serialize_item(item: StoredGlossary) -> GlossaryListItem:

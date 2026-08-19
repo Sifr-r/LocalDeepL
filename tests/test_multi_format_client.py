@@ -187,7 +187,9 @@ async def test_default_no_retries_on_5xx(openai_config: ProviderConfig) -> None:
     )
 
 
-async def test_explicit_max_retries_triggers_retry(openai_config: ProviderConfig) -> None:
+async def test_explicit_max_retries_triggers_retry(
+    openai_config: ProviderConfig,
+) -> None:
     """F1.2: explicit ``max_retries=N`` does ``N+1`` attempts with backoff.
 
     Direct callers that want retries opt in explicitly. The inner loop is
@@ -208,9 +210,7 @@ async def test_explicit_max_retries_triggers_retry(openai_config: ProviderConfig
                 max_retries=2,
                 retry_base_delay=0.001,
             )
-    assert call_count == 3, (
-        f"Expected 3 attempts with max_retries=2, got {call_count}"
-    )
+    assert call_count == 3, f"Expected 3 attempts with max_retries=2, got {call_count}"
 
 
 async def test_call_vlm_wrapper(openai_config: ProviderConfig) -> None:

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ElementTree
+from xml.etree.ElementTree import (  # nosemgrep: python.lang.security.use-defused-xml.use-defused-xml
+    Element,
+)
 
 from ._common import (
     decode_source,
@@ -63,7 +65,7 @@ def parse_tbx(
 
 
 def _language_terms(
-    term_entry: ElementTree.Element,
+    term_entry: Element,
 ) -> list[tuple[str | None, list[str]]]:
     result: list[tuple[str | None, list[str]]] = []
     for lang_set in term_entry:

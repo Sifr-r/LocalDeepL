@@ -191,8 +191,9 @@ def test_dp_conserves_all_lines_on_real_boxes(
 ):
     """Every LLM line must be present somewhere in the output (no drops)."""
     boxes = _get_page_boxes(surya_aligner, PDFHandler(), example_pdfs[name])
-    if len(boxes) == 0:
-        pytest.skip(f"{name}: no boxes detected")
+    assert len(boxes) > 0, (
+        f"{name}: Surya layout detection returned 0 boxes on valid fixture PDF"
+    )
 
     lines = [
         "ALPHALINE first distinct line",
@@ -216,8 +217,9 @@ def test_dp_placement_is_monotonic_on_real_boxes(
     earlier-or-equal box position. This is the monotonicity guarantee that
     preserves reading order."""
     boxes = _get_page_boxes(surya_aligner, PDFHandler(), example_pdfs[name])
-    if len(boxes) < 3:
-        pytest.skip(f"{name}: need at least 3 boxes")
+    assert len(boxes) >= 3, (
+        f"{name}: need at least 3 detected boxes to verify monotonicity"
+    )
 
     # Use tagged lines so we can track original order into the output.
     lines = [f"TAG{i:02d}line with some body text here" for i in range(6)]
@@ -255,8 +257,9 @@ def test_embedded_text_positionally_matches_aligned_boxes(
     pdf_handler = PDFHandler()
     DPI = 200  # keep pipeline DPI and reconstruction DPI identical
     boxes = _get_page_boxes(surya_aligner, pdf_handler, example_pdfs[name], dpi=DPI)
-    if len(boxes) < 3:
-        pytest.skip(f"{name}: need at least 3 boxes")
+    assert len(boxes) >= 3, (
+        f"{name}: need at least 3 detected boxes to verify embedding geometry"
+    )
 
     # Tagged, distinct lines — one per detectable box (padded with extras so
     # DP has freedom and some boxes may remain empty; we only check the ones

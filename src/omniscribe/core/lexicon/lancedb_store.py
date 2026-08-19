@@ -248,12 +248,23 @@ class LanceDBLexiconStore:
 
     def health(self) -> dict[str, object]:
         self._ensure_open()
-        df = self._table.to_pandas()
+        try:
+            tbl = self._table.to_arrow()
+            row_count = tbl.num_rows
+            if row_count > 0:
+                import pyarrow.compute as pc
+
+                glossary_count = len(pc.unique(tbl["glossary_id"]))
+            else:
+                glossary_count = 0
+        except Exception:
+            row_count = 0
+            glossary_count = 0
         return {
             "path": str(self._path),
             "table": self.TABLE_NAME,
-            "row_count": len(df),
-            "glossary_count": int(df["glossary_id"].nunique()) if not df.empty else 0,
+            "row_count": row_count,
+            "glossary_count": glossary_count,
             "embedding_dim": self._embedding.dim,
             "embedding_model": self._embedding.model_name,
             "index_spec": VECTOR_INDEX_SPEC,
@@ -263,15 +274,38 @@ class LanceDBLexiconStore:
 
     def list_glossaries(self) -> list[GlossaryMeta]:
         self._ensure_open()
-        df = self._table.to_pandas()
-        if df.empty:
+        tbl = self._table.to_arrow()
+        if tbl.num_rows == 0:
             return []
+        columns = [
+            "glossary_id",
+            "glossary_name",
+            "source_format",
+            "glossary_source_uri",
+            "glossary_encoding",
+            "glossary_enabled",
+            "glossary_priority",
+            "glossary_group",
+            "created_at",
+            "updated_at",
+        ]
+        available_cols = [c for c in columns if c in tbl.column_names]
+        selected_tbl = tbl.select(available_cols)
+        pylist = selected_tbl.to_pylist()
+        groups: dict[str, dict[str, Any]] = {}
+        for row in pylist:
+            gid = str(row["glossary_id"])
+            if gid not in groups:
+                groups[gid] = {"first": row, "count": 1}
+            else:
+                groups[gid]["count"] += 1
+
         result: list[GlossaryMeta] = []
-        for gid, group in df.groupby("glossary_id", sort=False):
-            first = group.iloc[0]
+        for gid, grp in groups.items():
+            first = grp["first"]
             result.append(
                 GlossaryMeta(
-                    id=str(gid),
+                    id=gid,
                     name=str(first["glossary_name"]),
                     format=str(first["source_format"]),
                     source_uri=_opt_str(first.get("glossary_source_uri")),
@@ -279,7 +313,7 @@ class LanceDBLexiconStore:
                     enabled=bool(first["glossary_enabled"]),
                     priority=int(first["glossary_priority"]),
                     group=str(first["glossary_group"]),
-                    entry_count=len(group),
+                    entry_count=grp["count"],
                     created_at=_to_utc_datetime(first["created_at"]),
                     updated_at=_to_utc_datetime(first["updated_at"]),
                 )
@@ -293,13 +327,21 @@ class LanceDBLexiconStore:
     def get_glossary(self, glossary_id: str) -> GlossaryMeta | None:
         self._ensure_open()
         target = str(glossary_id)
-        df = self._table.to_pandas()
-        if df.empty:
+        escaped_target = _sql_escape(target)
+        try:
+            search = self._table.search().where(f"glossary_id = '{escaped_target}'")
+            tbl = search.to_arrow()
+        except Exception:
+            all_tbl = self._table.to_arrow()
+            if all_tbl.num_rows == 0:
+                return None
+            import pyarrow.compute as pc
+
+            mask = pc.equal(all_tbl["glossary_id"], target)
+            tbl = all_tbl.filter(mask)
+        if tbl.num_rows == 0:
             return None
-        rows = df[df["glossary_id"] == target]
-        if rows.empty:
-            return None
-        first = rows.iloc[0]
+        first = tbl.slice(0, 1).to_pylist()[0]
         return GlossaryMeta(
             id=target,
             name=str(first["glossary_name"]),
@@ -309,7 +351,7 @@ class LanceDBLexiconStore:
             enabled=bool(first["glossary_enabled"]),
             priority=int(first["glossary_priority"]),
             group=str(first["glossary_group"]),
-            entry_count=len(rows),
+            entry_count=tbl.num_rows,
             created_at=_to_utc_datetime(first["created_at"]),
             updated_at=_to_utc_datetime(first["updated_at"]),
         )
@@ -420,24 +462,28 @@ class LanceDBLexiconStore:
         new_value = bool(enabled)
         # Use a single SQL update statement — the denormalized glossary_enabled
         # field is what the hybrid filter reads, so we update it in place.
+        escaped_target = _sql_escape(target)
         try:
             self._table.update(
-                where=f"glossary_id = '{target.replace(chr(39), chr(39) + chr(39))}'",
+                where=f"glossary_id = '{escaped_target}'",
                 values={"glossary_enabled": new_value, "updated_at": now},
             )
         except Exception as exc:
-            # Fallback path: do a per-row merge via to_pandas to re-write.
-            # Slower but correct if LanceDB version doesn't support update().
-            df = self._table.to_pandas()
-            if df.empty:
+            # Fallback path: per-row merge via Arrow table to re-write.
+            tbl = self._table.to_arrow()
+            if tbl.num_rows == 0:
                 raise GlossaryNotFoundError(target) from exc
-            mask = df["glossary_id"] == target
-            if not mask.any():
+            records = tbl.to_pylist()
+            found = False
+            for r in records:
+                if str(r.get("glossary_id")) == target:
+                    r["glossary_enabled"] = new_value
+                    r["updated_at"] = now
+                    found = True
+            if not found:
                 raise GlossaryNotFoundError(target) from exc
-            df.loc[mask, "glossary_enabled"] = new_value
-            df.loc[mask, "updated_at"] = now
-            self._table.delete(f"glossary_id = '{target}'")
-            self._table.add(df.to_dict(orient="records"))
+            self._table.delete(where=f"glossary_id = '{escaped_target}'")
+            self._table.add(records)
         meta = self.get_glossary(target)
         if meta is None:
             raise GlossaryNotFoundError(target)
@@ -458,43 +504,47 @@ class LanceDBLexiconStore:
         total = len(ordered)
         for index, gid in enumerate(ordered):
             new_priority = total - index
+            escaped_gid = _sql_escape(gid)
             self._table.update(
-                where=f"glossary_id = '{gid.replace(chr(39), chr(39) + chr(39))}'",
+                where=f"glossary_id = '{escaped_gid}'",
                 values={"glossary_priority": new_priority},
             )
 
     def delete_glossary(self, glossary_id: str) -> bool:
         self._ensure_open()
         target = str(glossary_id)
-        df = self._table.to_pandas()
-        if df.empty or not (df["glossary_id"] == target).any():
-            return False
-        self._table.delete(
-            where=f"glossary_id = '{target.replace(chr(39), chr(39) + chr(39))}'"
-        )
+        escaped_target = _sql_escape(target)
+        try:
+            tbl = (
+                self._table.search()
+                .where(f"glossary_id = '{escaped_target}'")
+                .limit(1)
+                .to_arrow()
+            )
+            if tbl.num_rows == 0:
+                return False
+        except Exception:
+            if self.get_glossary(target) is None:
+                return False
+        self._table.delete(where=f"glossary_id = '{escaped_target}'")
         return True
 
     # --- Read API (used by translation RAG) ---------------------------------
 
     def hybrid_query(self, query: LexiconQuery) -> list[LexiconHit]:
         self._ensure_open()
-        df = self._table.to_pandas()
-        if df.empty:
+        if not query.source_chunk or not query.source_chunk.strip():
             return []
-        # Pre-filter via the same WHERE clauses we'll pass to the vector
-        # search. We also do this client-side as a defense in depth — the
-        # same predicates are pushed down to the search call.
-        candidates = self._apply_prefilter(df, query)
-        if candidates.empty:
+        try:
+            row_count = self._table.count_rows()
+        except Exception:
+            row_count = self._table.to_arrow().num_rows
+        if row_count == 0:
             return []
 
-        # Embed the source chunk and search. We use LanceDB's hybrid
-        # .search() + .where() when the table has a vector index, and
-        # fall back to a pure pandas cosine-similarity ranking when the
-        # table is small enough that the index isn't built yet.
-        if self._has_vector_index():
-            return self._hybrid_via_lancedb(query, candidates)
-        return self._hybrid_via_pandas(query, candidates)
+        # Embed the source chunk and search via LanceDB's native vector search.
+        # Falls back to in-memory Arrow/NumPy cosine similarity if vector query fails.
+        return self._hybrid_via_lancedb(query)
 
     def exact_lookup(
         self,
@@ -504,61 +554,82 @@ class LanceDBLexiconStore:
         target_lang: str,
     ) -> list[LexiconEntry]:
         self._ensure_open()
-        df = self._table.to_pandas()
-        if df.empty:
+        target_clean = source_text.strip().lower()
+        if not target_clean:
             return []
-        mask = df["source_text"].str.lower() == source_text.strip().lower()
+        where_parts: list[str] = []
         if source_lang:
-            mask &= df["source_lang"] == source_lang
+            where_parts.append(f"source_lang = '{_sql_escape(source_lang)}'")
         if target_lang:
-            mask &= df["target_lang"] == target_lang
-        rows = df[mask]
-        return [_entry_from_row(r) for _, r in rows.iterrows()]
+            where_parts.append(f"target_lang = '{_sql_escape(target_lang)}'")
+        try:
+            search = self._table.search()
+            if where_parts:
+                search = search.where(" AND ".join(where_parts))
+            tbl = search.to_arrow()
+        except Exception:
+            tbl = self._table.to_arrow()
+        if tbl.num_rows == 0:
+            return []
+
+        entries: list[LexiconEntry] = []
+        for row in tbl.to_pylist():
+            if str(row.get("source_text", "")).strip().lower() == target_clean:
+                if source_lang and str(row.get("source_lang", "")) != source_lang:
+                    continue
+                if target_lang and str(row.get("target_lang", "")) != target_lang:
+                    continue
+                entries.append(_entry_from_row(row))
+        return entries
 
     def list_entries(self, glossary_id: str) -> list[LexiconEntry]:
         self._ensure_open()
         target = str(glossary_id)
-        df = self._table.to_pandas()
-        if df.empty:
+        escaped_target = _sql_escape(target)
+        try:
+            search = self._table.search().where(f"glossary_id = '{escaped_target}'")
+            tbl = search.to_arrow()
+        except Exception:
+            all_tbl = self._table.to_arrow()
+            if all_tbl.num_rows == 0:
+                return []
+            import pyarrow.compute as pc
+
+            mask = pc.equal(all_tbl["glossary_id"], target)
+            tbl = all_tbl.filter(mask)
+        if tbl.num_rows == 0:
             return []
-        rows = df[df["glossary_id"] == target]
-        return [_entry_from_row(r) for _, r in rows.iterrows()]
+        return [_entry_from_row(r) for r in tbl.to_pylist()]
 
     # --- Internal helpers ---------------------------------------------------
 
-    def _apply_prefilter(self, df: Any, query: LexiconQuery) -> Any:
-        """Apply structured filters to the candidate set."""
-        mask = df["source_lang"].notna()  # always true; placeholder
-        if query.source_lang:
-            mask &= df["source_lang"] == query.source_lang
-        if query.target_lang:
-            mask &= df["target_lang"] == query.target_lang
-        if query.domain:
-            mask &= df["domain"] == query.domain
-        if query.enabled_only:
-            mask &= df["glossary_enabled"] == True  # noqa: E712
+    def _matches_query(self, row: dict[str, Any], query: LexiconQuery) -> bool:
+        """Evaluate query filter predicates against a row dict."""
+        if query.source_lang and str(row.get("source_lang", "")) != query.source_lang:
+            return False
+        if query.target_lang and str(row.get("target_lang", "")) != query.target_lang:
+            return False
+        if query.domain and str(row.get("domain", "")) != query.domain:
+            return False
+        if query.enabled_only and not bool(row.get("glossary_enabled", True)):
+            return False
         if query.glossary_ids is not None:
             allowed = {str(g) for g in query.glossary_ids}
-            mask &= df["glossary_id"].isin(allowed)
-        return df[mask]
+            if str(row.get("glossary_id", "")) not in allowed:
+                return False
+        return True
 
     def _has_vector_index(self) -> bool:
-        # LanceDB Python doesn't expose a direct "is index built" query in
-        # all versions. We treat the table as indexed once it has at least
-        # one row; on the first query, LanceDB will build the index lazily
-        # if it doesn't exist. This is a deliberate simplification — the
-        # alternative (a custom index tracker) adds complexity for marginal
-        # benefit at personal-scale lexicon sizes.
         try:
             row_count = self._table.count_rows()
         except Exception:
             return False
         return int(row_count) > 0
 
-    def _hybrid_via_lancedb(
-        self, query: LexiconQuery, candidates: Any
-    ) -> list[LexiconHit]:
+    def _hybrid_via_lancedb(self, query: LexiconQuery) -> list[LexiconHit]:
         vector = self._embedding.embed(query.source_chunk)
+        if not vector:
+            return []
         try:
             search = (
                 self._table.search(vector, vector_column_name="embedding")
@@ -568,12 +639,16 @@ class LanceDBLexiconStore:
             where_clauses = self._build_where(query)
             if where_clauses:
                 search = search.where(where_clauses)
-            raw = search.to_list()
+            arrow_tbl = search.to_arrow()
+            if arrow_tbl.num_rows == 0:
+                return []
+            raw = arrow_tbl.to_pylist()
         except Exception as exc:
             logger.warning(
-                "LanceDB hybrid search failed: %s; falling back to pandas", exc
+                "LanceDB hybrid search failed: %s; falling back to Arrow/NumPy search",
+                exc,
             )
-            return self._hybrid_via_pandas(query, candidates)
+            return self._hybrid_via_arrow(query)
         hits: list[LexiconHit] = []
         for row in raw:
             distance = float(row.get("_distance", 0.0))
@@ -586,19 +661,26 @@ class LanceDBLexiconStore:
                 break
         return hits
 
-    def _hybrid_via_pandas(
-        self, query: LexiconQuery, candidates: Any
-    ) -> list[LexiconHit]:
-        """Fallback ranking using in-process cosine similarity."""
+    def _hybrid_via_arrow(self, query: LexiconQuery) -> list[LexiconHit]:
+        """Fallback ranking using in-memory Arrow table + cosine similarity."""
         import numpy as np
 
-        if candidates.empty:
+        try:
+            tbl = self._table.to_arrow()
+        except Exception:
             return []
+        if tbl.num_rows == 0:
+            return []
+
+        rows = tbl.to_pylist()
+        candidates = [r for r in rows if self._matches_query(r, query)]
+        if not candidates:
+            return []
+
         query_vec = np.asarray(
             self._embedding.embed(query.source_chunk), dtype=np.float32
         )
-        # Build a (N, 384) matrix from the candidate embeddings
-        emb_matrix = np.asarray(candidates["embedding"].tolist(), dtype=np.float32)
+        emb_matrix = np.asarray([r["embedding"] for r in candidates], dtype=np.float32)
         # Cosine similarity
         qn = query_vec / (np.linalg.norm(query_vec) + 1e-12)
         en = emb_matrix / (np.linalg.norm(emb_matrix, axis=1, keepdims=True) + 1e-12)
@@ -609,7 +691,7 @@ class LanceDBLexiconStore:
             score = float(scores[idx])
             if query.min_score is not None and score < query.min_score:
                 continue
-            row = candidates.iloc[int(idx)]
+            row = candidates[int(idx)]
             hits.append(LexiconHit(entry=_entry_from_row(row), score=score))
             if len(hits) >= query.limit:
                 break

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -127,7 +128,34 @@ async def translate_text(
 ) -> str:
     """Translate OCR text with stable settings resolution and provider errors."""
 
-    if not request.text.strip():
+    source_text = request.text.strip()
+    if not source_text and request.text_artifact_id and request.text_artifact_token:
+        from omniscribe.api.routers import state
+        from omniscribe.api.services.document_exports import load_json_file
+
+        try:
+            path_str = await state.text_artifacts.get(
+                request.text_artifact_id, request.text_artifact_token
+            )
+            raw_payload = await asyncio.to_thread(load_json_file, path_str)
+            if isinstance(raw_payload, dict):
+                lines_by_page: list[str] = []
+                for _k, lines in sorted(
+                    raw_payload.items(),
+                    key=lambda item: int(item[0]) if item[0].isdigit() else 0,
+                ):
+                    if isinstance(lines, list):
+                        lines_by_page.append(
+                            "\n".join(str(line) for line in lines if line)
+                        )
+                source_text = "\n\n".join(lines_by_page).strip()
+        except Exception:
+            logger.warning(
+                "Failed to resolve text artifact %s for translation",
+                request.text_artifact_id,
+            )
+
+    if not source_text:
         return ""
 
     settings = await resolve_ai_settings(
@@ -137,7 +165,7 @@ async def translate_text(
         config=config,
         namespace="translation",
     )
-    prompt = build_translation_prompt(request.text, request.target_language)
+    prompt = build_translation_prompt(source_text, request.target_language)
     return await _complete_text(
         settings,
         prompt,

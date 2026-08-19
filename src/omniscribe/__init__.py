@@ -55,7 +55,10 @@ def __getattr__(name: str) -> Any:
     if module_name is None:
         raise AttributeError(f"module 'omniscribe' has no attribute {name!r}")
 
-    value = getattr(import_module(module_name), name)
+    mod = import_module(  # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import
+        module_name
+    )
+    value = getattr(mod, name)
     globals()[name] = value
     return value
 

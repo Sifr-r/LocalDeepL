@@ -49,6 +49,16 @@ class StoredGlossary:
     created_at: float = 0.0
     updated_at: float = 0.0
 
+    def __post_init__(self) -> None:
+        import warnings
+
+        warnings.warn(
+            "StoredGlossary is deprecated and will be removed in a future release. "
+            "Use GlossaryMeta from omniscribe.core.lexicon instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
 
 class GlossaryNotFoundError(KeyError):
     """Raised when a requested library glossary does not exist."""
@@ -121,6 +131,14 @@ class GlossaryLibraryAdapter:
     """
 
     def __init__(self, store: LexiconStore) -> None:
+        import warnings
+
+        warnings.warn(
+            "GlossaryLibraryAdapter is deprecated and will be removed in a future release. "
+            "Use LexiconStore directly.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._store = store
         self._lock = threading.Lock()
 
@@ -208,6 +226,13 @@ def merged_enabled_glossary(store: LexiconStore) -> Glossary:
     semantics. We sort by priority ASC so that the highest-priority
     glossary is the last writer and the effective winner.
     """
+    import warnings
+
+    warnings.warn(
+        "merged_enabled_glossary is deprecated and will be removed in a future release.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     metas = [m for m in store.list_glossaries() if m.enabled]
     metas.sort(key=lambda m: m.priority)  # low → high
     seen: dict[str, Any] = {}
@@ -226,6 +251,13 @@ def preview(store: LexiconStore) -> dict[str, object]:
     For every source term that appears in more than one enabled glossary,
     return the list of distinct target translations across those glossaries.
     """
+    import warnings
+
+    warnings.warn(
+        "preview is deprecated and will be removed in a future release.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     metas = [m for m in store.list_glossaries() if m.enabled]
     by_source: dict[str, list[tuple[str, str]]] = {}
     for meta in metas:

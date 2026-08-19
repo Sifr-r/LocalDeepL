@@ -22,12 +22,7 @@ from pathlib import Path
 # `importlib.import_module`) so it doesn't pay the cost of importing
 # every core module and so a layering regression can't accidentally
 # prevent the test itself from collecting.
-CORE_ROOT = (
-    Path(__file__).resolve().parent.parent
-    / "src"
-    / "omniscribe"
-    / "core"
-)
+CORE_ROOT = Path(__file__).resolve().parent.parent / "src" / "omniscribe" / "core"
 
 # Lines that, if present at runtime, invert the layering. Both
 # `from omniscribe.api...` and `import omniscribe.api...` are forbidden.
@@ -60,11 +55,7 @@ def _collect_core_modules() -> list[Path]:
     Excludes ``__pycache__`` and ``__init__.py`` is included (we
     want to catch upward imports there too).
     """
-    return sorted(
-        p
-        for p in CORE_ROOT.rglob("*.py")
-        if "__pycache__" not in p.parts
-    )
+    return sorted(p for p in CORE_ROOT.rglob("*.py") if "__pycache__" not in p.parts)
 
 
 def test_core_does_not_import_api() -> None:
@@ -89,6 +80,5 @@ def test_core_does_not_import_api() -> None:
     assert not violations, (
         "core/ modules must not import from omniscribe.api at runtime "
         "(layering inversion). Move the import target to omniscribe.core "
-        "or guard it with `if TYPE_CHECKING:`. Violations:\n"
-        + "\n".join(violations)
+        "or guard it with `if TYPE_CHECKING:`. Violations:\n" + "\n".join(violations)
     )

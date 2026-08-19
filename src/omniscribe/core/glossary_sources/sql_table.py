@@ -49,6 +49,25 @@ def parse_sql_table(
         raise ValueError("source_table and target_table must match for a pair table.")
     logger.info("Reading glossary SQL table from %s", redact_dsn(clean_dsn))
 
+    from omniscribe.utils.security import is_blocked_host
+
+    try:
+        from sqlalchemy.engine import make_url
+
+        url = make_url(clean_dsn)
+        if (
+            url.get_backend_name() != "sqlite"
+            and url.host
+            and is_blocked_host(url.host)
+        ):
+            raise ValueError(
+                f"Access to private or local host '{url.host}' is forbidden."
+            )
+    except ValueError:
+        raise
+    except Exception:
+        pass
+
     try:
         engine = create_engine(clean_dsn)
     except Exception as exc:
@@ -64,7 +83,7 @@ def parse_sql_table(
         quoted_table = engine.dialect.identifier_preparer.quote(table)
         quoted_source = engine.dialect.identifier_preparer.quote(source)
         quoted_target = engine.dialect.identifier_preparer.quote(target)
-        statement = text(
+        statement = text(  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             f"SELECT {quoted_source} AS source, {quoted_target} AS target "
             f"FROM {quoted_table}{predicate}"
         )

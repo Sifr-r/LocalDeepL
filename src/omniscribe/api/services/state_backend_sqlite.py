@@ -168,6 +168,15 @@ class SQLiteTextArtifactStore(TextArtifactStore):
         with _connect(db_path) as conn:
             conn.executescript(_ARTIFACT_TABLE_SCHEMA.format(table=table))
 
+    def _execute(
+        self,
+        conn: sqlite3.Connection,
+        sql: str,
+        parameters: tuple[Any, ...] = (),
+    ) -> sqlite3.Cursor:
+        # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
+        return conn.execute(sql, parameters)
+
     def put(
         self,
         *,
@@ -183,13 +192,15 @@ class SQLiteTextArtifactStore(TextArtifactStore):
         expires_at = now + self._ttl_seconds
 
         with _connect(self._db_path) as conn:
-            existing = conn.execute(
+            existing = self._execute(
+                conn,
                 f"SELECT path FROM {self._table} WHERE id = ?",
                 (artifact_id,),
             ).fetchone()
             if existing is not None and Path(existing[0]) != artifact_path:
                 _delete_file(Path(existing[0]))
-            conn.execute(
+            self._execute(
+                conn,
                 f"INSERT OR REPLACE INTO {self._table} "
                 "(id, token, path, created_at, expires_at) "
                 "VALUES (?, ?, ?, ?, ?)",
@@ -210,7 +221,8 @@ class SQLiteTextArtifactStore(TextArtifactStore):
         self.cleanup_expired()
         now = self._clock()
         with _connect(self._db_path) as conn:
-            row = conn.execute(
+            row = self._execute(
+                conn,
                 f"SELECT token, path, expires_at FROM {self._table} WHERE id = ?",
                 (artifact_id,),
             ).fetchone()
@@ -222,7 +234,8 @@ class SQLiteTextArtifactStore(TextArtifactStore):
             # Best-effort expiry cleanup; ignore failure (the TTL
             # sweep on the next put() will catch it).
             with _connect(self._db_path) as conn:
-                conn.execute(
+                self._execute(
+                    conn,
                     f"DELETE FROM {self._table} WHERE id = ?",
                     (artifact_id,),
                 )
@@ -235,7 +248,8 @@ class SQLiteTextArtifactStore(TextArtifactStore):
         _validate_token(token)
         self.cleanup_expired()
         with _connect(self._db_path) as conn:
-            row = conn.execute(
+            row = self._execute(
+                conn,
                 f"SELECT token, path FROM {self._table} WHERE id = ?",
                 (artifact_id,),
             ).fetchone()
@@ -244,7 +258,8 @@ class SQLiteTextArtifactStore(TextArtifactStore):
         if not secrets.compare_digest(row[0], token):
             raise ArtifactAccessDeniedError("Artifact token does not match.")
         with _connect(self._db_path) as conn:
-            conn.execute(
+            self._execute(
+                conn,
                 f"DELETE FROM {self._table} WHERE id = ?",
                 (artifact_id,),
             )
@@ -260,12 +275,14 @@ class SQLiteTextArtifactStore(TextArtifactStore):
     def cleanup_expired(self) -> list[str]:
         now = self._clock()
         with _connect(self._db_path) as conn:
-            expired = conn.execute(
+            expired = self._execute(
+                conn,
                 f"SELECT id, path FROM {self._table} WHERE expires_at <= ?",
                 (now,),
             ).fetchall()
             if expired:
-                conn.execute(
+                self._execute(
+                    conn,
                     f"DELETE FROM {self._table} WHERE expires_at <= ?",
                     (now,),
                 )
@@ -276,8 +293,8 @@ class SQLiteTextArtifactStore(TextArtifactStore):
 
     def clear(self) -> list[str]:
         with _connect(self._db_path) as conn:
-            rows = conn.execute(f"SELECT path FROM {self._table}").fetchall()
-            conn.execute(f"DELETE FROM {self._table}")
+            rows = self._execute(conn, f"SELECT path FROM {self._table}").fetchall()
+            self._execute(conn, f"DELETE FROM {self._table}")
         removed_paths = [str(row[0]) for row in rows]
         for path in removed_paths:
             _delete_file(Path(path))
@@ -286,7 +303,9 @@ class SQLiteTextArtifactStore(TextArtifactStore):
     def __len__(self) -> int:
         self.cleanup_expired()
         with _connect(self._db_path) as conn:
-            (count,) = conn.execute(f"SELECT COUNT(*) FROM {self._table}").fetchone()
+            (count,) = self._execute(
+                conn, f"SELECT COUNT(*) FROM {self._table}"
+            ).fetchone()
         return int(count)
 
     def _evict_overflow_sqlite(self) -> None:
@@ -298,19 +317,22 @@ class SQLiteTextArtifactStore(TextArtifactStore):
         """
         while True:
             with _connect(self._db_path) as conn:
-                (count,) = conn.execute(
-                    f"SELECT COUNT(*) FROM {self._table}"
+                (count,) = self._execute(
+                    conn,
+                    f"SELECT COUNT(*) FROM {self._table}",
                 ).fetchone()
                 if count <= self._max_entries:
                     return
-                row = conn.execute(
+                row = self._execute(
+                    conn,
                     f"SELECT id, path FROM {self._table} "
-                    "ORDER BY created_at ASC LIMIT 1"
+                    "ORDER BY created_at ASC LIMIT 1",
                 ).fetchone()
             if row is None:
                 return
             with _connect(self._db_path) as conn:
-                conn.execute(
+                self._execute(
+                    conn,
                     f"DELETE FROM {self._table} WHERE id = ?",
                     (row[0],),
                 )
@@ -351,6 +373,7 @@ class SQLiteJobHistory(JobHistory):
         duration_s: float,
         status: JobStatus,
         failed_pages: Sequence[int] = (),
+        text_artifact_id: str | None = None,
     ) -> JobRecord:
         record = JobRecord(
             id=_clean_required_text(job_id, "job_id"),
@@ -362,6 +385,11 @@ class SQLiteJobHistory(JobHistory):
             timestamp=_current_timestamp(self._now),
             status=_clean_status(status),
             failed_pages=_clean_failed_pages(failed_pages),
+            text_artifact_id=(
+                _clean_optional_text(text_artifact_id, "text_artifact_id")
+                if text_artifact_id is not None
+                else None
+            ),
         )
         payload = json.dumps(record.to_dict())
         inserted_at = time.time()

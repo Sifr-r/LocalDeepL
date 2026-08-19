@@ -184,7 +184,7 @@ class RedisTextArtifactStore(TextArtifactStore):
 
     def __len__(self) -> int:
         self.cleanup_expired()
-        return 0
+        return sum(1 for _ in self._redis.scan_iter(f"{self.prefix}:*"))
 
 
 class RedisJobHistory(JobHistory):
@@ -194,7 +194,7 @@ class RedisJobHistory(JobHistory):
         self,
         redis_url: str,
         *,
-        max_jobs: int = 50,
+        max_jobs: int = 1000,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         super().__init__(max_jobs=max_jobs, now=now)
@@ -212,6 +212,7 @@ class RedisJobHistory(JobHistory):
         duration_s: float,
         status: JobStatus,
         failed_pages: Sequence[int] = (),
+        text_artifact_id: str | None = None,
     ) -> JobRecord:
         record = JobRecord(
             id=_clean_required_text(job_id, "job_id"),
@@ -223,6 +224,11 @@ class RedisJobHistory(JobHistory):
             timestamp=_current_timestamp(self._now),
             status=_clean_status(status),
             failed_pages=_clean_failed_pages(failed_pages),
+            text_artifact_id=(
+                _clean_optional_text(text_artifact_id, "text_artifact_id")
+                if text_artifact_id is not None
+                else None
+            ),
         )
         payload = json.dumps(record.to_dict())
         self._redis.lpush(self.key, payload)
@@ -269,7 +275,7 @@ class RedisStateBackend:
             redis_url, "omniscribe:artifacts:export", artifact_dir=self.artifact_dir
         )
         self.job_history = RedisJobHistory(redis_url)
-        self.progress_service = ProgressService()
+        self.progress_service = ProgressService(redis_url=redis_url)
         self.glossary_library = GlossaryLibrary(artifact_dir=self.artifact_dir)
         self.ocr_job_queue = OCRJobQueue()
         # Duck-typed config-store attribute (see

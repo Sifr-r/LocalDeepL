@@ -42,6 +42,10 @@ services:
     # ``OMNISCRIBE_AUTH_TOKEN`` (the F2.1 hardening is the only
     # auth gate). The Redis service was already loopback-only and
     # is unchanged.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     ports:
       - "127.0.0.1:8000:8000"
     environment:
@@ -65,6 +69,8 @@ services:
       # var, so the env-var contract is symmetric — one password, four
       # uses, all sourced from ``.env`` or rejected at startup.
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env (see .env.example)}@redis:6379/0
+      # Persistent artifact/state directory for SQLite and LanceDB.
+      OMNISCRIBE_ARTIFACT_DIR: /app/data
       # Recommended security defaults. See README "Security" section.
       # 10240 MB (10 GB) matches ``SecuritySettings.DEFAULT_MAX_UPLOAD_MB``
       # in ``src/omniscribe/api/services/security_config.py`` and the
@@ -80,6 +86,8 @@ services:
       # real, high-entropy secret. See .env.example for the same hint
       # in a more discoverable spot.
       # OMNISCRIBE_AUTH_TOKEN: <generate with: openssl rand -hex 32>
+    volumes:
+      - app-data:/app/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -110,20 +118,37 @@ services:
       resources:
         limits:
           memory: 4g
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     command: ["celery", "-A", "omniscribe.api.tasks", "worker", "--loglevel=info", "--pool=solo"]
     environment:
       LLM_API_BASE: http://host.docker.internal:1234/v1
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env (see .env.example)}@redis:6379/0
+      OMNISCRIBE_ARTIFACT_DIR: /app/data
+    volumes:
+      - app-data:/app/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A omniscribe.api.celery_app inspect ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
     profiles: ["async"]
 
   redis:
     image: redis:7-alpine
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     # ``AOF every second`` is the standard production trade-off; for a
     # single-host personal stack, ``--save ""`` (no snapshots) is fine
     # and avoids disk pressure. Override with command: when needed.
@@ -152,3 +177,6 @@ services:
 volumes:
   redis-data:
     name: omniscribe-redis-data
+  app-data:
+    name: omniscribe-app-data
+

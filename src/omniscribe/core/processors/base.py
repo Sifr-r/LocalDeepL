@@ -183,21 +183,23 @@ async def run_document_processors(
             _enforce_processor_contract(processor, pre, result)
 
     if strict:
+        allows_deletion = any(
+            getattr(p, "contract", None) == ProcessorContract.MAY_DELETE
+            for p in processors
+        )
         final_count = sum(len(page.blocks) for page in result.pages)
         final_texts = [block.text for page in result.pages for block in page.blocks]
-        if final_count != original_block_count:
+        if not allows_deletion and final_count != original_block_count:
             raise ValueError(
                 "run_document_processors(strict=True): aggregate block count "
                 f"changed ({original_block_count} -> {final_count}); at least "
                 "one processor with ANNOTATE_ONLY / MAY_REORDER contract "
                 "violated its declaration"
             )
-        if sorted(final_texts) != sorted(original_texts):
-            # Block text identity changed — only MAY_REORDER/MAY_DELETE are
+        if not allows_deletion and sorted(final_texts) != sorted(original_texts):
+            # Block text identity changed — only MAY_DELETE processors are
             # allowed to alter text multisets. ANNOTATE_ONLY is caught by
-            # the per-processor checks above, so reaching here with the same
-            # count but a different text set implies at least one processor
-            # violated its contract.
+            # the per-processor checks above.
             raise ValueError(
                 "run_document_processors(strict=True): aggregate block text "
                 "multiset changed while block count was preserved; at least "

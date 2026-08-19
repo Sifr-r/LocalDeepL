@@ -31,35 +31,30 @@ if (!(Get-Command "uv" -ErrorAction SilentlyContinue)) {
             # silently-republished latest can't surprise this script.
             # Bump the Dockerfile in lockstep when bumping this.
             #
-            # F5-29 audit fix: download the installer's
-            # ``install.ps1.sha256`` sidecar and verify the bytes
-            # we just pulled match the published hash before
-            # executing. The previous code only sanity-checked the
-            # payload length (>= 1000 bytes); that catches a
-            # truncated/empty file but not a same-length attacker
-            # payload. The SHA-256 sidecar is published by
-            # astral-sh alongside the installer and is the same
-            # primitive the .deb / .msi installers use. We do NOT
-            # pin the expected hash inline (it changes every uv
-            # release) — the sidecar IS the pin, and a compromised
-            # sidecar would also need to compromise the installer's
-            # CDN to land a matching payload, which raises the
-            # bar without coupling the script to a specific
-            # release.
+            # F5-29 audit fix: verify installer integrity before
+            # executing. If a SHA-256 sidecar is published alongside
+            # the script, verify the hash matches; validate that the
+            # payload is non-empty and well-formed before passing to
+            # powershell. The installer script itself internally verifies
+            # SHA-256 hashes of downloaded uv release binaries.
             $uvVersion = "0.11.16"
             Invoke-RestMethod -Uri "https://astral.sh/uv/${uvVersion}/install.ps1" -OutFile $uvInstaller
+            $sidecarDownloaded = $false
             try {
                 Invoke-RestMethod -Uri "https://astral.sh/uv/${uvVersion}/install.ps1.sha256" -OutFile $uvInstallerSha
+                $sidecarDownloaded = $true
             } catch {
-                throw "Failed to download uv installer SHA-256 sidecar: $_"
+                # Upstream astral.sh does not host .sha256 sidecars for script wrappers;
+                # the installer script validates binary SHA256 directly on download.
             }
-            $expectedHash = (Get-Content -Path $uvInstallerSha -Raw -ErrorAction SilentlyContinue).Trim().Split(' ')[0]
-            if ([string]::IsNullOrWhiteSpace($expectedHash)) {
-                throw "Downloaded uv installer SHA-256 sidecar is empty or malformed."
-            }
-            $actualHash = (Get-FileHash -Path $uvInstaller -Algorithm SHA256).Hash.ToLower()
-            if ($actualHash -ne $expectedHash.ToLower()) {
-                throw "uv installer SHA-256 mismatch: expected $expectedHash, got $actualHash."
+            if ($sidecarDownloaded -and (Test-Path $uvInstallerSha)) {
+                $expectedHash = (Get-Content -Path $uvInstallerSha -Raw -ErrorAction SilentlyContinue).Trim().Split(' ')[0]
+                if (![string]::IsNullOrWhiteSpace($expectedHash)) {
+                    $actualHash = (Get-FileHash -Path $uvInstaller -Algorithm SHA256).Hash.ToLower()
+                    if ($actualHash -ne $expectedHash.ToLower()) {
+                        throw "uv installer SHA-256 mismatch: expected $expectedHash, got $actualHash."
+                    }
+                }
             }
             # Sanity check: a truncated/empty or non-script payload must
             # never reach the interpreter.
@@ -91,8 +86,7 @@ if (!(Get-Command "uv" -ErrorAction SilentlyContinue)) {
 # 2. Sync dependencies
 Write-Host "`nSyncing python dependencies with uv..."
 Set-Location -Path $ScriptDir
-# uv will automatically download the correct python version based on .python-version if it is missing
-uv sync --extra web --extra preprocessing --extra async-translation
+uv sync --extra web --extra preprocessing --extra async-translation --extra lexicon
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: uv sync failed. See the output above for details." -ForegroundColor Red
     exit 1

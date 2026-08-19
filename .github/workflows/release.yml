@@ -98,8 +98,8 @@ jobs:
       - name: Update README pin example
         if: steps.ver.outputs.skip != 'true'
         run: |
-          sed -i -E "s|(local-deepl\\.git)@v[0-9]+\\.[0-9]+\\.[0-9]+([a-z0-9.-]*)?|\\1@${{ steps.ver.outputs.tag }}|g" README.md
-          grep -nE 'local-deepl\\.git@v' README.md || true
+          sed -i -E "s|OmniScribe\\.git@v[0-9]+\\.[0-9]+\\.[0-9]+([a-z0-9.-]*)?|OmniScribe.git@${{ steps.ver.outputs.tag }}|g" README.md
+          grep -nE 'OmniScribe\\.git@v' README.md || true
 
       - name: Commit README (if changed), tag, push
         if: steps.ver.outputs.skip != 'true'

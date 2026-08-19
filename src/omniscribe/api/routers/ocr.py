@@ -29,7 +29,7 @@ import uuid
 from collections.abc import Sequence
 from concurrent.futures import Future as ConcurrentFuture
 from http import HTTPStatus
-from typing import cast
+from typing import Any, cast
 
 from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import JSONResponse
@@ -126,8 +126,8 @@ def stage_to_percent(stage: str, current: int, total: int) -> int:
 
     progress = get_progress_service()
     if progress is not None:
-        return progress.stage_to_percent(stage, current, total)
-    return state.progress_service.stage_to_percent(stage, current, total)
+        return int(progress.stage_to_percent(stage, current, total))
+    return int(state.progress_service.stage_to_percent(stage, current, total))
 
 
 def _record_job(
@@ -883,6 +883,22 @@ async def process_pdf_async(
     output_path = os.path.join(tempfile.gettempdir(), f"output_{uuid.uuid4()}.pdf")
     job_id = uuid.uuid4().hex
 
+    from omniscribe.api.services.state_backend_redis import RedisStateBackend
+
+    is_redis_mode = isinstance(state.backend, RedisStateBackend)
+    if is_redis_mode:
+        from omniscribe.api.tasks import process_ocr_task
+
+        process_ocr_task.delay(
+            job_id,
+            input_path,
+            settings.model_dump(),
+            progress_target,
+            progress_token,
+        )
+        _emit_job_submitted(job_id, filename)
+        return {"job_id": job_id, "status": "pending"}
+
     async def runner() -> OCRJobResult:
         text_path: str | None = None
         succeeded = False
@@ -991,9 +1007,42 @@ async def process_pdf_async(
 async def process_status(job_id: str):
     """Return the current state of a queued background OCR job."""
     record = await state.ocr_job_queue.get(job_id)
-    if record is None:
-        return api_error_response(HTTPStatus.NOT_FOUND, "Job not found")
-    return record.to_dict()
+    if record is not None:
+        return record.to_dict()
+
+    for job in state.job_history.list():
+        if job.get("id") == job_id or job.get("job_id") == job_id:
+            return job
+
+    try:
+        from omniscribe.api.celery_app import celery_app
+        from omniscribe.core.translation_config import AsyncTranslationUnavailable
+
+        task = celery_app.AsyncResult(job_id)
+        if task is not None and getattr(task, "state", None):
+            res: dict[str, Any] = {
+                "job_id": job_id,
+                "status": (
+                    task.state.lower()
+                    if isinstance(task.state, str)
+                    else str(task.state)
+                ),
+            }
+            if (
+                task.state == "SUCCESS"
+                and hasattr(task, "result")
+                and isinstance(task.result, dict)
+            ):
+                res.update(task.result)
+            elif task.state == "FAILURE" and hasattr(task, "info"):
+                res["error"] = str(task.info)
+            elif hasattr(task, "info") and isinstance(task.info, dict):
+                res.update(task.info)
+            return res
+    except (AsyncTranslationUnavailable, Exception):
+        pass
+
+    return api_error_response(HTTPStatus.NOT_FOUND, "Job not found")
 
 
 # Canonical namespaced routes for the Svelte UI. The prefix-less forms remain

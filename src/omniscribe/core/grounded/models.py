@@ -19,7 +19,7 @@ Three pieces live here:
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
@@ -94,8 +94,9 @@ class RepairableGroundedBackend(Protocol):
 
     async def ocr_crop(
         self,
-        image_base64: str,
-        bbox: tuple[float, float, float, float],
+        input_path: str,
+        page_index: int,
+        bbox: tuple[float, float, float, float] | Sequence[float],
     ) -> str: ...
 
 

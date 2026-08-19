@@ -27,10 +27,11 @@ __pycache__/
 frontend/
 src/omniscribe/static/assets/
 
-# --- Example / fixture inputs ---
+# --- Example / fixture inputs & test files ---
 # Binary blobs and large PDFs used by `tests/` and the confidence scripts.
 examples/
-tests/fixtures/
+tests/
+scripts/
 
 # --- Generated / vendored reference data ---
 # ChromaDB persistence from `scripts/ingest_lexicon.py` and friends.

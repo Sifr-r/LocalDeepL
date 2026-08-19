@@ -22,11 +22,47 @@ import ipaddress
 import os
 import socket
 from dataclasses import dataclass
+from typing import Final
 from urllib.parse import urlparse
 
 
 def _local_ssrf_allowed() -> bool:
     return os.getenv("ALLOW_SSRF_LOCAL", "").strip().lower() == "true"
+
+
+_UNCONDITIONAL_BLOCKED_NETWORKS: Final[
+    tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]
+] = (
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("100.64.0.0/10"),
+    ipaddress.ip_network("0.0.0.0/8"),
+    ipaddress.ip_network("fe80::/10"),
+)
+
+
+def _is_unconditionally_blocked(
+    ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> bool:
+    normalized: ipaddress.IPv4Address | ipaddress.IPv6Address = (
+        ip.ipv4_mapped
+        if (isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None)
+        else ip
+    )
+    if str(normalized).startswith("169.254.") or str(normalized) == "0.0.0.0":
+        return True
+    for net in _UNCONDITIONAL_BLOCKED_NETWORKS:
+        if normalized.version == net.version and normalized in net:
+            return True
+    return False
+
+
+def _is_cloud_metadata(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    normalized: ipaddress.IPv4Address | ipaddress.IPv6Address = (
+        ip.ipv4_mapped
+        if (isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None)
+        else ip
+    )
+    return normalized.is_link_local or str(normalized).startswith("169.254.")
 
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -127,6 +163,10 @@ async def is_ssrf_target(url: str | None) -> SSRFCheckResult:
             ip = None
 
         if ip is not None:
+            if _is_cloud_metadata(ip):
+                return SSRFCheckResult(False, None, "metadata-endpoint")
+            if _is_unconditionally_blocked(ip):
+                return SSRFCheckResult(False, None, "literal-blocked-ip")
             if _is_blocked_ip(ip):
                 if not allow_local:
                     return SSRFCheckResult(False, None, "literal-blocked-ip")
@@ -152,6 +192,10 @@ async def is_ssrf_target(url: str | None) -> SSRFCheckResult:
                 resolved_ip = ipaddress.ip_address(address)
             except ValueError:
                 return SSRFCheckResult(False, None, "invalid-resolved-ip")
+            if _is_cloud_metadata(resolved_ip):
+                return SSRFCheckResult(False, None, "metadata-endpoint")
+            if _is_unconditionally_blocked(resolved_ip):
+                return SSRFCheckResult(False, None, "resolved-blocked-ip")
             if _is_blocked_ip(resolved_ip):
                 if not allow_local:
                     return SSRFCheckResult(False, None, "resolved-blocked-ip")
@@ -162,3 +206,40 @@ async def is_ssrf_target(url: str | None) -> SSRFCheckResult:
         return SSRFCheckResult(True, resolved[0][0])
     except Exception as exc:
         return SSRFCheckResult(False, None, f"unexpected-error: {exc}")
+
+
+def is_blocked_host(host: str | None) -> bool:
+    """Synchronously check if a hostname/IP is a blocked private or metadata target."""
+    if not host:
+        return False
+    h = host.strip().lower()
+    if h == "metadata.google.internal":
+        return True
+    allow_local = _local_ssrf_allowed()
+    try:
+        ip = ipaddress.ip_address(h)
+        if _is_cloud_metadata(ip) or _is_unconditionally_blocked(ip):
+            return True
+        if _is_blocked_ip(ip):
+            return not allow_local
+        return False
+    except ValueError:
+        pass
+    if (h == "localhost" or h.endswith(".local")) and not allow_local:
+        return True
+    try:
+        addr_info = socket.getaddrinfo(h, None)
+        for _fam, _st, _p, _cn, sockaddr in addr_info:
+            raw_addr = sockaddr[0]
+            if isinstance(raw_addr, bytes):
+                raw_addr = raw_addr.decode("utf-8", errors="replace")
+            resolved_ip = ipaddress.ip_address(raw_addr)
+            if _is_cloud_metadata(resolved_ip) or _is_unconditionally_blocked(
+                resolved_ip
+            ):
+                return True
+            if _is_blocked_ip(resolved_ip) and not allow_local:
+                return True
+    except Exception:
+        pass
+    return False

@@ -46,9 +46,7 @@
       {disabled}
       aria-label={label}
       class="peer absolute inset-0 z-10 opacity-0 cursor-pointer
-             focus:outline-none focus-visible:opacity-100 focus-visible:ring-2
-             focus-visible:ring-brand focus-visible:ring-offset-2
-             focus-visible:ring-offset-background
+             focus:outline-none
              disabled:cursor-not-allowed"
     />
     <span
@@ -56,6 +54,7 @@
       class={[
         'pointer-events-none absolute inset-0 inline-block rounded-full',
         'transition-colors duration-150',
+        'peer-focus-visible:ring-2 peer-focus-visible:ring-brand peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background',
         checked ? 'bg-brand' : 'bg-muted'
       ].join(' ')}
     ></span>

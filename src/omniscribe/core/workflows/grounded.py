@@ -230,10 +230,9 @@ class GroundedEngine(EngineBase):
         """
         loop = QualityRepairLoop(repair_options)
         cb = self.block_callbacks
-        # F1.14 audit fix: mypy now sees ``ocr_crop`` because the
-        # ``isinstance(..., RepairableGroundedBackend)`` check in
-        # ``execute`` narrows the type. No ``# type: ignore`` needed.
-        crop_ocr = self.grounded_backend.ocr_crop
+        from typing import cast
+
+        crop_ocr = cast(RepairableGroundedBackend, self.grounded_backend).ocr_crop
 
         by_page: dict[int, list[GroundedBlock]] = {}
         for block in response.blocks:

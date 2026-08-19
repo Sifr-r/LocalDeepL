@@ -55,11 +55,11 @@ WORKDIR /app
 COPY pyproject.toml uv.lock LICENSE README.md ./
 RUN mkdir -p /app/src/omniscribe \
  && touch /app/src/omniscribe/__init__.py \
- && uv sync --locked --extra web --extra async-translation --extra preprocessing --no-install-project
+ && uv sync --locked --extra web --extra async-translation --extra preprocessing --extra lexicon --no-install-project
 
 # Copy the project source and complete the install.
 COPY src ./src
-RUN uv sync --locked --extra web --extra async-translation --extra preprocessing \
+RUN uv sync --locked --extra web --extra async-translation --extra preprocessing --extra lexicon \
  && rm -rf /root/.cache
 
 # ---- runtime stage ----
@@ -73,18 +73,17 @@ RUN groupadd --system app && useradd --system --gid app --uid 1001 --no-create-h
 
 WORKDIR /app
 
-# Copy the venv from the builder. The project is installed in the
-# venv as a regular (non-editable) install, so the source tree is
-# not strictly required at runtime; we still copy it for debugging
-# and so ``python -m omniscribe.server`` works even if the venv
-# metadata is lost.
-COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app/src ./src
-COPY --from=builder /app/pyproject.toml /app/uv.lock ./
+# Copy the venv and source from the builder with non-root ownership.
+# D5-02 audit fix: using --chown=app:app directly avoids a redundant
+# RUN chown -R layer that duplicates the ~1.5GB venv in Docker storage.
+COPY --chown=app:app --from=builder /app/.venv /app/.venv
+COPY --chown=app:app --from=builder /app/src ./src
+COPY --chown=app:app --from=builder /app/pyproject.toml /app/uv.lock ./
+
+RUN mkdir -p /app/data && chown -R app:app /app/data
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-RUN chown -R app:app /app
 USER app
 
 EXPOSE 8000

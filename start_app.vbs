@@ -11,14 +11,60 @@ objShell.CurrentDirectory = scriptDir
 ' --- Logging (append; safe across reboots) ---
 Const ForAppending = 8
 
+' --- Log rotation (audit-secondary Phase 5 — F23): the launcher can be
+'     re-run on every login / shortcut click, and a long-running station
+'     that boots daily can grow start_app.log into the hundreds of MB
+'     over a year. Rotate when the file crosses MAX_LOG_BYTES; keep
+'     MAX_LOG_BACKUPS generations (start_app.log.1 .. .MAX_LOG_BACKUPS).
+'     The oldest backup is dropped on each rotation. ---
+Const MAX_LOG_BYTES = 10485760     ' 10 MiB
+Const MAX_LOG_BACKUPS = 3
+Const LOG_BASE_NAME = "start_app.log"
+
 ' --- Polling loop bounds (M3 audit): cap each unbounded Do-While loop so a
 '     hung external process (docker.exe, uv.exe) cannot stall the launcher.
-'     Defaults: 300 attempts * 100ms = 30s wall-clock per check. Tune via
-'     the two Consts below; success-path behaviour is byte-identical. ---
+'     MAX_POLL_ATTEMPTS bounds the iteration count; success-path behaviour
+'     is identical to the pre-F30 fixed 100ms sleep on the first poll. ---
+'
+'     Adaptive backoff (audit-secondary Phase 5 — F30): instead of a fixed
+'     100ms sleep, start fast (INITIAL_BACKOFF_MS) and double on each
+'     iteration up to a 2s cap (MAX_BACKOFF_MS). This keeps the success
+'     path snappy (most polls hit on the first or second iteration) while
+'     avoiding a tight loop when the child is truly hung. The wall-clock
+'     upper bound is ~10 minutes at the cap; a hung child still fails
+'     fast relative to a human operator waiting on the launcher.
 Const MAX_POLL_ATTEMPTS = 300
-Const POLL_INTERVAL_MS = 100
+Const INITIAL_BACKOFF_MS = 100
+Const MAX_BACKOFF_MS = 2000
 
-Dim logFile : Set logFile = objFSO.OpenTextFile(scriptDir & "\start_app.log", ForAppending, True)
+' Rotate start_app.log if it has crossed MAX_LOG_BYTES. Rolls
+' start_app.log.N -> start_app.log.(N+1), dropping the oldest, then
+' creates a fresh start_app.log. No-op on first launch when no log
+' exists yet.
+Sub RotateLogIfNeeded()
+    Dim logPath : logPath = scriptDir & "\" & LOG_BASE_NAME
+    If Not objFSO.FileExists(logPath) Then Exit Sub
+    Dim f : Set f = objFSO.GetFile(logPath)
+    If f.Size < MAX_LOG_BYTES Then Exit Sub
+    f.Close
+    ' Shift backups: .MAX -> delete, .(N) -> .(N+1), ..., .1 -> .2
+    Dim oldest : oldest = scriptDir & "\" & LOG_BASE_NAME & "." & MAX_LOG_BACKUPS
+    If objFSO.FileExists(oldest) Then objFSO.DeleteFile oldest, True
+    Dim i
+    For i = MAX_LOG_BACKUPS - 1 To 1 Step -1
+        Dim src : src = scriptDir & "\" & LOG_BASE_NAME & "." & i
+        Dim dst : dst = scriptDir & "\" & LOG_BASE_NAME & "." & (i + 1)
+        If objFSO.FileExists(src) Then
+            objFSO.MoveFile src, dst
+        End If
+    Next
+    ' .log -> .1
+    objFSO.MoveFile logPath, scriptDir & "\" & LOG_BASE_NAME & ".1"
+End Sub
+
+RotateLogIfNeeded
+
+Dim logFile : Set logFile = objFSO.OpenTextFile(scriptDir & "\" & LOG_BASE_NAME, ForAppending, True)
 
 Sub LogMsg(s)
     logFile.WriteLine FormatDateTime(Now, vbGeneralDate) & " " & s
@@ -31,13 +77,18 @@ Function IsDockerAvailable()
     On Error Resume Next
     Dim exec : Set exec = objShell.Exec("docker info")
     Dim attempts : attempts = 0
+    Dim backoff : backoff = INITIAL_BACKOFF_MS
     Do While exec.Status = 0
-        WScript.Sleep POLL_INTERVAL_MS
+        WScript.Sleep backoff
         attempts = attempts + 1
         If attempts >= MAX_POLL_ATTEMPTS Then
-            LogMsg "FATAL: 'docker info' did not exit within " & (MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS / 1000) & "s; aborting launcher"
+            LogMsg "FATAL: 'docker info' did not exit within " & (MAX_POLL_ATTEMPTS * INITIAL_BACKOFF_MS / 1000) & "s; aborting launcher"
             logFile.Close
             WScript.Quit 1
+        End If
+        If backoff < MAX_BACKOFF_MS Then
+            backoff = backoff * 2
+            If backoff > MAX_BACKOFF_MS Then backoff = MAX_BACKOFF_MS
         End If
     Loop
     IsDockerAvailable = (exec.ExitCode = 0)
@@ -48,13 +99,18 @@ Function ContainerExists(name)
     On Error Resume Next
     Dim exec : Set exec = objShell.Exec("docker inspect " & name)
     Dim attempts : attempts = 0
+    Dim backoff : backoff = INITIAL_BACKOFF_MS
     Do While exec.Status = 0
-        WScript.Sleep POLL_INTERVAL_MS
+        WScript.Sleep backoff
         attempts = attempts + 1
         If attempts >= MAX_POLL_ATTEMPTS Then
-            LogMsg "FATAL: 'docker inspect " & name & "' did not exit within " & (MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS / 1000) & "s; aborting launcher"
+            LogMsg "FATAL: 'docker inspect " & name & "' did not exit within " & (MAX_POLL_ATTEMPTS * INITIAL_BACKOFF_MS / 1000) & "s; aborting launcher"
             logFile.Close
             WScript.Quit 1
+        End If
+        If backoff < MAX_BACKOFF_MS Then
+            backoff = backoff * 2
+            If backoff > MAX_BACKOFF_MS Then backoff = MAX_BACKOFF_MS
         End If
     Loop
     ContainerExists = (exec.ExitCode = 0)
@@ -77,17 +133,22 @@ Function GetOrCreateRedisPassword()
     ' wall clock), which is guessable in shared environments even with
     ' --requirepass set on the Redis side. sh.Exec is the portable form for
     ' capturing stdout; sh.Run only returns the exit code.
-    Dim pwd, psCmd, exec, attempts
+    Dim pwd, psCmd, exec, attempts, backoff
     psCmd = "powershell -NoProfile -NonInteractive -Command ""$alphabet = [char[]]'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'; $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create(); $bytes = New-Object byte[] 24; $rng.GetBytes($bytes); -join ($bytes | ForEach-Object { $alphabet[[int]($_ % 62)] })"""
     Set exec = objShell.Exec(psCmd)
     attempts = 0
+    backoff = INITIAL_BACKOFF_MS
     Do While exec.Status = 0
-        WScript.Sleep POLL_INTERVAL_MS
+        WScript.Sleep backoff
         attempts = attempts + 1
         If attempts >= MAX_POLL_ATTEMPTS Then
-            LogMsg "FATAL: PowerShell CSPRNG did not exit within " & (MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS / 1000) & "s; aborting launcher"
+            LogMsg "FATAL: PowerShell CSPRNG did not exit within " & (MAX_POLL_ATTEMPTS * INITIAL_BACKOFF_MS / 1000) & "s; aborting launcher"
             logFile.Close
             WScript.Quit 1
+        End If
+        If backoff < MAX_BACKOFF_MS Then
+            backoff = backoff * 2
+            If backoff > MAX_BACKOFF_MS Then backoff = MAX_BACKOFF_MS
         End If
     Loop
     pwd = exec.StdOut.ReadAll()
@@ -109,17 +170,22 @@ End Function
 On Error Resume Next
 Dim uvCheck : Set uvCheck = objShell.Exec("uv --version")
 Dim uvAttempts : uvAttempts = 0
+Dim uvBackoff : uvBackoff = INITIAL_BACKOFF_MS
 Do While uvCheck.Status = 0
-    WScript.Sleep POLL_INTERVAL_MS
+    WScript.Sleep uvBackoff
     uvAttempts = uvAttempts + 1
     If uvAttempts >= MAX_POLL_ATTEMPTS Then
-        LogMsg "FATAL: 'uv --version' did not exit within " & (MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS / 1000) & "s; aborting launcher (uv hung?)"
+        LogMsg "FATAL: 'uv --version' did not exit within " & (MAX_POLL_ATTEMPTS * INITIAL_BACKOFF_MS / 1000) & "s; aborting launcher (uv hung?)"
         logFile.Close
-        MsgBox "uv --version did not respond within " & (MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS / 1000) & " seconds." & vbCrLf & vbCrLf & _
+        MsgBox "uv --version did not respond within " & (MAX_POLL_ATTEMPTS * INITIAL_BACKOFF_MS / 1000) & " seconds." & vbCrLf & vbCrLf & _
                "This usually means uv is installed but hung, or the executable is blocked by antivirus." & vbCrLf & _
                "Try opening a new Command Prompt and running 'uv --version' manually to diagnose.", _
                vbCritical, "OmniScribe"
         WScript.Quit 1
+    End If
+    If uvBackoff < MAX_BACKOFF_MS Then
+        uvBackoff = uvBackoff * 2
+        If uvBackoff > MAX_BACKOFF_MS Then uvBackoff = MAX_BACKOFF_MS
     End If
 Loop
 If uvCheck.ExitCode <> 0 Then

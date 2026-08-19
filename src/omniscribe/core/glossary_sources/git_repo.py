@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import re
 import subprocess
 import tarfile
 from collections.abc import Callable
@@ -35,8 +36,11 @@ def parse_git_glossary(
         raise ValueError("Git glossary URL is required.")
     if _ssrf_blocked(clean_url):
         raise ValueError("Git glossary URL is not allowed.")
-    if not isinstance(ref, str) or not ref.strip():
+    clean_ref = str(ref).strip() if ref is not None else ""
+    if not clean_ref:
         raise ValueError("Git ref must not be empty.")
+    if clean_ref.startswith("-") or not re.match(r"^[a-zA-Z0-9_.\-/]+$", clean_ref):
+        raise ValueError("Git ref is invalid or malformed.")
     safe_path = _validate_path(path)
     if timeout_sec <= 0 or timeout_sec > 600:
         raise ValueError("timeout_sec must be between 1 and 600 seconds.")
@@ -46,7 +50,7 @@ def parse_git_glossary(
         "git",
         "archive",
         f"--remote={remote_url}",
-        ref.strip(),
+        clean_ref,
         safe_path,
     ]
     try:

@@ -10,6 +10,7 @@ import requests
 if sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
+
 def _parse_xml(content: str):
     """Parse an XML string with XXE/DTD protection.
 

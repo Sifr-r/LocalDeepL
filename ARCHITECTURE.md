@@ -504,7 +504,7 @@ the three services.
 | `.github/workflows/test.yml` | Add `pip-audit` vulnerability scan, `pytest-cov` test coverage reporting, and CycloneDX SBOM artifact generation |
 | `pyproject.toml` | Add `pytest-cov`, `pip-audit`, and `cyclonedx-python-lib` to `dependency-groups.dev` |
 | `.pre-commit-config.yaml` | Sync `ruff-pre-commit` version to `v0.9.0` |
-| `AGENTS.md` | Document `surya-ocr` `requests>=2.31` workaround follow-up and `live_llm` manual test run instructions |
+| `AGENTS.md` | Document `surya-ocr` `requests>=2.31` workaround follow-up and `live_llm` manual test run instructions (workaround closed in audit-secondary Phase 5 — see Known Tech Debt) |
 
 ### 2026-08-11: Goose-Style Multi-Provider API Handling Architecture
 
@@ -699,7 +699,7 @@ Conducted a comprehensive 4-domain audit (Core Pipeline, Backend API/Security, F
 | `.github/workflows/test.yml` | Add `pip-audit` vulnerability scan, `pytest-cov` test coverage reporting, and CycloneDX SBOM artifact generation |
 | `pyproject.toml` | Add `pytest-cov`, `pip-audit`, and `cyclonedx-python-lib` to `dependency-groups.dev` |
 | `.pre-commit-config.yaml` | Sync `ruff-pre-commit` version to `v0.9.0` |
-| `AGENTS.md` | Document `surya-ocr` `requests>=2.31` workaround follow-up and `live_llm` manual test run instructions |
+| `AGENTS.md` | Document `surya-ocr` `requests>=2.31` workaround follow-up and `live_llm` manual test run instructions (workaround closed in audit-secondary Phase 5 — see Known Tech Debt) |
 
 ### 2026-08-11: Goose-Style Multi-Provider API Handling Architecture
 

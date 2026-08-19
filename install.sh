@@ -45,10 +45,23 @@ echo "======================================================="
 if ! command -v uv >/dev/null 2>&1; then
     echo "uv not found. Installing uv..."
     UV_VERSION="0.11.16"
-    if ! curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | env UV_INSTALL_DIR="$HOME/.local/bin" sh; then
-        echo "ERROR: uv installer failed. Install manually: https://docs.astral.sh/uv/" >&2
+    TMP_INSTALLER="$(mktemp -t uv-install.XXXXXX.sh)"
+    if ! curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" -o "$TMP_INSTALLER"; then
+        echo "ERROR: Failed to download uv installer. Install manually: https://docs.astral.sh/uv/" >&2
+        rm -f "$TMP_INSTALLER"
         exit 1
     fi
+    if [ ! -s "$TMP_INSTALLER" ] || [ "$(wc -c < "$TMP_INSTALLER")" -lt 1000 ]; then
+        echo "ERROR: Downloaded uv installer is empty or truncated." >&2
+        rm -f "$TMP_INSTALLER"
+        exit 1
+    fi
+    if ! env UV_INSTALL_DIR="$HOME/.local/bin" sh "$TMP_INSTALLER"; then
+        echo "ERROR: uv installer failed. Install manually: https://docs.astral.sh/uv/" >&2
+        rm -f "$TMP_INSTALLER"
+        exit 1
+    fi
+    rm -f "$TMP_INSTALLER"
     # Make uv available to the rest of this script.
     export PATH="$HOME/.local/bin:$PATH"
     if ! command -v uv >/dev/null 2>&1; then
@@ -61,8 +74,7 @@ fi
 
 # 2. Sync Python dependencies.
 echo
-echo "Syncing Python dependencies with uv..."
-uv sync --extra web --extra preprocessing --extra async-translation
+uv sync --extra web --extra preprocessing --extra async-translation --extra lexicon
 
 # 3. Build the frontend static assets.
 #
@@ -89,7 +101,30 @@ echo "Verifying the install..."
 uv run python --version
 echo "Python environment OK."
 
-# 5. Drop a ``start_app`` shim that mirrors ``start_app.vbs`` on Windows.
+# 5. Docker / Redis advisory (audit-secondary Phase 5 — F22).
+#
+# Mirrors install.ps1:131. The Redis broker and Celery worker are
+# needed for async translation; without Docker the workstation still
+# runs (uvicorn + sync OCR path) but async translation routes will
+# be unavailable. This check is advisory only — it never aborts
+# the install because the synchronous /api/process path does not
+# need Redis.
+echo
+echo "Checking for Docker (required for Redis-backed async translation)..."
+if ! command -v docker >/dev/null 2>&1; then
+    echo "WARNING: Docker is not installed or not in PATH." >&2
+    echo "WARNING: Docker is required to run Redis for the async translation features." >&2
+    echo "WARNING: Install Docker Engine: https://docs.docker.com/engine/install/" >&2
+    echo "WARNING: Async translation will be unavailable until Docker + Redis are present." >&2
+elif ! docker info >/dev/null 2>&1; then
+    echo "WARNING: Docker is installed but the daemon is not responding." >&2
+    echo "WARNING: Start Docker (e.g. 'sudo systemctl start docker') then re-run start_app." >&2
+    echo "WARNING: Async translation will be unavailable until the daemon is up." >&2
+else
+    echo "Docker is installed and the daemon is reachable."
+fi
+
+# 6. Drop a ``start_app`` shim that mirrors ``start_app.vbs`` on Windows.
 #
 # The Windows shim launches Docker, starts Redis, starts the server,
 # and opens the browser. On Linux we don't have a cross-distro way

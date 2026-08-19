@@ -50,6 +50,7 @@ from omniscribe.core.workflows.utils import (
     _estimate_confidence,
     _is_refinable,
     parse_page_range,
+    validate_bbox_coordinates,
 )
 
 logger = logging.getLogger(__name__)
@@ -564,7 +565,7 @@ class HybridEngine(EngineBase):
                 # the merge boundary. ``HybridAligner`` emits tuples, so this
                 # keeps the merged page homogeneous whatever container a
                 # duck-typed booster returns.
-                extra = [(b[0], b[1], b[2], b[3]) for b in extra]
+                extra = [validate_bbox_coordinates(b, clamp=True) for b in extra]
             except Exception as e:
                 logger.warning(
                     "Whitespace recall failed for page %s: %s: %s",
@@ -611,7 +612,7 @@ class HybridEngine(EngineBase):
         for p_num, boxes in zip(chunk_pages, chunk_boxes, strict=False):
             try:
                 extra = await asyncio.to_thread(source.supplement, p_num, boxes)
-                extra = [(b[0], b[1], b[2], b[3]) for b in extra]
+                extra = [validate_bbox_coordinates(b, clamp=True) for b in extra]
             except Exception as e:
                 logger.warning(
                     "Text-layer recall failed for page %s: %s: %s",
@@ -904,8 +905,9 @@ class HybridEngine(EngineBase):
                 async with semaphore:
                     if not _is_refinable(bbox):
                         return idx, ""
+                    safe_bbox = validate_bbox_coordinates(bbox, clamp=True)
                     crop_b64 = await asyncio.to_thread(
-                        crop_for_ocr_from_image, page_image, bbox
+                        crop_for_ocr_from_image, page_image, safe_bbox
                     )
                     if crop_b64 is None:
                         return idx, ""
@@ -984,8 +986,9 @@ class HybridEngine(EngineBase):
         async def refine_one(p_num: int, idx: int, bbox: BBox) -> tuple[int, int, str]:
             try:
                 async with semaphore:
+                    safe_bbox = validate_bbox_coordinates(bbox, clamp=True)
                     crop_b64 = await asyncio.to_thread(
-                        crop_for_ocr_from_image, page_images[p_num], bbox
+                        crop_for_ocr_from_image, page_images[p_num], safe_bbox
                     )
                     if crop_b64 is None:
                         return p_num, idx, ""

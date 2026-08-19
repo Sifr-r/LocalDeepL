@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from xml.etree.ElementTree import Element
+from xml.etree.ElementTree import (  # nosemgrep: python.lang.security.use-defused-xml.use-defused-xml
+    Element,
+)
 
 from ._common import (
     decode_source,

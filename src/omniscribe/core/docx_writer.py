@@ -6,13 +6,33 @@ from __future__ import annotations
 
 import io
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from docx import Document
 from docx.shared import Inches, Pt
 
+from omniscribe.core.document_exporters.base_exporter import BaseDocumentExporter
+
 if TYPE_CHECKING:
     from docx.text.paragraph import Paragraph
+
+    from omniscribe.core.block_tree import DocumentTree
+    from omniscribe.core.document import DocumentResult
+
+
+class DocxMarkdownExporter(BaseDocumentExporter):
+    """Document exporter producing Word (.docx) documents from Markdown or DocumentResult."""
+
+    def export_document(self, document: DocumentResult, **kwargs: Any) -> io.BytesIO:
+        """Render a DocumentResult to a Word document stream via markdown text."""
+        raw_text = document.text() if callable(document.text) else str(document.text)
+        return convert_markdown_to_docx(raw_text)
+
+    def export_tree(self, tree: DocumentTree, **kwargs: Any) -> io.BytesIO:
+        """Render a DocumentTree to a Word document stream."""
+        from omniscribe.core.docx_tree_writer import convert_tree_to_docx
+
+        return convert_tree_to_docx(tree)
 
 
 def convert_markdown_to_docx(markdown_text: str) -> io.BytesIO:
@@ -142,3 +162,9 @@ def _add_inline_formatting(paragraph: Paragraph, text: str) -> None:
             run.font.name = "Courier New"
         else:
             paragraph.add_run(part)
+
+
+__all__ = [
+    "DocxMarkdownExporter",
+    "convert_markdown_to_docx",
+]

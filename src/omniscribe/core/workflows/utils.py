@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
+import math
 import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
@@ -27,6 +28,7 @@ __all__ = [
     "_is_refinable",
     "_normalize_for_dedup",
     "parse_page_range",
+    "validate_bbox_coordinates",
 ]
 
 
@@ -37,6 +39,42 @@ __all__ = [
 WELL_FORMED_CONFIDENCE = 0.99
 
 _NUMERIC_EXPR_PATTERN = re.compile(r"^[\d\s.,:/\-+$€£%()#№]+$")
+
+
+def validate_bbox_coordinates(
+    bbox: Sequence[float],
+    *,
+    clamp: bool = True,
+) -> tuple[float, float, float, float]:
+    """Validate and optionally clamp a 4-element normalized bounding box [x0, y0, x1, y1].
+
+    Ensures coordinates are 4 finite numbers, ordered such that x0 <= x1 and y0 <= y1.
+    If ``clamp`` is True (default), coordinates are bounded to the [0.0, 1.0] interval.
+    """
+    if len(bbox) != 4:
+        raise ValueError(f"Expected 4 coordinate values for bbox, got {len(bbox)}")
+    try:
+        x0, y0, x1, y1 = float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"BBox coordinates must be real numbers, got {bbox}") from exc
+
+    if any(math.isnan(c) or math.isinf(c) for c in (x0, y0, x1, y1)):
+        raise ValueError(
+            f"BBox coordinates must be finite numbers, got {(x0, y0, x1, y1)}"
+        )
+
+    if clamp:
+        x0 = max(0.0, min(1.0, x0))
+        y0 = max(0.0, min(1.0, y0))
+        x1 = max(0.0, min(1.0, x1))
+        y1 = max(0.0, min(1.0, y1))
+
+    if x0 > x1:
+        x0, x1 = x1, x0
+    if y0 > y1:
+        y0, y1 = y1, y0
+
+    return (x0, y0, x1, y1)
 
 
 def _estimate_confidence(text: str) -> float:
@@ -115,6 +153,14 @@ def _drop_refined_duplicates(
 
 
 def _is_refinable(bbox: Sequence[float]) -> bool:
-    width = bbox[2] - bbox[0]
-    height = bbox[3] - bbox[1]
+    if len(bbox) != 4:
+        return False
+    try:
+        x0, y0, x1, y1 = float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])
+    except (ValueError, TypeError):
+        return False
+    if any(math.isnan(c) or math.isinf(c) for c in (x0, y0, x1, y1)):
+        return False
+    width = x1 - x0
+    height = y1 - y0
     return width > REFINABLE_MIN_WIDTH and height > REFINABLE_MIN_HEIGHT

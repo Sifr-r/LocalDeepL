@@ -404,7 +404,9 @@ class ProviderManager:
             parent_dir.mkdir(parents=True, exist_ok=True)
             if os.name != "nt":
                 with contextlib.suppress(Exception):
-                    os.chmod(parent_dir, 0o700)
+                    os.chmod(  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
+                        parent_dir, 0o700
+                    )
 
             data = {
                 "active_provider_id": self._active_provider_id,
@@ -495,6 +497,12 @@ class ProviderManager:
 
     def save_provider(self, config: ProviderConfig) -> ProviderConfig:
         """Save or update a provider configuration."""
+        existing = self._providers.get(config.id)
+        if existing and config.api_key:
+            k = config.api_key.strip()
+            if k == "***" or "..." in k:
+                config.api_key = existing.api_key
+
         if config.requires_auth:
             config.configured = bool(config.api_key and config.api_key.strip())
         else:

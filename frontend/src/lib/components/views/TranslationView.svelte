@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { activeTab, documentStore, configStore, modelStore, refreshModels, pushToast } from '$lib/stores/appStore';
   import { fetchApi } from '$lib/api/client';
+  import { artifactsApi } from '$lib/api/endpoints';
   import type { TranslationRequest, TreeTranslationRequest } from '$lib/types/api';
   import Card from '../ui/Card.svelte';
   import Button from '../ui/Button.svelte';
@@ -57,6 +58,9 @@
     selectedArtifactId = $documentStore.textArtifactId;
     selectedArtifactToken = $documentStore.textArtifactToken || '';
     lastSyncedArtifactId = $documentStore.textArtifactId;
+    if (!sourceText.trim() && $documentStore.pages?.length > 0) {
+      sourceText = $documentStore.pages.map((p) => p.text || '').filter(Boolean).join('\n\n');
+    }
   } else if (lastSyncedArtifactId) {
     // The store cleared (e.g. user picked a new doc with no
     // artifact); clear the local selection so a stale id is
@@ -75,7 +79,34 @@
     isTranslating = true;
     translatedOutput = '';
     try {
+      if (!sourceText.trim() && selectedArtifactId) {
+        if ($documentStore.textArtifactId === selectedArtifactId && $documentStore.pages?.length > 0) {
+          sourceText = $documentStore.pages.map((p) => p.text || '').filter(Boolean).join('\n\n');
+        }
+        if (!sourceText.trim()) {
+          try {
+            const blob = await artifactsApi.getText(selectedArtifactId, selectedArtifactToken);
+            const raw = await blob.text();
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+              sourceText = parsed.join('\n\n');
+            } else if (typeof parsed === 'object' && parsed !== null) {
+              sourceText = Object.values(parsed).flat().join('\n\n');
+            } else {
+              sourceText = String(raw);
+            }
+          } catch (err) {
+            console.warn('Failed to fetch artifact text for translation', err);
+          }
+        }
+      }
+
       if (useNllb) {
+        if (!sourceText.trim()) {
+          pushToast('warning', 'Source text is empty. Provide text or select a valid document artifact.', 3000);
+          isTranslating = false;
+          return;
+        }
         const res = await fetchApi<{ translated_text: string }>('/translate/nllb', {
           method: 'POST',
           body: JSON.stringify({
@@ -197,12 +228,14 @@
     <!-- Controls bar -->
     <div class="flex items-center gap-2 flex-wrap">
       <Select
+        id="translation-target-language"
         label="Target language"
         options={languages.map(l => ({ value: l, label: l }))}
         bind:value={targetLanguage}
       />
       <div class="flex items-end gap-1">
         <Select
+          id="translation-model-select"
           label="Model"
           options={[
             { value: '', label: `Default: ${$configStore.translation_model || $configStore.model || 'auto'}` },
@@ -270,7 +303,10 @@
         </svelte:fragment>
       </SectionHeader>
 
+      <label for="translation-source-text" class="sr-only">Source text to translate</label>
       <textarea
+        id="translation-source-text"
+        aria-label="Source text to translate"
         bind:value={sourceText}
         placeholder="Paste text to translate here, or process a document in the OCR workstation to bind its text artifact..."
         class="flex-1 w-full surface-inset rounded-md p-3 text-sm font-mono text-foreground placeholder:text-foreground-subtle focus:outline-none focus:ring-2 focus:ring-brand/20 resize-none leading-relaxed min-h-[160px]"
@@ -301,7 +337,7 @@
       <SectionHeader title={`Translated output (${targetLanguage})`} divider={false}>
         <svelte:fragment slot="action">
           {#if isTranslating}
-            <span class="flex items-center gap-1.5 text-[11px] font-mono text-warning">
+            <span role="status" aria-live="polite" class="flex items-center gap-1.5 text-[11px] font-mono text-warning">
               <span class="relative flex h-1.5 w-1.5">
                 <span class="absolute inline-flex h-full w-full rounded-full bg-warning opacity-60 animate-ping"></span>
                 <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-warning"></span>
@@ -313,7 +349,7 @@
       </SectionHeader>
 
       {#if asyncStatus}
-        <div class="p-2.5 surface-inset rounded-md text-xs font-mono text-foreground-muted">
+        <div role="status" aria-live="polite" class="p-2.5 surface-inset rounded-md text-xs font-mono text-foreground-muted">
           {asyncStatus}
         </div>
       {/if}

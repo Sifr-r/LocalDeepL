@@ -100,6 +100,9 @@ class TableExtractionProcessor:
                                 max_x = max(max_x, bbox[2])
                                 max_y = max(max_y, bbox[3])
 
+                    if min_x == float("inf"):
+                        min_x, min_y, max_x, max_y = 0.0, 0.0, 1.0, 1.0
+
                     # Pad grid rows to ensure rectangular matrix
                     for r in range(row_count):
                         while len(grid[r]) < max_col + 1:

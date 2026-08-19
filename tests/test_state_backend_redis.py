@@ -34,7 +34,9 @@ _OTHER_TOKEN = "u" * 43
 
 @pytest.fixture()
 def fake_redis(monkeypatch: pytest.MonkeyPatch):
-    """Route every ``Redis.from_url`` in the backend module to one fake server."""
+    """Route every ``Redis.from_url`` to one fake server."""
+    import redis
+
     server = fakeredis.FakeServer()
 
     class _FakeRedisFactory:
@@ -43,6 +45,15 @@ def fake_redis(monkeypatch: pytest.MonkeyPatch):
             return fakeredis.FakeRedis(server=server, decode_responses=decode_responses)
 
     monkeypatch.setattr(redis_backend_mod, "Redis", _FakeRedisFactory)
+    monkeypatch.setattr(
+        redis.Redis,
+        "from_url",
+        staticmethod(
+            lambda url, decode_responses=False: fakeredis.FakeRedis(
+                server=server, decode_responses=decode_responses
+            )
+        ),
+    )
     return server
 
 
@@ -239,6 +250,104 @@ def test_backend_shares_one_artifact_dir(fake_redis, tmp_path: Path):
     assert backend.text_artifacts.artifact_dir == backend.artifact_dir
     assert backend.metadata_artifacts.artifact_dir == backend.artifact_dir
     assert backend.export_artifacts.artifact_dir == backend.artifact_dir
+
+
+def test_redis_text_artifact_store_len(store: RedisTextArtifactStore, tmp_path: Path):
+    assert len(store) == 0
+    file1 = _write_artifact_file(tmp_path, "f1.json")
+    file2 = _write_artifact_file(tmp_path, "f2.json")
+    store.put(artifact_id=_ARTIFACT_ID, token=_TOKEN, path=file1)
+    assert len(store) == 1
+    store.put(artifact_id=_OTHER_ARTIFACT_ID, token=_OTHER_TOKEN, path=file2)
+    assert len(store) == 2
+    store.pop(_ARTIFACT_ID, _TOKEN)
+    assert len(store) == 1
+    store.clear()
+    assert len(store) == 0
+
+
+def test_job_history_default_max_jobs(fake_redis):
+    history = RedisJobHistory("redis://fake:6379/0")
+    assert history.max_jobs == 1000
+
+
+def test_redis_state_backend_initializes_progress_service_with_redis_url(
+    fake_redis, tmp_path: Path
+):
+    backend = RedisStateBackend("redis://fake:6379/0", artifact_dir=tmp_path)
+    assert backend.progress_service.redis_url == "redis://fake:6379/0"
+    assert backend.progress_service._redis is not None
+
+
+def test_progress_service_publish_and_publish_async(fake_redis):
+    import json
+
+    from omniscribe.api.services.progress import ProgressService
+
+    service = ProgressService(redis_url="redis://fake:6379/0")
+    assert service._redis is not None
+
+    pubsub = service._redis.pubsub()
+    channel_id = "abcd" * 8
+    pubsub.subscribe(f"omniscribe:progress:{channel_id}")
+
+    # sync publish
+    service.publish(channel_id, {"status": "running", "percent": 10})
+    msg = None
+    for _ in range(5):
+        m = pubsub.get_message(ignore_subscribe_messages=True)
+        if m:
+            msg = m
+            break
+    assert msg is not None
+    assert json.loads(msg["data"]) == {"status": "running", "percent": 10}
+
+    # async publish
+    _run(service.publish_async(channel_id, {"status": "running", "percent": 20}))
+    msg2 = pubsub.get_message(ignore_subscribe_messages=True)
+    assert msg2 is not None
+    assert json.loads(msg2["data"]) == {"status": "running", "percent": 20}
+
+    # None channel_id is no-op
+    service.publish(None, {"status": "ignored"})
+    _run(service.publish_async(None, {"status": "ignored"}))
+
+    # Fail open on exception
+    class _FailingRedis:
+        def publish(self, *args, **kwargs):
+            raise ConnectionError("Redis down")
+
+    service._redis = _FailingRedis()
+    service.publish(channel_id, {"status": "fail-open"})
+
+
+def test_connection_manager_send_publishes_to_redis(fake_redis):
+    import json
+
+    from omniscribe.api.routers import websocket as ws_mod
+    from omniscribe.api.services.progress import ProgressService
+
+    service = ProgressService(redis_url="redis://fake:6379/0")
+    old_service = ws_mod._progress_service
+    ws_mod._progress_service = service
+    try:
+        manager = ws_mod.ConnectionManager()
+        pubsub = service._redis.pubsub()
+        channel_id = "abcd" * 8
+        pubsub.subscribe(f"omniscribe:progress:{channel_id}")
+
+        _run(manager.send(channel_id, {"status": "test", "percent": 42}))
+
+        msg = None
+        for _ in range(5):
+            m = pubsub.get_message(ignore_subscribe_messages=True)
+            if m:
+                msg = m
+                break
+        assert msg is not None
+        assert json.loads(msg["data"]) == {"status": "test", "percent": 42}
+    finally:
+        ws_mod._progress_service = old_service
 
 
 def _run(coro):

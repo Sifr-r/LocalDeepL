@@ -13,12 +13,13 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
+from omniscribe.core.block_tree import BlockNode
 from omniscribe.core.entity_memory import EntityMemory
 from omniscribe.core.glossary import Glossary
 from omniscribe.utils.prompt_safety import sanitize_prompt_input
 
 if TYPE_CHECKING:
-    from omniscribe.core.block_tree import BlockNode, DocumentTree
+    from omniscribe.core.block_tree import DocumentTree
     from omniscribe.core.callbacks import TranslateChunkCallback
     from omniscribe.core.translation_config import TranslationSettings
 
@@ -138,6 +139,33 @@ async def translate_tree(
                             target_language,
                         )
                         chunk_idx += 1
+            elif hasattr(node, "cells"):
+                for row in node.cells:
+                    for cell in row:
+                        if isinstance(cell, BlockNode):
+                            translated_text, last_window = await _translate_node(
+                                cell,
+                                target_language=target_language,
+                                translator=translator,
+                                glossary=glossary,
+                                memory=memory,
+                                last_window=last_window,
+                                sliding_window_words=sliding_window_words,
+                                dual_translate=dual_translate,
+                                second_translator=second_translator,
+                            )
+                            if translated_text is not None:
+                                cell.text = translated_text
+                                cell.metadata["translation"] = translated_text
+                                if on_translate_chunk is not None:
+                                    source_chars = len(cell.text)
+                                    await on_translate_chunk(
+                                        chunk_idx,
+                                        source_chars,
+                                        translated_text,
+                                        target_language,
+                                    )
+                                    chunk_idx += 1
     return tree
 
 

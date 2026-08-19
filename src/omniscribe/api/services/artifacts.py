@@ -12,7 +12,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from omniscribe.api.plugin import ContextDisposedError, ServiceNotFoundError
+# NOTE: ``ContextDisposedError`` and ``ServiceNotFoundError`` are
+# imported lazily inside ``_emit_artifact_created`` to avoid a
+# circular import (``omniscribe.api.plugin.__init__`` imports
+# ``providers`` which imports ``TextArtifactStore`` from this
+# module). The lazy import is safe because the call site is only
+# reached on the secondary write path after a successful put.
 from omniscribe.utils import write_atomic
 
 DEFAULT_ARTIFACT_TTL_SECONDS = 60 * 60
@@ -179,6 +184,10 @@ class TextArtifactStore:
         silently dropping every artifact creation event.
         """
         try:
+            from omniscribe.api.plugin import (
+                ContextDisposedError,
+                ServiceNotFoundError,
+            )
             from omniscribe.api.plugin.events_catalog import (
                 ArtifactCreatedEvent,
             )

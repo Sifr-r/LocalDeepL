@@ -21,7 +21,10 @@ import tempfile
 import threading
 import time
 import unicodedata
-from importlib import resources, util
+from importlib import (  # nosemgrep: python.lang.compatibility.python37.python37-compatibility-importlib2
+    resources,
+    util,
+)
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:

@@ -17,9 +17,10 @@ from __future__ import annotations
 import base64
 import html
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from omniscribe.core.block_tree import TableNode
+from omniscribe.core.document_exporters.base_exporter import BaseDocumentExporter
 
 if TYPE_CHECKING:
     from omniscribe.core.block_tree import (
@@ -27,6 +28,22 @@ if TYPE_CHECKING:
         DocumentTree,
         PageTree,
     )
+    from omniscribe.core.document import DocumentResult
+
+
+class HtmlExporter(BaseDocumentExporter):
+    """Document exporter producing structured semantic HTML from DocumentTree or DocumentResult."""
+
+    def export_tree(self, tree: DocumentTree, **kwargs: Any) -> str:
+        """Render a DocumentTree to semantic HTML string."""
+        return render_html(tree)
+
+    def export_document(self, document: DocumentResult, **kwargs: Any) -> str:
+        """Render a DocumentResult to semantic HTML string via DocumentTree."""
+        from omniscribe.core.block_tree import from_document_result
+
+        tree = from_document_result(document)
+        return render_html(tree)
 
 
 def render_html(tree: DocumentTree) -> str:
@@ -40,15 +57,20 @@ def render_html(tree: DocumentTree) -> str:
     out.append(f"<title>{html.escape(title)}</title>")
     out.append(_embedded_css())
     out.append("</head><body>")
-    rendered_table_ids: set[str] = set()
+    rendered_table_ids: set[str | int] = set()
     for i, page in enumerate(tree.pages):
         if i > 0:
             out.append("<!-- PageBreak -->")
         out.append(_render_page(page, rendered_table_ids))
     for table in tree.tables:
-        if table.block_id not in rendered_table_ids:
+        t_id = getattr(table, "block_id", "")
+        if (t_id and t_id not in rendered_table_ids) and id(
+            table
+        ) not in rendered_table_ids:
             out.append(_render_table(table))
-            rendered_table_ids.add(table.block_id)
+            if t_id:
+                rendered_table_ids.add(t_id)
+            rendered_table_ids.add(id(table))
     out.append("</body></html>")
     return "\n".join(out)
 
@@ -73,7 +95,9 @@ def _embedded_css() -> str:
     )
 
 
-def _render_page(page: PageTree, rendered_table_ids: set[str] | None = None) -> str:
+def _render_page(
+    page: PageTree, rendered_table_ids: set[str | int] | None = None
+) -> str:
     parts: list[str] = []
     parts.append(f'<section data-page-idx="{page.page_idx}">')
     current_list: list[str] = []
@@ -89,7 +113,9 @@ def _render_page(page: PageTree, rendered_table_ids: set[str] | None = None) -> 
         if isinstance(child, TableNode):
             flush_list()
             if rendered_table_ids is not None:
-                rendered_table_ids.add(child.block_id)
+                if child.block_id:
+                    rendered_table_ids.add(child.block_id)
+                rendered_table_ids.add(id(child))
             parts.append(_render_table(child))
             continue
 
@@ -103,9 +129,13 @@ def _render_page(page: PageTree, rendered_table_ids: set[str] | None = None) -> 
             flush_list()
             if bt_val == "table":
                 if rendered_table_ids is not None:
-                    rendered_table_ids.add(child.block_id)
-                if hasattr(child, "cells"):
+                    if getattr(child, "block_id", None):
+                        rendered_table_ids.add(child.block_id)
+                    rendered_table_ids.add(id(child))
+                if hasattr(child, "cells") and getattr(child, "cells", None):
                     parts.append(_render_table(cast("TableNode", child)))
+                elif getattr(child, "text", ""):
+                    parts.append(f"<p>{html.escape(child.text)}</p>")
             else:
                 parts.append(_render_block(child))
 
@@ -114,7 +144,7 @@ def _render_page(page: PageTree, rendered_table_ids: set[str] | None = None) -> 
     return "\n".join(parts)
 
 
-def _render_block(node: BlockNode | TableNode) -> str:
+def _render_block(node: BlockNode | TableNode | Any) -> str:
     if isinstance(node, TableNode):
         return _render_table(node)
     bt = (
@@ -123,9 +153,10 @@ def _render_block(node: BlockNode | TableNode) -> str:
         else str(node.block_type)
     )
     if bt == "table":
-        if hasattr(node, "cells"):
+        if hasattr(node, "cells") and getattr(node, "cells", None):
             return _render_table(cast("TableNode", node))
-        return ""
+        text = getattr(node, "text", "")
+        return f"<p>{html.escape(text)}</p>" if text else ""
     data = (
         f' data-block-id="{node.block_id}"'
         f' data-bbox="{",".join(f"{v:.4f}" for v in node.bbox)}"'
@@ -134,7 +165,7 @@ def _render_block(node: BlockNode | TableNode) -> str:
         data += f' data-confidence="{node.confidence:.3f}"'
 
     if bt == "section_header":
-        level = max(1, min(6, node.level or 1))
+        level = max(1, min(6, getattr(node, "level", 1) or 1))
         tag = f"h{level}"
         return f"<{tag}{data}>{html.escape(node.text)}</{tag}>"
     if bt == "list_item":
@@ -149,6 +180,9 @@ def _render_block(node: BlockNode | TableNode) -> str:
         # Figures can be either a BlockNode (caption-only) or a FigureNode
         # (image_bytes + caption). Handle both.
         image_bytes = getattr(node, "image_bytes", None)
+        metadata = getattr(node, "metadata", {}) or {}
+        if not image_bytes and metadata.get("image_bytes"):
+            image_bytes = metadata["image_bytes"]
         if image_bytes:
             b64 = base64.b64encode(image_bytes).decode("ascii")
             img_html = f'<img src="data:image/png;base64,{b64}" alt="">'
@@ -156,9 +190,7 @@ def _render_block(node: BlockNode | TableNode) -> str:
             node.text.startswith("http") or node.text.startswith("data:")
         ):
             img_html = f'<img src="{html.escape(node.text)}" alt="">'
-        caption = (
-            getattr(node, "caption", None) or node.metadata.get("caption", "") or ""
-        )
+        caption = getattr(node, "caption", None) or metadata.get("caption", "") or ""
         if (
             not caption
             and node.text
@@ -179,7 +211,7 @@ def _render_block(node: BlockNode | TableNode) -> str:
 
 
 def _render_spans(node: BlockNode) -> str:
-    if not node.spans:
+    if not getattr(node, "spans", None):
         return html.escape(node.text)
     out: list[str] = []
     for sp in node.spans:
@@ -196,23 +228,44 @@ def _render_spans(node: BlockNode) -> str:
     return "".join(out)
 
 
-def _render_table(table: TableNode) -> str:
+def _render_table(table: TableNode | BlockNode | Any) -> str:
+    cells = getattr(table, "cells", None)
+    if not cells or not isinstance(cells, (list, tuple)):
+        text = getattr(table, "text", "")
+        if text:
+            return f"<p>{html.escape(text)}</p>"
+        return ""
+
+    rows_count = getattr(table, "rows", len(cells))
+    cols_count = getattr(
+        table,
+        "cols",
+        max((len(r) for r in cells if isinstance(r, (list, tuple))), default=0),
+    )
+    block_id = getattr(table, "block_id", "")
+
     rows: list[str] = []
-    for r_idx, row in enumerate(table.cells):
-        cells: list[str] = []
+    for r_idx, row in enumerate(cells):
+        if not isinstance(row, (list, tuple)):
+            continue
+        row_cells: list[str] = []
         for c in row:
-            cells.append(
+            c_id = getattr(c, "block_id", "")
+            c_text = getattr(c, "text", str(c) if c is not None else "")
+            row_cells.append(
                 "<td"
-                + f' data-block-id="{c.block_id}"'
-                + f">{html.escape(c.text)}</td>"
+                + (f' data-block-id="{c_id}"' if c_id else "")
+                + f">{html.escape(c_text)}</td>"
             )
         # for header row swap td->th
         if r_idx == 0:
-            cells = [c.replace("<td", "<th").replace("</td>", "</th>") for c in cells]
-        rows.append(f"<tr>{''.join(cells)}</tr>")
+            row_cells = [
+                c.replace("<td", "<th").replace("</td>", "</th>") for c in row_cells
+            ]
+        rows.append(f"<tr>{''.join(row_cells)}</tr>")
     return (
-        f'<table data-block-id="{table.block_id}" '
-        f'data-rows="{table.rows}" data-cols="{table.cols}">'
+        f'<table data-block-id="{block_id}" '
+        f'data-rows="{rows_count}" data-cols="{cols_count}">'
         + f"<tbody>{''.join(rows)}</tbody></table>"
     )
 
@@ -220,15 +273,25 @@ def _render_table(table: TableNode) -> str:
 def iter_blocks(tree: DocumentTree) -> Iterable[BlockNode]:
     for page in tree.pages:
         for child in page.children:
-            if isinstance(child, BlockNode):
+            if isinstance(child, TableNode):
+                cells = getattr(child, "cells", [])
+                for row in cells:
+                    if isinstance(row, (list, tuple)):
+                        for cell in row:
+                            if isinstance(cell, BlockNode):
+                                yield from _walk(cell)
+            elif isinstance(child, BlockNode):
                 yield from _walk(child)
-            elif isinstance(child, TableNode):
-                for row in child.cells:
-                    for cell in row:
-                        yield from _walk(cell)
 
 
 def _walk(node: BlockNode) -> Iterable[BlockNode]:
     yield node
-    for c in node.children:
+    for c in getattr(node, "children", []):
         yield from _walk(c)
+
+
+__all__ = [
+    "HtmlExporter",
+    "iter_blocks",
+    "render_html",
+]

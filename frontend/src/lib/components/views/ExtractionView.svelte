@@ -1,6 +1,8 @@
 <script lang="ts">
   import { activeTab, documentStore, configStore, pushToast } from '$lib/stores/appStore';
   import { fetchApi, fetchFile } from '$lib/api/client';
+  import { artifactsApi } from '$lib/api/endpoints';
+  import { downloadBlob } from '$lib/utils/download';
   import type { ExtractionRequest } from '$lib/types/api';
   import Card from '../ui/Card.svelte';
   import Button from '../ui/Button.svelte';
@@ -10,7 +12,16 @@
 
   type Template = 'invoice' | 'resume' | 'academic' | 'custom';
   let selectedTemplate: Template = 'invoice';
-  let customSchemaJson = '{\n  "invoice_number": "string",\n  "total_amount": "number",\n  "date": "string",\n  "line_items": "array"\n}';
+  let customSchemaJson = JSON.stringify(
+    {
+      invoice_number: 'string',
+      total_amount: 'number',
+      date: 'string',
+      line_items: 'array'
+    },
+    null,
+    2
+  );
   let inputText = '';
   let selectedArtifactId = '';
   let selectedArtifactToken = '';
@@ -27,6 +38,9 @@
     selectedArtifactId = $documentStore.textArtifactId;
     selectedArtifactToken = $documentStore.textArtifactToken || '';
     lastSyncedArtifactId = $documentStore.textArtifactId;
+    if (!inputText.trim() && $documentStore.pages?.length > 0) {
+      inputText = $documentStore.pages.map((p) => p.text || '').filter(Boolean).join('\n\n');
+    }
   } else if (lastSyncedArtifactId) {
     selectedArtifactId = '';
     selectedArtifactToken = '';
@@ -40,17 +54,6 @@
     { value: 'custom', label: 'Custom schema' }
   ];
 
-  function downloadBlob(blob: Blob, name: string) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
-
   async function handleExtract() {
     if (!inputText.trim() && !selectedArtifactId) {
       pushToast('warning', 'Provide source text or select a document artifact for extraction.', 3000);
@@ -61,10 +64,42 @@
     extractedData = null;
 
     try {
+      let textToExtract = inputText.trim();
+      if (!textToExtract && selectedArtifactId) {
+        if ($documentStore.textArtifactId === selectedArtifactId && $documentStore.pages?.length > 0) {
+          textToExtract = $documentStore.pages.map((p) => p.text || '').filter(Boolean).join('\n\n');
+        }
+        if (!textToExtract) {
+          try {
+            const blob = await artifactsApi.getText(selectedArtifactId, selectedArtifactToken);
+            const raw = await blob.text();
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+              textToExtract = parsed.join('\n\n');
+            } else if (typeof parsed === 'object' && parsed !== null) {
+              textToExtract = Object.values(parsed).flat().join('\n\n');
+            } else {
+              textToExtract = String(raw);
+            }
+          } catch (err) {
+            console.warn('Failed to fetch artifact text for extraction', err);
+          }
+        }
+        if (textToExtract && !inputText.trim()) {
+          inputText = textToExtract;
+        }
+      }
+
+      if (!textToExtract.trim()) {
+        pushToast('warning', 'Source text is empty. Provide text or select a valid document artifact.', 3000);
+        isExtracting = false;
+        return;
+      }
+
       const payload: ExtractionRequest = {
         template: selectedTemplate,
         custom_prompt: selectedTemplate === 'custom' ? customSchemaJson : undefined,
-        text: inputText || undefined,
+        text: textToExtract,
         model: $configStore.model,
         api_base: $configStore.api_base,
       };
@@ -163,7 +198,10 @@
         </svelte:fragment>
       </SectionHeader>
 
+      <label for="extraction-input-text" class="sr-only">Input text / document artifact</label>
       <textarea
+        id="extraction-input-text"
+        aria-label="Input text to extract structured data from"
         bind:value={inputText}
         placeholder="Paste text to extract structured data from, or leave empty if a document artifact is bound..."
         class="flex-1 w-full surface-inset rounded-md p-3 text-sm font-mono text-foreground placeholder:text-foreground-subtle focus:outline-none focus:ring-2 focus:ring-brand/20 resize-none leading-relaxed min-h-[160px]"
@@ -209,7 +247,7 @@
 
       <div class="flex-1 surface-inset rounded-md p-3 font-mono text-xs overflow-y-auto leading-relaxed min-h-[160px]">
         {#if isExtracting}
-          <div class="h-full flex items-center justify-center text-brand animate-pulse">
+          <div role="status" aria-live="polite" class="h-full flex items-center justify-center text-brand animate-pulse">
             Extracting structured schema fields…
           </div>
         {:else if extractedData}

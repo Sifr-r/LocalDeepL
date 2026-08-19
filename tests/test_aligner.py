@@ -567,9 +567,7 @@ class TestNaNBboxHandling:
                 [
                     types.SimpleNamespace(
                         bboxes=[
-                            types.SimpleNamespace(
-                                bbox=[float("nan")] * 4
-                            ),
+                            types.SimpleNamespace(bbox=[float("nan")] * 4),
                         ]
                     )
                 ]

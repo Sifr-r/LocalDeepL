@@ -449,21 +449,26 @@ class PromptedGroundedOCR:
         completed = 0
         if progress is not None:
             await progress("ocr", 0, total_pages, f"Grounded OCR (0/{total_pages})...")
-        for fut in asyncio.as_completed(tasks):
-            page_idx, blocks, page_error = await fut
-            blocks_by_page[page_idx] = blocks
-            completed += 1
-            if progress is not None:
-                await progress(
-                    "ocr",
-                    completed,
-                    total_pages,
-                    f"Grounded OCR ({completed}/{total_pages})",
-                )
-            if page_error is not None:
-                failed_pages.append(page_idx)
-                if on_warning is not None:
-                    await on_warning(page_idx, page_error)
+        try:
+            for fut in asyncio.as_completed(tasks):
+                page_idx, blocks, page_error = await fut
+                blocks_by_page[page_idx] = blocks
+                completed += 1
+                if progress is not None:
+                    await progress(
+                        "ocr",
+                        completed,
+                        total_pages,
+                        f"Grounded OCR ({completed}/{total_pages})",
+                    )
+                if page_error is not None:
+                    failed_pages.append(page_idx)
+                    if on_warning is not None:
+                        await on_warning(page_idx, page_error)
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
 
         # Flatten in page order for a stable, deterministic output.
         flat_blocks: list[GroundedBlock] = []

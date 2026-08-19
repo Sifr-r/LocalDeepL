@@ -55,10 +55,8 @@
     { id: 'table_extraction', label: 'Table extraction' },
   ];
 
-  // Render the real server cap from /api/config instead of a
-  // hard-coded value (audit P3 copy fix).
+  let maxUploadMb = 0;
   $: maxUploadMb = Math.round(($configStore.security?.max_upload_bytes || 0) / (1024 * 1024));
-  $: uploadCapLabel = maxUploadMb >= 1024 ? `${Math.round(maxUploadMb / 1024)} GB` : `${maxUploadMb} MB`;
 
   onMount(() => {
     refreshModels('ocr');
@@ -174,7 +172,7 @@
         role="tab"
         id={`settings-tab-${tab.id}`}
         aria-selected={activeNamespace === tab.id}
-        aria-controls={`settings-panel-${tab.id}`}
+        aria-controls={`settings-tabpanel-${tab.id}`}
         tabindex={activeNamespace === tab.id ? 0 : -1}
         on:click={() => activeNamespace = tab.id as Namespace}
         on:keydown={(e) => handleTabKeydown(e, tab.id)}
@@ -195,251 +193,247 @@
   <!-- Tab content -->
   <div class="flex-1 overflow-y-auto pr-1">
     {#if activeNamespace === 'ocr'}
-      <Card padding="lg" class="max-w-3xl space-y-6">
-        <SectionHeader title="OCR LLM backend settings" description="Endpoints, model, and processor plugins used by the OCR pipeline." />
+      <div id="settings-tabpanel-ocr" role="tabpanel" tabindex="0" aria-labelledby="settings-tab-ocr">
+        <Card padding="lg" class="max-w-3xl space-y-6">
+          <SectionHeader title="OCR LLM backend settings" description="Endpoints, model, and processor plugins used by the OCR pipeline." />
 
-        <div class="space-y-4">
-          <Input
-            id="ocr-api-base"
-            label="OCR API base URL"
-            type="text"
-            bind:value={$configStore.ocr_api_base}
-            placeholder={$configStore.api_base || 'http://localhost:1234/v1'}
-          />
-          <Input
-            id="ocr-api-key"
-            label="OCR API key"
-            type="password"
-            bind:value={$configStore.ocr_api_key}
-            placeholder="lm-studio / masked"
-            hint="Stored server-side. Never sent to the browser."
-          />
+          <div class="space-y-4">
+            <Input
+              id="ocr-api-base"
+              label="OCR API base URL"
+              type="text"
+              bind:value={$configStore.ocr_api_base}
+              placeholder={$configStore.api_base || 'http://localhost:1234/v1'}
+            />
+            <Input
+              id="ocr-api-key"
+              label="OCR API key"
+              type="password"
+              bind:value={$configStore.ocr_api_key}
+              placeholder="lm-studio / masked"
+              hint="Stored server-side. Never sent to the browser."
+            />
 
-          <div>
-            <div class="flex items-center justify-between mb-1.5">
-              <label for="ocr-model" class="form-label mb-0">OCR model ID</label>
-              <button type="button" on:click={() => refreshModels('ocr')} class="text-xs text-brand hover:underline">
-                Refresh models
-              </button>
-            </div>
-            <div class="flex gap-2">
-              <Input
-                id="ocr-model"
-                type="text"
-                bind:value={$configStore.ocr_model}
-                placeholder="allenai/olmocr-2-7b"
-                class="flex-1 font-mono"
-              />
-              <Select
-                label=""
-                ariaLabel="Pick OCR model from the server list"
-                options={[
-                  { value: '', label: '(Select model)' },
-                  ...$modelStore.ocr.map(m => ({ value: m, label: m }))
-                ]}
-                on:change={(e) => {
-                  const v = (e.target as HTMLSelectElement).value;
-                  if (v) configStore.update((c) => ({ ...c, ocr_model: v }));
-                }}
-              />
-            </div>
-          </div>
-
-          <!-- Document Processor Chips -->
-          <div class="pt-4 border-t border-border space-y-3">
-            <p class="form-label">Document processors</p>
-            <div class="flex flex-wrap gap-2">
-              {#each availableProcessors as proc (proc.id)}
-                {@const active = ($configStore.document_processors || []).includes(proc.id)}
-                <button
-                  type="button"
-                  on:click={() => toggleProcessor(proc.id)}
-                  class={[
-                    'inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium font-body',
-                    'border transition-colors',
-                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand',
-                    active
-                      ? 'bg-brand/15 border-brand/40 text-brand'
-                      : 'bg-card border-border text-foreground-muted hover:text-foreground hover:border-border-strong'
-                  ].join(' ')}
-                >
-                  {#if active}
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-                    </svg>
-                  {:else}
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                    </svg>
-                  {/if}
-                  <span>{proc.label}</span>
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <label for="ocr-model" class="form-label mb-0">OCR model ID</label>
+                <button type="button" on:click={() => refreshModels('ocr')} class="text-xs text-brand hover:underline">
+                  Refresh models
                 </button>
-              {/each}
+              </div>
+              <div class="flex gap-2">
+                <Input
+                  id="ocr-model"
+                  type="text"
+                  bind:value={$configStore.ocr_model}
+                  placeholder="allenai/olmocr-2-7b"
+                  class="flex-1 font-mono"
+                />
+                <Select
+                  label=""
+                  ariaLabel="Pick OCR model from the server list"
+                  options={[
+                    { value: '', label: '(Select model)' },
+                    ...$modelStore.ocr.map(m => ({ value: m, label: m }))
+                  ]}
+                  on:change={(e) => {
+                    const v = (e.target as HTMLSelectElement).value;
+                    if (v) configStore.update((c) => ({ ...c, ocr_model: v }));
+                  }}
+                />
+              </div>
+            </div>
+
+            <!-- Document Processor Chips -->
+            <div class="pt-4 border-t border-border space-y-3">
+              <p class="form-label">Document processors</p>
+              <p class="text-xs text-foreground-muted">
+                Select local post-OCR processors to run automatically before PDF generation.
+              </p>
+              <div class="flex flex-wrap gap-2 pt-1">
+                {#each availableProcessors as proc (proc.id)}
+                  {@const active = ($configStore.document_processors || []).includes(proc.id)}
+                  <button
+                    type="button"
+                    on:click={() => toggleProcessor(proc.id)}
+                    class={[
+                      'px-3 py-1.5 text-xs font-medium rounded-md border transition-all flex items-center gap-1.5',
+                      active
+                        ? 'bg-brand/10 border-brand text-brand shadow-sm'
+                        : 'bg-surface-alt border-border text-foreground-muted hover:border-border-strong hover:text-foreground'
+                    ].join(' ')}
+                  >
+                    {#if active}
+                      <svg class="w-3.5 h-3.5 text-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                      </svg>
+                    {/if}
+                    <span>{proc.label}</span>
+                  </button>
+                {/each}
+              </div>
             </div>
           </div>
-        </div>
-      </Card>
+        </Card>
+      </div>
 
     {:else if activeNamespace === 'translation'}
-      <Card padding="lg" class="max-w-3xl space-y-6">
-        <SectionHeader title="Translation backend settings" description="Endpoints and parameters used by the translation pipeline." />
+      <div id="settings-tabpanel-translation" role="tabpanel" tabindex="0" aria-labelledby="settings-tab-translation">
+        <Card padding="lg" class="max-w-3xl space-y-6">
+          <SectionHeader title="Translation backend settings" description="Endpoints and parameters used by the translation pipeline." />
 
-        <div class="space-y-4">
-          <Input
-            id="translation-api-base"
-            label="Translation API base URL"
-            type="text"
-            bind:value={$configStore.translation_api_base}
-            placeholder={$configStore.api_base || 'http://localhost:1234/v1'}
-          />
-          <Input
-            id="translation-api-key"
-            label="Translation API key"
-            type="password"
-            bind:value={$configStore.translation_api_key}
-            placeholder="lm-studio / masked"
-          />
-
-          <div>
-            <div class="flex items-center justify-between mb-1.5">
-              <label for="translation-model" class="form-label mb-0">Translation model ID</label>
-              <button type="button" on:click={() => refreshModels('translation')} class="text-xs text-brand hover:underline">
-                Refresh models
-              </button>
-            </div>
-            <div class="flex gap-2">
-              <Input
-                id="translation-model"
-                type="text"
-                bind:value={$configStore.translation_model}
-                placeholder="allenai/olmocr-2-7b"
-                class="flex-1 font-mono"
-              />
-              <Select
-                label=""
-                ariaLabel="Pick translation model from the server list"
-                options={[
-                  { value: '', label: '(Select model)' },
-                  ...$modelStore.translation.map(m => ({ value: m, label: m }))
-                ]}
-                on:change={(e) => {
-                  const v = (e.target as HTMLSelectElement).value;
-                  if (v) configStore.update((c) => ({ ...c, translation_model: v }));
-                }}
-              />
-            </div>
-          </div>
-
-          <div class="pt-4 border-t border-border">
+          <div class="space-y-4">
             <Input
-              id="sliding-window"
-              label="Sliding window words"
-              type="number"
-              bind:value={$configStore.sliding_window_words}
-              placeholder="400"
+              id="translation-api-base"
+              label="Translation API base URL"
+              type="text"
+              bind:value={$configStore.translation_api_base}
+              placeholder={$configStore.api_base || 'https://api.openai.com/v1'}
             />
-          </div>
+            <Input
+              id="translation-api-key"
+              label="Translation API key"
+              type="password"
+              bind:value={$configStore.translation_api_key}
+              placeholder="sk-... / masked"
+              hint="Stored server-side. Never sent to the browser."
+            />
 
-          <div class="pt-2">
-            <Toggle
-              id="dual-translate"
-              label="Enable secondary LLM dual verification"
-              description="Cross-check translations with a second model for higher accuracy"
-              bind:checked={$configStore.dual_translate}
-            />
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <label for="translation-model" class="form-label mb-0">Translation model ID</label>
+                <button type="button" on:click={() => refreshModels('translation')} class="text-xs text-brand hover:underline">
+                  Refresh models
+                </button>
+              </div>
+              <div class="flex gap-2">
+                <Input
+                  id="translation-model"
+                  type="text"
+                  bind:value={$configStore.translation_model}
+                  placeholder="gpt-4o-mini"
+                  class="flex-1 font-mono"
+                />
+                <Select
+                  label=""
+                  ariaLabel="Pick translation model from the server list"
+                  options={[
+                    { value: '', label: '(Select model)' },
+                    ...$modelStore.translation.map(m => ({ value: m, label: m }))
+                  ]}
+                  on:change={(e) => {
+                    const v = (e.target as HTMLSelectElement).value;
+                    if (v) configStore.update((c) => ({ ...c, translation_model: v }));
+                  }}
+                />
+              </div>
+            </div>
+
+            <div class="pt-4 border-t border-border space-y-4">
+              <Toggle
+                id="dual-translate"
+                label="Enable secondary LLM dual verification"
+                description="Cross-check translations with a second model for higher accuracy"
+                bind:checked={$configStore.dual_translate}
+              />
+            </div>
           </div>
-        </div>
-      </Card>
+        </Card>
+      </div>
 
     {:else if activeNamespace === 'transcription'}
-      <Card padding="lg" class="max-w-3xl space-y-6">
-        <SectionHeader title="Voice transcription settings" description="Whisper-compatible backend and prompt tuning." />
+      <div id="settings-tabpanel-transcription" role="tabpanel" tabindex="0" aria-labelledby="settings-tab-transcription">
+        <Card padding="lg" class="max-w-3xl space-y-6">
+          <SectionHeader title="Voice transcription settings" description="Whisper-compatible backend and prompt tuning." />
 
-        <div class="space-y-4">
-          <Input
-            id="transcription-api-base"
-            label="Transcription API base URL"
-            type="text"
-            bind:value={$configStore.transcription_api_base}
-            placeholder="https://api.openai.com/v1"
-          />
-          <Input
-            id="transcription-api-key"
-            label="Transcription API key"
-            type="password"
-            bind:value={$configStore.transcription_api_key}
-            placeholder="sk-..."
-          />
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Select
-              id="transcription-engine"
-              label="Engine type"
-              options={[
-                { value: 'api', label: 'OpenAI / Remote API' },
-                { value: 'faster-whisper', label: 'Local Faster-Whisper' }
-              ]}
-              value={$configStore.transcription_engine}
-              on:change={(e) => {
-                const v = (e.target as HTMLSelectElement).value;
-                configStore.update((c) => ({ ...c, transcription_engine: v }));
-              }}
+          <div class="space-y-4">
+            <Input
+              id="transcription-api-base"
+              label="Transcription API base URL"
+              type="text"
+              bind:value={$configStore.transcription_api_base}
+              placeholder="https://api.openai.com/v1"
             />
             <Input
-              id="transcription-model"
-              label="Model name"
-              type="text"
-              bind:value={$configStore.transcription_model}
-              placeholder="whisper-1"
+              id="transcription-api-key"
+              label="Transcription API key"
+              type="password"
+              bind:value={$configStore.transcription_api_key}
+              placeholder="sk-..."
             />
-          </div>
-        </div>
-      </Card>
 
-    {:else if activeNamespace === 'auth'}
-      <Card padding="lg" class="max-w-3xl space-y-6">
-        <SectionHeader title="Server authentication & bearer tokens" description="OMNISCRIBE_AUTH_TOKEN and per-service overrides." />
-
-        <div class="space-y-4">
-          <Input
-            id="auth-global"
-            label="Global bearer auth token (OMNISCRIBE_AUTH_TOKEN)"
-            type="password"
-            bind:value={$authStore.global}
-            placeholder="Enter global bearer token…"
-          />
-          <Input
-            id="auth-ocr"
-            label="OCR per-service override token (OMNISCRIBE_OCR_AUTH_TOKEN)"
-            type="password"
-            bind:value={$authStore.ocr}
-            placeholder="Leave empty to use global token"
-          />
-          <Input
-            id="auth-translation"
-            label="Translation per-service override token (OMNISCRIBE_TRANSLATION_AUTH_TOKEN)"
-            type="password"
-            bind:value={$authStore.translation}
-            placeholder="Leave empty to use global token"
-          />
-          <Input
-            id="auth-transcription"
-            label="Transcription per-service override token (OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN)"
-            type="password"
-            bind:value={$authStore.transcription}
-            placeholder="Leave empty to use global token"
-          />
-
-          <div class="pt-4 border-t border-border surface-inset p-3 space-y-1">
-            <p class="text-sm font-display font-semibold text-foreground">Upload limits & environment</p>
-            <div class="flex items-center gap-2 text-xs text-foreground-muted">
-              <span>Max upload cap:</span>
-              <Badge variant="success" size="sm" dot>{uploadCapLabel}</Badge>
-              <span class="font-mono text-foreground-subtle">({$configStore.security?.max_upload_bytes} bytes)</span>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Select
+                id="transcription-engine"
+                label="Engine type"
+                options={[
+                  { value: 'api', label: 'OpenAI / Remote API' },
+                  { value: 'faster-whisper', label: 'Local Faster-Whisper' }
+                ]}
+                value={$configStore.transcription_engine}
+                on:change={(e) => {
+                  const v = (e.target as HTMLSelectElement).value;
+                  configStore.update((c) => ({ ...c, transcription_engine: v }));
+                }}
+              />
+              <Input
+                id="transcription-model"
+                label="Model name"
+                type="text"
+                bind:value={$configStore.transcription_model}
+                placeholder="whisper-1"
+              />
             </div>
           </div>
-        </div>
-      </Card>
+        </Card>
+      </div>
+
+    {:else if activeNamespace === 'auth'}
+      <div id="settings-tabpanel-auth" role="tabpanel" tabindex="0" aria-labelledby="settings-tab-auth">
+        <Card padding="lg" class="max-w-3xl space-y-6">
+          <SectionHeader title="Server authentication & bearer tokens" description="OMNISCRIBE_AUTH_TOKEN and per-service overrides." />
+
+          <div class="space-y-4">
+            <Input
+              id="auth-global"
+              label="Global bearer auth token (OMNISCRIBE_AUTH_TOKEN)"
+              type="password"
+              bind:value={$authStore.global}
+              placeholder="Enter global bearer token…"
+            />
+            <Input
+              id="auth-ocr"
+              label="OCR per-service override token (OMNISCRIBE_OCR_AUTH_TOKEN)"
+              type="password"
+              bind:value={$authStore.ocr}
+              placeholder="Leave empty to use global token"
+            />
+            <Input
+              id="auth-translation"
+              label="Translation per-service override token (OMNISCRIBE_TRANSLATION_AUTH_TOKEN)"
+              type="password"
+              bind:value={$authStore.translation}
+              placeholder="Leave empty to use global token"
+            />
+            <Input
+              id="auth-transcription"
+              label="Transcription per-service override token (OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN)"
+              type="password"
+              bind:value={$authStore.transcription}
+              placeholder="Leave empty to use global token"
+            />
+
+            <div class="pt-4 border-t border-border surface-inset p-3 space-y-1 rounded-md">
+              <p class="text-sm font-display font-semibold text-foreground">Upload limits & environment</p>
+              <div class="flex items-center gap-2 text-xs text-foreground-muted">
+                <span>Max upload cap:</span>
+                <Badge variant="success" size="sm">{maxUploadMb} MB</Badge>
+                <span class="font-mono text-foreground-subtle">({$configStore.security?.max_upload_bytes || 0} bytes)</span>
+              </div>
+            </div>
+          </div>
+        </Card>
+      </div>
     {/if}
   </div>
 </section>

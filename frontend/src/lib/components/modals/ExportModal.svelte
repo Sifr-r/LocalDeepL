@@ -6,6 +6,7 @@
     aggregateMarkdownFromBboxes,
     aggregateTextFromBboxes,
   } from '../../utils/exportAggregation';
+  import { downloadBlob, downloadUrl } from '../../utils/download';
   import Modal from '../ui/Modal.svelte';
   import Button from '../ui/Button.svelte';
   import Badge, { type BadgeVariant } from '../ui/Badge.svelte';
@@ -53,17 +54,6 @@
 
   function closeModal() {
     exportModalOpen.set(false);
-  }
-
-  function downloadBlob(blob: Blob, name: string) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
   }
 
   async function handleExport(format: ExportFormat) {
@@ -118,12 +108,7 @@
           );
           return;
         }
-        const a = document.createElement('a');
-        a.href = blobUrl;
-        a.download = $pdfPreview.responseFileName || `${filename}.ocr.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
+        downloadUrl(blobUrl, $pdfPreview.responseFileName || `${filename}.ocr.pdf`);
         toastStore.pushToast('success', 'Searchable PDF downloaded');
       }
 

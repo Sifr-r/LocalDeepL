@@ -209,6 +209,16 @@ class TestSqlTable:
                 target_col="tgt",
             )
 
+    def test_ssrf_blocked_dsn_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ALLOW_SSRF_LOCAL", "false")
+        with pytest.raises(ValueError, match="forbidden"):
+            parse_sql_table(
+                dsn="postgresql://user:pass@169.254.169.254:5432/mydb",
+                source_table="terms",
+                source_col="src",
+                target_col="tgt",
+            )
+
 
 # ---------------------------------------------------------------------------
 # git_repo

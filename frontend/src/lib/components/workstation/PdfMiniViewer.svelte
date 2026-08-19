@@ -61,7 +61,6 @@
       try {
         page = await target.doc.getPage(target.pageNumber);
         if (cancelled) {
-          page.cleanup();
           return;
         }
         const viewport = page.getViewport({ scale: target.scale });
@@ -69,7 +68,6 @@
         canvas.height = Math.round(viewport.height);
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-          page.cleanup();
           throw new Error('2D canvas context unavailable');
         }
         const renderParams = {
@@ -78,17 +76,20 @@
           viewport
         } as unknown as Parameters<typeof page.render>[0];
         await page.render(renderParams).promise;
-        if (cancelled) {
-          page.cleanup();
-          return;
-        }
-        page.cleanup();
       } catch (err) {
         if (cancelled) return;
         // Cancellation is expected when the user switches source.
         const name = (err as { name?: string } | null)?.name;
         if (name === 'RenderingCancelledException') return;
         throw err;
+      } finally {
+        if (page) {
+          try {
+            page.cleanup();
+          } catch {
+            /* ignore */
+          }
+        }
       }
     }
 
@@ -116,6 +117,7 @@
     pendingCancels.clear();
     if (doc) {
       try { await doc.cleanup(); } catch { /* ignore */ }
+      try { await (doc as { destroy?: () => Promise<void> | void }).destroy?.(); } catch { /* ignore */ }
       doc = null;
     }
     try {
@@ -123,6 +125,7 @@
       const next = await task.promise;
       if (epoch !== renderEpoch) {
         try { await next.cleanup(); } catch { /* ignore */ }
+        try { await (next as { destroy?: () => Promise<void> | void }).destroy?.(); } catch { /* ignore */ }
         return;
       }
       doc = next;
@@ -149,6 +152,7 @@
     pendingCancels.clear();
     if (doc) {
       try { void doc.cleanup(); } catch { /* ignore */ }
+      try { void (doc as { destroy?: () => Promise<void> | void }).destroy?.(); } catch { /* ignore */ }
       doc = null;
     }
   });

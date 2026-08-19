@@ -55,6 +55,7 @@ import asyncio
 import contextlib
 import hmac
 import json
+import logging
 from collections import OrderedDict
 from http import HTTPStatus
 from typing import Any, Protocol, runtime_checkable
@@ -64,6 +65,7 @@ from fastapi.responses import JSONResponse
 
 from omniscribe.api.routers import state
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 _progress_service = state.progress_service
 
@@ -314,6 +316,8 @@ class ConnectionManager:
         """
         if not channel_id:
             return
+        if getattr(_progress_service, "_redis", None) is not None:
+            _progress_service.publish(channel_id, payload)
         ws = self.active.get(channel_id)
         if ws is None:
             return
@@ -575,6 +579,31 @@ async def cancel_channel(
     return {"status": "cancel_requested"}
 
 
+async def _listen_redis_pubsub(channel_id: str, ws: WebSocket) -> None:
+    redis_client = getattr(_progress_service, "_redis", None)
+    if redis_client is None:
+        return
+    pubsub = None
+    try:
+        pubsub = redis_client.pubsub()
+        pubsub.subscribe(f"omniscribe:progress:{channel_id}")
+        while True:
+            msg = await asyncio.to_thread(pubsub.get_message, True, 0.5)
+            if msg and msg.get("type") == "message":
+                data = msg.get("data")
+                if isinstance(data, str):
+                    await ws.send_text(data if data.endswith("\n") else data + "\n")
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.warning("Redis pubsub listener for %s error: %s", channel_id, exc)
+    finally:
+        if pubsub is not None:
+            with contextlib.suppress(Exception):
+                pubsub.unsubscribe(f"omniscribe:progress:{channel_id}")
+                pubsub.close()
+
+
 @router.websocket("/ws/{channel_id}")
 async def websocket_endpoint(websocket: WebSocket, channel_id: str):
     """Accept a token-bound WebSocket connection for real-time progress updates.
@@ -619,6 +648,9 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
         await _close_with_code(websocket, 1008)
         return
     manager.register_channel(websocket, channel_id, session_token)
+    listener_task: asyncio.Task[None] | None = None
+    if getattr(_progress_service, "_redis", None) is not None:
+        listener_task = asyncio.create_task(_listen_redis_pubsub(channel_id, websocket))
     try:
         while True:
             try:
@@ -641,4 +673,8 @@ async def websocket_endpoint(websocket: WebSocket, channel_id: str):
             if isinstance(msg, dict) and msg.get("type") == "cancel":
                 manager.request_cancel(channel_id)
     finally:
+        if listener_task is not None:
+            listener_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await listener_task
         manager.disconnect(channel_id)

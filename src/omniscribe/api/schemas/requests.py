@@ -292,6 +292,8 @@ class TranslationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     text: str = ""
+    text_artifact_id: str | None = None
+    text_artifact_token: str | None = None
     target_language: str = Field(default="Spanish", min_length=1, max_length=80)
     api_base: str | None = None
     api_key: str | None = None
@@ -305,7 +307,14 @@ class TranslationRequest(BaseModel):
     second_model: str | None = None
 
     @field_validator(
-        "text", "target_language", "api_base", "api_key", "model", mode="before"
+        "text",
+        "text_artifact_id",
+        "text_artifact_token",
+        "target_language",
+        "api_base",
+        "api_key",
+        "model",
+        mode="before",
     )
     @classmethod
     def validate_optional_strings(cls, value: Any) -> Any:

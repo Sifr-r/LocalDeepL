@@ -361,8 +361,7 @@ class TestRepairableGroundedBackendProtocol:
             source = f.read()
         normalised = " ".join(source.split())
         assert (
-            "isinstance(self.grounded_backend, RepairableGroundedBackend)"
-            in normalised
+            "isinstance(self.grounded_backend, RepairableGroundedBackend)" in normalised
         )
         assert 'hasattr(self.grounded_backend, "ocr_crop")' not in normalised
         # The legacy ``# type: ignore[attr-defined]`` for ``ocr_crop``

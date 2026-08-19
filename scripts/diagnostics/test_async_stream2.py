@@ -1,16 +1,42 @@
-"""Test with explicit asyncio loop and transport."""
+"""Diagnostic: SSE-style streaming via ``aiter_raw``.
+
+Audit-secondary F24: moved out of ``tests/_diag/`` so the
+file is no longer auto-collected by pytest. See
+``test_minimal.py`` for the rationale.
+
+How to run::
+
+    uv run python scripts/diagnostics/test_async_stream2.py
+
+What it checks: an infinite SSE-style stream can be read
+chunk-by-chunk via ``aiter_raw`` without hanging. Useful when
+debugging a slow SSE consumer — the first keepalive chunk
+arrives within ~100 ms and the test exits.
+
+Context: this file was created while debugging the audit's
+"D2-12 QueueFull unhandled in SSE push" finding. The fix
+(D2-12 in audit-secondary Phase 3) moved to
+``api/routers/events.py:_put_with_drop_oldest``; this
+diagnostic is kept for future debugging of related SSE
+behaviour.
+"""
+
+from __future__ import annotations
+
 import sys
+
 sys.path.insert(0, "src")
 
 import asyncio
+
 import httpx
-from httpx import ASGITransport
+import pytest
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
-
-import pytest
+from httpx import ASGITransport
 
 app = FastAPI()
+
 
 @app.get("/stream")
 async def stream():
@@ -21,7 +47,11 @@ async def stream():
                 yield b": keepalive\n\n"
         finally:
             pass
-    return StreamingResponse(gen(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"})
+
+    return StreamingResponse(
+        gen(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"}
+    )
+
 
 @pytest.mark.asyncio
 async def test_keepalive_via_aiter_raw():
@@ -43,3 +73,7 @@ async def test_keepalive_via_aiter_raw():
         await response.aclose()
         print("DONE")
         assert response.status_code == 200
+
+
+if __name__ == "__main__":
+    asyncio.run(test_keepalive_via_aiter_raw())

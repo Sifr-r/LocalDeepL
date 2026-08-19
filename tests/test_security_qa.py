@@ -11,7 +11,7 @@ import pytest
 
 from omniscribe.api.tasks import process_translation_task
 from omniscribe.core.translation import chunk_text, evaluate_node
-from omniscribe.utils.security import is_ssrf_target
+from omniscribe.utils.security import is_blocked_host, is_ssrf_target
 
 
 def test_is_ssrf_target_defaults():
@@ -71,6 +71,63 @@ def test_is_ssrf_target_allowed():
     with patch.dict(os.environ, {"ALLOW_SSRF_LOCAL": "true"}):
         assert asyncio.run(is_ssrf_target("http://localhost:1234/v1")).allowed is True
         assert asyncio.run(is_ssrf_target("http://127.0.0.1/v1")).allowed is True
+
+
+def test_unconditional_blocked_ips_even_with_allow_ssrf_local():
+    """169.254.169.254, 100.64.0.1, and 0.0.0.0 are blocked unconditionally,
+
+    even when ALLOW_SSRF_LOCAL=true.
+    """
+    with patch.dict(os.environ, {"ALLOW_SSRF_LOCAL": "true"}):
+        # Literal IPs
+        res_169 = asyncio.run(
+            is_ssrf_target("http://169.254.169.254/latest/meta-data/")
+        )
+        assert res_169.allowed is False
+        assert res_169.reason == "metadata-endpoint"
+
+        res_cgnat = asyncio.run(is_ssrf_target("http://100.64.0.1/foo"))
+        assert res_cgnat.allowed is False
+        assert res_cgnat.reason == "literal-blocked-ip"
+
+        res_zero = asyncio.run(is_ssrf_target("http://0.0.0.0:8000/"))
+        assert res_zero.allowed is False
+        assert res_zero.reason == "literal-blocked-ip"
+
+        res_meta = asyncio.run(is_ssrf_target("http://metadata.google.internal/"))
+        assert res_meta.allowed is False
+        assert res_meta.reason == "metadata-endpoint"
+
+        # Synchronous is_blocked_host checks
+        assert is_blocked_host("169.254.169.254") is True
+        assert is_blocked_host("100.64.0.1") is True
+        assert is_blocked_host("0.0.0.0") is True
+        assert is_blocked_host("metadata.google.internal") is True
+
+        # DNS resolution to unconditionally blocked IPs
+        with patch("socket.getaddrinfo") as mock_getaddrinfo:
+            mock_getaddrinfo.return_value = [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("100.64.0.5", 80))
+            ]
+            res_dns_cgnat = asyncio.run(is_ssrf_target("http://custom-cgnat.internal/"))
+            assert res_dns_cgnat.allowed is False
+            assert res_dns_cgnat.reason == "resolved-blocked-ip"
+
+            mock_getaddrinfo.return_value = [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("169.254.1.1", 80))
+            ]
+            res_dns_169 = asyncio.run(
+                is_ssrf_target("http://custom-linklocal.internal/")
+            )
+            assert res_dns_169.allowed is False
+            assert res_dns_169.reason == "metadata-endpoint"
+
+            mock_getaddrinfo.return_value = [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("0.0.0.0", 80))
+            ]
+            res_dns_zero = asyncio.run(is_ssrf_target("http://custom-zero.internal/"))
+            assert res_dns_zero.allowed is False
+            assert res_dns_zero.reason == "resolved-blocked-ip"
 
 
 def test_translation_chunking_preserves_size():

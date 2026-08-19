@@ -43,12 +43,17 @@ horizontal scaling."
 
 from __future__ import annotations
 
+import asyncio
 import hmac
+import json
+import logging
 import re
 import secrets
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Final, cast
+
+logger = logging.getLogger(__name__)
 
 
 class Stage(StrEnum):
@@ -98,7 +103,33 @@ class ProgressChannel:
 
 
 class ProgressService:
-    """Progress math, channel validation, and frame builders."""
+    """Progress math, channel validation, frame builders, and Redis pub/sub."""
+
+    def __init__(self, *, redis_url: str | None = None) -> None:
+        self.redis_url = redis_url
+        self._redis: Any | None = None
+        if redis_url:
+            try:
+                from redis import Redis
+
+                self._redis = Redis.from_url(redis_url, decode_responses=True)
+            except ImportError:
+                self._redis = None
+
+    def publish(self, channel_id: str | None, frame: dict[str, Any]) -> None:
+        if not channel_id or self._redis is None:
+            return
+        try:
+            payload = json.dumps(frame, separators=(",", ":"), ensure_ascii=False)
+            self._redis.publish(f"omniscribe:progress:{channel_id}", payload)
+        except Exception as exc:
+            logger.warning("Failed to publish progress frame to Redis: %s", exc)
+
+    async def publish_async(
+        self, channel_id: str | None, frame: dict[str, Any]
+    ) -> None:
+        if channel_id and self._redis is not None:
+            await asyncio.to_thread(self.publish, channel_id, frame)
 
     def stage_to_percent(self, stage: str, current: int, total: int) -> int:
         return stage_to_percent(stage, current, total)

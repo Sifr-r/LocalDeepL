@@ -11,6 +11,7 @@ grounded-backend tests; that's intentional — the public surface is
 underscore-prefixed helper is the canonical pre-validation step the
 schema layer uses to extract JSON from a VLM response.
 """
+
 import logging
 from unittest.mock import MagicMock
 

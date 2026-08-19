@@ -113,10 +113,10 @@ jobs:
         run: uv run ruff format src tests --check
 
       - name: Run Mypy type check
-        run: uv run mypy src
+        run: uv run mypy src tests
 
       - name: Run fast tests
-        run: uv run pytest -m "not slow and not slow_dataset" --cov=src/omniscribe --cov-report=term-missing --cov-report=xml -v
+        run: uv run pytest -m "not slow and not slow_dataset" --cov=src/omniscribe --cov-fail-under=85 --cov-report=term-missing --cov-report=xml -v
 
       - name: Run pip-audit vulnerability check
         # Keep in sync with `make audit` (Makefile): PYSEC-2026-311 /

@@ -41,7 +41,7 @@ describe('F3.4 URL.createObjectURL revoke on unmount', () => {
     const fakeUrl = 'blob:fake-url';
     const realCreate = URL.createObjectURL;
     const realRevoke = URL.revokeObjectURL;
-    URL.createObjectURL = ((b: unknown) => {
+    URL.createObjectURL = ((_b: unknown) => {
       const u = `${fakeUrl}-${created.length}`;
       created.push(u);
       return u;

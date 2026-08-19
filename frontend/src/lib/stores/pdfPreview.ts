@@ -115,7 +115,19 @@ function createPdfPreviewStore(): PdfPreviewStore {
   let activeVersion = 0;
 
   function resetTransient(): void {
-    pdfDoc = null;
+    if (pdfDoc) {
+      try {
+        (pdfDoc as { destroy?: () => Promise<void> | void; cleanup?: () => Promise<void> | void }).destroy?.();
+      } catch {
+        /* ignore */
+      }
+      try {
+        (pdfDoc as { destroy?: () => Promise<void> | void; cleanup?: () => Promise<void> | void }).cleanup?.();
+      } catch {
+        /* ignore */
+      }
+      pdfDoc = null;
+    }
     activeVersion += 1;
   }
 
@@ -126,6 +138,7 @@ function createPdfPreviewStore(): PdfPreviewStore {
       try { URL.revokeObjectURL(prev.blobUrl); } catch { /* ignore */ }
     }
     resetTransient();
+    const loadVersion = activeVersion;
     const blobUrl = URL.createObjectURL(blob);
     const isPdf = isPdfLike(blob);
     let pageCount = 1;
@@ -133,6 +146,12 @@ function createPdfPreviewStore(): PdfPreviewStore {
       try {
         const task = pdfjsLib.getDocument({ url: blobUrl });
         const doc = await task.promise;
+        if (loadVersion !== activeVersion) {
+          try { (doc as { cleanup?: () => Promise<void> | void }).cleanup?.(); } catch { /* ignore */ }
+          try { (doc as { destroy?: () => Promise<void> | void }).destroy?.(); } catch { /* ignore */ }
+          try { URL.revokeObjectURL(blobUrl); } catch { /* ignore */ }
+          return;
+        }
         pdfDoc = doc;
         pageCount = doc.numPages;
       } catch (err) {
@@ -194,27 +213,38 @@ function createPdfPreviewStore(): PdfPreviewStore {
     }
     if (!pdfDoc) return;
     const myVersion = curr.version;
-    const page: PDFPageProxy = await pdfDoc.getPage(curr.currentPage);
-    if (get(state).version !== myVersion) return;
-    const viewport = page.getViewport({ scale });
-    const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-    canvas.width = Math.round(viewport.width * dpr);
-    canvas.height = Math.round(viewport.height * dpr);
-    // Only the logical width is pinned; height stays ``auto`` (via the
-    // canvas element's ``h-auto max-w-full`` classes) so a container
-    // narrower than the logical size shrinks the page proportionally
-    // instead of squashing it against a fixed pixel height.
-    canvas.style.width = `${Math.round(viewport.width)}px`;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const transform = dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined;
-    // ``canvas`` is the field PDF.js's public typings now require; the
-    // ``canvasContext`` alias is kept for forward-compat with older
-    // worker builds that still read from it. The cast is contained here
-    // because the public type drifts between minor versions.
-    const renderParams = { canvas, canvasContext: ctx, viewport, transform } as unknown as Parameters<typeof page.render>[0];
-    await page.render(renderParams).promise;
-    if (get(state).version !== myVersion) return;
+    let page: PDFPageProxy | null = null;
+    try {
+      page = await pdfDoc.getPage(curr.currentPage);
+      if (get(state).version !== myVersion) return;
+      const viewport = page.getViewport({ scale });
+      const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+      canvas.width = Math.round(viewport.width * dpr);
+      canvas.height = Math.round(viewport.height * dpr);
+      // Only the logical width is pinned; height stays ``auto`` (via the
+      // canvas element's ``h-auto max-w-full`` classes) so a container
+      // narrower than the logical size shrinks the page proportionally
+      // instead of squashing it against a fixed pixel height.
+      canvas.style.width = `${Math.round(viewport.width)}px`;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      const transform = dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined;
+      // ``canvas`` is the field PDF.js's public typings now require; the
+      // ``canvasContext`` alias is kept for forward-compat with older
+      // worker builds that still read from it. The cast is contained here
+      // because the public type drifts between minor versions.
+      const renderParams = { canvas, canvasContext: ctx, viewport, transform } as unknown as Parameters<typeof page.render>[0];
+      await page.render(renderParams).promise;
+      if (get(state).version !== myVersion) return;
+    } finally {
+      if (page) {
+        try {
+          page.cleanup();
+        } catch {
+          /* ignore */
+        }
+      }
+    }
   }
 
   function clear(): void {

@@ -9,6 +9,7 @@
     audioCurrentTime,
   } from '$lib/stores/transcriptionStore';
   import type { TranscriptionJobResponse, TranscriptionSegment } from '$lib/types/api';
+  import { downloadBlob } from '$lib/utils/download';
   import Card from '../ui/Card.svelte';
   import Button from '../ui/Button.svelte';
   import Input from '../ui/Input.svelte';
@@ -98,12 +99,7 @@
   function downloadAsText() {
     if (!$transcriptionResult) return;
     const blob = new Blob([$transcriptionResult.text], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${$transcriptionResult.filename || 'transcript'}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, `${$transcriptionResult.filename || 'transcript'}.txt`);
   }
 
   function downloadAsSrt() {
@@ -115,12 +111,7 @@
       srt += `${i + 1}\n${start} --> ${end}\n${seg.text.trim()}\n\n`;
     });
     const blob = new Blob([srt], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${$transcriptionResult.filename || 'transcript'}.srt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, `${$transcriptionResult.filename || 'transcript'}.srt`);
   }
 
   function formatSrtTime(sec: number): string {
@@ -152,6 +143,7 @@
     <!-- Header controls -->
     <div class="flex items-center gap-2 flex-wrap">
       <Select
+        id="transcription-engine-select"
         label="Engine"
         options={engineOptions}
         bind:value={engine}
@@ -172,8 +164,10 @@
     <Card padding="md" class="flex flex-col gap-4">
       <SectionHeader title="Audio file" divider={false} />
 
+      <label for="audio-file-input" class="sr-only">Upload audio file</label>
       <input
         id="audio-file-input"
+        aria-label="Upload audio file"
         type="file"
         bind:this={audioInput}
         on:change={handleAudioFileChange}
@@ -260,7 +254,7 @@
 
       <div class="flex-1 overflow-y-auto space-y-2 pr-1">
         {#if $isTranscribing}
-          <div class="h-full flex flex-col items-center justify-center space-y-3 text-xs text-brand animate-pulse">
+          <div role="status" aria-live="polite" class="h-full flex flex-col items-center justify-center space-y-3 text-xs text-brand animate-pulse">
             <div class="w-8 h-8 border-[3px] border-brand border-t-transparent rounded-full animate-spin"></div>
             <div>Processing voice audio stream…</div>
           </div>

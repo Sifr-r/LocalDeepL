@@ -122,7 +122,6 @@
       if (open) {
         if (typeof document !== 'undefined') {
           const active = document.activeElement as HTMLElement | null;
-          // eslint-disable-next-line no-useless-assignment -- reactive block re-reads `prevActiveElement` on close.
           prevActiveElement =
             active && active !== document.body && typeof active.focus === 'function'
               ? active
@@ -131,7 +130,6 @@
         tick().then(focusFirst);
       } else if (typeof document !== 'undefined' && prevActiveElement) {
         const el = prevActiveElement;
-        // eslint-disable-next-line no-useless-assignment -- reactive block re-reads `prevActiveElement` on next transition.
         prevActiveElement = null;
         // Defer to the next frame so the dialog has unmounted before we
         // hand focus back to the trigger.
@@ -139,7 +137,6 @@
           if (typeof el.focus === 'function') el.focus();
         });
       }
-      // eslint-disable-next-line no-useless-assignment -- reactive block re-reads `prevOpen` as a transition guard.
       prevOpen = open;
     }
   }

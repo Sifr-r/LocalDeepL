@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import secrets
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
@@ -235,7 +236,7 @@ def in_memory_session_log_provider(
     log: InMemoryLogStore | None = None,
     *,
     name: str = "memory",
-) -> callable:
+) -> Callable[[Any], Callable[[], None]]:
     """Return a :class:`Plugin` that registers an in-memory :class:`SessionLog`.
 
     Parameters
@@ -253,8 +254,8 @@ def in_memory_session_log_provider(
     """
     impl = log if log is not None else InMemoryLogStore()
 
-    def _plugin(ctx) -> callable:
-        disposer = ctx.register(SessionLog, impl, name=name)
+    def _plugin(ctx: Any) -> Callable[[], None]:
+        disposer: Callable[[], None] = ctx.register(SessionLog, impl, name=name)
         return disposer
 
     return _plugin

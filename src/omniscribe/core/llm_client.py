@@ -128,7 +128,9 @@ async def call_vlm(
     system_prompt: str | None = None,
 ) -> str:
     """Make an asynchronous VLM call using active ProviderManager configuration or explicit settings."""
-    provider_config = _resolve_provider_config(provider_config, api_base, api_key, model)
+    provider_config = _resolve_provider_config(
+        provider_config, api_base, api_key, model
+    )
 
     return await complete_vlm_prompt(
         provider_config=provider_config,
@@ -170,7 +172,9 @@ async def call_llm(
         image_base64=image_base64,
     )
 
-    provider_config = _resolve_provider_config(provider_config, api_base, api_key, model)
+    provider_config = _resolve_provider_config(
+        provider_config, api_base, api_key, model
+    )
 
     return await complete_vlm_prompt(
         provider_config=provider_config,

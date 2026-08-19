@@ -144,8 +144,9 @@ def test_recall_above_threshold(
     # kind of "what boxes did you actually emit?" introspection. Walk
     # the page tree and collect (bbox, text) pairs in document order.
     doc_result = pipe.last_document_result
-    if doc_result is None:
-        pytest.skip(f"{pdf_name}: pipeline produced no DocumentResult")
+    assert doc_result is not None, (
+        f"{pdf_name}: pipeline produced no DocumentResult (pipeline failure)"
+    )
     for page in doc_result.pages:
         for block in page.blocks:
             text = getattr(block, "text", "") or ""
@@ -154,10 +155,9 @@ def test_recall_above_threshold(
                 continue
             captured.append((bbox, text))
 
-    if not captured:
-        pytest.skip(
-            f"{pdf_name}: pipeline emitted no (bbox, text) pairs to compare against GT"
-        )
+    assert len(captured) > 0, (
+        f"{pdf_name}: pipeline emitted no (bbox, text) pairs to compare against GT"
+    )
 
     report = compute_report(
         f"{pdf_name} (recall upper bound)",

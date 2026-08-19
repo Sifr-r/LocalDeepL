@@ -43,6 +43,16 @@ class StoredGlossary:
     created_at: float = 0.0
     updated_at: float = 0.0
 
+    def __post_init__(self) -> None:
+        import warnings
+
+        warnings.warn(
+            "StoredGlossary is deprecated and will be removed in a future release. "
+            "Use GlossaryMeta from omniscribe.core.lexicon instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
 
 class GlossaryNotFoundError(KeyError):
     """Raised when a requested library glossary does not exist."""
@@ -57,6 +67,14 @@ class GlossaryLibrary:
         artifact_dir: Path,
         clock: Callable[[], float] | None = None,
     ) -> None:
+        import warnings
+
+        warnings.warn(
+            "GlossaryLibrary is deprecated and will be removed in a future release. "
+            "Use omniscribe.core.lexicon.LexiconStore instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._artifact_dir = Path(artifact_dir).expanduser().resolve()
         self._library_dir = self._artifact_dir / "glossary_library"
         self._path = self._library_dir / "library.json"

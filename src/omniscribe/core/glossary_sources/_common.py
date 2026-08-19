@@ -5,9 +5,12 @@ from __future__ import annotations
 import base64
 import binascii
 import re
-import xml.etree.ElementTree as ElementTree
 from collections import Counter
 from typing import Any
+from xml.etree.ElementTree import (  # nosemgrep: python.lang.security.use-defused-xml.use-defused-xml
+    Element,
+    ParseError,
+)
 
 from defusedxml import ElementTree as _DefusedElementTree
 from defusedxml.common import DefusedXmlException
@@ -113,7 +116,7 @@ def local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1].lower()
 
 
-def iter_text(element: ElementTree.Element | None) -> str:
+def iter_text(element: Element | None) -> str:
     """Collect text from an XML element, including inline child elements."""
     if element is None:
         return ""
@@ -144,7 +147,7 @@ def validate_identifier(value: str, field_name: str) -> str:
     return value
 
 
-def safe_xml_root(data: bytes) -> ElementTree.Element:
+def safe_xml_root(data: bytes) -> Element:
     """Parse XML while rejecting DTDs, entity declarations, and external refs.
 
     defusedxml drives the parse so the rejection happens at the expat
@@ -154,13 +157,11 @@ def safe_xml_root(data: bytes) -> ElementTree.Element:
     the scanned prefix.
     """
     try:
-        root: ElementTree.Element = _DefusedElementTree.fromstring(
-            data, forbid_dtd=True
-        )
+        root: Element = _DefusedElementTree.fromstring(data, forbid_dtd=True)
         return root
     except DefusedXmlException as exc:
         raise ValueError(
             "DTD and external entities are not allowed in glossary XML."
         ) from exc
-    except ElementTree.ParseError as exc:
+    except ParseError as exc:
         raise ValueError(f"Invalid glossary XML: {exc}") from exc

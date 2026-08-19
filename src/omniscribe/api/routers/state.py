@@ -50,10 +50,7 @@ from omniscribe.config import load_settings
 if TYPE_CHECKING:
     # Type-only imports; never executed at runtime, so a missing
     # [lexicon] install doesn't break the server import chain.
-    from omniscribe.core.lexicon import (
-        GlossaryLibraryAdapter,
-        LanceDBLexiconStore,
-    )
+    pass
 
 _artifact_dir = (
     Path(os.getenv("OMNISCRIBE_ARTIFACT_DIR", tempfile.gettempdir())) / "omniscribe"
@@ -107,11 +104,14 @@ _embedding_factory: Any = None
 try:
     from omniscribe.core.lexicon import (
         GlossaryLibraryAdapter as _GlossaryLibraryAdapter,
+    )
+    from omniscribe.core.lexicon import (
         LanceDBLexiconStore as _LanceDBLexiconStore,
     )
     from omniscribe.core.lexicon.embedding import (
         get_default_embedding_model as _embedding_factory,
     )
+
     _LEXICON_AVAILABLE = True
 except ImportError as exc:
     _LEXICON_IMPORT_ERROR = str(exc)
@@ -131,8 +131,7 @@ class _UnavailableGlossaryLibrary:
     """
 
     _HINT = (
-        "The [lexicon] extra is not installed. Install with: "
-        "uv sync --extra lexicon"
+        "The [lexicon] extra is not installed. Install with: uv sync --extra lexicon"
     )
 
     def __getattr__(self, name: str) -> object:
@@ -165,8 +164,5 @@ def _build_glossary_library() -> object:
     return _GlossaryLibraryAdapter(store)
 
 
-# Module-level aliases. The server only ever reads these, so lazy attribute
-# access via __getattr__ keeps the heavy construction off the import path
-# while keeping the call-site syntax (``state.glossary_library``) unchanged.
-glossary_library: object = _build_glossary_library()
+glossary_library: Any = _build_glossary_library()
 lexicon_store: object | None = _build_lexicon_store()

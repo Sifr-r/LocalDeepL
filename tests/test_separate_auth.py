@@ -998,7 +998,9 @@ def test_from_env_warns_when_only_some_namespace_tokens_set(
         "OMNISCRIBE_OCR_AUTH_TOKEN", "ocr-secret-with-sufficient-length-32"
     )
 
-    with caplog.at_level(logging.WARNING, logger="omniscribe.api.services.security_config"):
+    with caplog.at_level(
+        logging.WARNING, logger="omniscribe.api.services.security_config"
+    ):
         SecuritySettings.from_env()
 
     warnings = [r for r in caplog.records if "Mixed auth configuration" in r.message]
@@ -1016,16 +1018,23 @@ def test_from_env_silent_when_all_tokens_set(
     import logging
 
     # All four set: no warning.
-    monkeypatch.setenv("OMNISCRIBE_AUTH_TOKEN", "global-secret-with-sufficient-length-32")
-    monkeypatch.setenv("OMNISCRIBE_OCR_AUTH_TOKEN", "ocr-secret-with-sufficient-length-32")
+    monkeypatch.setenv(
+        "OMNISCRIBE_AUTH_TOKEN", "global-secret-with-sufficient-length-32"
+    )
+    monkeypatch.setenv(
+        "OMNISCRIBE_OCR_AUTH_TOKEN", "ocr-secret-with-sufficient-length-32"
+    )
     monkeypatch.setenv(
         "OMNISCRIBE_TRANSLATION_AUTH_TOKEN", "translation-secret-with-sufficient-length"
     )
     monkeypatch.setenv(
-        "OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN", "transcription-secret-with-sufficient-len"
+        "OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN",
+        "transcription-secret-with-sufficient-len",
     )
 
-    with caplog.at_level(logging.WARNING, logger="omniscribe.api.services.security_config"):
+    with caplog.at_level(
+        logging.WARNING, logger="omniscribe.api.services.security_config"
+    ):
         SecuritySettings.from_env()
 
     warnings = [r for r in caplog.records if "Mixed auth configuration" in r.message]
@@ -1046,8 +1055,33 @@ def test_from_env_silent_when_no_tokens_set(
     ):
         monkeypatch.delenv(v, raising=False)
 
-    with caplog.at_level(logging.WARNING, logger="omniscribe.api.services.security_config"):
+    with caplog.at_level(
+        logging.WARNING, logger="omniscribe.api.services.security_config"
+    ):
         SecuritySettings.from_env()
 
     warnings = [r for r in caplog.records if "Mixed auth configuration" in r.message]
     assert warnings == []
+
+
+async def test_management_routes_protected_when_only_subsystem_token_set() -> None:
+    """D2-01 audit fix: when global token is unset but a subsystem token is set,
+    management routes must require an active token rather than bypassing auth."""
+    middleware = BearerAuthMiddleware(
+        app=_MarkerApp(),
+        expected_token=None,
+        ocr_token="ocr-secret-with-sufficient-length-32",
+    )
+
+    # Unauthenticated request to management route is rejected (401).
+    _inner, unauth_send = await _invoke(middleware, path="/api/config")
+    assert unauth_send.status == 401
+
+    # Request with active subsystem token is accepted (200).
+    inner, auth_send = await _invoke(
+        middleware,
+        path="/api/config",
+        authorization="Bearer ocr-secret-with-sufficient-length-32",
+    )
+    assert inner.calls == 1
+    assert auth_send.status == 200

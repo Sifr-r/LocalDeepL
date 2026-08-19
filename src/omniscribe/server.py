@@ -60,7 +60,9 @@ class ASGIApplication(Protocol):
 
 def _load_optional_module(module_name: str) -> ModuleType:
     try:
-        return importlib.import_module(module_name)
+        return importlib.import_module(  # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import
+            module_name
+        )
     except ModuleNotFoundError as exc:
         raise RuntimeError(
             f"Cannot start omniscribe-server because `{exc.name}` is not "

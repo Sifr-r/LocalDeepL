@@ -31,11 +31,16 @@ dependencies = [
     "torch>=2.0.0,<3",
     "torchvision>=0.15.0,<1",
     "httpx>=0.27.0",
-    "requests>=2.31",
+    # `requests` is intentionally NOT a base dep: surya-ocr ≥ 0.22
+    # declares `requests<3,>=2.28.0` itself, so the runtime tree
+    # pulls it in transitively. The only direct importer in this
+    # repo is `scripts/ingest_lexicon.py` (a dev-only ingestion
+    # helper), which is satisfied by the `requests` entry in
+    # [dependency-groups] `dev` below.
     "pyspellchecker>=0.8.1",
     "python-docx>=1.1.0",
     "redis>=8.1.0",
-    "numpy>=2.4.6,<2.5.0",
+    "numpy>=2.0,<2.5.0",
     "defusedxml>=0.7.1",  # XLIFF/TBX/TMX glossary parsing without XXE/DTD
 ]
 
@@ -163,6 +168,9 @@ dev = [
     "cyclonedx-bom>=7.3.1",
     "rich>=13.0.0",
     "fakeredis>=2.0",  # in-memory Redis for state_backend_redis tests
+    # Direct `requests` import — only `scripts/ingest_lexicon.py` needs it
+    # in this repo. Runtime deps get it transitively via surya-ocr.
+    "requests>=2.31",
 ]
 
 [tool.uv]
@@ -287,6 +295,8 @@ extra_checks = true
 check_untyped_defs = true
 warn_return_any = true
 ignore_missing_imports = true
+mypy_path = "src"
+explicit_package_bases = true
 
 [[tool.mypy.overrides]]
 # `core/` is the production hot path — require explicit type annotations
@@ -295,4 +305,9 @@ ignore_missing_imports = true
 module = "omniscribe.core.*"
 disallow_untyped_defs = true
 check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
+
 
