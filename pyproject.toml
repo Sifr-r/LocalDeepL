@@ -170,7 +170,7 @@ dev = [
     "fakeredis>=2.0",  # in-memory Redis for state_backend_redis tests
     # Direct `requests` import — only `scripts/ingest_lexicon.py` needs it
     # in this repo. Runtime deps get it transitively via surya-ocr.
-    "requests>=2.31",
+    "requests>=2.34.2",
 ]
 
 [tool.uv]
