@@ -89,6 +89,11 @@ def make_stub_ocr():
     return _StubOCR
 
 
-# F4.2 audit fix (P0): exclude the Phase 0/1 debug shelf from pytest collection.
-# These are throwaway FastAPI scaffolds for environment bring-up, not production tests.
-collect_ignore_glob = ["_diag/*"]
+# Audit-secondary F24 (Phase 4): the Phase 0/1 debug shelf was moved
+# from ``tests/_diag/`` to ``scripts/diagnostics/`` so it is no
+# longer auto-collected by pytest. The previous
+# ``collect_ignore_glob = ["_diag/*"]`` was a fragile single-line
+# guard; a future contributor "fixing" the conftest would have
+# silently re-enabled collection and broken the fast tier on a
+# hidden ``sys.path.insert``. The diagnostic scripts are now run
+# by hand (``uv run python scripts/diagnostics/test_*.py``).
