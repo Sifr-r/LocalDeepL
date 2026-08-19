@@ -24,7 +24,7 @@ dependencies = [
     "pillow>=11.3",
     "pymupdf>=1.26.7,<2",
     "python-dotenv>=1.2.1",
-    "tqdm>=4.67.1",
+    "tqdm>=4.70.0",
     "surya-ocr>=0.22.1",
     # Bounded majors (audit backlog): a torch 3.x or torchvision 1.x
     # release could break surya's model layer without warning.
