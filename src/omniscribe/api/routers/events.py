@@ -22,6 +22,7 @@ thread would race the event loop's queue implementation.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from collections.abc import AsyncIterator
 
@@ -51,6 +52,41 @@ _KEEPALIVE_TIMEOUT_S: float = 15.0
 _FRAME_QUEUE_MAXSIZE: int = 64
 
 
+def _put_with_drop_oldest(
+    queue: asyncio.Queue[dict[str, object]], frame: dict[str, object]
+) -> None:
+    """Put ``frame`` on ``queue``; if full, drop the oldest frame first.
+
+    D2-12 audit fix: ``queue.put_nowait`` raises ``QueueFull`` when
+    the slow consumer falls behind. The previous code let the
+    exception propagate into the event loop's scheduled task
+    handler (default: log + continue), which silently dropped the
+    frame. This wrapper implements drop-oldest semantics: a slow
+    client gets the *newest* progress frame instead of stalling
+    the OCR pipeline producer.
+
+    Exposed at module scope for unit testing — the SSE endpoint
+    schedules this via :func:`asyncio.loop.call_soon_threadsafe`
+    so the producer's worker thread never touches the queue
+    directly.
+    """
+    try:
+        queue.put_nowait(frame)
+        return
+    except asyncio.QueueFull:
+        # Fall through to drop-oldest.
+        pass
+    # Drop the oldest queued frame to make room for the new one.
+    # The race between ``get_nowait`` and ``put_nowait`` is benign
+    # — at worst we drop both the old and the new frame, which is
+    # the same as the original silent-drop behaviour but explicit
+    # and bounded.
+    with contextlib.suppress(asyncio.QueueEmpty):
+        queue.get_nowait()
+    with contextlib.suppress(asyncio.QueueFull):
+        queue.put_nowait(frame)
+
+
 @router.get("/api/process/{job_id}/events")
 async def stream_events(job_id: str, request: Request) -> StreamingResponse:
     """SSE progress stream for ``job_id``.
@@ -75,7 +111,9 @@ async def stream_events(job_id: str, request: Request) -> StreamingResponse:
 
     def push(frame: dict[str, object]) -> None:
         # Called from the broker's thread; marshal to the event loop.
-        loop.call_soon_threadsafe(queue.put_nowait, frame)
+        # D2-12 audit fix: see ``_put_with_drop_oldest`` for the
+        # drop-oldest semantics.
+        loop.call_soon_threadsafe(_put_with_drop_oldest, queue, frame)
 
     broker = get_broker()
     broker.subscribe(job_id, push)

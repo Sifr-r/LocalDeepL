@@ -16,11 +16,26 @@ Only ``httpx`` is used. The previous ``urllib`` fallback was removed
 because :func:`urllib.request.urlopen` follows redirects natively and
 accepts ``file://`` schemes — both of which silently re-introduce the
 SSRF surface this module is meant to close.
+
+Response decoding (D2-06 audit fix)
+-----------------------------------
+The hand-rolled HTTP/1.1 parser used to read the response body
+verbatim and return it as the ``httpx.Response.content`` field. A
+CDN that responds with ``Transfer-Encoding: chunked`` (jsdelivr,
+GitHub raw, many others) would surface raw chunk-size headers in
+the body, breaking downstream JSON / CSV / TBX parsers. A
+``Content-Encoding: gzip`` response would surface the compressed
+bytes verbatim, crashing the same parsers. The fix: post-process
+the body through a chunked decoder and a gzip decompressor when
+the response advertises them. HTTP/2 and keep-alive are out of
+scope; this transport sends ``Connection: close`` and the server
+closes the socket at the end of the response.
 """
 
 from __future__ import annotations
 
 import asyncio
+import gzip
 import logging
 import ssl
 from typing import Any
@@ -44,6 +59,58 @@ class SSRFBlockedError(Exception):
         self.url = url
         self.reason = reason
         super().__init__(f"SSRF-blocked URL {url!r}: {reason}")
+
+
+def _decode_chunked(body: bytes) -> bytes:
+    """Decode an HTTP/1.1 ``Transfer-Encoding: chunked`` body.
+
+    Format::
+
+        <size-hex>[;ext=val]\\r\\n<chunk-data>\\r\\n ... 0\\r\\n\\r\\n
+
+    Chunk-extensions (the ``;ext=val`` part) are ignored — the
+    spec allows them and most servers do not send them, but a
+    server that does (e.g. for flow-control hints) must still
+    parse cleanly. The terminating ``0\\r\\n\\r\\n`` is required;
+    we do not parse trailers (the spec makes them optional and
+    no OmniScribe consumer reads them).
+
+    Raises :class:`httpx.RemoteProtocolError` on a malformed
+    body. The transport has already capped the input at
+    :data:`MAX_GLOSSARY_BYTES`, so a pathologically large chunk
+    size cannot OOM us.
+    """
+    out = bytearray()
+    pos = 0
+    while pos < len(body):
+        line_end = body.find(b"\r\n", pos)
+        if line_end == -1:
+            raise httpx.RemoteProtocolError(
+                "Malformed chunked body: no size terminator"
+            )
+        size_line = body[pos:line_end]
+        # Strip the chunk-extension (anything after the first ';').
+        size_str = size_line.split(b";", 1)[0].strip()
+        try:
+            size = int(size_str, 16)
+        except ValueError as exc:
+            raise httpx.RemoteProtocolError(
+                f"Invalid chunk size: {size_str!r}"
+            ) from exc
+        pos = line_end + 2
+        if size == 0:
+            # End-of-chunks. The spec allows trailers here; we
+            # do not consume them because the body is over and
+            # our callers do not read them.
+            break
+        if pos + size > len(body):
+            raise httpx.RemoteProtocolError("Truncated chunk body")
+        out.extend(body[pos : pos + size])
+        pos += size
+        if body[pos : pos + 2] != b"\r\n":
+            raise httpx.RemoteProtocolError("Missing CRLF after chunk data")
+        pos += 2
+    return bytes(out)
 
 
 class _PinnedIPTransport(httpx.AsyncBaseTransport):
@@ -174,6 +241,27 @@ class _PinnedIPTransport(httpx.AsyncBaseTransport):
                 headers_dict[name.decode("latin-1").strip()] = value.decode(
                     "latin-1"
                 ).strip()
+
+        # D2-06 audit fix: decode chunked transfer-encoding and
+        # gzip content-encoding when the server advertises them.
+        # Without this, a CDN like jsdelivr (Transfer-Encoding:
+        # chunked) or any server with gzip negotiation
+        # (Content-Encoding: gzip) would surface raw bytes to
+        # downstream consumers and crash the JSON / CSV / TBX
+        # parsers. Both decoders are O(N) on the body length
+        # (already capped at ``MAX_GLOSSARY_BYTES`` by the
+        # transport), so no new memory pressure.
+        te = headers_dict.get("transfer-encoding", "").strip().lower()
+        if te == "chunked":
+            body = _decode_chunked(body)
+        ce = headers_dict.get("content-encoding", "").strip().lower()
+        if ce == "gzip":
+            try:
+                body = gzip.decompress(body)
+            except OSError as exc:
+                raise httpx.RemoteProtocolError(
+                    f"Malformed gzip body: {exc}", request=request
+                ) from exc
 
         return httpx.Response(
             status_code=status_code,

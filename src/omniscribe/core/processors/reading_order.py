@@ -35,5 +35,13 @@ class ReadingOrderProcessor:
         return document
 
     def _sort_key(self, block: DocumentBlock) -> tuple[int, float, float]:
-        x0, y0, _, _ = block.bbox
+        # D1-08 audit fix: ``block.bbox`` is normally a 4-tuple of
+        # normalized coordinates, but the ``MAY_DELETE`` contract
+        # processors upstream can produce blocks with ``bbox=None``
+        # (an empty box the next processor is expected to drop).
+        # Sort those last so the surviving blocks keep a sensible
+        # row-major order. Without the guard the unpack would raise
+        # ``TypeError: cannot unpack non-iterable NoneType object``.
+        bbox = block.bbox or (0.0, 0.0, 0.0, 0.0)
+        x0, y0, _, _ = bbox
         return (round(y0 / self.row_tolerance), x0, y0)

@@ -48,7 +48,7 @@ import posixpath
 import secrets
 import time
 import urllib.parse
-from collections import deque
+from collections import OrderedDict, deque
 from typing import Any, Final, TypedDict
 
 _LOGGER = logging.getLogger(__name__)
@@ -58,6 +58,15 @@ _INVALID_PATH: Final[dict[str, str]] = {"error": "Invalid path"}
 _TOO_LARGE: Final[dict[str, str]] = {"error": "Upload exceeds maximum size"}
 _TOO_MANY_REQUESTS: Final[dict[str, str]] = {"error": "Rate limit exceeded"}
 _DEADLINE_EXCEEDED: Final[dict[str, str]] = {"error": "Upload deadline exceeded"}
+
+#: Minimum interval between rate-limit memory sweeps. D2-04 audit
+#: fix: the previous code ran the full O(N) sweep on the request
+#: that triggered the overflow, so request 10,001 of a 10,000-IP
+#: flood took the full sweep latency. The sweep is now amortized:
+#: at most one full sweep per ``_SWEEP_INTERVAL_S`` seconds, and
+#: only the request that crosses the cap pays for it. The 5 s
+#: default matches the WebSocket keepalive cadence.
+_SWEEP_INTERVAL_S: float = 5.0
 
 
 class _UploadGuard(TypedDict):
@@ -371,17 +380,22 @@ class BearerAuthMiddleware:
         elif group == "transcription" and tokens["transcription"] is not None:
             acceptable_tokens = [tokens["transcription"]]
         elif tokens["global"] is not None:
-            # F2.2 audit fix: the global token is the ONLY token that
-            # satisfies management routes (``/api/jobs/*``,
-            # ``/api/providers/*``, ``/api/progress/*``,
-            # ``/api/config/*``). The previous design accepted ANY
-            # subsystem token for management routes, which let an
-            # OCR-token holder switch the LLM provider, cancel any
-            # job, or clear another namespace's token via
-            # ``POST /api/config/{translation,transcription}/auth``.
-            # Operators who want management access must set the
-            # global token (the recommended production posture).
             acceptable_tokens = [tokens["global"]]
+        elif group == "other":
+            # D2-01 audit fix: If global token is unset but one or more subsystem
+            # tokens are active, protect management routes with active subsystem tokens
+            # rather than leaving management routes completely unauthenticated.
+            active_subsystems = [
+                tok
+                for tok in (
+                    tokens["ocr"],
+                    tokens["translation"],
+                    tokens["transcription"],
+                )
+                if tok is not None
+            ]
+            if active_subsystems:
+                acceptable_tokens = active_subsystems
 
         if not acceptable_tokens:
             await self.app(scope, receive, send)
@@ -635,6 +649,7 @@ class RateLimitMiddleware:
     """
 
     WINDOW_SECONDS: Final[float] = 60.0
+    MAX_TRACKED_IPS: Final[int] = 10_000
     _XFF_HEADER: Final[bytes] = b"x-forwarded-for"
 
     def __init__(
@@ -648,7 +663,15 @@ class RateLimitMiddleware:
         self.app = app
         self.per_minute = per_minute
         self.clock = clock
-        self._hits: dict[str, deque[float]] = {}
+        self._hits: OrderedDict[str, deque[float]] = OrderedDict()
+        # D2-04 audit fix: amortize the O(N) sweep across many
+        # requests. ``_last_sweep`` is the ``clock()`` value at the
+        # last full sweep; subsequent overflow triggers within
+        # ``_SWEEP_INTERVAL_S`` skip the sweep and only the first
+        # request that crosses the interval pays the cost. A
+        # rotating-IP attacker can no longer pin p99 at the sweep
+        # latency.
+        self._last_sweep: float = 0.0
         self._trusted_proxies: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = (
             list(trusted_proxies) if trusted_proxies else []
         )
@@ -735,6 +758,8 @@ class RateLimitMiddleware:
             return
 
         key = self._client_key(scope)
+        if key in self._hits:
+            self._hits.move_to_end(key, last=True)
         now = self.clock()
         cutoff = now - self.WINDOW_SECONDS
         hits = self._hits.setdefault(key, deque())
@@ -744,7 +769,29 @@ class RateLimitMiddleware:
             await _send_json(scope, receive, send, _TOO_MANY_REQUESTS, 429)
             return
         hits.append(now)
-        # Lazily evict stale keys from other IPs to bound memory growth.
-        for stale_key in [k for k, v in self._hits.items() if k != key and not v]:
-            del self._hits[stale_key]
+
+        # Bounded memory footprint: If len(self._hits) > MAX_TRACKED_IPS,
+        # sweep empty or stale entries, then pop LRU items from OrderedDict start.
+        # D2-04 audit fix: the sweep is amortized — at most one full
+        # pass per ``_SWEEP_INTERVAL_S`` seconds. The first overflow
+        # trigger within the window pays the cost; later triggers
+        # skip the sweep and trust the next window to clean up.
+        if (
+            len(self._hits) > self.MAX_TRACKED_IPS
+            and now - self._last_sweep >= _SWEEP_INTERVAL_S
+        ):
+            self._last_sweep = now
+            stale_keys = [
+                k
+                for k, v in self._hits.items()
+                if (not v or v[-1] < cutoff) and k != key
+            ]
+            for sk in stale_keys:
+                self._hits.pop(sk, None)
+            while len(self._hits) > self.MAX_TRACKED_IPS:
+                first_k = next(iter(self._hits))
+                if first_k == key:
+                    break
+                self._hits.popitem(last=False)
+
         await self.app(scope, receive, send)

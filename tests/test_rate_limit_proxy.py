@@ -28,6 +28,7 @@ Pinned here:
 
 from __future__ import annotations
 
+import collections
 import ipaddress
 
 import pytest
@@ -553,3 +554,94 @@ class _StubApp:
 
     async def __call__(self, scope, receive, send) -> None:  # pragma: no cover
         return None
+
+
+# -- Audit-secondary D2-04: rate-limit sweep amortization ---------------------
+
+
+def test_rate_limit_sweep_is_amortized_across_overflows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Many overflow requests within ``_SWEEP_INTERVAL_S`` run the
+    sweep once, not on every request.
+
+    Audit-secondary D2-04: the previous code ran the full O(N)
+    sweep on the request that triggered the overflow, so a
+    rotating-IP attacker could pin p99 at the sweep latency by
+    forcing the cap on every request. The fix gates the sweep
+    on a time interval; subsequent overflow requests within the
+    interval skip the sweep and trust the next interval to
+    clean up.
+    """
+    import omniscribe.api.services.security_middleware as sm
+
+    # Speed up the interval so the test runs in < 1 s.
+    monkeypatch.setattr(sm, "_SWEEP_INTERVAL_S", 0.5)
+
+    fake_now = [1000.0]
+
+    def fake_clock() -> float:
+        return fake_now[0]
+
+    middleware = RateLimitMiddleware(
+        app=_StubApp(),
+        per_minute=10,
+        trusted_proxies=[],
+        clock=fake_clock,
+    )
+    # Use a tiny cap so we can fill it with a handful of IPs.
+    monkeypatch.setattr(sm.RateLimitMiddleware, "MAX_TRACKED_IPS", 10)
+
+    # Pre-fill the bucket with 11 unique IPs to trigger overflow
+    # on the very first request after.
+    for i in range(11):
+        middleware._hits[f"10.0.0.{i}"] = collections.deque([fake_clock()])
+
+    # Mark the sweep as "just done" so the next request skips
+    # the sweep even though we are over the cap.
+    middleware._last_sweep = fake_now[0]
+
+    # Helper: trigger one request and count the entries before
+    # and after. The sweep, when it runs, removes stale entries;
+    # when it skips, no removals happen.
+    async def one_request() -> int:
+        scope = {
+            "type": "http",
+            "client": ("10.0.0.50", 1234),
+            "headers": [],
+        }
+
+        async def receive() -> dict:  # pragma: no cover — never called
+            return {"type": "http.request"}
+
+        async def send(_msg: dict) -> None:  # pragma: no cover — never called
+            return None
+
+        await middleware(scope, receive, send)
+        return len(middleware._hits)
+
+    import asyncio
+
+    # First request: we are within the sweep interval, so the
+    # sweep is skipped. The bucket has 12 entries (11 pre-filled
+    # + the new IP). The cap is 10, so 12 > 10, but the sweep
+    # is skipped because the interval has not elapsed.
+    size_after_first = asyncio.run(one_request())
+    assert size_after_first == 12, (
+        f"sweep ran on the first request (12 expected, got {size_after_first})"
+    )
+
+    # Advance the clock past the sweep interval.
+    fake_now[0] += 1.0
+
+    # Second request: now the sweep runs. 11 of the 12 IPs are
+    # "stale" (their last hit is at fake_now == 1000.0, the
+    # cutoff is fake_now - 60.0 = 941.0, so the deque's last
+    # value 1000.0 > 941.0 — actually NOT stale!). The sweep
+    # would only remove empty deques. Since none are empty, the
+    # sweep only pops the LRU IP if size > cap. 12 > 10, so 2
+    # LRUs are popped.
+    size_after_second = asyncio.run(one_request())
+    assert size_after_second == 10, (
+        f"sweep did not run on the second request (10 expected, got {size_after_second})"
+    )

@@ -335,3 +335,97 @@ async def test_toctou_dns_rebinding_is_neutralised_by_ip_pinning() -> None:
             f"{rebinding_target!r}); transport must use the validated IP"
         )
         assert host != rebinding_target
+
+
+# ---------------------------------------------------------------------------
+# Audit-secondary D2-06: chunked + gzip response decoding
+# ---------------------------------------------------------------------------
+
+
+def test_decode_chunked_round_trip() -> None:
+    """``_decode_chunked`` reassembles a chunked body to its plain form.
+
+    Audit-secondary D2-06: a CDN that responds with
+    ``Transfer-Encoding: chunked`` (jsdelivr, GitHub raw, many
+    others) used to surface raw chunk-size headers in the
+    response body, breaking downstream JSON / CSV / TBX
+    parsers. The fix: a chunked decoder runs after the header
+    split when the response advertises chunked encoding.
+    """
+    from omniscribe.api.services.http_fetch import _decode_chunked
+
+    # Three chunks: "hello ", "chunked ", "world" + a 0-length terminator.
+    chunked = b"6\r\nhello \r\n8\r\nchunked \r\n5\r\nworld\r\n0\r\n\r\n"
+    assert _decode_chunked(chunked) == b"hello chunked world"
+
+
+def test_decode_chunked_handles_single_chunk() -> None:
+    """A single chunk followed by the terminator decodes cleanly."""
+    from omniscribe.api.services.http_fetch import _decode_chunked
+
+    assert _decode_chunked(b"5\r\nhello\r\n0\r\n\r\n") == b"hello"
+
+
+def test_decode_chunked_strips_chunk_extension() -> None:
+    """The chunk-extension (``;ext=val``) is ignored per RFC 7230."""
+    from omniscribe.api.services.http_fetch import _decode_chunked
+
+    # The chunk has an ``;name=value`` extension that the decoder
+    # must ignore. Most servers do not send extensions, but a
+    # server that does (for flow-control hints) must still parse.
+    chunked = b"5;name=value\r\nhello\r\n0\r\n\r\n"
+    assert _decode_chunked(chunked) == b"hello"
+
+
+def test_decode_chunked_raises_on_malformed_body() -> None:
+    """A malformed chunked body raises ``RemoteProtocolError``."""
+    import httpx
+
+    from omniscribe.api.services.http_fetch import _decode_chunked
+
+    # No size terminator (no \r\n after the size).
+    with pytest.raises(httpx.RemoteProtocolError):
+        _decode_chunked(b"5hello\r\n0\r\n\r\n")
+
+
+async def test_fetch_url_bytes_handles_gzip_response() -> None:
+    """A real local server with ``Content-Encoding: gzip`` decodes
+    cleanly through ``fetch_url_bytes``.
+
+    D2-06 regression: a gzip-encoded response used to surface
+    the raw compressed bytes, crashing downstream JSON / CSV /
+    TBX parsers. The decompressor runs as part of the
+    transport's ``_parse_response`` step.
+    """
+    import gzip as _gzip
+    import http.server as hs
+    import socketserver
+
+    body = b"this is a gzipped response body " * 8
+    gzipped = _gzip.compress(body)
+
+    class _GzipHandler(hs.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Content-Length", str(len(gzipped)))
+            self.end_headers()
+            self.wfile.write(gzipped)
+
+        def log_message(self, *_args) -> None:
+            return
+
+    with socketserver.TCPServer(("127.0.0.1", 0), _GzipHandler) as srv:
+        port = srv.server_address[1]
+        thread = threading.Thread(target=srv.serve_forever, daemon=True)
+        thread.start()
+        try:
+            url = f"http://127.0.0.1:{port}/gzip.bin"
+            received = await http_fetch.fetch_url_bytes(url)
+        finally:
+            srv.shutdown()
+            thread.join(timeout=2)
+
+    # The decompressor must have inflated the body.
+    assert received == body

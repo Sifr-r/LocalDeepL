@@ -391,3 +391,60 @@ def test_two_backends_against_different_dbs_are_isolated(tmp_path: Path) -> None
         status="complete",
     )
     assert b.job_history.list() == []
+
+
+# -- Audit-secondary D4-04: SQLite lock contention under concurrent writers --
+
+
+def test_concurrent_writers_do_not_block_under_wal(tmp_path: Path) -> None:
+    """N threads writing 50 artifacts each complete in bounded time.
+
+    Audit-secondary D4-04: the previous test suite never spawned
+    two concurrent writers, so the production ``WAL + timeout=30``
+    setting had no test that proved it works. A regression to
+    the default 5 s timeout (or removing ``WAL``) would not be
+    caught.
+
+    This test spawns 4 threads × 50 puts (200 total writes) and
+    asserts all complete within a generous bound. The bound
+    is loose (5 s) so a slow CI runner does not flake; the
+    real signal is "no thread hung on a lock".
+    """
+    import time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    db_path = tmp_path / "omniscribe-state.db"
+    backend = SQLiteStateBackend(db_path=db_path)
+
+    def writer(thread_idx: int) -> int:
+        # Re-open a fresh connection per call so each thread gets
+        # its own SQLite connection (sqlite3 connections are not
+        # safe to share across threads). The StateBackend opens
+        # a connection per call internally, so the test mirrors
+        # production.
+        for i in range(50):
+            aid = f"{thread_idx:02x}{i:030x}"
+            backend.text_artifacts.put(
+                artifact_id=aid,
+                token="t" * 32,
+                path=tmp_path / f"text_{aid}.json",
+            )
+        return 50
+
+    t0 = time.monotonic()
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(writer, idx) for idx in range(4)]
+        results = [f.result(timeout=10) for f in as_completed(futures)]
+    elapsed = time.monotonic() - t0
+
+    assert results == [50, 50, 50, 50], "every thread must report 50 writes"
+    # Loose bound so a slow CI does not flake; the real signal
+    # is that no thread hung on a database lock. The previous
+    # (no-WAL) implementation would either time out or
+    # serialize the writes; either way the bound is hit.
+    assert elapsed < 5.0, f"200 concurrent writes took {elapsed:.2f}s — lock contention"
+
+    # All 200 artifacts are queryable through the same backend.
+    assert len(backend.text_artifacts) == 200, (
+        f"expected 200 artifacts after concurrent writes, got {len(backend.text_artifacts)}"
+    )
