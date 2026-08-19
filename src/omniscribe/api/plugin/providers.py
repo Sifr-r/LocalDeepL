@@ -105,7 +105,7 @@ def in_memory_session_log_provider(
 def progress_service_provider(
     service: _ProgressService | None = None,
     *,
-    name: str = "default",
+    name: str = "memory",
 ) -> Callable[[PluginContext], Callable[[], None]]:
     """Return a :class:`Plugin` that registers a :class:`ProgressService`.
 
@@ -122,10 +122,13 @@ def progress_service_provider(
         :class:`ProgressService`. Tests pass a stub to assert
         consumer behaviour without standing up the real math.
     name:
-        Provider name. Defaults to ``"default"``; a future
-        ``"telemetry"`` provider (e.g. one that streams frames
-        to an OpenTelemetry exporter) would register under its
-        own name so a profile can run both side by side.
+        Provider name. Defaults to ``"memory"`` (audit-secondary
+        F14 — the in-process implementation has no distributed
+        variant today; if one is added, it registers under its
+        own name and a profile can run both side by side). The
+        same convention is used by
+        :func:`in_memory_session_log_provider` (``"memory"``)
+        and :func:`local_job_queue_provider` (``"local"``).
     """
     impl = service if service is not None else _ProgressService()
 
@@ -144,7 +147,7 @@ def progress_service_provider(
 def config_store_provider(
     store: _ConfigStore | None = None,
     *,
-    name: str = "default",
+    name: str = "memory",
 ) -> Callable[[PluginContext], Callable[[], None]]:
     """Return a :class:`Plugin` that registers a :class:`ConfigStore`.
 
@@ -166,7 +169,10 @@ def config_store_provider(
         ``/api/config`` handler and the seam see one source of
         truth.
     name:
-        Provider name. Defaults to ``"default"``.
+        Provider name. Defaults to ``"memory"`` (audit-secondary
+        F14 — backend-kind convention; matches the
+        :func:`in_memory_session_log_provider` default so a
+        single diagnostic can list providers by kind).
     """
     impl = store if store is not None else InMemoryConfigStore()
 
@@ -183,7 +189,7 @@ def config_store_provider(
 def text_artifact_store_provider(
     store: _TextArtifactStore,
     *,
-    name: str = "default",
+    name: str = "text",
 ) -> Callable[[PluginContext], Callable[[], None]]:
     """Return a :class:`Plugin` that registers a :class:`TextArtifactStore`.
 
@@ -200,9 +206,10 @@ def text_artifact_store_provider(
     - ``ctx.get(TextArtifactStore, name="export")`` — the export
       pipeline outputs (HTML / DOCX / tree)
 
-    The default name is ``"default"`` to match the rest of the
-    registration API; the server boot wiring passes the
-    right name explicitly.
+    The default name is ``"text"`` (audit-secondary F14 — the
+    "text" store is the most common consumer, and the three
+    domain names are not backend kinds). Production wiring still
+    passes the right name explicitly.
 
     Parameters
     ----------

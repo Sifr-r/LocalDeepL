@@ -349,3 +349,65 @@ def test_legacy_and_projection_have_same_field_set() -> None:
         if key == "timestamp":
             continue
         assert projection[0][key] == legacy[0][key]
+
+
+# -- Audit-secondary F10: dual-write shim exception scope --------------------
+
+
+def test_dual_write_shim_propagates_programming_bugs(tmp_path) -> None:
+    """A programming bug in a projection listener propagates to the caller.
+
+    Audit-secondary F10: the dual-write shim in
+    ``TextArtifactStore._emit_artifact_created`` used to catch
+    ``Exception`` and log; that masked projection bugs as silent
+    emit failures. The narrowed scope (``ServiceNotFoundError`` /
+    ``ContextDisposedError``) lets ``KeyError`` / ``AttributeError``
+    / ``TypeError`` propagate so a regression in the projection
+    code is caught at the call site instead of silently dropping
+    every artifact creation event.
+    """
+    from omniscribe.api.plugin import runtime
+    from omniscribe.api.services.artifacts import TextArtifactStore
+
+    log = InMemoryLogStore()
+    ctx = PluginContext("test")
+    ctx.mount(in_memory_session_log_provider(log=log, name="memory"))
+
+    def buggy_listener(**_payload) -> None:
+        raise KeyError("intentional programming bug in projection listener")
+
+    ctx.on("artifact.created", buggy_listener, mode="emit")
+    runtime.set_plugin_context(ctx)
+    try:
+        store = TextArtifactStore(artifact_dir=tmp_path, kind="text")
+        with pytest.raises(KeyError, match="intentional programming bug"):
+            store.put(
+                artifact_id="a" * 32,
+                token="t" * 32,
+                path=str(tmp_path / "text_a.json"),
+            )
+    finally:
+        runtime.set_plugin_context(None)
+
+
+def test_dual_write_shim_swallows_expected_context_errors(tmp_path) -> None:
+    """A disposed / missing context does NOT raise from the shim.
+
+    Audit-secondary F10: the shim's exception scope is the two
+    expected "context is gone" errors. The primary write (in-memory
+    ``_entries`` dict + backing file) must never be affected by a
+    context-related failure on the secondary write path.
+    """
+    from omniscribe.api.plugin import runtime
+    from omniscribe.api.services.artifacts import TextArtifactStore
+
+    # No context mounted at all — the shim short-circuits.
+    runtime.set_plugin_context(None)
+    store = TextArtifactStore(artifact_dir=tmp_path, kind="text")
+    # Should not raise.
+    handle = store.put(
+        artifact_id="b" * 32,
+        token="u" * 32,
+        path=str(tmp_path / "text_b.json"),
+    )
+    assert handle.artifact_id == "b" * 32

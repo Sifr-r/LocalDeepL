@@ -18,8 +18,6 @@ Covers:
 
 from __future__ import annotations
 
-import pytest
-
 from omniscribe.api.plugin import (
     InMemoryLogStore,
     JobHistoryProjection,
@@ -28,12 +26,10 @@ from omniscribe.api.plugin import (
     in_memory_session_log_provider,
 )
 from omniscribe.api.plugin.events_catalog import (
-    JobCancelledEvent,
     JobCompletedEvent,
     JobStartedEvent,
     JobSubmittedEvent,
 )
-from omniscribe.api.plugin.recorders import audit_log_recorder
 
 
 def _emit(ctx: PluginContext, payload) -> None:
@@ -254,9 +250,11 @@ def test_projection_and_audit_recorder_see_the_same_events() -> None:
     log into a JobRecord."""
     ctx = PluginContext("test")
     captured_audit: list[str] = []
+
     # A minimal recorder: log every emit.
     def _log_listener(**payload):
         captured_audit.append(payload.get("event_name", ""))
+
     ctx.on("ocr.job.submitted", _log_listener, mode="emit")
     ctx.on("ocr.job.started", _log_listener, mode="emit")
     ctx.on("ocr.job.completed", _log_listener, mode="emit")
@@ -266,9 +264,17 @@ def test_projection_and_audit_recorder_see_the_same_events() -> None:
     # Emit one full lifecycle. The dataclass already carries
     # the event_name field; we pass ``__dict__`` directly to
     # ``ctx.emit``.
-    ctx.emit("ocr.job.submitted", **JobSubmittedEvent(job_id="j1", filename="x.pdf").__dict__)
-    ctx.emit("ocr.job.started", **JobStartedEvent(job_id="j1", model="m", pipeline_mode="hybrid").__dict__)
-    ctx.emit("ocr.job.completed", **JobCompletedEvent(job_id="j1", status="complete", duration_s=2.0).__dict__)
+    ctx.emit(
+        "ocr.job.submitted", **JobSubmittedEvent(job_id="j1", filename="x.pdf").__dict__
+    )
+    ctx.emit(
+        "ocr.job.started",
+        **JobStartedEvent(job_id="j1", model="m", pipeline_mode="hybrid").__dict__,
+    )
+    ctx.emit(
+        "ocr.job.completed",
+        **JobCompletedEvent(job_id="j1", status="complete", duration_s=2.0).__dict__,
+    )
 
     # Audit recorder saw all three.
     assert captured_audit == [
@@ -318,11 +324,20 @@ def test_projection_output_matches_legacy_job_history_shape() -> None:
 
     # Build the same record via the projection.
     log = InMemoryLogStore()
-    log.append(LogEvent(kind="ocr.job.submitted", payload={"job_id": "j1", "filename": "x.pdf"}))
+    log.append(
+        LogEvent(
+            kind="ocr.job.submitted", payload={"job_id": "j1", "filename": "x.pdf"}
+        )
+    )
     log.append(
         LogEvent(
             kind="ocr.job.started",
-            payload={"job_id": "j1", "model": "m", "pipeline_mode": "hybrid", "pages": "1-5"},
+            payload={
+                "job_id": "j1",
+                "model": "m",
+                "pipeline_mode": "hybrid",
+                "pages": "1-5",
+            },
         )
     )
     log.append(
@@ -351,3 +366,92 @@ def test_projection_output_matches_legacy_job_history_shape() -> None:
             f"field {key!r} differs: projection={projection[0][key]!r}, "
             f"legacy={legacy[0][key]!r}"
         )
+
+
+# -- Audit-secondary F15: fold + sort cache ---------------------------------
+
+
+def test_list_caches_fold_until_log_changes(monkeypatch) -> None:
+    """Repeated ``list()`` calls reuse the cached fold.
+
+    Audit-secondary F15: the fold + position-stamp + sort is
+    the expensive part (O(N log N)). The cache is keyed on
+    ``len(self._log)`` so any ``log.append`` invalidates it.
+    Three calls within the same log version must fold only
+    once; one call after a new event must fold again.
+    """
+    log = InMemoryLogStore()
+    log.append(
+        LogEvent(
+            kind="ocr.job.submitted",
+            payload={"job_id": "j1", "filename": "x.pdf"},
+        )
+    )
+    proj = JobHistoryProjection(log)
+
+    fold_calls = 0
+    original_fold_all = proj._fold_all
+
+    def counting_fold_all():
+        nonlocal fold_calls
+        fold_calls += 1
+        return original_fold_all()
+
+    monkeypatch.setattr(proj, "_fold_all", counting_fold_all)
+
+    # Three calls within the same log version: one fold.
+    r1 = proj.list()
+    r2 = proj.list()
+    r3 = proj.list()
+    assert fold_calls == 1
+    assert r1 == r2 == r3
+
+    # Append a new event: cache invalidated.
+    log.append(
+        LogEvent(
+            kind="ocr.job.started",
+            payload={"job_id": "j1", "model": "m"},
+        )
+    )
+    r4 = proj.list()
+    assert fold_calls == 2
+    # The new event updates the same record.
+    assert r4[0]["model"] == "m"
+
+    # Another repeat call within the same (new) log version: cache hit.
+    r5 = proj.list()
+    assert fold_calls == 2
+    assert r4 == r5
+
+
+def test_list_cache_invalidation_fires_on_unrelated_event() -> None:
+    """An unrelated event also invalidates the cache.
+
+    The cache key is ``len(self._log)``, not the event kind.
+    Any append (e.g. a new ``artifact.created`` event) bumps
+    the log length and forces a re-fold. This is the
+    conservative choice — a finer-grained invalidation would
+    require an event-kind index in the log itself.
+    """
+    log = InMemoryLogStore()
+    log.append(
+        LogEvent(
+            kind="ocr.job.submitted",
+            payload={"job_id": "j1", "filename": "x.pdf"},
+        )
+    )
+    proj = JobHistoryProjection(log)
+
+    assert len(proj.list()) == 1
+    # An unrelated event still invalidates.
+    log.append(
+        LogEvent(
+            kind="artifact.created",
+            payload={"artifact_id": "a" * 32, "kind": "text"},
+        )
+    )
+    # The projection itself does not see the artifact event, but
+    # the cache key changed so the re-fold runs. Output is
+    # unchanged.
+    assert len(proj.list()) == 1
+    assert proj.list()[0]["id"] == "j1"

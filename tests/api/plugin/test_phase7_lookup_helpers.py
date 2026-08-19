@@ -274,3 +274,113 @@ def test_default_profile_lets_every_helper_return_a_real_service(
         )
     finally:
         runtime.set_plugin_context(None)
+
+
+# -- Audit-secondary F14: backend-kind service-name convention --------------
+
+
+def test_provider_and_helper_defaults_match() -> None:
+    """Provider default name == corresponding helper default name.
+
+    Audit-secondary F14: a provider registered without an
+    explicit ``name=`` must be reachable through the helper
+    without an explicit ``name=`` either. Any drift between
+    provider default and helper default would silently return
+    ``None`` from the helper.
+    """
+    from inspect import signature
+
+    from omniscribe.api.plugin.providers import (
+        config_store_provider,
+        in_memory_session_log_provider,
+        local_job_queue_provider,
+        progress_service_provider,
+        text_artifact_store_provider,
+    )
+    from omniscribe.api.plugin.runtime import (
+        get_config_store,
+        get_job_queue,
+        get_progress_service,
+        get_session_log,
+        get_text_artifact_store,
+    )
+
+    pairs = [
+        (local_job_queue_provider, get_job_queue),
+        (in_memory_session_log_provider, get_session_log),
+        (progress_service_provider, get_progress_service),
+        (config_store_provider, get_config_store),
+        (text_artifact_store_provider, get_text_artifact_store),
+    ]
+    for provider, helper in pairs:
+        provider_default = signature(provider).parameters["name"].default
+        helper_default = signature(helper).parameters["name"].default
+        assert provider_default == helper_default, (
+            f"defaults diverge: {provider.__name__}(name={provider_default!r}) "
+            f"vs {helper.__name__}(name={helper_default!r})"
+        )
+
+
+def test_progress_service_helper_uses_memory_default() -> None:
+    """F14: ``get_progress_service()`` looks up ``name='memory'`` by default."""
+    from omniscribe.api.plugin.runtime import get_progress_service
+
+    # No context — both default-name and explicit-name return None.
+    runtime.set_plugin_context(None)
+    assert get_progress_service() is None
+    assert get_progress_service(name="memory") is None
+    # An explicitly wrong name still returns None.
+    assert get_progress_service(name="default") is None
+
+
+def test_config_store_helper_uses_memory_default() -> None:
+    """F14: ``get_config_store()`` looks up ``name='memory'`` by default."""
+    from omniscribe.api.plugin.runtime import get_config_store
+
+    runtime.set_plugin_context(None)
+    assert get_config_store() is None
+    assert get_config_store(name="memory") is None
+    assert get_config_store(name="default") is None
+
+
+def test_text_artifact_store_helper_uses_text_default() -> None:
+    """F14: ``get_text_artifact_store()`` looks up ``name='text'`` by default.
+
+    The three TextArtifactStore domain names (``text`` / ``metadata``
+    / ``export``) are not backend kinds — they identify the kind of
+    artifact the store owns. ``text`` is the most common consumer
+    and the most useful default.
+    """
+    from omniscribe.api.plugin.runtime import get_text_artifact_store
+
+    runtime.set_plugin_context(None)
+    assert get_text_artifact_store() is None  # default name is "text"
+    assert get_text_artifact_store(name="text") is None
+    assert get_text_artifact_store(name="default") is None  # legacy name gone
+
+
+def test_provider_default_name_is_backend_kind() -> None:
+    """F14: every provider's default name is a backend kind, not ``"default"``.
+
+    Locking in the convention so a future provider doesn't
+    regress to ``name="default"`` and re-introduce the mixed
+    convention.
+    """
+    from inspect import signature
+
+    from omniscribe.api.plugin.providers import (
+        config_store_provider,
+        in_memory_session_log_provider,
+        local_job_queue_provider,
+        progress_service_provider,
+    )
+
+    expected = {
+        local_job_queue_provider: "local",
+        in_memory_session_log_provider: "memory",
+        progress_service_provider: "memory",
+        config_store_provider: "memory",
+    }
+    for provider, want in expected.items():
+        got = signature(provider).parameters["name"].default
+        assert got == want, f"{provider.__name__} default name = {got!r}, want {want!r}"

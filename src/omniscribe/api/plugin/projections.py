@@ -39,6 +39,7 @@ Phase 3d will add :class:`ArtifactStoreProjection`.
 
 from __future__ import annotations
 
+import builtins
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -159,43 +160,66 @@ class JobHistoryProjection:
         self._log = log
         self._max_jobs = max_jobs
         self._now_fn: Callable[[], datetime] = now_fn or (lambda: datetime.now(UTC))
+        # Cache: (log_version, sorted_records_with_internal_fields).
+        # ``log_version`` is the event count at the time of the
+        # fold; any subsequent ``log.append`` invalidates the
+        # cache by changing ``len(self._log)``. The fold +
+        # position-stamp + sort is the expensive part (O(N log
+        # N)); the dict-comprehension emit is cheap and runs at
+        # read time so the ``timestamp`` field stays current.
+        self._cache: tuple[int, builtins.list[dict[str, Any]]] | None = None
 
-    def list(self) -> list[dict[str, Any]]:
+    def list(self) -> builtins.list[dict[str, Any]]:
         """Return the projected JobRecord dicts, newest first.
 
         Mirrors :meth:`JobHistory.list` — the legacy contract
         was ``list[dict]`` with no JobRecord import needed.
+
+        Performance (audit-secondary F15): the fold + sort is
+        cached against the log's event count. The first call
+        after any ``log.append`` re-folds; subsequent calls
+        within the same log version reuse the cached sort. The
+        emit (dict-comprehension + ``max_jobs`` cap) runs on
+        every call so the returned ``timestamp`` reflects the
+        current time, not the cache-population time.
         """
-        records = self._fold_all()
-        # Stamp each record with its insertion position so the
-        # sort has a strict total order. ``time.monotonic()``
-        # can return identical values for events appended in
-        # the same monotonic tick (common in fast tests and
-        # not impossible in real bursts), which would make the
-        # sort non-deterministic. The position comes from the
-        # order ``by_id`` saw the job — which itself mirrors
-        # the log's insertion order — so newest-by-insertion
-        # is the natural tiebreaker.
-        for pos, r in enumerate(records):
-            r["__position"] = pos
-        # Newest first: by submitted (created_at) monotonic
-        # timestamp, then by insertion position. Both
-        # descending so the strictly-newer record wins. The
-        # resulting tuple order is what ``reverse=True``
-        # inverts element-wise.
-        records.sort(
-            key=lambda r: (r["__sort_key"], r["__position"]),
-            reverse=True,
-        )
+        version = len(self._log)
+        cached = self._cache
+        if cached is None or cached[0] != version:
+            records = self._fold_all()
+            # Stamp each record with its insertion position so the
+            # sort has a strict total order. ``time.monotonic()``
+            # can return identical values for events appended in
+            # the same monotonic tick (common in fast tests and
+            # not impossible in real bursts), which would make the
+            # sort non-deterministic. The position comes from the
+            # order ``by_id`` saw the job — which itself mirrors
+            # the log's insertion order — so newest-by-insertion
+            # is the natural tiebreaker.
+            for pos, r in enumerate(records):
+                r["__position"] = pos
+            # Newest first: by submitted (created_at) monotonic
+            # timestamp, then by insertion position. Both
+            # descending so the strictly-newer record wins. The
+            # resulting tuple order is what ``reverse=True``
+            # inverts element-wise.
+            records.sort(
+                key=lambda rec: (rec["__sort_key"], rec["__position"]),
+                reverse=True,
+            )
+            self._cache = (version, records)
+            records = self._cache[1]
+        else:
+            records = cached[1]
         # Build the output, applying the max_jobs cap AFTER
         # sort so the cap drops the oldest records (matching
         # the legacy ``deque(maxlen=N)`` semantics).
-        out: list[dict[str, Any]] = []
+        out: builtins.list[dict[str, Any]] = []
         for r in records[: self._max_jobs]:
             out.append({k: v for k, v in r.items() if not k.startswith("__")})
         return out
 
-    def _fold_all(self) -> list[dict[str, Any]]:
+    def _fold_all(self) -> builtins.list[dict[str, Any]]:
         """Fold every OCR job event in the log into a JobRecord-shaped dict.
 
         Walks the log once; events for the same ``job_id`` are
@@ -326,6 +350,25 @@ class ArtifactStoreProjection:
 
     def __init__(self, log: SessionLog) -> None:
         self._log = log
+        # Cache: (log_version, per_id_folded_dict). The fold is
+        # shared between ``list()`` and ``get()``; either method
+        # invalidates the cache via ``len(self._log)``. See
+        # :class:`JobHistoryProjection` for the same pattern.
+        self._cache: tuple[int, dict[str, dict[str, Any]]] | None = None
+
+    def _get_folded(self) -> dict[str, dict[str, Any]]:
+        """Return the cached per-id accumulator, recomputing on log change.
+
+        Both :meth:`list` and :meth:`get` route through this helper so
+        a single ``log.append`` invalidates both call paths.
+        """
+        version = len(self._log)
+        cached = self._cache
+        if cached is None or cached[0] != version:
+            folded = self._fold_all()
+            self._cache = (version, folded)
+            return folded
+        return cached[1]
 
     def list(self) -> list[dict[str, Any]]:
         """Return every ``artifact.created`` event as a dict, newest first.
@@ -334,8 +377,12 @@ class ArtifactStoreProjection:
         legacy store has its own eviction policy
         (``max_entries`` + TTL) but the projection is purely a
         read view, so the caller decides whether to apply one.
+
+        Performance (audit-secondary F16): the fold is cached.
+        First call after any ``log.append`` re-folds; subsequent
+        calls reuse the cache.
         """
-        records = list(self._fold_all().values())
+        records = list(self._get_folded().values())
         _sort_newest_first(records, "__sort_key")
         return [{k: v for k, v in r.items() if not k.startswith("__")} for r in records]
 
@@ -346,8 +393,13 @@ class ArtifactStoreProjection:
         this id?" — a use case the legacy
         :meth:`TextArtifactStore.get` does not support (it
         requires the token to be supplied).
+
+        Performance (audit-secondary F16): a single ``get()``
+        used to walk the entire log; the cache means a UI
+        rendering 50 artifacts in a sidebar does 50 cache
+        lookups (O(1) each) instead of 50 full log walks.
         """
-        rec = self._fold_all().get(artifact_id)
+        rec = self._get_folded().get(artifact_id)
         if rec is None:
             return None
         return {k: v for k, v in rec.items() if not k.startswith("__")}

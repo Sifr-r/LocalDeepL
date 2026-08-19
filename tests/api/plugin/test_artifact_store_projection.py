@@ -350,3 +350,99 @@ def test_state_backend_uses_per_kind_stores(
     assert backend.text_artifacts._kind == "text"  # type: ignore[attr-defined]
     assert backend.metadata_artifacts._kind == "metadata"  # type: ignore[attr-defined]
     assert backend.export_artifacts._kind == "export"  # type: ignore[attr-defined]
+
+
+# -- Audit-secondary F16: per-id fold cache --------------------------------
+
+
+def test_get_caches_fold_until_log_changes(monkeypatch) -> None:
+    """Repeated ``get()`` calls reuse the cached fold.
+
+    Audit-secondary F16: a single ``get()`` used to walk the
+    entire log (O(N) fold + O(1) dict lookup). A UI rendering
+    50 artifacts does 50 full walks. The cache means 50 cache
+    lookups (O(1)) instead.
+    """
+    log = InMemoryLogStore()
+    for i in range(5):
+        log.append(
+            LogEvent(
+                kind="artifact.created",
+                payload={
+                    "artifact_id": f"{i:032x}",
+                    "kind": "text",
+                    "token": f"tok-{i}",
+                    "path": f"/tmp/a{i}.json",
+                    "expires_at": 1700000000.0 + i,
+                },
+            )
+        )
+    proj = ArtifactStoreProjection(log)
+
+    fold_calls = 0
+    original_fold_all = proj._fold_all
+
+    def counting_fold_all():
+        nonlocal fold_calls
+        fold_calls += 1
+        return original_fold_all()
+
+    monkeypatch.setattr(proj, "_fold_all", counting_fold_all)
+
+    # 5 distinct get() calls within the same log version: one fold.
+    for i in range(5):
+        rec = proj.get(f"{i:032x}")
+        assert rec is not None
+        assert rec["token"] == f"tok-{i}"
+    assert fold_calls == 1
+
+    # list() also uses the same cache — no second fold.
+    records = proj.list()
+    assert len(records) == 5
+    assert fold_calls == 1
+
+    # Append a new event: cache invalidated.
+    log.append(
+        LogEvent(
+            kind="artifact.created",
+            payload={
+                "artifact_id": "f" * 32,
+                "kind": "text",
+                "token": "tok-f",
+                "path": "/tmp/af.json",
+                "expires_at": 1700000010.0,
+            },
+        )
+    )
+    proj.get("f" * 32)
+    assert fold_calls == 2
+    assert len(proj.list()) == 6
+    assert fold_calls == 2  # list() reused the fold from the get()
+
+
+def test_get_cache_returns_none_for_unknown_id() -> None:
+    """An unknown artifact id returns None without breaking the cache.
+
+    Audit-secondary F16 regression: a None result must still
+    populate the cache so a sidebar of 50 known + 1 unknown
+    artifact does not re-fold on the unknown one.
+    """
+    log = InMemoryLogStore()
+    log.append(
+        LogEvent(
+            kind="artifact.created",
+            payload={
+                "artifact_id": "a" * 32,
+                "kind": "text",
+                "token": "tok-1",
+                "path": "/tmp/a1.json",
+                "expires_at": 1700000000.0,
+            },
+        )
+    )
+    proj = ArtifactStoreProjection(log)
+    assert proj.get("a" * 32) is not None
+    assert proj.get("b" * 32) is None
+    # Cache must survive the None lookup.
+    assert proj.get("a" * 32) is not None
+    assert proj.get("b" * 32) is None

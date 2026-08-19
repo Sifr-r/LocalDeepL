@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import secrets
 import tempfile
@@ -11,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from omniscribe.api.plugin import ContextDisposedError, ServiceNotFoundError
 from omniscribe.utils import write_atomic
 
 DEFAULT_ARTIFACT_TTL_SECONDS = 60 * 60
@@ -167,10 +169,14 @@ class TextArtifactStore:
     def _emit_artifact_created(self, handle: TextArtifactHandle) -> None:
         """Emit an :class:`ArtifactCreatedEvent` for the just-stored handle.
 
-        Best-effort: a missing plugin context, a disposed context,
-        or a listener that raises all fall through silently so the
-        primary write (the in-memory ``_entries`` dict + the
-        backing file) is never affected.
+        Best-effort with a narrow exception scope (audit-secondary
+        pass F10): a missing plugin context or a disposed context
+        fall through silently so the primary write (the in-memory
+        ``_entries`` dict + the backing file) is never affected.
+        Programming bugs (``KeyError`` / ``AttributeError`` /
+        ``TypeError``) propagate to the caller so a regression in
+        the projection code is caught at the call site instead of
+        silently dropping every artifact creation event.
         """
         try:
             from omniscribe.api.plugin.events_catalog import (
@@ -190,12 +196,12 @@ class TextArtifactStore:
                         expires_at=handle.expires_at,
                     ).__dict__,
                 )
-        except Exception:
-            import logging
-
-            logging.getLogger(__name__).exception(
-                "audit: failed to emit ArtifactCreatedEvent for artifact_id=%s",
+        except (ServiceNotFoundError, ContextDisposedError) as exc:
+            logging.getLogger(__name__).warning(
+                "audit: skipped emit for artifact_id=%s (%s: %s)",
                 handle.artifact_id,
+                type(exc).__name__,
+                exc,
             )
 
     async def get(self, artifact_id: str, token: str) -> str:

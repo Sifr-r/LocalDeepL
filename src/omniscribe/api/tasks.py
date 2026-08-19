@@ -11,7 +11,67 @@ try:
 except ImportError:
     _CeleryTask = object
 
+try:
+    from celery.signals import worker_process_shutdown, worker_shutdown
+except ImportError:
+    worker_process_shutdown = None
+    worker_shutdown = None
+
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Celery worker lifecycle: release the shared httpx client on shutdown.
+# ---------------------------------------------------------------------------
+# Audit-secondary F28: the FastAPI lifespan calls
+# ``aclose_shared_client`` in its ``finally`` block, but Celery
+# workers live in their own process and never enter that lifespan.
+# Without this signal, a long-running worker holds the shared httpx
+# client (and its keep-alive socket) alive across event-loop
+# boundaries; the next task creates a new client on a different loop
+# and the old one is left to be GC'd. We register the signal handler
+# at import time so it is wired before the first task runs.
+#
+# Two signals cover the two Celery deployment modes:
+# - ``worker_process_shutdown`` fires when a child worker process
+#   exits (prefork pool, the production case).
+# - ``worker_shutdown`` fires when the main worker process exits
+#   (solo pool, the local-dev case).
+# Both are safe to register; they call the same close routine.
+
+
+def _aclose_shared_client_on_celery_shutdown(**_kwargs: Any) -> None:
+    """Run ``aclose_shared_client`` on a fresh event loop.
+
+    The Celery signal handler runs synchronously on the main thread;
+    the shared client is async-only. We spin up a fresh loop, run
+    the close coroutine, and tear the loop down. Any failure is
+    logged but never raised — the signal handler must not crash the
+    worker shutdown.
+    """
+    try:
+        from omniscribe.core.ocr.multi_format_client import aclose_shared_client
+    except ImportError:
+        # Optional httpx dep missing; nothing to close.
+        return
+    try:
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(aclose_shared_client())
+        finally:
+            loop.close()
+    except Exception:  # pragma: no cover — defensive
+        logger.warning(
+            "Celery shutdown: could not aclose shared httpx client; "
+            "some sockets may linger briefly",
+            exc_info=True,
+        )
+
+
+if worker_process_shutdown is not None:
+    worker_process_shutdown.connect(_aclose_shared_client_on_celery_shutdown)
+if worker_shutdown is not None:
+    worker_shutdown.connect(_aclose_shared_client_on_celery_shutdown)
 
 
 def _current_translation_settings() -> TranslationSettings:
@@ -104,6 +164,10 @@ class _TranslationTask(_CeleryTaskBase):
 
 class _GlossaryTask(_CeleryTaskBase):
     """Apply the mixin to the glossary import task via dynamic inheritance."""
+
+
+class _OCRTask(_CeleryTaskBase):
+    """Apply the mixin to the OCR task via dynamic inheritance."""
 
 
 @celery_app.task(bind=True, name="process_translation", base=_TranslationTask)
@@ -330,3 +394,118 @@ def process_glossary_import_task(
         "entry_count": len(summary.entries),
         "warnings": list(summary.warnings),
     }
+
+
+@celery_app.task(bind=True, name="process_ocr", base=_OCRTask)
+def process_ocr_task(
+    self,
+    job_id: str,
+    file_path: str,
+    settings_dict: dict[str, Any],
+    channel_id: str | None = None,
+    session_token: str | None = None,
+) -> dict[str, Any]:
+    """Background task to run the full OCR pipeline on an uploaded file."""
+    if not isinstance(job_id, str) or not job_id.strip():
+        raise ValueError("job_id must be a non-empty string")
+    if not isinstance(file_path, str) or not file_path.strip():
+        raise ValueError("file_path must be a non-empty string")
+    if not isinstance(settings_dict, dict):
+        raise ValueError("settings_dict must be a dict")
+
+    import os
+    import tempfile
+    import time
+
+    from omniscribe.api.routers.ocr import (
+        _emit_job_started,
+        _execute_ocr_pipeline,
+        _record_job,
+    )
+    from omniscribe.api.schemas import ProcessSettings
+
+    if channel_id is None:
+        channel_id = settings_dict.get("progress_channel")
+    if session_token is None:
+        session_token = settings_dict.get("progress_token")
+
+    self.emit_progress(0, "Initializing OCR pipeline")
+
+    t_start = time.monotonic()
+    try:
+        clean_settings = {
+            k: v
+            for k, v in settings_dict.items()
+            if k not in ("progress_channel", "progress_token")
+        }
+        settings = ProcessSettings(**clean_settings)
+        output_path = os.path.join(tempfile.gettempdir(), f"output_{job_id}.pdf")
+
+        _emit_job_started(
+            job_id,
+            model=settings.model,
+            pipeline_mode=settings.pipeline_mode,
+            pages=settings.pages,
+        )
+
+        (
+            pipeline,
+            artifact_handle,
+            metadata_handle,
+            text_path,
+            failed_pages,
+        ) = asyncio.run(
+            _execute_ocr_pipeline(
+                settings=settings,
+                input_path=file_path,
+                output_path=output_path,
+                progress_target=channel_id,
+            )
+        )
+
+        duration_s = time.monotonic() - t_start
+        _record_job(
+            job_id=job_id,
+            filename=os.path.basename(file_path),
+            model=settings.model,
+            pipeline_mode=settings.pipeline_mode,
+            pages=settings.pages,
+            duration_s=duration_s,
+            status="complete",
+            failed_pages=failed_pages,
+            text_artifact_id=artifact_handle.artifact_id,
+        )
+        self.emit_progress(100, "OCR complete")
+        return {
+            "job_id": job_id,
+            "status": "complete",
+            "text_artifact_id": artifact_handle.artifact_id,
+            "text_artifact_token": artifact_handle.token,
+            "output_pdf_path": output_path,
+            "failed_pages": list(failed_pages),
+        }
+    except Exception as exc:
+        duration_s = time.monotonic() - t_start
+        model = (
+            settings.model
+            if "settings" in locals()
+            else str(settings_dict.get("model", "unknown"))
+        )
+        pipeline_mode = (
+            settings.pipeline_mode
+            if "settings" in locals()
+            else str(settings_dict.get("pipeline_mode", "hybrid"))
+        )
+        pages = settings.pages if "settings" in locals() else settings_dict.get("pages")
+        _record_job(
+            job_id=job_id,
+            filename=os.path.basename(file_path),
+            model=model,
+            pipeline_mode=pipeline_mode,
+            pages=pages,
+            duration_s=duration_s,
+            status="error",
+            error=str(exc),
+        )
+        self.emit_progress(0, f"Error: {exc}")
+        raise

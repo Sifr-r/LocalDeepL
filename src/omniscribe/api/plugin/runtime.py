@@ -31,6 +31,30 @@ empty, so the call site reads::
 A consumer that uses the helper is one search-and-replace away
 from the legacy singleton — the seam becomes the primary code
 path, the legacy alias stays for any code that hasn't migrated.
+
+Service-name convention (audit-secondary F14)
+---------------------------------------------
+
+Every helper's default name matches the corresponding provider's
+default name in :mod:`omniscribe.api.plugin.providers`, so a
+provider registered without an explicit ``name=`` is reachable
+through the helper without an explicit ``name=`` either. The
+convention is **backend kind** for capability seams and
+**domain name** for the artifact store triple:
+
+| Helper / Provider                           | Default name  | Reason                          |
+|---------------------------------------------|---------------|---------------------------------|
+| :func:`get_job_queue`                       | ``"local"``   | in-process vs future Celery     |
+| :func:`get_session_log`                     | ``"memory"``  | in-memory vs future SQLite/JSONL|
+| :func:`get_progress_service`                | ``"memory"``  | in-process (no distributed)     |
+| :func:`get_config_store`                    | ``"memory"``  | in-memory vs SQLite/Redis       |
+| :func:`get_text_artifact_store`             | ``"text"``    | text / metadata / export        |
+
+The three ``TextArtifactStore`` names are domain names, not
+backend kinds — a profile can register the same backend under
+all three names. A diagnostic that lists ``(definition, name)``
+pairs should see this convention encoded in the helper defaults
+so a "what providers are wired?" report is one line per entry.
 """
 
 from __future__ import annotations
@@ -159,8 +183,11 @@ def get_session_log(*, name: str = "memory") -> Any | None:
     return ctx.get(SessionLog, name=name)
 
 
-def get_progress_service(*, name: str = "default") -> Any | None:
-    """Return the registered :class:`ProgressService`, or ``None``."""
+def get_progress_service(*, name: str = "memory") -> Any | None:
+    """Return the registered :class:`ProgressService`, or ``None``.
+
+    Default name matches :func:`progress_service_provider` (audit-secondary F14).
+    """
     from omniscribe.api.plugin import ProgressService
 
     ctx = get_plugin_context()
@@ -169,8 +196,11 @@ def get_progress_service(*, name: str = "default") -> Any | None:
     return ctx.get(ProgressService, name=name)
 
 
-def get_config_store(*, name: str = "default") -> Any | None:
-    """Return the registered :class:`ConfigStore`, or ``None``."""
+def get_config_store(*, name: str = "memory") -> Any | None:
+    """Return the registered :class:`ConfigStore`, or ``None``.
+
+    Default name matches :func:`config_store_provider` (audit-secondary F14).
+    """
     from omniscribe.api.plugin import ConfigStore
 
     ctx = get_plugin_context()
@@ -179,13 +209,14 @@ def get_config_store(*, name: str = "default") -> Any | None:
     return ctx.get(ConfigStore, name=name)
 
 
-def get_text_artifact_store(*, name: str = "default") -> Any | None:
+def get_text_artifact_store(*, name: str = "text") -> Any | None:
     """Return the registered :class:`TextArtifactStore`, or ``None``.
 
-    The three legacy stores register under their canonical names:
-    ``"text"``, ``"metadata"``, ``"export"``. Pass the right name
-    to reach the right store. The default ``"default"`` slot is
-    also accepted for tests and ad-hoc consumers.
+    The three legacy stores register under their canonical domain
+    names: ``"text"``, ``"metadata"``, ``"export"``. Pass the right
+    name to reach the right store. The default ``"text"`` slot
+    matches :func:`text_artifact_store_provider` (audit-secondary
+    F14 — domain names, not backend kinds).
     """
     from omniscribe.api.plugin import TextArtifactStore
 

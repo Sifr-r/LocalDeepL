@@ -88,7 +88,7 @@ def test_progress_service_provider_registers_default_impl() -> None:
     ctx = PluginContext("test")
     plugin = progress_service_provider()
     plugin(ctx)
-    service = ctx.get(ProgressService)
+    service = ctx.get(ProgressService, name="memory")
     # Structural check via the runtime_checkable Protocol.
     assert isinstance(service, ProgressService)
     # Behavioural spot check: stage_to_percent is a pure function
@@ -103,25 +103,25 @@ def test_progress_service_provider_with_explicit_service() -> None:
     real_service = _ProgressService()
     ctx = PluginContext("test")
     progress_service_provider(service=real_service)(ctx)
-    assert ctx.get(ProgressService) is real_service
+    assert ctx.get(ProgressService, name="memory") is real_service
 
 
 def test_progress_service_provider_disposer_unregisters() -> None:
     ctx = PluginContext("test")
     disposer = progress_service_provider()(ctx)
-    assert ctx.has(ProgressService)
+    assert ctx.has(ProgressService, name="memory")
     disposer()
-    assert not ctx.has(ProgressService)
+    assert not ctx.has(ProgressService, name="memory")
 
 
 def test_progress_service_provider_named_slot() -> None:
     """Two providers can register under different names so a
     future 'telemetry' provider can co-exist with the default."""
     ctx = PluginContext("test")
-    progress_service_provider(name="default")(ctx)
+    progress_service_provider(name="memory")(ctx)
     alt = _ProgressService()
     progress_service_provider(service=alt, name="telemetry")(ctx)
-    assert ctx.get(ProgressService, name="default") is not alt
+    assert ctx.get(ProgressService, name="memory") is not alt
     assert ctx.get(ProgressService, name="telemetry") is alt
 
 
@@ -131,7 +131,7 @@ def test_progress_service_provider_named_slot() -> None:
 def test_config_store_provider_registers_default_impl() -> None:
     ctx = PluginContext("test")
     config_store_provider()(ctx)
-    store = ctx.get(ConfigStore)
+    store = ctx.get(ConfigStore, name="memory")
     assert isinstance(store, ConfigStore)
     # Behavioural: an empty in-memory store returns an empty
     # snapshot.
@@ -145,17 +145,17 @@ def test_config_store_provider_with_explicit_store() -> None:
     real_store = InMemoryConfigStore(initial={"x": 1})
     ctx = PluginContext("test")
     config_store_provider(store=real_store)(ctx)
-    assert ctx.get(ConfigStore) is real_store
+    assert ctx.get(ConfigStore, name="memory") is real_store
     # The shared instance keeps its initial data.
-    assert ctx.get(ConfigStore).get_snapshot() == {"x": 1}
+    assert ctx.get(ConfigStore, name="memory").get_snapshot() == {"x": 1}
 
 
 def test_config_store_provider_disposer_unregisters() -> None:
     ctx = PluginContext("test")
     disposer = config_store_provider()(ctx)
-    assert ctx.has(ConfigStore)
+    assert ctx.has(ConfigStore, name="memory")
     disposer()
-    assert not ctx.has(ConfigStore)
+    assert not ctx.has(ConfigStore, name="memory")
 
 
 # -- text_artifact_store_provider ----------------------------------------
@@ -257,16 +257,18 @@ def test_default_server_profile_has_all_five_capabilities(
 
     assert ctx.get(JobQueue, name="local") is queue
     assert ctx.get(SessionLog, name="memory") is log
-    assert ctx.get(ProgressService) is progress
-    assert ctx.get(ConfigStore) is config
+    assert ctx.get(ProgressService, name="memory") is progress
+    assert ctx.get(ConfigStore, name="memory") is config
     assert ctx.get(TextArtifactStore, name="text") is text_store
     assert ctx.get(TextArtifactStore, name="metadata") is meta_store
     assert ctx.get(TextArtifactStore, name="export") is export_store
     # Behavioural sanity check on the progress service — the
     # consumer got the same instance the state module uses.
-    assert ctx.get(ProgressService).stage_to_percent("embed", 1, 1) == 100
+    assert (
+        ctx.get(ProgressService, name="memory").stage_to_percent("embed", 1, 1) == 100
+    )
     # Config store sees the initial data the StateBackend owns.
-    assert ctx.get(ConfigStore).get_snapshot() == {"model": "qwen2.5-vl"}
+    assert ctx.get(ConfigStore, name="memory").get_snapshot() == {"model": "qwen2.5-vl"}
 
 
 # -- Consumer migration smoke test ---------------------------------------
