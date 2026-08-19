@@ -87,8 +87,11 @@ def create_app() -> ASGIApplication:
     # is also the registered provider, so the two paths share state.
     from omniscribe.api.plugin import (
         PluginContext,
+        config_store_provider,
         in_memory_session_log_provider,
         local_job_queue_provider,
+        progress_service_provider,
+        text_artifact_store_provider,
     )
     from omniscribe.api.plugin.recorders import audit_log_recorder
     from omniscribe.api.plugin.runtime import set_plugin_context
@@ -127,6 +130,25 @@ def create_app() -> ASGIApplication:
     # the same ``"memory"`` slot name (or a new one) without
     # changing any consumer.
     plugin_ctx.mount(in_memory_session_log_provider(name="memory"))
+    # Phase 6 (audit-secondary F2-deeper): mount the three remaining
+    # capability-seam providers so the context is the single source
+    # of truth for the five advertised seams. The instances are
+    # the existing legacy singletons (state.config_store,
+    # state.progress_service, state.{text,metadata,export}_artifacts)
+    # so the two paths share state during the migration window.
+    plugin_ctx.mount(config_store_provider(store=state.config_store, name="memory"))
+    plugin_ctx.mount(
+        progress_service_provider(service=state.progress_service, name="memory")
+    )
+    plugin_ctx.mount(
+        text_artifact_store_provider(store=state.text_artifacts, name="text")
+    )
+    plugin_ctx.mount(
+        text_artifact_store_provider(store=state.metadata_artifacts, name="metadata")
+    )
+    plugin_ctx.mount(
+        text_artifact_store_provider(store=state.export_artifacts, name="export")
+    )
     # Phase 2: mount the audit log recorder so every ``ctx.emit()`` call
     # from the request handlers lands in the application log. The
     # recorder is the default consumer; future recorders (telemetry,

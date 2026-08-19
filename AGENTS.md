@@ -193,9 +193,9 @@ to the legacy `api/routers/state.py` singletons. **Last updated 2026-08-19.**
 |---|---|---|---|
 | `JobQueue` | `seams.JobQueue` | `local_job_queue_provider("local")` | REGISTERED — wraps `state.ocr_job_queue` |
 | `SessionLog` | `seams.SessionLog` | `memory_session_log_provider("memory")` | REGISTERED — new audit log |
-| `ConfigStore` | `seams.ConfigStore` | _none_ | UNREGISTERED — `get_config_store()` returns `None`; legacy singleton wins |
-| `ProgressService` | `seams.ProgressService` | _none_ | UNREGISTERED — `get_progress_service()` returns `None`; legacy singleton wins |
-| `TextArtifactStore` | `seams.TextArtifactStore` | _none_ | UNREGISTERED — `get_text_artifact_store()` returns `None`; legacy singleton wins |
+| `ConfigStore` | `seams.ConfigStore` | `config_store_provider("memory")` | REGISTERED — wraps `state.config_store` (Phase 6 F2-deeper) |
+| `ProgressService` | `seams.ProgressService` | `progress_service_provider("memory")` | REGISTERED — wraps `state.progress_service` (Phase 6 F2-deeper) |
+| `TextArtifactStore` | `seams.TextArtifactStore` | `text_artifact_store_provider("text"\|"metadata"\|"export")` | REGISTERED — three providers, one per domain (Phase 6 F2-deeper) |
 
 **Migration semantics.** During the migration window every consumer uses
 `runtime.get_<name>()` which returns the registered provider or `None`.
