@@ -40,6 +40,23 @@ so it stays light (no torch / no multi-GB ML stack):
 uv sync --extra web --extra preprocessing --extra async-translation --extra memory
 ```
 
+> **Upgrading from a pre-LanceDB version?** The server auto-migrates
+> the legacy `glossary_library/library.json` + `chroma_db/lanes_lexicon`
+> pair to the new LanceDB store on first boot (fail-open — a broken
+> migration never blocks startup). If you prefer an explicit, scripted
+> upgrade, run the `omniscribe-migrate-lexicon` console script:
+>
+> ```bash
+> uv run omniscribe-migrate-lexicon --dry-run      # preview the plan
+> uv run omniscribe-migrate-lexicon               # run (idempotent)
+> uv run omniscribe-migrate-lexicon --verify-only # check the result
+> uv run omniscribe-migrate-lexicon --strict      # exit 2 on empty store
+> ```
+>
+> Exit codes: `0` = success (including a valid empty `lexicon.lance`
+> after `--verify-only`); `1` = migration error; `2` = `--strict` only
+> — empty live store when a backup manifest reports glossaries.
+
 Real OCR requires an OpenAI-compatible VLM endpoint. The local-development default is LM Studio at `http://localhost:1234/v1`.
 
 ## Web Workspace
@@ -148,4 +165,4 @@ PDF-handling surface that pypdfium2 covers with feature parity.
 - [SECURITY.md](SECURITY.md) — threat model, hardening checklist, vulnerability disclosure
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var reference
 
-_Last updated: 2026-08-14_
+_Last updated: 2026-08-19_

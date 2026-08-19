@@ -119,6 +119,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Verbose (INFO) logging.",
     )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help=(
+            "With --verify-only: treat an empty live store (0 glossaries) as a "
+            "failure (exit 2). Default treats an empty store as a valid "
+            "no-glossary install and exits 0."
+        ),
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -133,15 +142,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(_format_report(report))
     # Exit codes:
-    #   0 — ran successfully (or was a clean no-op)
+    #   0 — ran successfully, was a clean no-op, or --verify-only confirmed
+    #       a valid (possibly empty) live store
     #   1 — migration failed or was skipped due to ambiguous state
-    #   2 — verify-only detected a problem
+    #   2 — only with --strict: --verify-only found an empty live store
+    #       (no glossaries, no skip). Without --strict, an empty live store
+    #       is a valid no-glossary install and exits 0.
     if report.error:
         return 1
-    if report.verified and report.error is None and report.skipped:
-        # verify-only with no lexicon.lance to verify is not an error per se
-        return 0
-    if report.verified and report.glossaries_migrated == 0 and not report.skipped:
+    if (
+        args.strict
+        and report.verified
+        and not report.skipped
+        and report.glossaries_migrated == 0
+    ):
         return 2
     return 0
 

@@ -6,8 +6,7 @@ This file tells coding agents and contributors how to work with this repository.
 
 ```bash
 uv sync
-uv sync --extra web --extra preprocessing
-uv sync --extra web --extra preprocessing --extra async-translation
+uv sync --extra web --extra preprocessing --extra async-translation --extra lexicon
 uv run omniscribe-server --port 8000
 ```
 
@@ -182,6 +181,45 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 - `document_processors=`: sequence of `DocumentProcessor` instances run after OCR cleanup and before PDF embedding
 - `page_preprocessor=`: opt-in `PagePreprocessor` for orientation/deskew/denoise/contrast/crop preprocessing on the hybrid image path
 
+## Plugin Context Migration Status
+
+The new `src/omniscribe/api/plugin/` package introduces a Cordis-style
+plugin container with Protocol-based seams and a "look up by Protocol,
+fall back to singleton" migration window. This section is the single
+source of truth for which seams are wired at boot and which fall through
+to the legacy `api/routers/state.py` singletons. **Last updated 2026-08-19.**
+
+| Seam | Protocol | Boot provider | Status |
+|---|---|---|---|
+| `JobQueue` | `seams.JobQueue` | `local_job_queue_provider("local")` | REGISTERED — wraps `state.ocr_job_queue` |
+| `SessionLog` | `seams.SessionLog` | `memory_session_log_provider("memory")` | REGISTERED — new audit log |
+| `ConfigStore` | `seams.ConfigStore` | _none_ | UNREGISTERED — `get_config_store()` returns `None`; legacy singleton wins |
+| `ProgressService` | `seams.ProgressService` | _none_ | UNREGISTERED — `get_progress_service()` returns `None`; legacy singleton wins |
+| `TextArtifactStore` | `seams.TextArtifactStore` | _none_ | UNREGISTERED — `get_text_artifact_store()` returns `None`; legacy singleton wins |
+
+**Migration semantics.** During the migration window every consumer uses
+`runtime.get_<name>()` which returns the registered provider or `None`.
+Callers fall through to the legacy `api/routers/state.py` singletons
+when the lookup is `None`. This is intentional — it lets new and old code
+paths coexist on the same request.
+
+**Toggle.** `PLUGIN_CONTEXT_ENABLED` is read at import time from
+`OMNISCRIBE_PLUGIN_CONTEXT` (default `False`). Runtime toggling is not
+yet supported; the seam is "open or closed" for the life of the process.
+`set_plugin_context_enabled()` exists for tests only.
+
+**Dual-write shim.** `api/services/artifacts.py` `TextArtifactStore.put`
+emits an `artifact.created` event to the plugin context as a
+best-effort secondary write. The primary write (the singleton store)
+never blocks on the plugin path. The dual-write `except Exception` is
+intentionally narrow in the new code (only `ServiceNotFoundError` and
+`ContextDisposedError` are swallowed) — programming bugs in
+`ArtifactStoreProjection._apply` propagate to the caller.
+
+**Operator note.** Until the three UNREGISTERED seams get providers,
+you can ignore the plugin package entirely. The legacy `state.py`
+singletons are the production access path. See `audits/2026-08-19-secondary-validation-pass.md` for the build-up debt the new infra introduced.
+
 ## Web Notes
 
 - Browser translation and structured extraction use synchronous endpoints and do not require Redis.
@@ -241,4 +279,4 @@ survive into the post-scout roadmap) live in
 - [DEPLOYMENT.md](DEPLOYMENT.md) — local / LAN / public-internet deployment profiles
 - [SECURITY.md](SECURITY.md) — threat model, hardening checklist, vulnerability disclosure
 
-_Last updated: 2026-08-16_
+_Last updated: 2026-08-19_

@@ -214,6 +214,30 @@ for the protocol.
 The settings tab persists user preferences via `localStorage`, not
 server-side state. A version upgrade does not lose user settings.
 
+### Upgrading from a pre-LanceDB Glossary
+
+The server auto-migrates the legacy `glossary_library/library.json` +
+`chroma_db/lanes_lexicon` pair to the new LanceDB store on first boot
+(fail-open — a broken migration never blocks startup). If you prefer
+an explicit, scripted upgrade — or need to retry a failed auto-migration
+— use the `omniscribe-migrate-lexicon` console script:
+
+```bash
+uv run omniscribe-migrate-lexicon --dry-run      # preview the plan
+uv run omniscribe-migrate-lexicon               # run (idempotent)
+uv run omniscribe-migrate-lexicon --verify-only # check the result
+uv run omniscribe-migrate-lexicon --strict      # exit 2 on empty store
+```
+
+Exit codes: `0` = success (including a valid empty `lexicon.lance`
+after `--verify-only`); `1` = migration error; `2` = `--strict` only —
+empty live store when a backup manifest reports glossaries.
+
+A `--verify-only` of a valid empty store is a successful verification
+(it is not an error to have zero glossaries). Use `--strict` to opt
+into the old "empty store = exit 2" behavior for scripted pre-deploy
+checks.
+
 ## Uninstall
 
 ```bash
@@ -238,4 +262,4 @@ Job artifacts in `/tmp/ocr_*` are removed by the startup sweep
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var
   reference
 
-_Last updated: 2026-08-14_
+_Last updated: 2026-08-19_

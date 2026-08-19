@@ -46,6 +46,61 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   Requires the `preprocessing` extra (`opencv-python-headless`);
   without it the pass logs one warning and stays inert.
 
+- **`omniscribe-migrate-lexicon` exit-code fix** — the CLI no longer
+  returns exit code 2 for a valid empty `lexicon.lance` after
+  `--verify-only` (a fresh install or one with no glossaries is a
+  successful verification, not a problem). Exit 2 is now reserved for
+  `--strict` mode when the live store is empty but a backup manifest
+  reports glossaries. Operators scripting `if
+  omniscribe-migrate-lexicon --verify-only; then …` no longer see
+  false-positive failures.
+
+- **Plugin context infrastructure (Cordis-style container)** —
+  `src/omniscribe/api/plugin/` introduces a Protocol-based plugin
+  container with five seams (`JobQueue`, `SessionLog`, `ConfigStore`,
+  `ProgressService`, `TextArtifactStore`), a runtime `get_<name>()`
+  helper, a "look up by Protocol, fall back to singleton" migration
+  window, and dual-write projections for `JobHistory` and the artifact
+  stores. `OMNISCRIBE_PLUGIN_CONTEXT=1` enables it (default off; import-
+  time-only toggle, no runtime flip). Two of the five seams are wired at
+  boot (`JobQueue` → `local`, `SessionLog` → `memory`); the other three
+  fall through to the legacy `api/routers/state.py` singletons by
+  design. See `AGENTS.md` §"Plugin Context Migration Status" for the
+  current state.
+
+- **`document_exporters/` package** — the `core/document_exporters/`
+  package is a thin `DocumentExportProtocol` + `BaseDocumentExporter`
+  ABC. The three real exporters (DOCX, tree-DOCX, HTML) are
+  co-located with the writers they wrap
+  (`core/docx_writer.py`, `core/docx_tree_writer.py`,
+  `core/html_writer.py`); the package ships only the abstraction.
+
+- **A11y test additions (frontend)** — `frontend/src/__tests__/a11y.test.ts`
+  plus the new `frontend/src/lib/utils/download.ts` / `__tests__/download.test.ts`
+  cover the Svelte 5 component layer for accessible-name regressions
+  and the new browser download lifecycle. `vitest-axe` /
+  `@axe-core/playwright` integration is still pending (tracked
+  separately).
+
+- **Celery task unit tests** — `tests/test_distributed_ocr_tasks.py`
+  covers the Celery worker side of the OCR pipeline for crash-safety
+  and queue draining. Multi-worker / crash-safe dispatch remains a
+  follow-up.
+
+- **Document exporter tests** — `tests/test_document_exporters.py`
+  pins the new `document_exporters/` abstraction's contract.
+
+- **Phase-2 remediation tests** — `tests/test_phase2_remediations.py`
+  bundles 7 fixes from the 2026-08-17 audit's Domain 1 / Domain 2
+  close-out into one regression file (splitting per-finding is a
+  follow-up; see `audits/2026-08-19-secondary-validation-pass.md` §F26).
+
+- **Misc 2026-08-17 → 2026-08-19** — `tests/test_security_middleware.py`,
+  `tests/test_token_deprecation.py`,
+  `frontend/src/__tests__/auditMediumD3.test.ts`, and the
+  `_PinnedIPTransport` regression test (D2-06 partial close-out) all
+  landed in this window.
+
 ### Changed
 
 - **`[memory]` extra renamed to `[lexicon]`** — the `chromadb` dependency
