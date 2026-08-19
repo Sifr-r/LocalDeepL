@@ -2299,7 +2299,7 @@ requires-dist = [
     { name = "celery", marker = "extra == 'async-translation'", specifier = ">=5.4.0" },
     { name = "chardet", marker = "extra == 'glossary'", specifier = ">=5.2.0" },
     { name = "defusedxml", specifier = ">=0.7.1" },
-    { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.124.4" },
+    { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.141.1" },
     { name = "faster-whisper", marker = "extra == 'transcription'", specifier = ">=1.0.0" },
     { name = "gitpython", marker = "extra == 'glossary'", specifier = ">=3.1.0" },
     { name = "httpx", specifier = ">=0.27.0" },
@@ -2331,10 +2331,10 @@ requires-dist = [
     { name = "surya-ocr", specifier = ">=0.22.1" },
     { name = "torch", specifier = ">=2.0.0,<3" },
     { name = "torchvision", specifier = ">=0.15.0,<1" },
-    { name = "tqdm", specifier = ">=4.67.1" },
+    { name = "tqdm", specifier = ">=4.70.0" },
     { name = "transformers", marker = "extra == 'nllb'", specifier = ">=4.45.0" },
     { name = "transformers", marker = "extra == 'trocr'", specifier = ">=4.45.0" },
-    { name = "uvicorn", marker = "extra == 'web'", specifier = ">=0.38.0" },
+    { name = "uvicorn", marker = "extra == 'web'", specifier = ">=0.52.3" },
     { name = "websockets", marker = "extra == 'web'", specifier = ">=17.0.1,<18.0" },
 ]
 provides-extras = ["web", "preprocessing", "async-translation", "memory", "lexicon", "trocr", "nllb", "quality", "transcription", "glossary"]
@@ -2350,8 +2350,8 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=0.23" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "requests", specifier = ">=2.31" },
-    { name = "rich", specifier = ">=13.0.0" },
+    { name = "requests", specifier = ">=2.34.2" },
+    { name = "rich", specifier = ">=15.0.0" },
     { name = "ruff", specifier = ">=0.16.2" },
 ]
 

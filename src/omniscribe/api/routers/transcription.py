@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
-from fastapi.responses import JSONResponse
 
 from omniscribe.api.routers.common import _stable_server_error
 from omniscribe.api.routers.config import (
@@ -17,7 +16,6 @@ from omniscribe.api.routers.config import (
     _persist_config,
 )
 from omniscribe.api.schemas.requests import (
-    AuthTokenUpdate,
     TranscriptionConfigUpdate,
 )
 from omniscribe.api.schemas.responses import (
@@ -217,21 +215,3 @@ async def update_transcription_config(
             ) from None
 
     return await get_transcription_config()
-
-
-@router.post("/api/config/transcription/auth")
-async def update_transcription_auth_token(body: AuthTokenUpdate) -> Any:
-    """Persist the per-namespace transcription auth token. ``None`` clears it.
-
-    Writes through the StateBackend's config_store so every worker
-    sees the new value (issue H1). When the active backend is the
-    default in-memory one, the request is refused with a 503.
-    """
-    try:
-        _persist_config({"transcription_auth_token": body.auth_token})
-    except _ConfigBackendIncompatible as exc:
-        return JSONResponse(
-            status_code=503,
-            content={"error": str(exc)},
-        )
-    return JSONResponse(content={"transcription_auth_token": body.auth_token})
