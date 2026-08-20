@@ -3,6 +3,7 @@
   import { activeTab, configStore, modelStore, refreshModels, authStore, pushToast } from '$lib/stores/appStore';
   import { openProviderModal } from '$lib/stores/providerModalStore';
   import { fetchApi } from '$lib/api/client';
+  import { reportError } from '$lib/utils/error';
   import Card from '../ui/Card.svelte';
   import Button from '../ui/Button.svelte';
   import Input from '../ui/Input.svelte';
@@ -106,8 +107,7 @@
         pushToast('success', 'Server authentication tokens saved.', 3000);
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      pushToast('error', message || 'Save failed', 4000);
+      reportError(err, 'Save failed');
     } finally {
       isSaving = false;
     }

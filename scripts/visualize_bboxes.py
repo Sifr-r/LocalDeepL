@@ -3,6 +3,7 @@
 Visualize bounding boxes detected by HybridAligner.
 """
 
+import argparse
 import io
 import os
 import sys
@@ -10,8 +11,10 @@ import sys
 import pymupdf as fitz
 from PIL import Image, ImageDraw
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Allow ``import omniscribe.*`` from the working tree without ``pip install -e .``.
+from _common import setup_sys_path
+
+setup_sys_path()
 
 from omniscribe.core.aligner import HybridAligner
 
@@ -64,8 +67,20 @@ def visualize_boxes(pdf_filename):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        visualize_boxes(sys.argv[1])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "pdf_filename",
+        nargs="?",
+        default=None,
+        help=(
+            "Single PDF filename in examples/ to visualize "
+            "(e.g. hybrid.pdf). If omitted, runs against "
+            "digital.pdf, hybrid.pdf, handwritten.pdf."
+        ),
+    )
+    args = parser.parse_args()
+    if args.pdf_filename:
+        visualize_boxes(args.pdf_filename)
     else:
         visualize_boxes("digital.pdf")
         visualize_boxes("hybrid.pdf")

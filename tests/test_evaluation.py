@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from omniscribe.evaluation import (
+from omniscribe.confidence_eval import (
     GTBlock,
     _detect_bbox_axis_order,
     _swap_axes,

@@ -10,10 +10,10 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from omniscribe.api.routers import state
 from omniscribe.api.routers.common import (
     _path_exists,
-    _stable_server_error,
     get_access_token,
 )
 from omniscribe.api.schemas import DocumentExportRequest, ExportDocxRequest
+from omniscribe.api.services.api_helpers import stable_server_error
 from omniscribe.api.services.artifacts import (
     ArtifactAccessDeniedError,
     ArtifactNotFoundError,
@@ -203,7 +203,7 @@ async def export_docx(body: ExportDocxRequest):
         )
     except Exception:
         logger.exception("Docx export failed")
-        return _stable_server_error()
+        return stable_server_error()
 
 
 # Canonical namespaced routes for the Svelte UI. Prefix-less routes above

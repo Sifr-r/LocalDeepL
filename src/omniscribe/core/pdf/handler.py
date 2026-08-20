@@ -13,19 +13,10 @@ from typing import TYPE_CHECKING, Any
 
 from PIL import Image
 
-from omniscribe.core.pdf.embedder import (
-    _draw_invisible_text,
-    _draw_single_line_text,
-    _embed_from_image_input,
-    _handle_fullpage_fallback,
-    _split_and_draw_lines,
-    embed_structured_text,
-)
+from omniscribe.core.pdf.embedder import embed_structured_text
 from omniscribe.core.pdf.rasterizer import (
     _DEFAULT_RASTERIZER_WORKERS,
     MAX_SAFE_PIXELS,
-    _calculate_safe_dpi,
-    _images_from_image_file,
     convert_batches,
     convert_generator,
     convert_pdf_to_images,
@@ -46,14 +37,6 @@ class PDFHandler:
     """
 
     MAX_SAFE_PIXELS = MAX_SAFE_PIXELS
-
-    _calculate_safe_dpi = staticmethod(_calculate_safe_dpi)
-    _images_from_image_file = staticmethod(_images_from_image_file)
-    _embed_from_image_input = staticmethod(_embed_from_image_input)
-    _draw_invisible_text = staticmethod(_draw_invisible_text)
-    _handle_fullpage_fallback = staticmethod(_handle_fullpage_fallback)
-    _split_and_draw_lines = staticmethod(_split_and_draw_lines)
-    _draw_single_line_text = staticmethod(_draw_single_line_text)
 
     def convert_to_images(
         self,

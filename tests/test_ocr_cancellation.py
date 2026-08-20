@@ -411,7 +411,9 @@ class TestProcessRouteCancel:
                 "omniscribe.api.routers.ocr._execute_ocr_pipeline",
                 side_effect=OCRCancelled("cancelled from test"),
             ) as mock_execute,
-            patch("omniscribe.api.routers.ocr._cleanup") as mock_cleanup,
+            patch(
+                "omniscribe.api.routers.ocr.cleanup_files_dispatcher"
+            ) as mock_cleanup,
         ):
             response = client.post(
                 "/api/process",

@@ -9,7 +9,8 @@ pins the HTTP surface the Svelte client actually consumes:
   schema with the right method;
 * the progress WebSocket path must stay registered;
 * the committed route snapshot (``tests/openapi.json``) must not drift
-  from the live schema. Regenerate it with
+  from the live schema. Regenerate it with ``make openapi`` (which
+  rewrites ``tests/openapi.json`` from ``app.openapi()``) or with
   ``OMNISCRIBE_UPDATE_OPENAPI_SNAPSHOT=1 uv run pytest tests/test_frontend_openapi_contract.py``.
 """
 

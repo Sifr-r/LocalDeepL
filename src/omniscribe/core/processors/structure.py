@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 
 from omniscribe.core.block_tree import BlockNode, BlockType
 from omniscribe.core.document import DocumentBlock, DocumentResult
-from omniscribe.core.processors.base import (
-    _KEY_VALUE_RE,
-    _LIST_ITEM_RE,
-    _TABLE_SPLIT_RE,
-    ProcessorContract,
+from omniscribe.core.processors.base import ProcessorContract
+
+# Module-level regexes used by the structure heuristics below. They used
+# to live in ``processors/base.py`` because they're shared with the
+# ``section`` and ``table`` processors; moved here to colocate them with
+# the processor that defines their semantics.
+_KEY_VALUE_RE = re.compile(r"^\s*([^:\n]{1,50}):\s*(\S.+)$")
+_LIST_ITEM_RE = re.compile(
+    r"^\s*(?:[-*\u2022\u25e6\u2013\u2014]|\(?\d+[\).]|\(?[A-Za-z][\).])\s+"
 )
+_TABLE_SPLIT_RE = re.compile(r"\t+|\|+|\s{2,}")
 
 
 class StructureAnalysisProcessor:

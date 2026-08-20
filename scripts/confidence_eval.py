@@ -36,7 +36,7 @@ from omniscribe import (  # noqa: E402
     PDFHandler,
     PromptedGroundedOCR,
 )
-from omniscribe.evaluation import (  # noqa: E402
+from omniscribe.confidence_eval import (  # noqa: E402
     compute_report,
     load_ground_truth,
 )

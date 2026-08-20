@@ -7,11 +7,11 @@ from typing import TypedDict
 from omniscribe.core.block_tree import BlockNode, BlockType, TableNode
 from omniscribe.core.document import BBox, DocumentBlock, DocumentPage, DocumentResult
 from omniscribe.core.processors.base import (
-    _TABLE_SPLIT_RE,
     ProcessorContract,
     _bbox_area,
     _normalize_space,
 )
+from omniscribe.core.processors.structure import _TABLE_SPLIT_RE
 
 
 class _TableCellRecord(TypedDict):

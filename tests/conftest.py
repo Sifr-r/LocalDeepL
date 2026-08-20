@@ -6,6 +6,10 @@ Shared fixtures.
   (Surya model load is ~5s, so we only want to pay it once).
 - `stub_ocr` — an OCRProcessor replacement that returns canned text without
   hitting LM Studio, so tests can run offline.
+- `EXAMPLE_PDF_NAMES` — the canonical list of on-disk example PDF filenames
+  (and the few images). Re-exported by ``tests/test_integration.py`` and
+  imported by ``test_ui.py`` so the parametrize/IO surface stays in lock
+  step with the fixtures in this module.
 """
 
 from __future__ import annotations
@@ -23,6 +27,17 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 
+# Canonical list of on-disk example PDF filenames. Add a new file here
+# (and to ``examples/`` on disk) and every parametrize site picks it up.
+EXAMPLE_PDF_NAMES: list[str] = [
+    "digital.pdf",
+    "hybrid.pdf",
+    "handwritten.pdf",
+    "dense.pdf",
+    "notes.pdf",
+]
+
+
 @pytest.fixture(scope="session")
 def examples_dir() -> Path:
     d = ROOT / "examples"
@@ -32,8 +47,7 @@ def examples_dir() -> Path:
 
 @pytest.fixture(scope="session")
 def example_pdfs(examples_dir: Path) -> dict[str, Path]:
-    names = ["digital.pdf", "hybrid.pdf", "handwritten.pdf"]
-    paths = {n: examples_dir / n for n in names}
+    paths = {n: examples_dir / n for n in EXAMPLE_PDF_NAMES}
     missing = [n for n, p in paths.items() if not p.exists()]
     if missing:
         pytest.skip(f"example PDFs not found: {missing}")

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { activeTab, pushToast } from '$lib/stores/appStore';
   import { fetchApi } from '$lib/api/client';
+  import { reportError } from '$lib/utils/error';
   import type { JobRecord } from '$lib/types/api';
   import Card from '../ui/Card.svelte';
   import Button from '../ui/Button.svelte';
@@ -45,8 +46,7 @@
       pushToast('info', `Job ${jobId} cancellation requested.`, 3000);
       await loadJobs();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      pushToast('error', message || 'Cancel failed', 4000);
+      reportError(err, 'Cancel failed');
     }
   }
 
@@ -61,8 +61,7 @@
       jobs = [];
       pushToast('success', 'Job history cleared.', 3000);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      pushToast('error', message || 'Clear failed', 4000);
+      reportError(err, 'Clear failed');
     }
   }
 

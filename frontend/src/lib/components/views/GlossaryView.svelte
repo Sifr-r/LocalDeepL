@@ -14,6 +14,7 @@
     deleteGlossaryItem,
   } from '$lib/stores/glossaryStore';
   import { fetchApi } from '$lib/api/client';
+  import { reportError } from '$lib/utils/error';
   import type { GlossaryImportJobResponse } from '$lib/types/api';
   import Card from '../ui/Card.svelte';
   import Button from '../ui/Button.svelte';
@@ -86,8 +87,7 @@
       await fetchGlossaryLibrary();
       await fetchMergedGlossary();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      pushToast('error', message || 'Import failed', 4000);
+      reportError(err, 'Import failed');
     } finally {
       isSubmittingImport = false;
     }
@@ -115,8 +115,7 @@
       await fetchGlossaryLibrary();
       await fetchMergedGlossary();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      pushToast('error', message || 'URL import failed', 4000);
+      reportError(err, 'URL import failed');
     } finally {
       isSubmittingImport = false;
     }

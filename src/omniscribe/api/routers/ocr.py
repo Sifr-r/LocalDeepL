@@ -69,8 +69,8 @@ from omniscribe.core.workflows.base import OCRCancelled
 from omniscribe.core.workflows.repair import RepairOptions
 from omniscribe.utils import is_ssrf_target
 
+from ..services.api_helpers import cleanup_files_dispatcher, stable_server_error
 from . import state
-from .common import _cleanup, _stable_server_error
 from .config import _config
 from .websocket import manager
 
@@ -684,7 +684,7 @@ async def process_pdf(
             input_path=input_path,
             artifact_handle=artifact_handle,
             metadata_handle=metadata_handle,
-            cleanup_callback=_cleanup,
+            cleanup_callback=cleanup_files_dispatcher,
             filename=file.filename or "unknown",
             failed_pages=failed_pages,
         )
@@ -704,14 +704,18 @@ async def process_pdf(
         )
         logger.warning("OCR processing rejected invalid input: %s", ve)
         await manager.send_progress(progress_target, "Invalid input.", 0, stage="error")
-        await asyncio.to_thread(_cleanup, input_path, output_path, text_path)
+        await asyncio.to_thread(
+            cleanup_files_dispatcher, input_path, output_path, text_path
+        )
         return api_error_response(
             HTTPStatus.BAD_REQUEST, "Invalid input.", detail=str(ve)
         )
 
     except asyncio.CancelledError:
         logger.info("OCR request cancelled by client: job_id=%s", canonical_job_id)
-        await asyncio.to_thread(_cleanup, input_path, output_path, text_path)
+        await asyncio.to_thread(
+            cleanup_files_dispatcher, input_path, output_path, text_path
+        )
         raise
 
     except OCRCancelled:
@@ -750,7 +754,9 @@ async def process_pdf(
             "OCR run cancelled by client before completion: job_id=%s",
             canonical_job_id,
         )
-        await asyncio.to_thread(_cleanup, input_path, output_path, text_path)
+        await asyncio.to_thread(
+            cleanup_files_dispatcher, input_path, output_path, text_path
+        )
         await manager.send_progress(progress_target, "Cancelled.", 0, stage="cancelled")
         return JSONResponse(
             status_code=HTTPStatus.SERVICE_UNAVAILABLE,
@@ -777,8 +783,10 @@ async def process_pdf(
         await manager.send_progress(
             progress_target, "Processing failed.", 0, stage="error"
         )
-        await asyncio.to_thread(_cleanup, input_path, output_path, text_path)
-        return _stable_server_error()
+        await asyncio.to_thread(
+            cleanup_files_dispatcher, input_path, output_path, text_path
+        )
+        return stable_server_error()
 
 
 @router.post("/process/async", status_code=202)
@@ -955,7 +963,7 @@ async def process_pdf_async(
             # record a job history entry (the JobStatus Literal
             # doesn't include "cancelled"), and re-raise so the
             # queue worker surfaces the failure to the polling
-            # client. ``_cleanup`` runs in the ``finally`` block
+            # client. ``cleanup_files_dispatcher`` runs in the ``finally`` block
             # below and drops the input/output/text paths.
             # Phase 3c — emit the cancelled event for the projection.
             try:
@@ -993,7 +1001,7 @@ async def process_pdf_async(
             cleanup_paths = (
                 (input_path,) if succeeded else (input_path, output_path, text_path)
             )
-            await asyncio.to_thread(_cleanup, *cleanup_paths)
+            await asyncio.to_thread(cleanup_files_dispatcher, *cleanup_paths)
 
     await state.ocr_job_queue.submit(job_id, filename, runner)
     # Phase 2 + 3c: emit the audit event through the plugin context so

@@ -3,6 +3,8 @@
   import { fetchApi, fetchFile } from '$lib/api/client';
   import { artifactsApi } from '$lib/api/endpoints';
   import { downloadBlob } from '$lib/utils/download';
+  import { bindArtifactToText } from '$lib/utils/artifactBinding';
+  import { reportError } from '$lib/utils/error';
   import type { ExtractionRequest } from '$lib/types/api';
   import Card from '../ui/Card.svelte';
   import Button from '../ui/Button.svelte';
@@ -31,20 +33,14 @@
   // F3.9 audit fix: same pattern as TranslationView. A transition
   // to falsy in the store would leave the local selection stale;
   // the next extraction would re-send the old id and the server
-  // would 422. Clear the local state when the store value is
-  // falsy AND a value was previously held.
-  let lastSyncedArtifactId: string | null = null;
-  $: if ($documentStore.textArtifactId) {
-    selectedArtifactId = $documentStore.textArtifactId;
-    selectedArtifactToken = $documentStore.textArtifactToken || '';
-    lastSyncedArtifactId = $documentStore.textArtifactId;
-    if (!inputText.trim() && $documentStore.pages?.length > 0) {
-      inputText = $documentStore.pages.map((p) => p.text || '').filter(Boolean).join('\n\n');
-    }
-  } else if (lastSyncedArtifactId) {
-    selectedArtifactId = '';
-    selectedArtifactToken = '';
-    lastSyncedArtifactId = null;
+  // would 422. The clear-on-falsy invariant lives in
+  // ``$lib/utils/artifactBinding#bindArtifactToText`` so both views
+  // share the same F3.9 implementation.
+  const artifact = bindArtifactToText(documentStore);
+  $: selectedArtifactId = $artifact.id;
+  $: selectedArtifactToken = $artifact.token;
+  $: if ($artifact.id && !inputText.trim() && $documentStore.pages?.length > 0) {
+    inputText = $documentStore.pages.map((p) => p.text || '').filter(Boolean).join('\n\n');
   }
 
   const templates: { value: Template; label: string }[] = [
@@ -72,16 +68,10 @@
         }
         if (!textToExtract) {
           try {
-            const blob = await artifactsApi.getText(selectedArtifactId, selectedArtifactToken);
-            const raw = await blob.text();
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) {
-              textToExtract = parsed.join('\n\n');
-            } else if (typeof parsed === 'object' && parsed !== null) {
-              textToExtract = Object.values(parsed).flat().join('\n\n');
-            } else {
-              textToExtract = String(raw);
-            }
+            textToExtract = await artifactsApi.getTextAsString(
+              selectedArtifactId,
+              selectedArtifactToken
+            );
           } catch (err) {
             console.warn('Failed to fetch artifact text for extraction', err);
           }
@@ -113,8 +103,7 @@
       extractedData = res.extracted_data;
       pushToast('success', 'Structured data extraction completed!', 3000);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      pushToast('error', message || 'Extraction failed', 4000);
+      reportError(err, 'Extraction failed');
     } finally {
       isExtracting = false;
     }
@@ -160,8 +149,7 @@
         pushToast('success', 'BlockTree export downloaded.', 3000);
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      pushToast('error', message || 'Export failed', 4000);
+      reportError(err, 'Export failed');
     }
   }
 </script>

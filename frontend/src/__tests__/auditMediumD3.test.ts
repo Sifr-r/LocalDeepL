@@ -272,22 +272,36 @@ describe('F3.8 window.confirm replaced with Modal', () => {
 // ---------------------------------------------------------------------------
 
 describe('F3.9 one-way $: sync clears on store transition to falsy', () => {
-  it('TranslationView and ExtractionView track lastSyncedArtifactId and clear local state on falsy transition', async () => {
+  it('TranslationView and ExtractionView bind via bindArtifactToText and clear local state on falsy transition', async () => {
     const fs = await import('node:fs/promises');
     const path = await import('node:path');
     const url = await import('node:url');
     const here = url.fileURLToPath(import.meta.url);
     const dir = path.resolve(path.dirname(here), '..', 'lib', 'components', 'views');
+    // Phase A refactor (FE-02): the F3.9 ``lastSyncedArtifactId``
+    // guard moved out of the inline ``$:`` block into the shared
+    // ``$lib/utils/artifactBinding#bindArtifactToText`` helper. The
+    // invariant (clear on falsy transition) is enforced there, so
+    // the views now just subscribe to the derived store and the
+    // local id/token track it via ``$artifact.id`` / ``$artifact.token``.
+    const helperDir = path.resolve(path.dirname(here), '..', 'lib', 'utils');
+    const helperSource = await fs.readFile(
+      path.join(helperDir, 'artifactBinding.ts'),
+      'utf-8'
+    );
+    expect(helperSource, 'artifactBinding helper missing the F3.9 lastSynced guard').toMatch(
+      /lastSynced/
+    );
     for (const file of ['TranslationView.svelte', 'ExtractionView.svelte']) {
       const source = await fs.readFile(path.join(dir, file), 'utf-8');
-      // The audit's fix: a ``lastSyncedArtifactId`` local that
-      // detects the falsy transition and clears the local
-      // ``selectedArtifactId`` / ``selectedArtifactToken``.
-      expect(source, `${file} missing lastSyncedArtifactId`).toMatch(
-        /lastSyncedArtifactId/
+      // The view must import the helper and read from the derived
+      // ``$artifact`` store — that single dependency wires both
+      // views to the same F3.9 clear-on-falsy behaviour.
+      expect(source, `${file} missing bindArtifactToText import`).toMatch(
+        /bindArtifactToText/
       );
-      expect(source, `${file} missing the else-if clear branch`).toMatch(
-        /else\s+if\s*\(\s*lastSyncedArtifactId\s*\)/
+      expect(source, `${file} missing $artifact binding`).toMatch(
+        /\$artifact\.id/
       );
     }
   });

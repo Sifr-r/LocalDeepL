@@ -19,11 +19,18 @@ when pytest-asyncio is acting up and you want to isolate
 
 from __future__ import annotations
 
-import sys
-
-sys.path.insert(0, "src")
-
 import asyncio
+import sys
+from pathlib import Path
+
+# Allow ``import omniscribe.*`` from the working tree without ``pip install -e .``.
+# _common.py lives in the parent ``scripts/`` directory; add it to sys.path
+# before importing.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from _common import setup_sys_path  # noqa: E402
+
+setup_sys_path()
 
 import httpx
 from fastapi import FastAPI

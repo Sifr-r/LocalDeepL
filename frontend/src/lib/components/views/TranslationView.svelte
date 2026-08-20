@@ -3,6 +3,8 @@
   import { activeTab, documentStore, configStore, modelStore, refreshModels, pushToast } from '$lib/stores/appStore';
   import { fetchApi } from '$lib/api/client';
   import { artifactsApi } from '$lib/api/endpoints';
+  import { bindArtifactToText } from '$lib/utils/artifactBinding';
+  import { reportError } from '$lib/utils/error';
   import type { TranslationRequest, TreeTranslationRequest } from '$lib/types/api';
   import Card from '../ui/Card.svelte';
   import Button from '../ui/Button.svelte';
@@ -51,23 +53,15 @@
   // the artifact selection, or switches to a different document
   // that has no text artifact) was silently ignored. A subsequent
   // translation request would then re-send the stale id and the
-  // server would 422. The fix: also clear the local state when
-  // the store value is falsy AND a value was previously held.
-  let lastSyncedArtifactId: string | null = null;
-  $: if ($documentStore.textArtifactId) {
-    selectedArtifactId = $documentStore.textArtifactId;
-    selectedArtifactToken = $documentStore.textArtifactToken || '';
-    lastSyncedArtifactId = $documentStore.textArtifactId;
-    if (!sourceText.trim() && $documentStore.pages?.length > 0) {
-      sourceText = $documentStore.pages.map((p) => p.text || '').filter(Boolean).join('\n\n');
-    }
-  } else if (lastSyncedArtifactId) {
-    // The store cleared (e.g. user picked a new doc with no
-    // artifact); clear the local selection so a stale id is
-    // never re-sent.
-    selectedArtifactId = '';
-    selectedArtifactToken = '';
-    lastSyncedArtifactId = null;
+  // server would 422. The fix lives in
+  // ``$lib/utils/artifactBinding#bindArtifactToText`` — both views
+  // subscribe to the same derived store and the F3.9 clear-on-falsy
+  // invariant is enforced in one place.
+  const artifact = bindArtifactToText(documentStore);
+  $: selectedArtifactId = $artifact.id;
+  $: selectedArtifactToken = $artifact.token;
+  $: if ($artifact.id && !sourceText.trim() && $documentStore.pages?.length > 0) {
+    sourceText = $documentStore.pages.map((p) => p.text || '').filter(Boolean).join('\n\n');
   }
 
   async function handleSyncTranslate() {
@@ -85,16 +79,10 @@
         }
         if (!sourceText.trim()) {
           try {
-            const blob = await artifactsApi.getText(selectedArtifactId, selectedArtifactToken);
-            const raw = await blob.text();
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) {
-              sourceText = parsed.join('\n\n');
-            } else if (typeof parsed === 'object' && parsed !== null) {
-              sourceText = Object.values(parsed).flat().join('\n\n');
-            } else {
-              sourceText = String(raw);
-            }
+            sourceText = await artifactsApi.getTextAsString(
+              selectedArtifactId,
+              selectedArtifactToken
+            );
           } catch (err) {
             console.warn('Failed to fetch artifact text for translation', err);
           }
@@ -149,8 +137,7 @@
         pushToast('success', 'Translation complete.', 3000);
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      pushToast('error', message || 'Translation failed', 4000);
+      reportError(err, 'Translation failed');
     } finally {
       isTranslating = false;
     }
@@ -183,9 +170,8 @@
       pushToast('info', `Async job queued: ${res.job_id}`, 3000);
       pollAsyncStatus(asyncJobId);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = reportError(err, 'Async translation failed');
       asyncStatus = `Async queue error: ${message}`;
-      pushToast('error', message || 'Async translation failed', 4000);
       isTranslating = false;
     }
   }

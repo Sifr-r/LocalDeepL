@@ -85,7 +85,7 @@
           </div>
           <span
             class={[
-              'font-mono text-[10px] uppercase tracking-wider font-medium truncate w-full',
+              'font-mono text-micro truncate w-full',
               status === 'complete' ? 'text-success' :
               status === 'processing' ? 'text-warning' : 'text-foreground-muted'
             ].join(' ')}
@@ -117,7 +117,7 @@
     <!-- Warnings surfaced by the worker (per-page OCR failures etc.) -->
     {#if warnings.length > 0}
       <div class="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 max-h-24 overflow-y-auto">
-        <p class="text-[10px] font-medium uppercase tracking-wider text-warning mb-1">
+        <p class="text-micro text-warning mb-1">
           {warnings.length} warning{warnings.length === 1 ? '' : 's'}
         </p>
         <ul class="space-y-0.5 text-xs text-foreground-muted font-mono">

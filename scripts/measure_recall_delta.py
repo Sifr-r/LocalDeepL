@@ -12,13 +12,14 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import io
 from pathlib import Path
 
 from omniscribe.core.aligner import HybridAligner
 from omniscribe.core.pdf import PDFHandler
 from omniscribe.core.text_recall import WhitespaceRecallBooster
-from omniscribe.evaluation import load_ground_truth
+from omniscribe.confidence_eval import load_ground_truth
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests" / "fixtures"
@@ -127,4 +128,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.parse_args()
     main()

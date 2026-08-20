@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Diagnostic: render Surya boxes + final output text positions for an image input."""
 
+import argparse
 import asyncio
 import os
 import sys
@@ -8,7 +9,10 @@ import sys
 import pymupdf as fitz
 from PIL import Image, ImageDraw
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Allow ``import omniscribe.*`` from the working tree without ``pip install -e .``.
+from _common import setup_sys_path
+
+setup_sys_path()
 
 from omniscribe import HybridAligner, OCRPipeline, OCRProcessor, PDFHandler
 
@@ -85,4 +89,8 @@ async def main(image_path: str, output_pdf: str) -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main(sys.argv[1], sys.argv[2]))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("image_path", help="Path to the input image (PNG/JPG).")
+    parser.add_argument("output_pdf", help="Path to the output PDF.")
+    args = parser.parse_args()
+    asyncio.run(main(args.image_path, args.output_pdf))

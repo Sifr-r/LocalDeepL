@@ -6,6 +6,7 @@ sits inside ``main`` and only runs when the script is invoked
 directly).
 """
 
+import argparse
 import json
 import os
 import sys
@@ -126,4 +127,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.parse_args()
     sys.exit(main())

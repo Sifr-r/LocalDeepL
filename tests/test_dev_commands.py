@@ -25,6 +25,7 @@ REQUIRED_TARGETS = {
     "security",
     "clean",
     "doctor",
+    "openapi",
 }
 
 

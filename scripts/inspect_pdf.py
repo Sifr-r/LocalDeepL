@@ -3,13 +3,16 @@
 Inspect PDF metadata and dimensions.
 """
 
+import argparse
 import os
 import sys
 
 import pymupdf as fitz
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Allow ``import omniscribe.*`` from the working tree without ``pip install -e .``.
+from _common import setup_sys_path
+
+setup_sys_path()
 
 
 def inspect_pdf(filename):
@@ -31,6 +34,13 @@ def inspect_pdf(filename):
 
 
 if __name__ == "__main__":
-    inspect_pdf("hybrid.pdf")
-    inspect_pdf("digital.pdf")
-    inspect_pdf("handwritten.pdf")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "filenames",
+        nargs="*",
+        default=["hybrid.pdf", "digital.pdf", "handwritten.pdf"],
+        help="PDF filenames in examples/ to inspect (default: hybrid, digital, handwritten).",
+    )
+    args = parser.parse_args()
+    for name in args.filenames:
+        inspect_pdf(name)

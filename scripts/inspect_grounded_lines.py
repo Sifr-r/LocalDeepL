@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Dump every word and its bbox from a grounded-output PDF, sorted by y."""
 
+import argparse
 import sys
 
 import pymupdf as fitz
@@ -48,4 +49,7 @@ def main(pdf_path: str) -> None:
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("pdf_path", help="Path to the grounded-output PDF to inspect.")
+    args = parser.parse_args()
+    main(args.pdf_path)

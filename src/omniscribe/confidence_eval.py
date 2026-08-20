@@ -256,7 +256,7 @@ def compute_report(
     """
     Greedy best-IoU matching of GT blocks to pipeline blocks, no re-use.
 
-    Small enough inputs (tens of blocks per page) that O(N×M) is fine.
+    Small enough inputs (tens of blocks per page) that O(N*M) is fine.
     """
     used: set[int] = set()
     matches: list[BlockMatch] = []

@@ -3,6 +3,7 @@
 Generate side-by-side comparison of raw Surya boxes vs aligned output.
 """
 
+import argparse
 import asyncio
 import io
 import logging
@@ -12,8 +13,10 @@ import sys
 import pymupdf as fitz
 from PIL import Image, ImageDraw
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Allow ``import omniscribe.*`` from the working tree without ``pip install -e .``.
+from _common import setup_sys_path
+
+setup_sys_path()
 
 from omniscribe.core.aligner import HybridAligner
 from omniscribe.core.ocr import OCRProcessor
@@ -121,7 +124,8 @@ async def generate_comparison(pdf_path, output_path):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python visualize_comparison.py <input_pdf> <output_image_path>")
-    else:
-        asyncio.run(generate_comparison(sys.argv[1], sys.argv[2]))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("input_pdf", help="Path to the input PDF.")
+    parser.add_argument("output_image", help="Path to the output comparison image.")
+    args = parser.parse_args()
+    asyncio.run(generate_comparison(args.input_pdf, args.output_image))

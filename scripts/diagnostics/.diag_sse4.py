@@ -1,4 +1,8 @@
-"""Diagnostic — add lots of print statements to find the hang."""
+"""Diagnostic — read raw bytes with timeout.
+
+See also ``scripts/diagnostics/test_sse_keepalive.py`` for the canonical
+keepalive-line smoke test used by CI.
+"""
 import sys
 sys.path.insert(0, "src")
 
@@ -28,27 +32,33 @@ app = FastAPI()
 app.include_router(events_module.router)
 client = TestClient(app)
 
-print(f"t={time.monotonic():.2f}: before stream()")
+# Try iter_bytes via stream
+result = {"line": None, "error": None}
 
 def reader():
     try:
-        print(f"t={time.monotonic():.2f}: thread start, opening stream")
         with client.stream("GET", "/api/process/job-x/events") as response:
-            print(f"t={time.monotonic():.2f}: status={response.status_code}")
-            print(f"t={time.monotonic():.2f}: content-type={response.headers.get('content-type')}")
-            print(f"t={time.monotonic():.2f}: about to iter_lines")
-            for line in response.iter_lines():
-                print(f"t={time.monotonic():.2f}: line={line!r}")
-                break
+            print(f"  status={response.status_code}")
+            print(f"  content-type={response.headers.get('content-type')}")
+            # Use iter_bytes with a chunk generator
+            it = response.iter_bytes(chunk_size=1)
+            t0 = time.monotonic()
+            chunk = next(it)
+            print(f"  first_chunk={chunk!r} (elapsed={time.monotonic()-t0:.2f}s)")
+            result["chunk"] = chunk
     except Exception as e:
-        print(f"t={time.monotonic():.2f}: error={e!r}")
+        result["error"] = e
 
 t = threading.Thread(target=reader, daemon=True)
 t0 = time.monotonic()
 t.start()
 t.join(timeout=3.0)
-print(f"t={time.monotonic():.2f}: elapsed={time.monotonic()-t0:.2f}s alive={t.is_alive()}")
+print(f"\n=== Result: elapsed={time.monotonic()-t0:.2f}s ===")
+print(f"result={result!r}")
+if t.is_alive():
+    print("THREAD STILL ALIVE — stream is blocked")
 
+# Cleanup
 router_state.ocr_job_queue = orig_queue
 events_module.get_broker.__globals__["_broker"] = orig_broker
 print("DONE")

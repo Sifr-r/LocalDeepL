@@ -3,13 +3,16 @@
 Test script to check HybridAligner output format.
 """
 
+import argparse
 import os
 import sys
 
 import pymupdf as fitz
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Allow ``import omniscribe.*`` from the working tree without ``pip install -e .``.
+from _common import setup_sys_path
+
+setup_sys_path()
 
 from omniscribe.core.aligner import HybridAligner
 
@@ -57,6 +60,13 @@ def check_file(filename):
 
 
 if __name__ == "__main__":
-    check_file("digital.pdf")
-    check_file("hybrid.pdf")
-    check_file("handwritten.pdf")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "filenames",
+        nargs="*",
+        default=["digital.pdf", "hybrid.pdf", "handwritten.pdf"],
+        help="PDF filenames in examples/ to evaluate (default: digital, hybrid, handwritten).",
+    )
+    args = parser.parse_args()
+    for name in args.filenames:
+        check_file(name)

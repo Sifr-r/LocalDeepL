@@ -16,6 +16,7 @@
   import { onDestroy, tick } from 'svelte';
   import * as pdfjsLib from 'pdfjs-dist';
   import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+  import { humanizeApiError } from '$lib/utils/error';
   import type {
     PDFDocumentProxy,
     PDFPageProxy
@@ -138,7 +139,7 @@
       if (epoch !== renderEpoch) return;
       const name = (err as { name?: string } | null)?.name;
       if (name === 'RenderingCancelledException') return;
-      errorMessage = err instanceof Error ? err.message : String(err);
+      errorMessage = humanizeApiError(err);
       loading = false;
     }
   }

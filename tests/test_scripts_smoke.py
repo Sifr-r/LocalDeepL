@@ -118,3 +118,65 @@ def test_script_imports_without_attribute_error(script_name: str) -> None:
         # A transitive optional dep showed up missing during import —
         # surface it as a skip so the failure mode stays actionable.
         pytest.skip(f"{script_name} skipped: optional dep missing ({exc})")
+
+
+# Modules that intentionally are not runnable scripts (helper modules, not
+# CLI entry points). Everything else in ``scripts/`` must be a runnable
+# script — see ``test_scripts_have_argparse_and_main_guard`` below.
+_SCRIPT_EXCLUDE_FROM_RUNTIME_GUARD: frozenset[str] = frozenset({"_common.py"})
+
+
+def test_scripts_have_argparse_and_main_guard() -> None:
+    """Every standalone script has ``argparse`` and a ``__main__`` guard.
+
+    Two structural invariants:
+
+    1. ``if __name__ == "__main__":`` — the file is a runnable script,
+       not just an importable module. Without this guard, ``python
+       scripts/foo.py`` would silently run the whole module body on
+       import (and the smoke test above would execute production code
+       it shouldn't).
+    2. ``argparse.ArgumentParser`` — the file takes its inputs through
+       the standard ``argv``/``--help`` channel rather than hard-coded
+       paths, ``sys.argv[N]`` slicing, or environment variables alone.
+       Enforcing ``argparse`` makes every script self-documenting via
+       ``--help`` and keeps the call sites in the audit logs reviewable.
+
+    The check is a structural AST scan — we do not import the script,
+    so the rule is independent of optional deps (Surya, LM Studio, …).
+    Scripts whose path is listed in
+    ``_SCRIPT_EXCLUDE_FROM_RUNTIME_GUARD`` are exempt; today only
+    ``_common.py`` (a shared helper, not a CLI entry point) qualifies.
+    """
+    import ast
+
+    failures: list[str] = []
+    for path in sorted(SCRIPTS_DIR.glob("*.py")):
+        name = path.name
+        if name in _SCRIPT_EXCLUDE_FROM_RUNTIME_GUARD:
+            continue
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        has_main_guard = any(
+            isinstance(node, ast.If)
+            and isinstance(node.test, ast.Compare)
+            and isinstance(node.test.left, ast.Name)
+            and node.test.left.id == "__name__"
+            and any(
+                isinstance(comp, ast.Constant) and comp.value == "__main__"
+                for comp in node.test.comparators
+            )
+            for node in ast.walk(tree)
+        )
+        uses_argparse = "argparse" in source and "ArgumentParser" in source
+        if not has_main_guard:
+            failures.append(f"{name}: missing 'if __name__ == \"__main__\":' guard")
+        if not uses_argparse:
+            failures.append(
+                f"{name}: missing 'argparse.ArgumentParser' — scripts should "
+                "take args via argparse, not sys.argv[N] or hard-coded paths"
+            )
+    assert not failures, (
+        "scripts/ must contain only argparse-based runnable scripts:\n  - "
+        + "\n  - ".join(failures)
+    )

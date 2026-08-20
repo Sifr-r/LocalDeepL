@@ -3,13 +3,16 @@
 Verify that OCR output PDF contains searchable text.
 """
 
+import argparse
 import os
 import sys
 
 import pymupdf as fitz
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Allow ``import omniscribe.*`` from the working tree without ``pip install -e .``.
+from _common import setup_sys_path
+
+setup_sys_path()
 
 
 def verify(pdf_path):
@@ -73,7 +76,12 @@ def verify(pdf_path):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        verify(sys.argv[1])
-    else:
-        verify("output_ocr.pdf")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "pdf_path",
+        nargs="?",
+        default="output_ocr.pdf",
+        help="Path to the OCR-output PDF to verify (default: output_ocr.pdf).",
+    )
+    args = parser.parse_args()
+    verify(args.pdf_path)

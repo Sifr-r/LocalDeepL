@@ -3,13 +3,16 @@
 Debug script to visualize alignment between Surya boxes and LLM text.
 """
 
+import argparse
 import base64
 import io
 import os
 import sys
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Allow ``import omniscribe.*`` from the working tree without ``pip install -e .``.
+from _common import setup_sys_path
+
+setup_sys_path()
 
 import asyncio
 
@@ -102,9 +105,12 @@ def debug_alignment(pdf_path):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        debug_alignment(sys.argv[1])
-    else:
-        print("Please provide a PDF path.")
-        # Default debug
-        debug_alignment("examples/hybrid.pdf")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "pdf_path",
+        nargs="?",
+        default="examples/hybrid.pdf",
+        help="Path to the PDF to debug (default: examples/hybrid.pdf).",
+    )
+    args = parser.parse_args()
+    debug_alignment(args.pdf_path)

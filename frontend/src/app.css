@@ -197,6 +197,17 @@ html.light {
   .surface-inset {
     @apply rounded-md bg-card-raised border border-border/0;
   }
+  /* DESIGN_SYSTEM.md §2.2 — Micro role (10/14, weight 500, UPPER,
+     mono-friendly section labels / stage names). The arbitrary
+     ``text-[10px]`` value is now centralised here so a future
+     scale tweak only changes one rule. */
+  .text-micro {
+    font-size: 10px;
+    line-height: 14px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
 }
 
 /* Subtle dot-grid backdrop for the document canvas. */

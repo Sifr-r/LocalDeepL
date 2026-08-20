@@ -31,7 +31,7 @@ from omniscribe.core.translation_config import AsyncTranslationUnavailable
 from omniscribe.core.translation_tree import translate_tree
 from omniscribe.utils.security import is_ssrf_target
 
-from .common import _stable_server_error
+from ..services.api_helpers import stable_server_error
 from .config import _config
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ async def translate_text(body: TranslationRequest):
         return _ai_error_response(exc)
     except Exception:
         logger.exception("Translation request failed")
-        return _stable_server_error()
+        return stable_server_error()
     return {"translated_text": translated}
 
 
@@ -130,7 +130,7 @@ async def get_translation_status(job_id: str):
         return response
     except Exception:
         logger.exception("Async translation status lookup failed")
-        return _stable_server_error()
+        return stable_server_error()
 
 
 @router.post("/api/glossary")

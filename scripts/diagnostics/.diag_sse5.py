@@ -1,4 +1,8 @@
-"""Diagnostic — does ANY streaming response work with TestClient?"""
+"""Diagnostic — does ANY streaming response work with TestClient?
+
+See also ``scripts/diagnostics/test_sse_keepalive.py`` for the canonical
+keepalive-line smoke test used by CI.
+"""
 import sys
 sys.path.insert(0, "src")
 

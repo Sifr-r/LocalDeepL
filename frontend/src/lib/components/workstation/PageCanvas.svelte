@@ -1,6 +1,7 @@
 <script lang="ts">
   import { documentStore, jobStore } from '../../stores/appStore';
   import { pdfPreview } from '../../stores/pdfPreview';
+  import { humanizeApiError } from '$lib/utils/error';
   import Card from '../ui/Card.svelte';
   import type { BBoxItem } from '../../types/api';
 
@@ -39,8 +40,7 @@
       if (myToken !== renderToken) return;
     } catch (err: unknown) {
       if (myToken !== renderToken) return;
-      const message = err instanceof Error ? err.message : String(err);
-      renderError = message || 'Preview render failed';
+      renderError = humanizeApiError(err) || 'Preview render failed';
     }
   }
 

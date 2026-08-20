@@ -2,6 +2,8 @@
  * Utility functions for API error handling and humanization.
  */
 
+import { pushToast } from '../stores/appStore';
+
 interface ValidationErrorDetail {
   loc?: (string | number)[];
   msg?: string;
@@ -64,3 +66,28 @@ export function humanizeApiError(err: unknown): string {
 
   return 'An unexpected error occurred.';
 }
+
+/**
+ * Toast an error message and return the human-readable text. Wraps
+ * the boilerplate of
+ *
+ *   const message = err instanceof Error ? err.message : String(err);
+ *   pushToast('error', message || 'Default message', 4000);
+ *
+ * so the per-view catch blocks collapse to a single line. The
+ * message is routed through :func:`humanizeApiError` so FastAPI
+ * Pydantic 422 detail arrays, nested ``message`` fields, and raw
+ * strings all surface uniformly.
+ *
+ * Default toast TTL is 4 seconds; pass ``ttlMs`` to override.
+ */
+export function reportError(
+  err: unknown,
+  defaultMessage = 'An error occurred',
+  ttlMs = 4000
+): string {
+  const message = humanizeApiError(err) || defaultMessage;
+  pushToast('error', message, ttlMs);
+  return message;
+}
+

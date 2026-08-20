@@ -1,8 +1,32 @@
 import asyncio
 import os
 import re
+import sys
+from pathlib import Path
 
 from playwright.async_api import async_playwright, expect
+
+# Import the canonical example-PDF list from tests/conftest.py so the file
+# we exercise here stays in lock-step with the parametrize sites in
+# tests/test_integration.py. ``test_ui.py`` lives at the repo root rather
+# than under tests/, so we add the tests/ directory to sys.path before
+# importing the conftest module.
+_TESTS_DIR = Path(__file__).resolve().parent / "tests"
+if str(_TESTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_TESTS_DIR))
+from conftest import EXAMPLE_PDF_NAMES  # noqa: E402
+
+# The smoke test exercises the dense OCR path; pin the filename from the
+# canonical list so removing dense.pdf from EXAMPLE_PDF_NAMES fails loud.
+_DENSE_PDF_NAME = next(
+    (n for n in EXAMPLE_PDF_NAMES if n == "dense.pdf"),
+    None,
+)
+if _DENSE_PDF_NAME is None:  # pragma: no cover — guarded for the conftest audit
+    raise RuntimeError(
+        "test_ui.py requires 'dense.pdf' in EXAMPLE_PDF_NAMES; "
+        f"current list: {EXAMPLE_PDF_NAMES}"
+    )
 
 
 async def run():
@@ -21,7 +45,7 @@ async def run():
         await expect(page.locator("input#file-input")).to_be_visible()
 
         # Upload a test document
-        file_path = os.path.join("examples", "dense.pdf")
+        file_path = os.path.join("examples", _DENSE_PDF_NAME)
         if os.path.exists(file_path):
             await page.locator("input#file-input").set_input_files(file_path)
 

@@ -7,7 +7,6 @@ from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
 
-from omniscribe.api.routers.common import _stable_server_error
 from omniscribe.api.routers.config import (
     _CONFIG_BACKEND_INCOMPATIBLE_MESSAGE,
     _ConfigBackendIncompatible,
@@ -23,6 +22,7 @@ from omniscribe.api.schemas.responses import (
     TranscriptionConfigResponse,
     TranscriptionJobResponse,
 )
+from omniscribe.api.services.api_helpers import stable_server_error
 from omniscribe.api.services.security import (
     SAFE_API_BASE_ERROR,
     UploadValidationError,
@@ -94,7 +94,7 @@ async def transcribe_audio(
         raise
     except Exception:
         logger.exception("Voice transcription request failed")
-        return _stable_server_error()
+        return stable_server_error()
     finally:
         cleanup_files(upload.path)
 

@@ -7,6 +7,7 @@ The idea: Since LLM provides high-quality text, we only need boxes from Surya.
 Alignment becomes position-based rather than anchor-based.
 """
 
+import argparse
 import io
 import os
 import sys
@@ -15,8 +16,10 @@ import time
 import pymupdf as fitz
 from PIL import Image, ImageDraw, ImageFont
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Allow ``import omniscribe.*`` from the working tree without ``pip install -e .``.
+from _common import setup_sys_path
+
+setup_sys_path()
 
 
 def get_detection_only_boxes(image_bytes):
@@ -134,8 +137,19 @@ def test_detection(pdf_filename):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        test_detection(sys.argv[1])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "pdf_filename",
+        nargs="?",
+        default=None,
+        help=(
+            "Single PDF filename in examples/ to test (e.g. hybrid.pdf). "
+            "If omitted, runs against digital.pdf, hybrid.pdf, handwritten.pdf."
+        ),
+    )
+    args = parser.parse_args()
+    if args.pdf_filename:
+        test_detection(args.pdf_filename)
     else:
         for pdf_file in ["digital.pdf", "hybrid.pdf", "handwritten.pdf"]:
             test_detection(pdf_file)

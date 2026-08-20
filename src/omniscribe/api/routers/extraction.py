@@ -21,7 +21,6 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, Response
 
 from omniscribe.api.routers import state
-from omniscribe.api.routers.common import _stable_server_error
 from omniscribe.api.routers.config import _config
 from omniscribe.api.schemas.requests import (
     ExportBlockTreeRequest,
@@ -29,6 +28,7 @@ from omniscribe.api.schemas.requests import (
     ExtractionRequest,
 )
 from omniscribe.api.services.ai import AIServiceError, extract_structured_data
+from omniscribe.api.services.api_helpers import stable_server_error
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -134,5 +134,5 @@ async def extract_data(body: ExtractionRequest):
         return _ai_error_response(exc)
     except Exception:
         logger.exception("Extraction request failed")
-        return _stable_server_error()
+        return stable_server_error()
     return {"extracted_data": extracted}

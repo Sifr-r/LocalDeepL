@@ -619,13 +619,6 @@ class LanceDBLexiconStore:
                 return False
         return True
 
-    def _has_vector_index(self) -> bool:
-        try:
-            row_count = self._table.count_rows()
-        except Exception:
-            return False
-        return int(row_count) > 0
-
     def _hybrid_via_lancedb(self, query: LexiconQuery) -> list[LexiconHit]:
         vector = self._embedding.embed(query.source_chunk)
         if not vector:

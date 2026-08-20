@@ -1,9 +1,9 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help setup run build-frontend test test-slow lint typecheck audit security clean doctor
+.PHONY: help setup run build-frontend test test-slow lint typecheck audit security clean doctor openapi
 
 help: ## Show available developer commands
-	@uv run python -c "print('Available targets:\n  help           Show available developer commands\n  setup          Install project, web, and preprocessing dependencies\n  build-frontend Build Svelte 5 + Tailwind v4 frontend static assets\n  run            Start the web server on port 8000\n  test           Run the fast test suite\n  test-slow      Run the slow test suite (Surya, full fixtures) -- pulls model weights on first run\n  lint           Run Ruff lint and format checks\n  typecheck      Run mypy against production code\n  audit          Run pip-audit dependency vulnerability scan\n  security       Run Semgrep static analysis (best-effort, no CI gating)\n  clean          Remove generated caches and build artifacts\n  doctor         Report Python, uv, Redis, and model server health')"
+	@uv run python -c "print('Available targets:\n  help           Show available developer commands\n  setup          Install project, web, and preprocessing dependencies\n  build-frontend Build Svelte 5 + Tailwind v4 frontend static assets\n  run            Start the web server on port 8000\n  test           Run the fast test suite\n  test-slow      Run the slow test suite (Surya, full fixtures) -- pulls model weights on first run\n  lint           Run Ruff lint and format checks\n  typecheck      Run mypy against production code\n  audit          Run pip-audit dependency vulnerability scan\n  security       Run Semgrep static analysis (best-effort, no CI gating)\n  clean          Remove generated caches and build artifacts\n  doctor         Report Python, uv, Redis, and model server health\n  openapi        Regenerate tests/openapi.json from the FastAPI app spec')"
 
 setup: ## Install project, web, and preprocessing dependencies
 	uv sync --extra web --extra preprocessing
@@ -68,3 +68,11 @@ clean: ## Remove generated caches and build artifacts
 
 doctor: ## Report Python, uv, Redis, and model server health
 	uv run python scripts/dev.py doctor
+
+# Regenerate the checked-in OpenAPI snapshot the frontend contract tests
+# diff against. ``tests/test_frontend_openapi_contract.py`` will fail if
+# the snapshot drifts; running this target re-syncs the file to whatever
+# ``app.openapi()`` currently returns. The redirect uses ``>`` (not ``>>``)
+# so stale content is fully replaced on each run.
+openapi: ## Regenerate tests/openapi.json from the FastAPI app spec
+	uv run python -c "from omniscribe.server import app; import json; print(json.dumps(app.openapi(), indent=2))" > tests/openapi.json

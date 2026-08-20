@@ -8,7 +8,6 @@ read ``OCRPipeline.last_document_result``.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Iterable, Sequence
 from copy import deepcopy
 from enum import Enum
@@ -45,13 +44,6 @@ class ProcessorContract(Enum):
 
     MAY_DELETE = "may_delete"
     """Processor may drop, merge, or otherwise remove blocks (e.g. table extraction)."""
-
-
-_KEY_VALUE_RE = re.compile(r"^\s*([^:\n]{1,50}):\s*(\S.+)$")
-_LIST_ITEM_RE = re.compile(
-    r"^\s*(?:[-*\u2022\u25e6\u2013\u2014]|\(?\d+[\).]|\(?[A-Za-z][\).])\s+"
-)
-_TABLE_SPLIT_RE = re.compile(r"\t+|\|+|\s{2,}")
 
 
 class DocumentProcessor(Protocol):

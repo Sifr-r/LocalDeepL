@@ -5,12 +5,14 @@ from __future__ import annotations
 from omniscribe.core.block_tree import BlockNode, Section
 from omniscribe.core.document import DocumentBlock, DocumentResult
 from omniscribe.core.processors.base import (
-    _KEY_VALUE_RE,
-    _LIST_ITEM_RE,
-    _TABLE_SPLIT_RE,
     ProcessorContract,
     _normalize_space,
     _structure_kind,
+)
+from omniscribe.core.processors.structure import (
+    _KEY_VALUE_RE,
+    _LIST_ITEM_RE,
+    _TABLE_SPLIT_RE,
 )
 
 

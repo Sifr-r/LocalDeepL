@@ -481,3 +481,50 @@ def test_scripts_are_in_ruff_scope():
         "scripts/** must NOT be in extend-exclude — Ruff should lint scripts "
         "so future bugs (like the P0 XXE in ingest_lexicon.py) are caught at lint time"
     )
+
+
+def test_memory_and_lexicon_extras_resolve_to_same_install_set():
+    """``[memory]`` is a one-release deprecation alias of ``[lexicon]``.
+
+    The migration spec (``docs/lexicon-migration-spec.md`` §10) renames
+    the ChromaDB-backed ``memory`` extra to the LanceDB-backed ``lexicon``
+    extra. To keep both spellings installable for the deprecation window,
+    the two extras MUST resolve to the same install set — otherwise
+    `uv sync --extra memory` and `uv sync --extra lexicon` would pull
+    in different deps and the alias would silently lie.
+
+    The check is structural: we parse ``pyproject.toml`` with
+    :mod:`tomllib` and compare the sorted requirements of each extra.
+    A literal-string comparison is intentional; the audit cares that
+    the *extras look identical*, not that ``pip`` would deduplicate
+    them after PEP 508 marker resolution.
+
+    ``README.md`` must still mention the ``memory`` alias so the
+    deprecation pointer stays discoverable in the rendered docs.
+    """
+    with (ROOT / "pyproject.toml").open("rb") as f:
+        data = tomllib.load(f)
+
+    optional = data["project"].get("optional-dependencies", {})
+    assert "memory" in optional, (
+        "pyproject.toml must keep the [memory] deprecation alias for one "
+        "release; remove this assertion once the alias is dropped"
+    )
+    assert "lexicon" in optional, (
+        "pyproject.toml must define the canonical [lexicon] extra; see "
+        "docs/lexicon-migration-spec.md for the migration plan"
+    )
+
+    memory_reqs = sorted(optional["memory"])
+    lexicon_reqs = sorted(optional["lexicon"])
+    assert memory_reqs == lexicon_reqs, (
+        f"[memory] and [lexicon] must resolve to the same install set "
+        f"(deprecation alias). Got:\n  memory  = {memory_reqs}\n  "
+        f"lexicon = {lexicon_reqs}"
+    )
+
+    readme = _read(ROOT / "README.md")
+    assert "memory" in readme, (
+        "README.md must still mention the [memory] deprecation alias so "
+        "the migration pointer stays discoverable in the rendered docs"
+    )

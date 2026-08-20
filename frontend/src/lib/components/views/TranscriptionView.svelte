@@ -10,6 +10,7 @@
   } from '$lib/stores/transcriptionStore';
   import type { TranscriptionJobResponse, TranscriptionSegment } from '$lib/types/api';
   import { downloadBlob } from '$lib/utils/download';
+  import { reportError } from '$lib/utils/error';
   import Card from '../ui/Card.svelte';
   import Button from '../ui/Button.svelte';
   import Input from '../ui/Input.svelte';
@@ -81,8 +82,7 @@
       transcriptionResult.set(res);
       pushToast('success', `Transcription complete: ${res.segments.length} segments extracted`, 4000);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      pushToast('error', message || 'Transcription failed', 4000);
+      reportError(err, 'Transcription failed');
     } finally {
       isTranscribing.set(false);
     }

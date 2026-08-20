@@ -27,14 +27,14 @@ from pathlib import Path
 
 import pytest
 
+from omniscribe.confidence_eval import (
+    compute_report,
+    load_ground_truth,
+)
 from omniscribe.core.aligner import HybridAligner
 from omniscribe.core.document import BBox
 from omniscribe.core.ocr import OCRProcessor
 from omniscribe.core.pdf import PDFHandler
-from omniscribe.evaluation import (
-    compute_report,
-    load_ground_truth,
-)
 from omniscribe.pipeline import OCRPipeline
 
 pytestmark = pytest.mark.slow

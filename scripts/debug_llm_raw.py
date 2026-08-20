@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Dump the raw LLM lines per page for a PDF/image input — no DP, no embed."""
 
+import argparse
 import asyncio
 import os
 import sys
@@ -9,7 +10,10 @@ from collections import Counter
 # Force UTF-8 stdout on Windows so unicode in OCR'd text doesn't blow up.
 sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Allow ``import omniscribe.*`` from the working tree without ``pip install -e .``.
+from _common import setup_sys_path
+
+setup_sys_path()
 
 from omniscribe import OCRProcessor, PDFHandler  # noqa: E402
 
@@ -37,4 +41,7 @@ async def main(input_path: str) -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main(sys.argv[1]))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("input_path", help="Path to the input PDF or image.")
+    args = parser.parse_args()
+    asyncio.run(main(args.input_path))

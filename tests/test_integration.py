@@ -21,10 +21,14 @@ from omniscribe.core.ocr import OCRProcessor
 from omniscribe.core.pdf import PDFHandler
 from omniscribe.pipeline import OCRPipeline
 
+# Re-export the canonical list of example PDFs so the parametrize IDs
+# below stay in lock-step with the fixtures in tests/conftest.py.
+from tests.conftest import EXAMPLE_PDF_NAMES
+
 pytestmark = pytest.mark.slow
 
 
-EXAMPLE_NAMES = ["digital.pdf", "hybrid.pdf", "handwritten.pdf"]
+EXAMPLE_NAMES = EXAMPLE_PDF_NAMES
 
 
 # --- detection sanity -------------------------------------------------------

@@ -243,6 +243,38 @@ export const providersApi = {
 export const artifactsApi = {
   getText: (id: string, token: string) =>
     fetchFile(`/text/${id}`, { headers: { Authorization: `Bearer ${token}` } }),
+  /**
+   * Fetch an artifact's text payload and normalize it to a plain
+   * ``string`` in one call. The endpoint returns a JSON body whose
+   * shape varies per document (array of pages, object keyed by page
+   * index, or a raw string); this helper flattens all three into a
+   * newline-separated string so callers can drop the result into a
+   * ``<textarea>`` without re-implementing the array/object/string
+   * normalization in three different views.
+   *
+   * The token travels in the ``Authorization`` header, not the URL.
+   */
+  getTextAsString: async (id: string, token: string): Promise<string> => {
+    const blob = await fetchFile(`/text/${id}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const raw = await blob.text();
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed.filter((p): p is string => typeof p === 'string').join('\n\n');
+      }
+      if (parsed && typeof parsed === 'object') {
+        return Object.values(parsed as Record<string, unknown>)
+          .flat()
+          .filter((p): p is string => typeof p === 'string')
+          .join('\n\n');
+      }
+      return String(parsed);
+    } catch {
+      return raw;
+    }
+  },
   getExport: (id: string, token: string) =>
     fetchFile(`/export/${id}`, { headers: { Authorization: `Bearer ${token}` } })
 };
