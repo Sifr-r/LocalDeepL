@@ -11,10 +11,18 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["env_bool", "env_int", "env_list_csv", "env_str", "load_dotenv"]
+__all__ = [
+    "env_bool",
+    "env_int",
+    "env_list_csv",
+    "env_str",
+    "load_dotenv",
+    "update_dotenv",
+]
 
 
 def _find_dotenv(start_dir: Path | None = None) -> Path | None:
@@ -174,3 +182,93 @@ def env_list_csv(name: str) -> list[str]:
     if not raw:
         return []
     return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def update_dotenv(
+    entries: dict[str, Any],
+    dotenv_path: str | os.PathLike[str] | None = None,
+) -> bool:
+    """Update or insert key-value pairs into a .env file and sync to os.environ.
+
+    Preserves existing comments, section headers, and untouched variables.
+
+    Args:
+        entries: Dictionary of environment variable names to their new values.
+        dotenv_path: Path to the .env file. If None, searches current directory
+            and parent directories; if not found, creates .env in current directory.
+
+    Returns:
+        True if the .env file was successfully updated.
+    """
+    if not entries:
+        return True
+
+    if dotenv_path is not None:
+        target_path = Path(dotenv_path)
+    else:
+        found = _find_dotenv()
+        target_path = found if found is not None else (Path.cwd() / ".env")
+
+    # Format values for .env
+    formatted_entries: dict[str, str] = {}
+    for k, v in entries.items():
+        if v is None:
+            formatted_entries[k] = ""
+        elif isinstance(v, bool):
+            formatted_entries[k] = "true" if v else "false"
+        else:
+            formatted_entries[k] = str(v)
+
+    lines: list[str] = []
+    if target_path.is_file():
+        try:
+            content = target_path.read_text(encoding="utf-8")
+            lines = content.splitlines()
+        except OSError as exc:
+            logger.warning("Failed to read .env file at %s: %s", target_path, exc)
+            lines = []
+
+    updated_keys: set[str] = set()
+    new_lines: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            new_lines.append(line)
+            continue
+
+        prefix = ""
+        eval_line = stripped
+        if eval_line.startswith("export ") or eval_line.startswith("export\t"):
+            prefix = eval_line[:7]
+            eval_line = eval_line[7:].lstrip()
+
+        if "=" in eval_line:
+            key = eval_line.split("=", 1)[0].strip()
+            if key in formatted_entries:
+                val = formatted_entries[key]
+                new_lines.append(f"{prefix}{key}={val}")
+                updated_keys.add(key)
+                continue
+
+        new_lines.append(line)
+
+    # Append any keys that weren't present in the original file
+    missing_keys = [k for k in formatted_entries if k not in updated_keys]
+    if missing_keys:
+        if new_lines and new_lines[-1].strip():
+            new_lines.append("")
+        for k in missing_keys:
+            new_lines.append(f"{k}={formatted_entries[k]}")
+
+    try:
+        target_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+    except OSError as exc:
+        logger.warning("Failed to write .env file at %s: %s", target_path, exc)
+        return False
+
+    # Sync to live os.environ
+    for k, v in formatted_entries.items():
+        os.environ[k] = v
+
+    return True

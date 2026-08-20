@@ -25,7 +25,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-import fitz  # PyMuPDF
+import pymupdf as fitz  # PyMuPDF
 import pytest
 
 pytest.importorskip("fastapi")

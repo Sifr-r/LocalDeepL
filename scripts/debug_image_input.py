@@ -5,7 +5,7 @@ import asyncio
 import os
 import sys
 
-import fitz
+import pymupdf as fitz
 from PIL import Image, ImageDraw
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

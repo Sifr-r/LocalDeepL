@@ -162,23 +162,6 @@ def test_precommit_mypy_runs_in_the_project_environment():
     )
 
 
-def test_stop_app_covers_current_entry_points_and_redis_container():
-    """``stop_app.bat`` must terminate what ``start_app.vbs`` starts.
-
-    The launcher entry points moved to the installed-package module
-    path (``omniscribe.server:app`` / ``celery -A omniscribe.api.tasks``);
-    a stop script still matching only the old ``src.*`` forms would
-    leave both processes running. The ``redis-local-ocr`` broker
-    container must also be stopped (audit backlog).
-    """
-    stop = _read(ROOT / "stop_app.bat")
-    assert "omniscribe.server:app" in stop
-    assert "celery -A omniscribe.api.tasks" in stop
-    assert "redis-local-ocr" in stop, (
-        "stop_app.bat must stop the redis-local-ocr container created by start_app.vbs"
-    )
-
-
 def test_install_scripts_avoid_elevation_and_blind_remote_execution():
     """Installer hygiene invariants (audit backlog).
 
@@ -331,6 +314,14 @@ def test_celery_and_uvicorn_targets_match_installed_package_path():
     assert "omniscribe.api.tasks" in worker_cmd, (
         "compose worker must keep using `-A omniscribe.api.tasks` so "
         "both launchers agree on the Celery app module"
+    )
+
+    # start_app.vbs launches uvicorn and Celery in visible terminal windows (window style 1)
+    assert ", 1, False" in vbs, (
+        "start_app.vbs must launch terminal processes with window style 1 (visible)"
+    )
+    assert not (ROOT / "stop_app.bat").exists(), (
+        "stop_app.bat has been removed; closing visible terminal windows terminates processes"
     )
 
 

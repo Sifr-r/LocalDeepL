@@ -75,7 +75,6 @@
           document_processors: $configStore.document_processors || [],
         };
         await fetchApi('/config/ocr', { method: 'POST', body: JSON.stringify(payload) });
-        await fetchApi('/config', { method: 'POST', body: JSON.stringify({ document_processors: $configStore.document_processors }) });
         pushToast('success', 'OCR namespace settings saved.', 3000);
       } else if (activeNamespace === 'translation') {
         const payload = {
@@ -95,7 +94,9 @@
           engine: $configStore.transcription_engine,
           language: $configStore.transcription_language,
           prompt: $configStore.transcription_prompt,
-          temperature: $configStore.transcription_temperature,
+          temperature: typeof $configStore.transcription_temperature === 'number'
+            ? $configStore.transcription_temperature
+            : (parseFloat(String($configStore.transcription_temperature)) || 0.0),
         };
         await fetchApi('/config/transcription', { method: 'POST', body: JSON.stringify(payload) });
         pushToast('success', 'Transcription namespace settings saved.', 3000);
@@ -376,13 +377,31 @@
                   configStore.update((c) => ({ ...c, transcription_engine: v }));
                 }}
               />
-              <Input
-                id="transcription-model"
-                label="Model name"
-                type="text"
-                bind:value={$configStore.transcription_model}
-                placeholder="whisper-1"
-              />
+              <div class="space-y-1.5">
+                <label class="form-label" for="transcription-model">Model name</label>
+                <div class="flex gap-2">
+                  <Input
+                    id="transcription-model"
+                    label=""
+                    type="text"
+                    bind:value={$configStore.transcription_model}
+                    placeholder="whisper-1"
+                    class="flex-1 font-mono"
+                  />
+                  <Select
+                    label=""
+                    ariaLabel="Pick transcription model from the server list"
+                    options={[
+                      { value: '', label: '(Select model)' },
+                      ...$modelStore.transcription.map(m => ({ value: m, label: m }))
+                    ]}
+                    on:change={(e) => {
+                      const v = (e.target as HTMLSelectElement).value;
+                      if (v) configStore.update((c) => ({ ...c, transcription_model: v }));
+                    }}
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </Card>

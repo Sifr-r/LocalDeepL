@@ -6,7 +6,7 @@ Test script to check HybridAligner output format.
 import os
 import sys
 
-import fitz
+import pymupdf as fitz
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

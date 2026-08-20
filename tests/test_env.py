@@ -87,3 +87,56 @@ def test_load_dotenv_auto_discovery(
     monkeypatch.chdir(sub_dir)
     assert load_dotenv(dotenv_path=None, override=True)
     assert os.environ.get("TEST_DISCOVERY_KEY") == "discovered"
+
+
+def test_update_dotenv_replaces_and_appends(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from omniscribe.utils.env import update_dotenv
+
+    monkeypatch.delenv("LLM_API_BASE", raising=False)
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "# Heading\nLLM_API_BASE=http://old-host/v1\nLLM_MODEL=old-model\n",
+        encoding="utf-8",
+    )
+
+    success = update_dotenv(
+        {"LLM_API_BASE": "http://new-host/v1", "LLM_API_KEY": "secret-key"},
+        dotenv_path=env_file,
+    )
+    assert success is True
+
+    content = env_file.read_text(encoding="utf-8")
+    assert "# Heading" in content
+    assert "LLM_API_BASE=http://new-host/v1" in content
+    assert "LLM_MODEL=old-model" in content
+    assert "LLM_API_KEY=secret-key" in content
+    assert os.environ.get("LLM_API_BASE") == "http://new-host/v1"
+    assert os.environ.get("LLM_API_KEY") == "secret-key"
+
+
+def test_provider_manager_set_active_provider_syncs_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from omniscribe.api.services.provider_manager import ProviderManager
+
+    monkeypatch.delenv("LLM_API_BASE", raising=False)
+    monkeypatch.delenv("OPENAI_API_BASE", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    custom_yaml = tmp_path / "providers.yaml"
+    custom_env = tmp_path / ".env"
+    custom_env.write_text("LLM_API_BASE=http://localhost:1234/v1\n", encoding="utf-8")
+
+    mgr = ProviderManager(config_path=custom_yaml)
+    monkeypatch.setattr("omniscribe.utils.env._find_dotenv", lambda: custom_env)
+
+    provider = mgr.set_active_provider("openai", model="gpt-4o")
+    assert provider.id == "openai"
+
+    content = custom_env.read_text(encoding="utf-8")
+    assert "LLM_API_BASE=https://api.openai.com/v1" in content
+    assert "LLM_MODEL=gpt-4o" in content

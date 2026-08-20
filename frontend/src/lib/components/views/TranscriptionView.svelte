@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { activeTab, refreshModels, pushToast } from '$lib/stores/appStore';
+  import { activeTab, refreshModels, modelStore, pushToast } from '$lib/stores/appStore';
   import { fetchApi } from '$lib/api/client';
   import {
     transcriptionResult,
@@ -148,13 +148,29 @@
         options={engineOptions}
         bind:value={engine}
       />
-      <Input
-        id="transcription-model-input"
-        label="Model"
-        type="text"
-        bind:value={model}
-        placeholder="whisper-1"
-      />
+      <div class="flex items-end gap-2">
+        <Input
+          id="transcription-model-input"
+          label="Model"
+          type="text"
+          bind:value={model}
+          placeholder="whisper-1"
+        />
+        {#if $modelStore.transcription.length > 0}
+          <Select
+            label=""
+            ariaLabel="Pick transcription model from discovered list"
+            options={[
+              { value: '', label: '(Select model)' },
+              ...$modelStore.transcription.map((m) => ({ value: m, label: m }))
+            ]}
+            on:change={(e) => {
+              const v = (e.target as HTMLSelectElement).value;
+              if (v) model = v;
+            }}
+          />
+        {/if}
+      </div>
     </div>
   </header>
 

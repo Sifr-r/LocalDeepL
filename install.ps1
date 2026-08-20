@@ -161,14 +161,11 @@ $ShortcutSM.IconLocation = "%SystemRoot%\system32\SHELL32.dll,22"
 $ShortcutSM.Save()
 Write-Host "Created Start Menu Shortcut: $ShortcutPathSM"
 
-# Stop Shortcut (Start Menu)
-$StopShortcutPathSM = Join-Path -Path $StartMenuPath -ChildPath "Stop OmniScribe.lnk"
-$StopShortcutSM = $WshShell.CreateShortcut($StopShortcutPathSM)
-$StopShortcutSM.TargetPath = Join-Path -Path $ScriptDir -ChildPath "stop_app.bat"
-$StopShortcutSM.WorkingDirectory = $ScriptDir
-$StopShortcutSM.IconLocation = "%SystemRoot%\system32\SHELL32.dll,28" # Stop icon
-$StopShortcutSM.Save()
-Write-Host "Created Stop Shortcut in Start Menu: $StopShortcutPathSM"
+# Clean up legacy Stop Shortcut if present
+$LegacyStopShortcutSM = Join-Path -Path $StartMenuPath -ChildPath "Stop OmniScribe.lnk"
+if (Test-Path $LegacyStopShortcutSM) {
+    Remove-Item -Force $LegacyStopShortcutSM
+}
 
 Write-Host "`n======================================================="
 Write-Host "Installation Complete!"

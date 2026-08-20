@@ -121,16 +121,33 @@ async def get_transcription_models() -> Any:
     try:
         import httpx
 
+        from omniscribe.api.services.provider_manager import (
+            extract_model_ids_from_response,
+        )
+
         headers = {}
-        if api_key:
+        if api_key and api_key != "lm-studio":
             headers["Authorization"] = f"Bearer {api_key}"
 
+        base = api_base.rstrip("/")
+        candidate_urls: list[str] = []
+        if base.endswith("/v1"):
+            candidate_urls.append(f"{base}/models")
+        else:
+            candidate_urls.append(f"{base}/v1/models")
+            candidate_urls.append(f"{base}/models")
+        candidate_urls.append(f"{base}/api/tags")
+
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{api_base.rstrip('/')}/models", headers=headers)
-            if resp.status_code == 200:
-                data = resp.json()
-                models = [m.get("id") for m in data.get("data", []) if m.get("id")]
-                return ModelsResponse(models=models)
+            for url in candidate_urls:
+                try:
+                    resp = await client.get(url, headers=headers)
+                    if resp.status_code == 200:
+                        models = extract_model_ids_from_response(resp.json())
+                        if models:
+                            return ModelsResponse(models=models)
+                except Exception:
+                    continue
     except Exception as exc:
         logger.warning(
             "Failed to fetch models from transcription api_base %s: %s", api_base, exc

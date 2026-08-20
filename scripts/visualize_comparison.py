@@ -9,7 +9,7 @@ import logging
 import os
 import sys
 
-import fitz
+import pymupdf as fitz
 from PIL import Image, ImageDraw
 
 # Add parent directory to path for imports

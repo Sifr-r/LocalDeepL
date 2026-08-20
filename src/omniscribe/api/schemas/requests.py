@@ -43,6 +43,8 @@ class ExtractionTemplate(StrEnum):
     INVOICE = "invoice"
     RESUME = "resume"
     ACADEMIC = "academic"
+    TABLE = "table"
+    TABLE_EXTRACTION = "table_extraction"
     CUSTOM = "custom"
 
 
@@ -132,13 +134,21 @@ class ConfigUpdate(BaseModel):
     document_processors: list[DocumentProcessorName] | None = Field(
         default=None, max_length=100
     )
+    ocr: dict[str, Any] | None = None
+    translation: dict[str, Any] | None = None
+    transcription: dict[str, Any] | None = None
 
-    @field_validator("api_base", "api_key", "model", mode="before")
+    @field_validator("api_base", "model", mode="before")
     @classmethod
     def validate_strings(cls, value: Any) -> Any:
         if value is None:
             return value
         return _non_empty_string(value)
+
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def validate_api_key(cls, value: Any) -> Any:
+        return _validate_optional_string(value)
 
     @field_validator(
         "concurrency",
@@ -185,7 +195,7 @@ class ProcessSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     api_base: str
-    api_key: str
+    api_key: str = "lm-studio"
     model: str
     pipeline_mode: PipelineMode
     dpi: int = Field(ge=10, le=600)
@@ -226,10 +236,19 @@ class ProcessSettings(BaseModel):
     quality_target: float = Field(default=0.98, ge=0.5, le=1.0)
     quality_max_retries: int = Field(default=2, ge=0, le=5)
 
-    @field_validator("api_base", "api_key", "model", mode="before")
+    @field_validator("api_base", "model", mode="before")
     @classmethod
     def validate_strings(cls, value: Any) -> Any:
         return _non_empty_string(value)
+
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def validate_api_key(cls, value: Any) -> Any:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return "lm-studio"
+        if not isinstance(value, str):
+            raise ValueError("must be a string")
+        return value.strip()
 
     @field_validator(
         "dpi", "concurrency", "dense_threshold", "max_image_dim", mode="before"
@@ -549,6 +568,9 @@ class OcrConfigUpdate(BaseModel):
     ocr_api_key: str | None = Field(default=None, max_length=512)
     ocr_model: str | None = Field(default=None, min_length=1, max_length=256)
     ocr_provider: str | None = Field(default=None, min_length=1, max_length=64)
+    document_processors: list[DocumentProcessorName] | None = Field(
+        default=None, max_length=100
+    )
 
     @field_validator(
         "ocr_api_base", "ocr_api_key", "ocr_model", "ocr_provider", mode="before"
@@ -556,6 +578,11 @@ class OcrConfigUpdate(BaseModel):
     @classmethod
     def _validate_optional_strings(cls, value: Any) -> Any:
         return _validate_optional_string(value)
+
+    @field_validator("document_processors", mode="before")
+    @classmethod
+    def validate_document_processors(cls, value: Any) -> Any:
+        return _parse_document_processors(value)
 
     @property
     def stored_keys(self) -> tuple[str, ...]:
@@ -662,6 +689,8 @@ class TranscriptionEngineType(StrEnum):
     WHISPER_API = "whisper_api"
     LOCAL = "local"
     WHISPER_LOCAL = "whisper_local"
+    FASTER_WHISPER = "faster_whisper"
+    FASTER_WHISPER_DASH = "faster-whisper"
     AUTO = "auto"
 
 

@@ -6,6 +6,7 @@ from omniscribe.utils.env import (
     env_list_csv,
     env_str,
     load_dotenv,
+    update_dotenv,
 )
 from omniscribe.utils.file import write_atomic
 from omniscribe.utils.security import is_ssrf_target
@@ -35,5 +36,6 @@ __all__ = [
     "is_ssrf_target",
     "load_dotenv",
     "merge_extras",
+    "update_dotenv",
     "write_atomic",
 ]

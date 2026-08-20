@@ -1,7 +1,7 @@
 # EOL normalization rules for cross-platform checkouts.
 #
 # F5-13 audit fix: the previous absence of this file meant Windows
-# checkouts of ``install.ps1`` / ``start_app.vbs`` / ``stop_app.bat``
+# checkouts of ``install.ps1`` / ``start_app.vbs``
 # could normalize to CRLF (Git's ``core.autocrlf=true`` default) and
 # silently break the very scripts Windows users need to bootstrap.
 # The rules below match what those scripts require:

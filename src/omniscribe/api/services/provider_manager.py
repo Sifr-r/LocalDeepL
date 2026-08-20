@@ -9,6 +9,7 @@ import logging
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -20,6 +21,59 @@ from omniscribe.api.schemas.requests import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def extract_model_ids_from_response(data: Any) -> list[str]:
+    """Extract model identifiers from arbitrary JSON responses.
+
+    Supports:
+    - OpenAI standard: {"object": "list", "data": [{"id": "gpt-4o", ...}]}
+    - Ollama native: {"models": [{"name": "llama3", "model": "llama3:latest", ...}]}
+    - Anthropic: {"data": [{"id": "claude-3-5-sonnet", "display_name": "..."}]}
+    - OpenRouter / Together / Custom: {"data": [{"id": "..."}, {"name": "..."}]}
+    - Plain models list: {"models": ["model1", "model2"]} or {"models": [{"id": "m1"}]}
+    - Result list: {"result": [{"id": "..."}, {"name": "..."}]}
+    - Top-level list: [{"id": "m1"}, {"name": "m2"}] or ["m1", "m2"]
+    """
+    if not data:
+        return []
+
+    raw_items: list[Any] = []
+    if isinstance(data, list):
+        raw_items = data
+    elif isinstance(data, dict):
+        if "data" in data and isinstance(data["data"], list):
+            raw_items = data["data"]
+        elif "models" in data and isinstance(data["models"], list):
+            raw_items = data["models"]
+        elif "result" in data and isinstance(data["result"], list):
+            raw_items = data["result"]
+        elif "data" in data and isinstance(data["data"], dict):
+            raw_items = list(data["data"].values())
+        else:
+            for v in data.values():
+                if isinstance(v, dict) and any(k in v for k in ("id", "name", "model")):
+                    raw_items.append(v)
+
+    model_ids: list[str] = []
+    seen: set[str] = set()
+
+    for item in raw_items:
+        mid: str | None = None
+        if isinstance(item, str) and item.strip():
+            mid = item.strip()
+        elif isinstance(item, dict):
+            for key in ("id", "name", "model", "model_id", "display_name"):
+                val = item.get(key)
+                if isinstance(val, str) and val.strip():
+                    mid = val.strip()
+                    break
+        if mid and mid not in seen:
+            seen.add(mid)
+            model_ids.append(mid)
+
+    return model_ids
+
 
 DEFAULT_CONFIG_PATH = Path("~/.config/omniscribe/providers.yaml").expanduser()
 
@@ -135,9 +189,13 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
     ),
     "alibaba-china": ProviderTemplate(
         id="alibaba-china",
-        display_name="Alibaba Cloud Model Studio - China",
+        display_name="Alibaba Cloud Model Studio - China (Beijing)",
         format=ProviderFormatEnum.OPENAI_COMPATIBLE,
-        api_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        # Workspace-dedicated domain (preferred). Replace {WorkspaceId} with the
+        # value shown in the Alibaba Model Studio console. The legacy shared
+        # domain `https://dashscope.aliyuncs.com/compatible-mode/v1` still works
+        # but is officially deprecated for new integrations.
+        api_url="https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
         env_key="DASHSCOPE_API_KEY",
         models=["qwen-vl-max", "qwen2.5-vl-72b-instruct", "qwen2.5-vl-7b-instruct"],
         requires_auth=True,
@@ -146,7 +204,11 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         id="alibaba-singapore",
         display_name="Alibaba Cloud Model Studio - Singapore",
         format=ProviderFormatEnum.OPENAI_COMPATIBLE,
-        api_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        # Workspace-dedicated domain (preferred). Replace {WorkspaceId} with the
+        # value shown in the Alibaba Model Studio console. The legacy shared
+        # domain `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` still
+        # works but is officially deprecated for new integrations.
+        api_url="https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
         env_key="DASHSCOPE_API_KEY",
         models=["qwen-vl-max", "qwen2.5-vl-72b-instruct"],
         requires_auth=True,
@@ -180,29 +242,38 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
     ),
     "kimi": ProviderTemplate(
         id="kimi",
-        display_name="Kimi (Moonshot AI)",
+        display_name="Kimi (Moonshot AI) - China",
         format=ProviderFormatEnum.OPENAI_COMPATIBLE,
         api_url="https://api.moonshot.cn/v1",
         env_key="MOONSHOT_API_KEY",
         models=["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
         requires_auth=True,
     ),
+    "kimi-global": ProviderTemplate(
+        id="kimi-global",
+        display_name="Kimi (Moonshot AI) - Global",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        api_url="https://api.moonshot.ai/v1",
+        env_key="MOONSHOT_API_KEY",
+        models=[
+            "kimi-k2-0711-preview",
+            "moonshot-v1-8k",
+            "moonshot-v1-32k",
+            "moonshot-v1-128k",
+        ],
+        requires_auth=True,
+    ),
     "minimax-china": ProviderTemplate(
         id="minimax-china",
         display_name="MiniMax - China",
         format=ProviderFormatEnum.OPENAI_COMPATIBLE,
-        api_url="https://api.minimax.chat/v1",
-        env_key="MINIMAX_API_KEY",
-        models=["minimax-text-01", "abab6.5s-chat"],
-        requires_auth=True,
-    ),
-    "minimax-international": ProviderTemplate(
-        id="minimax-international",
-        display_name="MiniMax - International",
-        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        # The correct China endpoint per platform docs (verified 2026-07-18).
+        # `minimax` (international) and `minimax-china` (this) are the two
+        # supported regions; the `minimax-international` template that
+        # previously lived here was a duplicate and has been removed.
         api_url="https://api.minimaxi.com/v1",
         env_key="MINIMAX_API_KEY",
-        models=["minimax-text-01"],
+        models=["minimax-text-01", "abab6.5s-chat"],
         requires_auth=True,
     ),
     "google-gemini": ProviderTemplate(
@@ -236,7 +307,9 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         id="novita",
         display_name="Novita AI",
         format=ProviderFormatEnum.OPENAI_COMPATIBLE,
-        api_url="https://api.novita.ai/v3/openai",
+        # Current OpenAI-compatible base URL (the legacy `/v3/openai` path
+        # has been retired in favor of `/openai`).
+        api_url="https://api.novita.ai/openai",
         env_key="NOVITA_API_KEY",
         models=["qwen/qwen-2.5-vl-72b-instruct"],
         requires_auth=True,
@@ -245,7 +318,9 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         id="together",
         display_name="Together AI",
         format=ProviderFormatEnum.OPENAI_COMPATIBLE,
-        api_url="https://api.together.xyz/v1",
+        # Current Together domain is `.ai`; the legacy `.xyz` host is being
+        # phased out.
+        api_url="https://api.together.ai/v1",
         env_key="TOGETHER_API_KEY",
         models=["meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo"],
         requires_auth=True,
@@ -266,6 +341,335 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="http://localhost:1234/v1",
         models=[],
         requires_auth=False,
+    ),
+    # -----------------------------------------------------------------------
+    # Local providers — ported from OmniRoute reference (2026-08-19)
+    # ComfyUI and SD WebUI are intentionally excluded: they are image-gen
+    # pipelines, not chat/VLM endpoints, and do not fit OmniScribe's OCR use
+    # case. `llama-cpp` and `llamafile` both default to port 8080 — only run
+    # one at a time or override via env_host.
+    # -----------------------------------------------------------------------
+    "llama-cpp": ProviderTemplate(
+        id="llama-cpp",
+        display_name="llama.cpp server",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        api_url="http://127.0.0.1:8080/v1",
+        env_host="LLAMACPP_HOST",
+        models=["local-model"],
+        requires_auth=False,
+    ),
+    "llamafile": ProviderTemplate(
+        id="llamafile",
+        display_name="Mozilla Llamafile",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        api_url="http://localhost:8080/v1",
+        env_host="LLAMAFILE_HOST",
+        models=["LLaMA_CPP"],
+        requires_auth=False,
+    ),
+    "docker-model-runner": ProviderTemplate(
+        id="docker-model-runner",
+        display_name="Docker Model Runner",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        # Docker Model Runner's OpenAI-compatible surface lives at
+        # `/engines/v1`, not the usual `/v1`. The default TCP host port is
+        # 12434; enable with `docker desktop enable model-runner --tcp 12434`.
+        api_url="http://localhost:12434/engines/v1",
+        env_host="DMR_HOST",
+        models=[],
+        requires_auth=False,
+    ),
+    "lemonade": ProviderTemplate(
+        id="lemonade",
+        display_name="Lemonade Server",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        api_url="http://localhost:13305/v1",
+        env_host="LEMONADE_HOST",
+        models=[],
+        requires_auth=False,
+    ),
+    "oobabooga": ProviderTemplate(
+        id="oobabooga",
+        display_name="oobabooga text-generation-webui",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        # Requires the `--api` flag (or `--extensions openai`) at launch; the
+        # default port is 5000.
+        api_url="http://127.0.0.1:5000/v1",
+        env_host="OOBABOOGA_HOST",
+        models=[],
+        requires_auth=False,
+    ),
+    "triton": ProviderTemplate(
+        id="triton",
+        display_name="NVIDIA Triton Inference Server (OpenAI frontend)",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        # The OpenAI-compatible frontend listens on port 9000 by default
+        # (`openai-port`); Triton's native HTTP port is 8000 but does not
+        # speak the OpenAI schema.
+        api_url="http://localhost:9000/v1",
+        env_host="TRITON_HOST",
+        models=[],
+        requires_auth=False,
+    ),
+    "xinference": ProviderTemplate(
+        id="xinference",
+        display_name="Xorbits XInference",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        # Xinference's REST root is the bare port; the runtime will append
+        # `/v1/models` etc. for OpenAI-compat routes.
+        api_url="http://localhost:9997",
+        env_host="XINFERENCE_HOST",
+        models=[],
+        requires_auth=False,
+    ),
+    # -----------------------------------------------------------------------
+    # API-key providers — ported from OmniRoute reference (2026-08-19)
+    # All OpenAI-compatible unless noted. Where a URL contains placeholders
+    # (`<resource>`, `<account_id>`, `{WorkspaceId}`) the user MUST edit the
+    # URL in their provider config after enabling the template.
+    # -----------------------------------------------------------------------
+    "azure-ai": ProviderTemplate(
+        id="azure-ai",
+        display_name="Azure AI Foundry",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        # Replace `<resource>` with the Azure resource name. The legacy
+        # `<resource>.openai.azure.com` form is also accepted.
+        api_url="https://<resource>.services.ai.azure.com/openai/v1",
+        env_key="AZURE_AI_API_KEY",
+        models=[
+            "gpt-4o",
+            "gpt-4o-mini",
+            "Phi-3.5-vision-instruct",
+            "meta-llama/Llama-3.2-11B-Vision-Instruct",
+        ],
+        requires_auth=True,
+    ),
+    "bailian-coding-plan": ProviderTemplate(
+        id="bailian-coding-plan",
+        display_name="Alibaba Cloud Bailian Token Plan (Singapore)",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        # Team Edition Singapore default. Other regions: replace the
+        # domain — Beijing `token-plan.cn-beijing.maas.aliyuncs.com`, US
+        # `token-plan.us-west-1.maas.aliyuncs.com`. Requires a dedicated
+        # `sk-sp-...` key from the Bailian Token Plan console.
+        api_url="https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+        env_key="DASHSCOPE_API_KEY",
+        models=["qwen-vl-max", "qwen2.5-vl-72b-instruct", "qwen3-vl-plus"],
+        requires_auth=True,
+    ),
+    "chutes": ProviderTemplate(
+        id="chutes",
+        display_name="Chutes.ai",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        api_url="https://llm.chutes.ai/v1",
+        env_key="CHUTES_API_KEY",
+        models=["Qwen/Qwen2.5-VL-72B-Instruct", "deepseek-ai/DeepSeek-V3"],
+        requires_auth=True,
+    ),
+    "clarifai": ProviderTemplate(
+        id="clarifai",
+        display_name="Clarifai",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        # Auth uses a Personal Access Token (PAT) sent as `Bearer`. The env
+        # var is intentionally `CLARIFAI_PAT` (not `CLARIFAI_API_KEY`).
+        api_url="https://api.clarifai.com/v2/ext/openai/v1",
+        env_key="CLARIFAI_PAT",
+        models=[],
+        requires_auth=True,
+    ),
+    "cloudflare-ai": ProviderTemplate(
+        id="cloudflare-ai",
+        display_name="Cloudflare Workers AI",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        # Replace `<account_id>` with the value from dash.cloudflare.com.
+        # The newer AI Gateway surface additionally requires a
+        # `cf-aig-gateway-id` header.
+        api_url="https://api.cloudflare.com/client/v4/accounts/<account_id>/ai/v1",
+        env_key="CLOUDFLARE_API_TOKEN",
+        models=["@cf/meta/llama-3.2-11b-vision-instruct", "@cf/llava-1.5-7b-hf"],
+        requires_auth=True,
+    ),
+    "fireworks": ProviderTemplate(
+        id="fireworks",
+        display_name="Fireworks AI",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        api_url="https://api.fireworks.ai/inference/v1",
+        env_key="FIREWORKS_API_KEY",
+        models=[
+            "accounts/fireworks/models/llama-3.2-11b-vision-instruct",
+            "accounts/fireworks/models/qwen2-vl-72b-instruct",
+        ],
+        requires_auth=True,
+    ),
+    "github-models": ProviderTemplate(
+        id="github-models",
+        display_name="GitHub Models",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        # The Azure-hosted `models.inference.ai.azure.com` endpoint was
+        # retired 2025-10-17; the new GitHub-hosted base is `models.github.ai`.
+        # The new endpoint does NOT expose `/v1/models`; the static list
+        # below is the source of truth at runtime.
+        api_url="https://models.github.ai/v1",
+        env_key="GITHUB_TOKEN",
+        models=[
+            "gpt-4o",
+            "gpt-4o-mini",
+            "meta-llama/Llama-3.2-11B-Vision-Instruct",
+            "Phi-3.5-vision-instruct",
+        ],
+        requires_auth=True,
+    ),
+    "huggingface": ProviderTemplate(
+        id="huggingface",
+        display_name="HuggingFace Inference (Router)",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        # The legacy `api-inference.huggingface.co` was decommissioned late
+        # 2025 (now 410 Gone). The OpenAI-compatible surface is the new
+        # router at `router.huggingface.co/v1`.
+        api_url="https://router.huggingface.co/v1",
+        env_key="HF_TOKEN",
+        models=[],
+        requires_auth=True,
+    ),
+    "hyperbolic": ProviderTemplate(
+        id="hyperbolic",
+        display_name="Hyperbolic",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        api_url="https://api.hyperbolic.xyz/v1",
+        env_key="HYPERBOLIC_API_KEY",
+        models=[
+            "meta-llama/Llama-3.2-90B-Vision-Instruct",
+            "Qwen/Qwen2.5-VL-72B-Instruct",
+        ],
+        requires_auth=True,
+    ),
+    "lambda-ai": ProviderTemplate(
+        id="lambda-ai",
+        display_name="Lambda AI Inference",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        # ⚠ Lambda announced the Inference API is winding down in favor of
+        # customer self-hosted deployments on Lambda GPU instances (as of
+        # 2026-05-29). The endpoint still works for now.
+        api_url="https://api.lambda.ai/v1",
+        env_key="LAMBDA_API_KEY",
+        models=[],
+        requires_auth=True,
+    ),
+    "nvidia": ProviderTemplate(
+        id="nvidia",
+        display_name="NVIDIA NIM (integrate.api.nvidia.com)",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        api_url="https://integrate.api.nvidia.com/v1",
+        env_key="NVIDIA_API_KEY",
+        models=[
+            "meta/llama-3.2-90b-vision-instruct",
+            "nvidia/neva-22b",
+            "qwen/qwen2-vl-72b-instruct",
+        ],
+        requires_auth=True,
+    ),
+    "requesty": ProviderTemplate(
+        id="requesty",
+        display_name="Requesty (LLM Router)",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        # EU alternative: `https://router.eu.requesty.ai/v1`.
+        api_url="https://router.requesty.ai/v1",
+        env_key="REQUESTY_API_KEY",
+        models=[],
+        requires_auth=True,
+    ),
+    "sambanova": ProviderTemplate(
+        id="sambanova",
+        display_name="SambaNova (SambaCloud)",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        api_url="https://api.sambanova.ai/v1",
+        env_key="SAMBANOVA_API_KEY",
+        models=[
+            "Meta-Llama-3.2-11B-Vision-Instruct",
+            "Llama-3.2-90B-Vision-Instruct",
+        ],
+        requires_auth=True,
+    ),
+    "scaleway": ProviderTemplate(
+        id="scaleway",
+        display_name="Scaleway Generative APIs",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        # EU region (Paris) only. Free during beta.
+        api_url="https://api.scaleway.ai/v1",
+        env_key="SCALEWAY_API_KEY",
+        models=[
+            "llama-3.2-11b-vision-instruct",
+            "qwen2.5-vl-72b-instruct",
+        ],
+        requires_auth=True,
+    ),
+    "stepfun": ProviderTemplate(
+        id="stepfun",
+        display_name="StepFun",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        # Standard OpenAI-compat surface. The "Step Plan" subscription tier
+        # uses `https://api.stepfun.com/step_plan/v1` instead.
+        api_url="https://api.stepfun.com/v1",
+        env_key="STEPFUN_API_KEY",
+        models=["step-1v-8k", "step-1o-vision-32k"],
+        requires_auth=True,
+    ),
+    "vercel-ai-gateway": ProviderTemplate(
+        id="vercel-ai-gateway",
+        display_name="Vercel AI Gateway",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        api_url="https://ai-gateway.vercel.sh/v1",
+        env_key="VERCEL_AI_GATEWAY_API_KEY",
+        models=[],
+        requires_auth=True,
+    ),
+    "vertex": ProviderTemplate(
+        id="vertex",
+        display_name="Google Vertex AI (OpenAI-compat)",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        # Vertex has no single base URL — it varies by region, project, and
+        # deployment. The user MUST edit the URL after enabling the
+        # template. Common shapes:
+        #   https://{region}-aiplatform.googleapis.com/v1/projects/{p}/locations/{r}/endpoints/openapi
+        #   https://{endpoint_id}.{region}-{project}.prediction.vertexai.goog/v1/projects/{p}/locations/{r}/endpoints/{id}:predict
+        api_url="https://aiplatform.googleapis.com/v1",
+        env_key="VERTEX_API_KEY",
+        models=[
+            "gemini-1.5-pro",
+            "gemini-2.0-flash-exp",
+            "claude-3-5-sonnet@20240620",
+        ],
+        requires_auth=True,
+    ),
+    "xai": ProviderTemplate(
+        id="xai",
+        display_name="xAI (Grok)",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        api_url="https://api.x.ai/v1",
+        env_key="XAI_API_KEY",
+        models=["grok-2-vision-1212", "grok-vision-beta"],
+        requires_auth=True,
+    ),
+    "xiaomi-mimo": ProviderTemplate(
+        id="xiaomi-mimo",
+        display_name="Xiaomi MiMo",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        # Pay-as-you-go OpenAI-compat surface. The Xiaomi Token Plan tier
+        # uses `https://token-plan-cn.xiaomimimo.com/v1` (or `-sgp`/`-ams`
+        # for Singapore/Europe) and a `tp-...` key.
+        api_url="https://api.xiaomimimo.com/v1",
+        env_key="MIMO_API_KEY",
+        models=["mimo-v2.5-vl", "mimo-v2-vl-72b"],
+        requires_auth=True,
+    ),
+    "zenmux": ProviderTemplate(
+        id="zenmux",
+        display_name="ZenMux",
+        format=ProviderFormatEnum.OPENAI_COMPATIBLE,
+        api_url="https://zenmux.ai/api/v1",
+        env_key="ZENMUX_API_KEY",
+        models=[],
+        requires_auth=True,
     ),
 }
 
@@ -493,6 +897,38 @@ class ProviderManager:
             provider.models.insert(0, m)
 
         self._save()
+
+        # Sync with environment variables, .env file, and runtime config
+        active_model = provider.models[0] if provider.models else ""
+        env_updates: dict[str, Any] = {
+            "LLM_API_BASE": provider.api_url,
+            "LLM_MODEL": active_model,
+        }
+        if provider.api_key:
+            env_updates["LLM_API_KEY"] = provider.api_key
+
+        dotenv_target: Path | None = None
+        if self._config_path.parent.is_dir():
+            candidate = self._config_path.parent / ".env"
+            if candidate.is_file():
+                dotenv_target = candidate
+
+        if "PYTEST_CURRENT_TEST" not in os.environ or dotenv_target is not None:
+            from omniscribe.utils.env import update_dotenv
+
+            update_dotenv(env_updates, dotenv_path=dotenv_target)
+
+        try:
+            from omniscribe.api.routers.config import _config
+
+            _config["api_base"] = provider.api_url
+            if active_model:
+                _config["model"] = active_model
+            if provider.api_key:
+                _config["api_key"] = provider.api_key
+        except Exception:
+            pass
+
         return provider
 
     def save_provider(self, config: ProviderConfig) -> ProviderConfig:
@@ -564,51 +1000,49 @@ class ProviderManager:
             else:
                 headers["Authorization"] = f"Bearer {provider.api_key}"
 
-        url: str
+        base = provider.api_url.rstrip("/")
+        candidate_urls: list[str] = []
         if provider.format == ProviderFormatEnum.OLLAMA_COMPATIBLE:
-            url = f"{provider.api_url.rstrip('/')}/api/tags"
+            candidate_urls.append(f"{base}/api/tags")
+            candidate_urls.append(
+                f"{base}/models" if base.endswith("/v1") else f"{base}/v1/models"
+            )
         else:
-            base = provider.api_url.rstrip("/")
-            url = f"{base}/models" if base.endswith("/v1") else f"{base}/v1/models"
+            if base.endswith("/v1"):
+                candidate_urls.append(f"{base}/models")
+            else:
+                candidate_urls.append(f"{base}/v1/models")
+                candidate_urls.append(f"{base}/models")
+            if "11434" in base or "ollama" in base.lower() or "localhost" in base:
+                candidate_urls.append(f"{base}/api/tags")
 
         try:
             import httpx
 
             with httpx.Client(timeout=5.0) as client:
-                resp = client.get(url, headers=headers)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    fetched_models: list[str] = []
-                    if provider.format == ProviderFormatEnum.OLLAMA_COMPATIBLE:
-                        models_list = data.get("models", [])
-                        if isinstance(models_list, list):
-                            for item in models_list:
-                                if isinstance(item, dict):
-                                    name = item.get("name") or item.get("model")
-                                    if name:
-                                        fetched_models.append(str(name))
-                                elif isinstance(item, str):
-                                    fetched_models.append(item)
-                    else:
-                        models_list = data.get("data", [])
-                        if isinstance(models_list, list):
-                            for item in models_list:
-                                if isinstance(item, dict) and "id" in item:
-                                    fetched_models.append(str(item["id"]))
-                                elif isinstance(item, str):
-                                    fetched_models.append(item)
-
-                    if fetched_models:
-                        for m in fetched_models:
-                            if m not in provider.models:
-                                provider.models.append(m)
-                        self._save()
-                        return fetched_models
+                for url in candidate_urls:
+                    try:
+                        resp = client.get(url, headers=headers)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            fetched = extract_model_ids_from_response(data)
+                            if fetched:
+                                for m in fetched:
+                                    if m not in provider.models:
+                                        provider.models.append(m)
+                                self._save()
+                                return fetched
+                    except Exception as exc:
+                        logger.debug(
+                            "Model discovery candidate %s failed for provider %s: %s",
+                            url,
+                            provider_id,
+                            exc,
+                        )
         except Exception as exc:
             logger.warning(
-                "Failed to fetch models for provider '%s' at '%s': %s",
+                "Failed to fetch models for provider '%s': %s",
                 provider_id,
-                url,
                 exc,
             )
 
@@ -636,3 +1070,13 @@ def reset_provider_manager() -> None:
     """Reset the singleton ProviderManager instance (useful for unit tests)."""
     global _provider_manager_instance
     _provider_manager_instance = None
+
+
+__all__ = [
+    "DEFAULT_CONFIG_PATH",
+    "PROVIDER_TEMPLATES",
+    "ProviderManager",
+    "extract_model_ids_from_response",
+    "get_provider_manager",
+    "reset_provider_manager",
+]

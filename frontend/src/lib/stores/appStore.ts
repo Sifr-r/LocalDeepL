@@ -238,8 +238,18 @@ export const modelStore = writable<ModelStoreState>(defaultModelStore);
  * Refresh model list for a given namespace or all namespaces
  */
 export async function refreshModels(
-  namespace?: 'general' | 'ocr' | 'translation' | 'transcription'
+  namespace?: 'general' | 'ocr' | 'translation' | 'transcription' | 'all'
 ): Promise<void> {
+  if (!namespace || namespace === 'all') {
+    await Promise.allSettled([
+      refreshModels('general'),
+      refreshModels('ocr'),
+      refreshModels('translation'),
+      refreshModels('transcription'),
+    ]);
+    return;
+  }
+
   try {
     const ns = namespace === 'general' ? undefined : namespace;
     const url = ns ? `/models/${ns}` : '/models';
@@ -258,7 +268,7 @@ export async function refreshModels(
         if ('ocr' in res && res.ocr) next.ocr = res.ocr;
         if ('translation' in res && res.translation) next.translation = res.translation;
       }
-      next.lastFetched[namespace || 'all'] = Date.now();
+      next.lastFetched[namespace] = Date.now();
       return next;
     });
   } catch (err) {
@@ -287,6 +297,7 @@ export async function loadAppConfig(): Promise<void> {
 export async function refreshConfig(): Promise<void> {
   const fresh = await fetchApi<ConfigResponse>('/config');
   configStore.set(fresh);
+  await refreshModels();
 }
 
 /**
@@ -296,11 +307,12 @@ export async function refreshConfig(): Promise<void> {
 export async function updateOcrNamespace(
   patch: Partial<ConfigResponse>
 ): Promise<void> {
-  const next = await fetchApi<ConfigResponse>('/config', {
+  const next = await fetchApi<ConfigResponse>('/config/ocr', {
     method: 'POST',
-    body: JSON.stringify({ ocr: patch })
+    body: JSON.stringify(patch)
   });
-  configStore.set(next);
+  configStore.update((curr) => ({ ...curr, ...patch }));
+  await refreshModels('ocr');
 }
 
 /**
@@ -310,11 +322,12 @@ export async function updateOcrNamespace(
 export async function updateTranslationNamespace(
   patch: Partial<ConfigResponse>
 ): Promise<void> {
-  const next = await fetchApi<ConfigResponse>('/config', {
+  const next = await fetchApi<ConfigResponse>('/config/translation', {
     method: 'POST',
-    body: JSON.stringify({ translation: patch })
+    body: JSON.stringify(patch)
   });
-  configStore.set(next);
+  configStore.update((curr) => ({ ...curr, ...patch }));
+  await refreshModels('translation');
 }
 
 /**
@@ -324,11 +337,12 @@ export async function updateTranslationNamespace(
 export async function updateTranscriptionNamespace(
   patch: Partial<ConfigResponse>
 ): Promise<void> {
-  const next = await fetchApi<ConfigResponse>('/config', {
+  const next = await fetchApi<ConfigResponse>('/config/transcription', {
     method: 'POST',
-    body: JSON.stringify({ transcription: patch })
+    body: JSON.stringify(patch)
   });
-  configStore.set(next);
+  configStore.update((curr) => ({ ...curr, ...patch }));
+  await refreshModels('transcription');
 }
 
 /**

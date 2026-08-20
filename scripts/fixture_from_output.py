@@ -22,7 +22,7 @@ import json
 import sys
 from pathlib import Path
 
-import fitz
+import pymupdf as fitz
 
 sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 

@@ -30,7 +30,7 @@ def _rasterize_to_jpeg_pages(
             _rasterize_to_jpeg_pages, path, max_dim, dpi,
         )``
     """
-    import fitz
+    import pymupdf as fitz
     from PIL import Image, ImageSequence
 
     from omniscribe.core.pdf import (
@@ -61,7 +61,8 @@ def _rasterize_to_jpeg_pages(
         try:
             # Audit P2-9: same hard page-count cap as the hybrid rasterizer.
             _check_page_cap(len(doc))
-            for page in doc:
+            for page_num in range(len(doc)):
+                page = doc[page_num]
                 pix = page.get_pixmap(dpi=dpi)
                 # Performance: avoid JPEG encode/decode before _emit writes the
                 # final thumbnail JPEG. Direct pixmap conversion saves ~63-75ms/page.

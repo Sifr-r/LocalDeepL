@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import io
 
-import fitz
+import pymupdf as fitz
 import pytest
 
 from omniscribe.core.pdf.embedder import (

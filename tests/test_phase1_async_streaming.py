@@ -88,7 +88,7 @@ def test_convert_batches_yields_bounded_batches(example_pdfs: dict[str, Path]):
 
 def test_convert_batches_last_batch_may_be_smaller(example_pdfs: dict[str, Path]):
     """The last batch may be shorter than ``batch_size``."""
-    import fitz
+    import pymupdf as fitz
 
     input_pdf = str(example_pdfs["digital.pdf"])
     with fitz.open(input_pdf) as doc:
@@ -107,7 +107,7 @@ def test_convert_batches_last_batch_may_be_smaller(example_pdfs: dict[str, Path]
 
 def test_convert_batches_flattens_to_full_page_set(example_pdfs: dict[str, Path]):
     """Concatenating every batch reproduces the full page order with no gaps."""
-    import fitz
+    import pymupdf as fitz
 
     input_pdf = str(example_pdfs["digital.pdf"])
     with fitz.open(input_pdf) as doc:

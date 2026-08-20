@@ -10,7 +10,7 @@
   import SectionHeader from '../ui/SectionHeader.svelte';
   import SegmentedControl from '../ui/SegmentedControl.svelte';
 
-  type Template = 'invoice' | 'resume' | 'academic' | 'custom';
+  type Template = 'invoice' | 'resume' | 'academic' | 'table' | 'custom';
   let selectedTemplate: Template = 'invoice';
   let customSchemaJson = JSON.stringify(
     {
@@ -51,6 +51,7 @@
     { value: 'invoice', label: 'Invoice' },
     { value: 'resume', label: 'Resume' },
     { value: 'academic', label: 'Academic' },
+    { value: 'table', label: 'Table extraction' },
     { value: 'custom', label: 'Custom schema' }
   ];
 

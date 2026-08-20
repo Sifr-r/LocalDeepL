@@ -49,15 +49,17 @@ async def stream():
 
 @pytest.mark.asyncio
 async def test_keepalive():
-    async with httpx.AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        async with client.stream("GET", "/stream") as response:
-            assert response.status_code == 200
-            assert response.headers["content-type"].startswith("text/event-stream")
-            first = await anext(aiter(response.aiter_lines()))
-            assert first == ": keepalive"
-            print("GOT:", first)
+    async with (
+        httpx.AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client,
+        client.stream("GET", "/stream") as response,
+    ):
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        first = await anext(aiter(response.aiter_lines()))
+        assert first == ": keepalive"
+        print("GOT:", first)
 
 
 if __name__ == "__main__":

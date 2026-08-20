@@ -1585,7 +1585,7 @@ class TestHybridTextLayerRecall:
     async def test_real_source_through_detect_layout(self, tmp_path) -> None:
         # Real ``PdfTextLayerRecall`` against a real PDF: no Surya boxes,
         # both text-layer lines must land in the detection output.
-        import fitz
+        import pymupdf as fitz
 
         doc = fitz.open()
         page = doc.new_page(width=612, height=792)

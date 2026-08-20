@@ -37,7 +37,7 @@ import shutil
 import tempfile
 from typing import cast
 
-import fitz  # PyMuPDF — already a dependency via core.pdf.rasterizer
+import pymupdf as fitz  # PyMuPDF — already a dependency via core.pdf.rasterizer
 
 from omniscribe import OCRPipeline
 from omniscribe.api.routers.websocket import ConnectionManagerLike

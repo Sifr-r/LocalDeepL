@@ -280,23 +280,64 @@ def _load_config_from_store() -> dict[str, Any]:
     return cache
 
 
-def _persist_config(updates: dict[str, Any]) -> None:
-    """Write ``updates`` to the config store and refresh the local cache.
+_CONFIG_KEY_TO_ENV: dict[str, str] = {
+    "api_base": "LLM_API_BASE",
+    "api_key": "LLM_API_KEY",
+    "model": "LLM_MODEL",
+    "ocr_api_base": "OCR_API_BASE",
+    "ocr_api_key": "OCR_API_KEY",
+    "ocr_model": "OCR_MODEL",
+    "ocr_provider": "OCR_PROVIDER",
+    "translation_api_base": "TRANSLATION_API_BASE",
+    "translation_api_key": "TRANSLATION_API_KEY",
+    "translation_model": "TRANSLATION_MODEL",
+    "transcription_api_base": "OMNISCRIBE_TRANSCRIPTION_API_BASE",
+    "transcription_api_key": "OMNISCRIBE_TRANSCRIPTION_API_KEY",
+    "transcription_model": "OMNISCRIBE_TRANSCRIPTION_MODEL",
+    "transcription_engine": "OMNISCRIBE_TRANSCRIPTION_ENGINE",
+    "dense_mode": "OCR_DENSE_MODE",
+    "pipeline_mode": "OCR_PIPELINE_MODE",
+    "spellcheck": "OCR_SPELLCHECK",
+    "concurrency": "OCR_CONCURRENCY",
+    "dpi": "OCR_DPI",
+    "dense_threshold": "OCR_DENSE_THRESHOLD",
+    "max_image_dim": "OCR_MAX_IMAGE_DIM",
+    "refine": "OCR_REFINE",
+    "verify_model": "OCR_VERIFY_MODEL",
+    "self_correction": "OCR_SELF_CORRECTION",
+    "binarize": "OCR_BINARIZE",
+    "dual_engine": "OCR_DUAL_ENGINE",
+    "cross_page": "OCR_CROSS_PAGE",
+    "preprocess_pages": "OCR_PREPROCESS_PAGES",
+    "orientation_detection": "OCR_ORIENTATION_DETECTION",
+    "deskew": "OCR_DESKEW",
+    "denoise": "OCR_DENOISE",
+    "normalize_contrast": "OCR_NORMALIZE_CONTRAST",
+    "crop_cleanup": "OCR_CROP_CLEANUP",
+    "quality_routing": "OCR_QUALITY_ROUTING",
+    "quality_loop_enabled": "OMNISCRIBE_QUALITY_LOOP",
+    "quality_target": "OMNISCRIBE_QUALITY_TARGET",
+    "quality_max_retries": "OMNISCRIBE_QUALITY_MAX_RETRIES",
+}
 
-    Raises :class:`_ConfigBackendIncompatible` when the active store
-    is not cross-worker visible. The route handler converts the
-    exception to a 503 response (see
-    :func:`update_config`). On success, the local ``_config`` dict is
-    merged with ``updates`` so code that already holds a reference
-    (e.g. ``extraction.py``, ``ocr.py``) sees the new value without
-    a second round-trip.
-    """
+
+def _persist_config(updates: dict[str, Any]) -> None:
+    """Write ``updates`` to the config store, .env file, and refresh local cache."""
     store = _get_config_store()
     if not store.is_cross_worker_visible():
         raise _ConfigBackendIncompatible(_CONFIG_BACKEND_INCOMPATIBLE_MESSAGE)
     store.update(updates)
     cache = cast(dict[str, Any], _config)
     cache.update(updates)
+
+    env_updates: dict[str, Any] = {}
+    for k, v in updates.items():
+        if k in _CONFIG_KEY_TO_ENV:
+            env_updates[_CONFIG_KEY_TO_ENV[k]] = v
+    if "PYTEST_CURRENT_TEST" not in os.environ and env_updates:
+        from omniscribe.utils.env import update_dotenv
+
+        update_dotenv(env_updates)
 
 
 # ---------------------------------------------------------------------------
@@ -437,18 +478,11 @@ async def get_config():
 
 @router.post("/api/config")
 async def update_config(body: ConfigUpdate):
-    """Update legacy configuration.
+    """Update configuration.
 
-    Only mutates the legacy ``api_*`` keys and the OCR knobs; the
-    per-namespace ``ocr_*`` / ``translation_*`` keys are intentionally
-    untouched so a legacy POST does not silently clobber a deliberate
-    split.
-
-    The update is written through the StateBackend's config_store so
-    every uvicorn worker sees the new value (issue H1). When the
-    active backend is the default in-memory one, the request is
-    refused with a 503 + a remediation message so operators do not
-    see a silently per-worker update.
+    Mutates the legacy ``api_*`` keys, OCR knobs, and any nested
+    namespace updates provided in ``ocr``, ``translation``, or
+    ``transcription``.
     """
     values = body.model_dump(exclude_unset=True)
     if "api_base" in values and not (await is_ssrf_target(values["api_base"])).allowed:
@@ -458,6 +492,14 @@ async def update_config(body: ConfigUpdate):
     # return.
     updates: dict[str, Any] = {}
     for key, val in values.items():
+        if key in ("ocr", "translation", "transcription"):
+            if isinstance(val, dict):
+                for sub_k, sub_v in val.items():
+                    if not (isinstance(sub_v, str) and _is_masked_placeholder(sub_v)):
+                        updates[sub_k] = (
+                            sub_v.value if hasattr(sub_v, "value") else sub_v
+                        )
+            continue
         if key == "api_key" and isinstance(val, str) and _is_masked_placeholder(val):
             continue
         updates[key] = val.value if hasattr(val, "value") else val
@@ -491,6 +533,9 @@ async def _build_ocr_update(body: OcrConfigUpdate) -> dict[str, Any]:
             continue
         if key == "ocr_api_base" and isinstance(val, str) and await _is_ssrf(val):
             raise _SSRFRejected
+        if key == "document_processors" and isinstance(val, list):
+            updates[key] = [p.value if hasattr(p, "value") else p for p in val]
+            continue
         updates[key] = val
     return updates
 
@@ -663,6 +708,57 @@ async def update_transcription_auth_token(body: AuthTokenUpdate):
 # ---------------------------------------------------------------------------
 
 
+async def _discover_models_for_endpoint(
+    api_base: str, api_key: str | None = None
+) -> list[str]:
+    """Query available models from an arbitrary LLM endpoint with multi-URL and multi-format support."""
+    import httpx
+
+    from omniscribe.api.services.provider_manager import extract_model_ids_from_response
+
+    base = api_base.rstrip("/")
+    headers = {}
+    if api_key and api_key != "lm-studio":
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    candidate_urls: list[str] = []
+    if base.endswith("/v1"):
+        candidate_urls.append(f"{base}/models")
+    else:
+        candidate_urls.append(f"{base}/v1/models")
+        candidate_urls.append(f"{base}/models")
+    candidate_urls.append(f"{base}/api/tags")
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            for url in candidate_urls:
+                try:
+                    resp = await client.get(url, headers=headers)
+                    if resp.status_code == 200:
+                        models = extract_model_ids_from_response(resp.json())
+                        if models:
+                            return models
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
+    try:
+        from openai import AsyncOpenAI
+
+        client_sdk = AsyncOpenAI(
+            base_url=api_base,
+            api_key=api_key or "lm-studio",
+        )
+        response = await client_sdk.models.list()
+        if response.data:
+            return [m.id for m in response.data]
+    except Exception:
+        pass
+
+    return []
+
+
 @router.get("/api/models")
 async def list_models():
     """Query available models using the active provider from ProviderManager or configured api_base."""
@@ -677,15 +773,10 @@ async def list_models():
         if not (await is_ssrf_target(custom_base)).allowed:
             return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
         try:
-            from openai import AsyncOpenAI
-
-            client = AsyncOpenAI(
-                base_url=custom_base,
-                api_key=config.get("api_key") or "lm-studio",
+            models = await _discover_models_for_endpoint(
+                custom_base, config.get("api_key")
             )
-            response = await client.models.list()
-            model_ids = [m.id for m in response.data] if response.data else []
-            return JSONResponse(content={"models": model_ids})
+            return JSONResponse(content={"models": models})
         except Exception:
             logger.exception("Model discovery failed")
             return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
@@ -733,12 +824,8 @@ async def list_ocr_models():
     if not (await is_ssrf_target(api_base)).allowed:
         return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
     try:
-        from openai import AsyncOpenAI
-
-        client = AsyncOpenAI(base_url=api_base, api_key=api_key)
-        response = await client.models.list()
-        model_ids = [m.id for m in response.data] if response.data else []
-        return JSONResponse(content={"models": model_ids})
+        models = await _discover_models_for_endpoint(api_base, api_key)
+        return JSONResponse(content={"models": models})
     except Exception:
         logger.exception("OCR model discovery failed")
         return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
@@ -773,12 +860,8 @@ async def list_translation_models():
     if not (await is_ssrf_target(api_base)).allowed:
         return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
     try:
-        from openai import AsyncOpenAI
-
-        client = AsyncOpenAI(base_url=api_base, api_key=api_key)
-        response = await client.models.list()
-        model_ids = [m.id for m in response.data] if response.data else []
-        return JSONResponse(content={"models": model_ids})
+        models = await _discover_models_for_endpoint(api_base, api_key)
+        return JSONResponse(content={"models": models})
     except Exception:
         logger.exception("Translation model discovery failed")
         return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})

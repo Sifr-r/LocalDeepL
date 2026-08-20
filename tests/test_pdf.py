@@ -10,7 +10,7 @@ from __future__ import annotations
 import base64
 from pathlib import Path
 
-import fitz
+import pymupdf as fitz
 import pytest
 
 from omniscribe.core.pdf import PDFHandler

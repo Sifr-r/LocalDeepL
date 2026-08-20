@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-import fitz  # PyMuPDF
+import pymupdf as fitz  # PyMuPDF
 from PIL import Image, ImageSequence
 
 from omniscribe.core.document import BBox
@@ -234,7 +234,7 @@ def _ensure_font_registered(page: fitz.Page, alias: str, font: fitz.Font) -> Non
         return
     page.insert_font(fontname=alias, fontbuffer=font.buffer)
     registered.add(alias)
-    page._omni_registered_fonts = registered
+    page._omni_registered_fonts = registered  # type: ignore[attr-defined]
 
 
 def _filter_uncovered_chars(text: str, font: fitz.Font) -> str:

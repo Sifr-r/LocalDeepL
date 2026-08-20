@@ -36,6 +36,31 @@ export async function getProviderDetails(id: string): Promise<ProviderPreset> {
   return fetchApi<ProviderPreset>(`/providers/${id}`);
 }
 
+/**
+ * Live model list for a single provider. Calls the server's
+ * ``GET /api/providers/{id}/models`` endpoint, which fans out to the
+ * provider's own ``GET {base}/v1/models`` (or
+ * ``GET {base}/api/tags`` for Ollama) and falls back to the static
+ * preset list on error. The server uses a 5-second per-request
+ * timeout, so the worst-case latency here is bounded even when a
+ * provider is unreachable.
+ *
+ * The endpoint may return an ``error`` field when the live fetch
+ * failed; the static ``models`` list is still populated in that
+ * case. Callers should treat ``models`` as the source of truth and
+ * surface ``error`` as a non-blocking warning.
+ */
+export interface ProviderModelsResponse {
+  models: string[];
+  error?: string | null;
+}
+
+export async function getProviderModels(
+  id: string
+): Promise<ProviderModelsResponse> {
+  return fetchApi<ProviderModelsResponse>(`/providers/${id}/models`);
+}
+
 export interface ProcessOcrResult {
   /** Parsed response body (JSON when the endpoint returns JSON, otherwise the raw blob). */
   body: unknown;
@@ -208,7 +233,8 @@ export const jobsApi = {
 
 export const providersApi = {
   list: getProviders,
-  get: getProviderDetails
+  get: getProviderDetails,
+  models: getProviderModels
 };
 
 // Artifact GETs carry the token-bound access token in the Authorization

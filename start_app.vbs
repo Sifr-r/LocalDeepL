@@ -217,25 +217,25 @@ If dockerUp Then
     LogMsg "Creating hardened redis-local-ocr container (pinned image, loopback-only, requirepass)"
     objShell.Run "cmd.exe /c docker run -d --name redis-local-ocr -p 127.0.0.1:6379:6379 --rm redis:7-alpine redis-server --appendonly no --save """" --requirepass " & redisPass, 0, True
 
-    ' --- 2. Celery worker (hidden, fire-and-forget) ---
+    ' --- 2. Celery worker (visible terminal, fire-and-forget) ---
     ' -A must use the installed-package module path (compose.yaml uses the
     ' same). The old `src.*` namespace form resolved a second module copy,
     ' so tasks registered on the `omniscribe.*` copy were invisible to the
     ' worker (audit DevOps High #6, drift half).
-    LogMsg "Starting Celery worker"
-    objShell.Run "cmd.exe /c set ""REDIS_URL=" & redisUrl & """" & " && uv run --extra web --extra async-translation celery -A omniscribe.api.tasks worker --loglevel=info -P solo", 0, False
+    LogMsg "Starting Celery worker in terminal"
+    objShell.Run "cmd.exe /k title OmniScribe Celery Worker && set ""REDIS_URL=" & redisUrl & """" & " && uv run --extra web --extra async-translation celery -A omniscribe.api.tasks worker --loglevel=info -P solo", 1, False
 Else
     LogMsg "Docker is not available; skipping Redis and Celery. Async translation will be disabled."
 End If
 
-' --- 3. uvicorn (hidden, fire-and-forget) ---
+' --- 3. uvicorn (visible terminal, fire-and-forget) ---
 ' Same installed-package path as the `omniscribe-server` console script so
 ' the API process imports one module copy, not a `src.*` namespace twin.
-LogMsg "Starting uvicorn on :8000"
+LogMsg "Starting uvicorn on :8000 in terminal"
 If dockerUp Then
-    objShell.Run "cmd.exe /c set ""REDIS_URL=" & redisUrl & """" & " && uv run --extra web uvicorn omniscribe.server:app --port 8000", 0, False
+    objShell.Run "cmd.exe /k title OmniScribe Server && set ""REDIS_URL=" & redisUrl & """" & " && uv run --extra web uvicorn omniscribe.server:app --port 8000", 1, False
 Else
-    objShell.Run "cmd.exe /c uv run --extra web uvicorn omniscribe.server:app --port 8000", 0, False
+    objShell.Run "cmd.exe /k title OmniScribe Server && uv run --extra web uvicorn omniscribe.server:app --port 8000", 1, False
 End If
 
 ' --- 4. Wait for uvicorn to actually respond (poll HTTP, max 60s) ---

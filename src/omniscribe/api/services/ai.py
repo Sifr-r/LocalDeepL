@@ -270,6 +270,13 @@ def extraction_instructions(
                 "'title', 'authors' (array of strings), 'publication_year', 'abstract', 'key_conclusions' "
                 "(array of strings), 'methodology', and 'limitations' (array of strings)."
             )
+        case ExtractionTemplate.TABLE | ExtractionTemplate.TABLE_EXTRACTION:
+            return (
+                "Extract all data tables from the text into a clean JSON object containing 'tables', "
+                "where 'tables' is an array of table objects. Each table object should contain "
+                "'title' (table title or description if identifiable), 'headers' (an array of column header strings), "
+                "and 'rows' (an array of rows, where each row is an array of cell values or key-value objects)."
+            )
         case _:
             safe_custom = sanitize_prompt_input(custom_prompt)
             return (

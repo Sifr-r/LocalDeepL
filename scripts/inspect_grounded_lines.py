@@ -3,7 +3,7 @@
 
 import sys
 
-import fitz
+import pymupdf as fitz
 
 
 def _flush(

@@ -17,7 +17,13 @@ export type DocumentProcessorName =
   | 'layout_enrichment'
   | 'table_extraction';
 
-export type ExtractionTemplate = 'invoice' | 'resume' | 'academic' | 'custom';
+export type ExtractionTemplate =
+  | 'invoice'
+  | 'resume'
+  | 'academic'
+  | 'table'
+  | 'table_extraction'
+  | 'custom';
 export type DocumentExportFormat = 'json' | 'markdown' | 'text' | 'docling' | 'mineru';
 
 export type GlossaryFormat =
@@ -330,9 +336,11 @@ export interface ConfigResponse {
   ocr_model?: string;
   ocr_api_base?: string;
   ocr_api_key?: string;
+  ocr_provider?: string;
   translation_model?: string;
   translation_api_base?: string;
   translation_api_key?: string;
+  translation_provider?: string;
   sliding_window_words?: number;
   dual_translate?: boolean;
   transcription_model?: string;

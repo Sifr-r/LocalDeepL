@@ -132,7 +132,7 @@ and each pass logs one INFO run summary per job.
 | `examples/` | Sample PDFs and images used by `tests/`, `test_ui.py`, and the confidence scripts |
 | `tests/` | Unit, integration, security, and slow-path validation |
 | `install.bat` / `install.ps1` | Windows one-click install: `uv` bootstrap, `uv sync --extra web --extra preprocessing`, Docker check, Desktop/Start-Menu shortcuts, post-install verification |
-| `start_app.vbs` / `stop_app.bat` | Windows hidden-start and stop-launcher for Redis + Celery + uvicorn; `start_app.vbs` writes a timestamped append log to `start_app.log` |
+| `start_app.vbs` | Windows terminal launcher for Redis + Celery + uvicorn; writes a timestamped append log to `start_app.log` |
 | `test_ui.py` | Headless Playwright smoke test against the running web UI |
 
 ## Extension Points
@@ -236,6 +236,28 @@ CORS respectively. Artifact IDs use a separate artifact token supplied through
 | `GET` / `POST` / `DELETE` | `/api/glossary/library...` | `glossary_imports` | Local glossary library management |
 
 ## Change Blueprint
+
+### 2026-08-20: Robust Multi-Format Model Discovery & 422 Request Resilience
+
+Enhanced model discovery across `src/omniscribe/api/services/provider_manager.py`,
+`src/omniscribe/api/routers/config.py`, and `src/omniscribe/api/routers/transcription.py`.
+Introduced `extract_model_ids_from_response` supporting OpenAI standard, Ollama native
+(`/api/tags`), Anthropic, OpenRouter, Together, top-level arrays, and custom formats.
+Added candidate URL fallbacks (`/v1/models`, `/models`, `/api/tags`) for robust
+compatibility with local servers (LM Studio, Ollama, vLLM, LocalAI) and remote endpoints.
+Updated frontend `loadAppConfig` and `refreshModels` in `appStore.ts` to automatically
+pull and populate all model namespaces (`general`, `ocr`, `translation`, `transcription`)
+in parallel on application load and upon provider/namespace configuration updates.
+Resolved HTTP 422 validation errors by:
+- Allowing empty `api_key` in `ConfigUpdate` and defaulting empty `api_key` to `"lm-studio"` in `ProcessSettings` for local model backends.
+- Accepting `document_processors` in `OcrConfigUpdate` (`POST /api/config/ocr`).
+- Expanding `TranscriptionEngineType` to support `"faster-whisper"` and `"faster_whisper"`.
+- Accepting nested namespace update objects in `ConfigUpdate` (`POST /api/config`).
+- Aligning frontend namespace update calls in `appStore.ts` and `SettingsView.svelte` with dedicated API routes.
+Added bidirectional `.env` preset synchronization:
+- Implemented `update_dotenv` in `src/omniscribe/utils/env.py` to atomically update or insert `.env` variables while preserving comments and structure.
+- Connected `ProviderManager.set_active_provider` and `_persist_config` to automatically sync `LLM_API_BASE`, `LLM_MODEL`, `LLM_API_KEY`, and OCR/translation settings to `.env`, `os.environ`, and `_config`.
+- Updated `ProviderModal.svelte` so selecting catalog presets persists to backend active provider and `.env`.
 
 ### 2026-08-13: Quality repair loop (automatic low-confidence block retry)
 

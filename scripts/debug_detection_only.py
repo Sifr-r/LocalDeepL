@@ -12,7 +12,7 @@ import os
 import sys
 import time
 
-import fitz
+import pymupdf as fitz
 from PIL import Image, ImageDraw, ImageFont
 
 # Add parent directory to path for imports

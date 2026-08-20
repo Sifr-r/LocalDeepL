@@ -167,7 +167,7 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/core/handwriting_preprocessor.py` | Local handwriting image preprocessor |
 | `scripts/` | Developer utilities: confidence eval, fixture builder, debug/inspection scripts, bbox visualizers |
 | `examples/` | Sample PDFs and images for `tests/`, `test_ui.py`, and the confidence scripts |
-| `install.bat` / `install.ps1` / `start_app.vbs` / `stop_app.bat` / `test_ui.py` | Windows one-click install, hidden-start, stop, and Playwright smoke test |
+| `install.bat` / `install.ps1` / `start_app.vbs` / `test_ui.py` | Windows one-click install, terminal launcher, and Playwright smoke test |
 
 ## Extension Points
 
@@ -230,7 +230,7 @@ singletons are the production access path. See `audits/2026-08-19-secondary-vali
 - **Model pre-flight**: each `/api/process` request verifies the configured model is actually loaded on the VLM server (`GET /v1/models`) before paying for conversion/detection — one extra HTTP round-trip per request, guarding against LM Studio's silent model fallback (issue #7).
 - **Quality repair loop**: `/api/process` re-OCRs blocks whose estimated confidence is below the target (crop-scoped, sequential, accept-only-while-improving) after block emission and before embedding. Defaults ON at the API layer (up to 2 extra VLM passes per low-confidence block); in-process `OCRPipeline.run` callers stay off unless they pass `repair_options=`. Per-request form fields `quality_loop_enabled` / `quality_target` (0.5–1.0) / `quality_max_retries` (0–5); env seeds `OMNISCRIBE_QUALITY_LOOP`, `OMNISCRIBE_QUALITY_TARGET`, `OMNISCRIBE_QUALITY_MAX_RETRIES`. WebSocket frames: `block_retry`, `block_revised`, `quality_summary`.
 - Web runtime settings are initialized in `api/routers/config.py`.
-- **Windows quick-start**: run `install.bat` to install `uv`, sync the web extra, and create Desktop / Start-Menu shortcuts. `start_app.vbs` boots Redis (via Docker) + Celery + uvicorn hidden and opens the browser; it writes a timestamped append log to `start_app.log` next to itself. `stop_app.bat` terminates the uvicorn + Celery processes. `test_ui.py` is the headless Playwright smoke test against `examples/dense.pdf`.
+- **Windows quick-start**: run `install.bat` to install `uv`, sync the web extra, and create Desktop / Start-Menu shortcuts. `start_app.vbs` boots Redis (via Docker) + Celery + uvicorn in visible terminal windows and opens the browser; it writes a timestamped append log to `start_app.log` next to itself. Closing the terminal windows terminates the processes. `test_ui.py` is the headless Playwright smoke test against `examples/dense.pdf`.
 - **Developer scripts** live in `scripts/`. The most useful for OCR quality work are `scripts/confidence_eval.py` (hybrid + grounded vs the `examples/*.pdf` fixtures) and `scripts/confidence_image.py` (single-image confidence). The rest are debug/inspection/visualization tools.
 - **Docker**: `Dockerfile` builds a `python:3.14-slim` runtime with the `web`, `async-translation`, and `preprocessing` extras. `compose.yaml` runs `api` + `redis` by default; add `--profile async` to also start a Celery worker. Image exposes port 8000; bind `LLM_API_BASE` to `http://host.docker.internal:1234/v1` to talk to a host-side LM Studio.
 - **Pre-commit**: `.pre-commit-config.yaml` runs ruff (check + format), mypy, and `uv-lock` on every commit. Enable with `uv tool run pre-commit install` after cloning.

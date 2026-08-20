@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-import fitz  # PyMuPDF
+import pymupdf as fitz  # PyMuPDF
 
 from omniscribe.core.document import BBox
 from omniscribe.utils.env import env_str
