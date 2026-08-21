@@ -113,6 +113,7 @@ def create_app() -> ASGIApplication:
         translation,
         websocket,
     )
+    from omniscribe.api.services.envelope import register_envelope_handlers
     from omniscribe.api.services.lifespan import LifespanRunner, LifespanStep
     from omniscribe.api.services.security_config import SecuritySettings
     from omniscribe.api.services.security_middleware import (
@@ -258,6 +259,11 @@ def create_app() -> ASGIApplication:
             yield
 
     web_app = fastapi.FastAPI(lifespan=lifespan)
+    # Phase C: register the canonical error envelope handlers so
+    # APIError subclasses + FastAPI's RequestValidationError both render
+    # as ``{"error": "<code>", "detail": "<msg>"}`` instead of falling
+    # back to FastAPI's default HTTPException / bare 500 handlers.
+    register_envelope_handlers(web_app)
     security = SecuritySettings.from_env()
 
     if security.cors_origins:
