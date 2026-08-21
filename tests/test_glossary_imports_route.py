@@ -30,7 +30,10 @@ def library_dir(tmp_path, monkeypatch):
 
 
 def _build_client(library_dir: Path) -> TestClient:
+    from omniscribe.api.services.envelope import register_envelope_handlers
+
     app = FastAPI()
+    register_envelope_handlers(app)
     app.include_router(glossary_imports.router)
     return TestClient(app)
 
@@ -90,7 +93,7 @@ def test_import_requires_text_or_bytes(library_dir):
     assert response.status_code == 422
 
 
-def test_max_entries_too_small_returns_413(library_dir):
+def test_max_entries_too_small_returns_bad_request(library_dir):
     client = _build_client(library_dir)
     raw = (FIXTURES / "pairs.csv").read_bytes()
     body = {
@@ -101,9 +104,10 @@ def test_max_entries_too_small_returns_413(library_dir):
         }
     }
     response = client.post("/api/glossary/import", json=body)
-    assert response.status_code == 413, response.text
-    detail = response.json()["detail"]
-    assert detail["max"] == 2
+    assert response.status_code == 400, response.text
+    body_json = response.json()
+    assert body_json["error"] == "bad_request"
+    assert "max 2" in body_json["detail"]
 
 
 def test_toggle_endpoint_persists(library_dir):
