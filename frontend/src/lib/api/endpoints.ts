@@ -1,4 +1,5 @@
 import { fetchApi, fetchApiWithHeaders, fetchFile } from './client';
+import type { FetchOptions } from './fetchOptions';
 import type {
   RuntimeConfig,
   ProviderPreset,
@@ -16,24 +17,33 @@ import type {
   DocumentExportFormat
 } from '../types/api';
 
-export async function getConfig(): Promise<RuntimeConfig> {
-  return fetchApi<RuntimeConfig>('/config');
+export async function getConfig(options?: FetchOptions): Promise<RuntimeConfig> {
+  return fetchApi<RuntimeConfig>('/config', { signal: options?.signal });
 }
 
-export async function updateConfig(updates: Partial<RuntimeConfig>): Promise<RuntimeConfig> {
+export async function updateConfig(
+  updates: Partial<RuntimeConfig>,
+  options?: FetchOptions
+): Promise<RuntimeConfig> {
   return fetchApi<RuntimeConfig>('/config', {
     method: 'POST',
-    body: JSON.stringify(updates)
+    body: JSON.stringify(updates),
+    signal: options?.signal
   });
 }
 
-export async function getProviders(): Promise<ProviderPreset[]> {
-  const data = await fetchApi<{ providers: ProviderPreset[] }>('/providers');
+export async function getProviders(options?: FetchOptions): Promise<ProviderPreset[]> {
+  const data = await fetchApi<{ providers: ProviderPreset[] }>('/providers', {
+    signal: options?.signal
+  });
   return data.providers || [];
 }
 
-export async function getProviderDetails(id: string): Promise<ProviderPreset> {
-  return fetchApi<ProviderPreset>(`/providers/${id}`);
+export async function getProviderDetails(
+  id: string,
+  options?: FetchOptions
+): Promise<ProviderPreset> {
+  return fetchApi<ProviderPreset>(`/providers/${id}`, { signal: options?.signal });
 }
 
 /**
@@ -56,9 +66,10 @@ export interface ProviderModelsResponse {
 }
 
 export async function getProviderModels(
-  id: string
+  id: string,
+  options?: FetchOptions
 ): Promise<ProviderModelsResponse> {
-  return fetchApi<ProviderModelsResponse>(`/providers/${id}/models`);
+  return fetchApi<ProviderModelsResponse>(`/providers/${id}/models`, { signal: options?.signal });
 }
 
 export interface ProcessOcrResult {
@@ -83,10 +94,14 @@ export interface ProcessOcrResult {
  * responses, and exposes the headers so the WorkstationView can read
  * ``X-Document-Trust`` and the artifact id/token.
  */
-export async function processOcr(formData: FormData): Promise<ProcessOcrResult> {
+export async function processOcr(
+  formData: FormData,
+  options?: FetchOptions
+): Promise<ProcessOcrResult> {
   const { body, headers } = await fetchApiWithHeaders<unknown>('/process', {
     method: 'POST',
-    body: formData
+    body: formData,
+    signal: options?.signal
   });
 
   const trustRaw = headers['x-document-trust'];
@@ -104,12 +119,15 @@ export async function processOcr(formData: FormData): Promise<ProcessOcrResult> 
     headers,
     trustSummary,
     textArtifactId: headers['x-text-artifact-id'] ?? null,
-    textArtifactToken: headers['x-text-artifact-token'] ?? null,
+    textArtifactToken: headers['x-text-artifact-token'] ?? null
   };
 }
 
-export async function getOcrStatus(jobId: string): Promise<OcrJobStatusResponse> {
-  return fetchApi<OcrJobStatusResponse>(`/process/status/${jobId}`);
+export async function getOcrStatus(
+  jobId: string,
+  options?: FetchOptions
+): Promise<OcrJobStatusResponse> {
+  return fetchApi<OcrJobStatusResponse>(`/process/status/${jobId}`, { signal: options?.signal });
 }
 
 /**
@@ -122,11 +140,15 @@ export async function getOcrStatus(jobId: string): Promise<OcrJobStatusResponse>
  * channel; poll :func:`getOcrStatus` until ``status === "complete"`` and
  * then download the result PDF via :func:`getOcrResult`.
  */
-export async function processOcrAsync(formData: FormData): Promise<{ job_id: string; status: string }> {
+export async function processOcrAsync(
+  formData: FormData,
+  options?: FetchOptions
+): Promise<{ job_id: string; status: string }> {
   return fetchApi<{ job_id: string; status: string }>('/process/async', {
     method: 'POST',
     body: formData,
-    silent: true
+    silent: true,
+    signal: options?.signal
   });
 }
 
@@ -139,8 +161,14 @@ export async function processOcrAsync(formData: FormData): Promise<{ job_id: str
  * download link without needing a header. The route also accepts
  * the token via the ``Authorization: Bearer <token>`` header.
  */
-export async function getOcrResult(jobId: string, token: string): Promise<Blob> {
-  return fetchFile(`/jobs/${jobId}/result?token=${encodeURIComponent(token)}`);
+export async function getOcrResult(
+  jobId: string,
+  token: string,
+  options?: FetchOptions
+): Promise<Blob> {
+  return fetchFile(`/jobs/${jobId}/result?token=${encodeURIComponent(token)}`, {
+    signal: options?.signal
+  });
 }
 
 export interface DocumentExportResult {
@@ -149,43 +177,52 @@ export interface DocumentExportResult {
   format: string;
 }
 
-export async function exportDocument(payload: {
-  text_artifact_id?: string;
-  text_artifact_token?: string;
-  metadata_artifact_id?: string;
-  metadata_artifact_token?: string;
-  export_format?: DocumentExportFormat | string;
-  format?: string;
-  filename?: string;
-  [key: string]: unknown;
-}): Promise<DocumentExportResult> {
+export async function exportDocument(
+  payload: {
+    text_artifact_id?: string;
+    text_artifact_token?: string;
+    metadata_artifact_id?: string;
+    metadata_artifact_token?: string;
+    export_format?: DocumentExportFormat | string;
+    format?: string;
+    filename?: string;
+    [key: string]: unknown;
+  },
+  options?: FetchOptions
+): Promise<DocumentExportResult> {
   return fetchApi<DocumentExportResult>('/export/document', {
     method: 'POST',
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    signal: options?.signal
   });
 }
 
-export async function exportDocx(payload: {
-  text?: string;
-  [key: string]: unknown;
-}): Promise<Blob> {
+export async function exportDocx(
+  payload: {
+    text?: string;
+    [key: string]: unknown;
+  },
+  options?: FetchOptions
+): Promise<Blob> {
   return fetchFile('/export/docx', {
     method: 'POST',
     body: JSON.stringify(payload),
     headers: {
       'Content-Type': 'application/json'
-    }
+    },
+    signal: options?.signal
   });
 }
 
 export const configApi = {
   get: getConfig,
   update: updateConfig,
-  getModels: (namespace: string = 'general') =>
+  getModels: (namespace: string = 'general', options?: FetchOptions) =>
     // The server only registers /api/models plus the ocr/translation/
     // transcription namespaces — 'general' maps to the bare route.
     fetchApi<{ models: string[] }>(
-      namespace && namespace !== 'general' ? `/models/${namespace}` : '/models'
+      namespace && namespace !== 'general' ? `/models/${namespace}` : '/models',
+      { signal: options?.signal }
     )
 };
 
@@ -194,41 +231,82 @@ export const ocrApi = {
   processAsync: processOcrAsync,
   getStatus: getOcrStatus,
   getResult: getOcrResult,
-  cancel: (jobId: string) => fetchApi(`/jobs/${jobId}/cancel`, { method: 'POST' })
+  cancel: (jobId: string, options?: FetchOptions) =>
+    fetchApi(`/jobs/${jobId}/cancel`, { method: 'POST', signal: options?.signal })
 };
 
 export const translationApi = {
-  translate: (payload: TranslationRequest) =>
-    fetchApi<{ translated_text: string }>('/translate', { method: 'POST', body: JSON.stringify(payload) }),
-  translateAsync: (payload: TranslationRequest) =>
-    fetchApi<{ job_id: string; status: string }>('/translate/async', { method: 'POST', body: JSON.stringify(payload) }),
-  getStatus: (jobId: string) => fetchApi(`/translate/status/${jobId}`)
+  translate: (payload: TranslationRequest, options?: FetchOptions) =>
+    fetchApi<{ translated_text: string }>('/translate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal: options?.signal
+    }),
+  translateAsync: (payload: TranslationRequest, options?: FetchOptions) =>
+    fetchApi<{ job_id: string; status: string }>('/translate/async', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal: options?.signal
+    }),
+  getStatus: (jobId: string, options?: FetchOptions) =>
+    fetchApi(`/translate/status/${jobId}`, { signal: options?.signal })
 };
 
 export const transcriptionApi = {
-  transcribe: (formData: FormData) =>
-    fetchApi<{ text: string; segments: TranscriptionSegment[] }>('/transcribe', { method: 'POST', body: formData })
+  transcribe: (formData: FormData, options?: FetchOptions) =>
+    fetchApi<{ text: string; segments: TranscriptionSegment[] }>('/transcribe', {
+      method: 'POST',
+      body: formData,
+      signal: options?.signal
+    })
 };
 
 export const glossaryApi = {
-  getLibraries: () => fetchApi<{ libraries: GlossaryListItem[] }>('/glossary/library'),
-  getEntries: (id: string) => fetchApi<{ entries: GlossaryEntry[] } | GlossaryEntry[]>(`/glossary/library/${id}/entries`),
-  getMerged: () => fetchApi<{ entries: GlossaryEntry[] }>('/glossary/library/merged'),
-  getPreview: () => fetchApi<GlossaryPreviewResponse>('/glossary/library/preview'),
-  toggle: (id: string, enabled: boolean) =>
-    fetchApi(`/glossary/library/${id}/enable`, { method: 'POST', body: JSON.stringify({ enabled }) }),
-  delete: (id: string) => fetchApi(`/glossary/library/${id}`, { method: 'DELETE' }),
-  reorder: (orderedIds: string[]) =>
-    fetchApi('/glossary/library/reorder', { method: 'POST', body: JSON.stringify({ ordered_ids: orderedIds }) }),
-  importFile: (formData: FormData) => fetchApi<GlossaryImportJobResponse>('/glossary/import', { method: 'POST', body: formData }),
-  importUrl: (url: string, format: GlossaryFormat, name?: string) =>
-    fetchApi<GlossaryImportJobResponse>('/glossary/import/url', { method: 'POST', body: JSON.stringify({ url, format, name }) })
+  getLibraries: (options?: FetchOptions) =>
+    fetchApi<{ libraries: GlossaryListItem[] }>('/glossary/library', { signal: options?.signal }),
+  getEntries: (id: string, options?: FetchOptions) =>
+    fetchApi<{ entries: GlossaryEntry[] } | GlossaryEntry[]>(`/glossary/library/${id}/entries`, {
+      signal: options?.signal
+    }),
+  getMerged: (options?: FetchOptions) =>
+    fetchApi<{ entries: GlossaryEntry[] }>('/glossary/library/merged', { signal: options?.signal }),
+  getPreview: (options?: FetchOptions) =>
+    fetchApi<GlossaryPreviewResponse>('/glossary/library/preview', { signal: options?.signal }),
+  toggle: (id: string, enabled: boolean, options?: FetchOptions) =>
+    fetchApi(`/glossary/library/${id}/enable`, {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+      signal: options?.signal
+    }),
+  delete: (id: string, options?: FetchOptions) =>
+    fetchApi(`/glossary/library/${id}`, { method: 'DELETE', signal: options?.signal }),
+  reorder: (orderedIds: string[], options?: FetchOptions) =>
+    fetchApi('/glossary/library/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ ordered_ids: orderedIds }),
+      signal: options?.signal
+    }),
+  importFile: (formData: FormData, options?: FetchOptions) =>
+    fetchApi<GlossaryImportJobResponse>('/glossary/import', {
+      method: 'POST',
+      body: formData,
+      signal: options?.signal
+    }),
+  importUrl: (url: string, format: GlossaryFormat, name?: string, options?: FetchOptions) =>
+    fetchApi<GlossaryImportJobResponse>('/glossary/import/url', {
+      method: 'POST',
+      body: JSON.stringify({ url, format, name }),
+      signal: options?.signal
+    })
 };
 
 export const jobsApi = {
-  list: () => fetchApi<JobRecordResponse[]>('/jobs'),
-  clear: () => fetchApi('/jobs', { method: 'DELETE' }),
-  cancel: (jobId: string) => fetchApi(`/jobs/${jobId}/cancel`, { method: 'POST' })
+  list: (options?: FetchOptions) =>
+    fetchApi<JobRecordResponse[]>('/jobs', { signal: options?.signal }),
+  clear: (options?: FetchOptions) =>
+    fetchApi('/jobs', { method: 'DELETE', signal: options?.signal }),
+  cancel: (jobId: string, options?: FetchOptions) =>
+    fetchApi(`/jobs/${jobId}/cancel`, { method: 'POST', signal: options?.signal })
 };
 
 export const providersApi = {
@@ -241,8 +319,11 @@ export const providersApi = {
 // header (SECURITY.md: artifact tokens must not be placed in query strings).
 // The server enforces this via `get_access_token` (header-only).
 export const artifactsApi = {
-  getText: (id: string, token: string) =>
-    fetchFile(`/text/${id}`, { headers: { Authorization: `Bearer ${token}` } }),
+  getText: (id: string, token: string, options?: FetchOptions) =>
+    fetchFile(`/text/${id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: options?.signal
+    }),
   /**
    * Fetch an artifact's text payload and normalize it to a plain
    * ``string`` in one call. The endpoint returns a JSON body whose
@@ -254,9 +335,14 @@ export const artifactsApi = {
    *
    * The token travels in the ``Authorization`` header, not the URL.
    */
-  getTextAsString: async (id: string, token: string): Promise<string> => {
+  getTextAsString: async (
+    id: string,
+    token: string,
+    options?: FetchOptions
+  ): Promise<string> => {
     const blob = await fetchFile(`/text/${id}`, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}` },
+      signal: options?.signal
     });
     const raw = await blob.text();
     try {
@@ -275,12 +361,18 @@ export const artifactsApi = {
       return raw;
     }
   },
-  getExport: (id: string, token: string) =>
-    fetchFile(`/export/${id}`, { headers: { Authorization: `Bearer ${token}` } })
+  getExport: (id: string, token: string, options?: FetchOptions) =>
+    fetchFile(`/export/${id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: options?.signal
+    })
 };
 
 export const extractionApi = {
-  extract: (payload: ExtractionRequest) =>
-    fetchApi<{ extracted_data: unknown }>('/extract', { method: 'POST', body: JSON.stringify(payload) })
+  extract: (payload: ExtractionRequest, options?: FetchOptions) =>
+    fetchApi<{ extracted_data: unknown }>('/extract', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal: options?.signal
+    })
 };
-
