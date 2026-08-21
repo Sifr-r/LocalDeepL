@@ -5,6 +5,7 @@ import {
   translateAsync,
   translateNllb
 } from '../translationService';
+import { translationApi } from '../../api/endpoints';
 
 /**
  * Service-level tests for `translationService.ts`. The wrappers here
@@ -101,5 +102,34 @@ describe('translationService', () => {
     expect(url).toContain('/api/translate/status/job-42');
     // GET is the fetch default; the underlying wrapper omits method.
     expect(init.method ?? 'GET').toBe('GET');
+  });
+
+  // Phase C / FE-07 (Task 12) spec-compliance fix: ``pollAsyncStatus``
+  // in ``TranslationView`` polls every 2 s and a transient 5xx must
+  // not produce a toast every tick. The flag has to ride through the
+  // service → endpoint → fetchApi chain so ``fetchApi`` suppresses
+  // the toast on non-2xx responses.
+  //
+  // We can't observe ``silent`` on the global ``fetch`` spy because
+  // ``client.fetchApi`` destructures ``silent`` out of the request-init
+  // before calling ``fetch`` (see ``src/lib/api/client.ts``). So we
+  // spy on the lower-level ``translationApi.getStatus`` wrapper and
+  // verify the service forwarded the option verbatim.
+  it('getTranslationStatus propagates { silent: true } to translationApi.getStatus', async () => {
+    const spy = vi.spyOn(translationApi, 'getStatus');
+    await getTranslationStatus('job-silent', { silent: true });
+    expect(spy).toHaveBeenCalledTimes(1);
+    const [, forwarded] = spy.mock.calls[0] ?? [];
+    expect(forwarded).toEqual({ silent: true });
+    spy.mockRestore();
+  });
+
+  it('getTranslationStatus omits silent when not requested', async () => {
+    const spy = vi.spyOn(translationApi, 'getStatus');
+    await getTranslationStatus('job-noisy');
+    expect(spy).toHaveBeenCalledTimes(1);
+    const [, forwarded] = spy.mock.calls[0] ?? [];
+    expect(forwarded).toBeUndefined();
+    spy.mockRestore();
   });
 });

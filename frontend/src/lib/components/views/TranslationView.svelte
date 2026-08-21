@@ -180,8 +180,12 @@
       try {
         // ``getTranslationStatus`` returns ``unknown`` because the
         // payload shape varies across job states (queued / running /
-        // complete / error); narrow it at the call site.
-        const res = (await getTranslationStatus(jobId)) as {
+        // complete / error); narrow it at the call site. Pass
+        // ``silent: true`` so transient polling errors (network blips,
+        // mid-flight race conditions) don't fire a toast every 2 s
+        // while the job is still in flight — only the terminal FAILURE
+        // branch below surfaces a real error toast.
+        const res = (await getTranslationStatus(jobId, { silent: true })) as {
           state?: string;
           status?: string;
           result?: unknown;

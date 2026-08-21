@@ -16,15 +16,13 @@
  * hoisting onto `extractionApi` first.
  */
 import { extractionApi } from '../api/endpoints';
-import type {
-  DocumentExportResult,
-  ExportDocxTreeRequest
-} from '../api/endpoints';
+import type { DocumentExportResult } from '../api/endpoints';
 import type { FetchOptions } from '../api/fetchOptions';
 import type {
   DocumentExportRequest,
   ExportBlockTreeRequest,
   ExportDocxRequest,
+  ExportDocxTreeRequest,
   ExportHtmlRequest,
   ExtractionRequest
 } from '../types/api';

@@ -18,7 +18,8 @@ import type {
   DocumentExportRequest,
   ExportDocxRequest,
   ExportHtmlRequest,
-  ExportBlockTreeRequest
+  ExportBlockTreeRequest,
+  ExportDocxTreeRequest
 } from '../types/api';
 
 export async function getConfig(options?: FetchOptions): Promise<RuntimeConfig> {
@@ -245,17 +246,6 @@ export async function exportHtml(
 }
 
 /**
- * Payload for ``POST /api/export/docx-tree`` — convert a text artifact
- * into a structured ``.docx`` (block-tree-aware DOCX). Kept inline
- * because the server route only accepts the artifact id + token; no
- * bespoke request schema lives in ``types/api.ts`` yet.
- */
-export interface ExportDocxTreeRequest {
-  text_artifact_id: string;
-  text_artifact_token: string;
-}
-
-/**
  * Export a text artifact as a ``.docx`` built from the document's
  * block tree. Returns the document body as a ``Blob``.
  *
@@ -332,7 +322,10 @@ export const translationApi = {
       signal: options?.signal
     }),
   getStatus: (jobId: string, options?: FetchOptions) =>
-    fetchApi(`/translate/status/${jobId}`, { signal: options?.signal }),
+    fetchApi(`/translate/status/${jobId}`, {
+      signal: options?.signal,
+      silent: options?.silent
+    }),
   /**
    * NLLB fast-engine translation. See {@link translateNllb} for the
    * parameter shape.
