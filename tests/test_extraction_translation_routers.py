@@ -31,10 +31,8 @@ from omniscribe.api.routers import (  # noqa: E402
     translation,
 )
 from omniscribe.api.services.artifacts import TextArtifactStore  # noqa: E402
-from omniscribe.api.services.security import (  # noqa: E402
-    SAFE_API_BASE_ERROR,
-    SERVER_ERROR_MESSAGE,
-)
+from omniscribe.api.services.envelope import register_envelope_handlers  # noqa: E402
+from omniscribe.api.services.security import SERVER_ERROR_MESSAGE  # noqa: E402
 from omniscribe.api.services.tree_artifact import write_tree_atomic  # noqa: E402
 from omniscribe.core.block_tree import from_pages_data  # noqa: E402
 from omniscribe.core.glossary import Glossary  # noqa: E402
@@ -49,6 +47,7 @@ _DOCX_MEDIA_TYPE = (
 
 def _client() -> TestClient:
     app = FastAPI()
+    register_envelope_handlers(app)
     app.include_router(config.router)
     app.include_router(translation.router)
     app.include_router(extraction.router)
@@ -318,7 +317,10 @@ def test_translate_tree_blocks_unsafe_request_api_base(artifact_store):
         response = client.post("/api/translate/tree", json=request)
 
     assert response.status_code == 403
-    assert response.json() == {"detail": SAFE_API_BASE_ERROR}
+    assert response.json() == {
+        "error": "ssrf_blocked",
+        "detail": "URL targets a blocked address: api_base_blocked",
+    }
 
 
 def test_translate_tree_empty_artifact_short_circuits(artifact_store):
@@ -414,7 +416,7 @@ def test_translate_async_503_when_extras_missing(artifact_store):
         )
 
     assert response.status_code == 503
-    assert "celery not installed" in response.json()["error"]
+    assert "celery not installed" in response.json()["detail"]
 
 
 # ---------------------------------------------------------------------------

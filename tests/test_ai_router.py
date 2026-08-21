@@ -7,12 +7,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from omniscribe.api.routers import config, extraction, translation
-from omniscribe.api.services.security import SAFE_API_BASE_ERROR
+from omniscribe.api.services.envelope import register_envelope_handlers
 from omniscribe.utils.security import SSRFCheckResult
 
 
 def _api_client() -> TestClient:
     app = FastAPI()
+    register_envelope_handlers(app)
     app.include_router(config.router)
     app.include_router(translation.router)
     app.include_router(extraction.router)
@@ -97,7 +98,8 @@ def test_translate_blocks_unsafe_api_base():
         )
 
     assert response.status_code == 403
-    assert response.json() == {"error": SAFE_API_BASE_ERROR}
+    assert response.json()["error"] == "ssrf_blocked"
+    assert "ALLOW_SSRF_LOCAL" in response.json()["detail"]
     completion.assert_not_called()
 
 
