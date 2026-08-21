@@ -278,11 +278,15 @@ describe('free-function wrappers forward FetchOptions.signal', () => {
     ],
     [
       'exportDocument',
-      () => exportDocument({}, { signal: new AbortController().signal })
+      () =>
+        exportDocument(
+          { text_artifact_id: 'art-1', text_artifact_token: 'tok-1' },
+          { signal: new AbortController().signal }
+        )
     ],
     [
       'exportDocx',
-      () => exportDocx({}, { signal: new AbortController().signal })
+      () => exportDocx({ text: 'x' }, { signal: new AbortController().signal })
     ]
   ])('%s forwards the AbortSignal to fetch', async (_name, call) => {
     await call();

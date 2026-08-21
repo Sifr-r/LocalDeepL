@@ -14,7 +14,9 @@ import type {
   GlossaryPreviewResponse,
   TranscriptionSegment,
   TrustSummary,
-  DocumentExportFormat
+  DocumentExportFormat,
+  DocumentExportRequest,
+  ExportDocxRequest
 } from '../types/api';
 
 export async function getConfig(options?: FetchOptions): Promise<RuntimeConfig> {
@@ -178,16 +180,7 @@ export interface DocumentExportResult {
 }
 
 export async function exportDocument(
-  payload: {
-    text_artifact_id?: string;
-    text_artifact_token?: string;
-    metadata_artifact_id?: string;
-    metadata_artifact_token?: string;
-    export_format?: DocumentExportFormat | string;
-    format?: string;
-    filename?: string;
-    [key: string]: unknown;
-  },
+  payload: DocumentExportRequest,
   options?: FetchOptions
 ): Promise<DocumentExportResult> {
   return fetchApi<DocumentExportResult>('/export/document', {
@@ -198,10 +191,7 @@ export async function exportDocument(
 }
 
 export async function exportDocx(
-  payload: {
-    text?: string;
-    [key: string]: unknown;
-  },
+  payload: ExportDocxRequest,
   options?: FetchOptions
 ): Promise<Blob> {
   return fetchFile('/export/docx', {
@@ -374,5 +364,21 @@ export const extractionApi = {
       method: 'POST',
       body: JSON.stringify(payload),
       signal: options?.signal
-    })
+    }),
+  /**
+   * Export an artifact as a structured document (markdown / html / docx /
+   * block-tree). See {@link exportDocument} for the parameter shape.
+   *
+   * Phase C / FE-07: hoisted onto ``extractionApi`` so the typed
+   * ``extractionService`` can dispatch through a single namespace.
+   */
+  exportDocument,
+  /**
+   * Export a raw text blob as a ``.docx``. See {@link exportDocx} for
+   * the parameter shape.
+   *
+   * Phase C / FE-07: hoisted onto ``extractionApi`` for parity with
+   * ``exportDocument``.
+   */
+  exportDocx
 };
