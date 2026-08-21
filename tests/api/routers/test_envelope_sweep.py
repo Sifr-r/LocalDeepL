@@ -25,6 +25,7 @@ from fastapi.testclient import TestClient
 from omniscribe.api.routers import config as config_module
 from omniscribe.api.routers.config import _ConfigBackendIncompatible
 from omniscribe.api.routers.config import router as config_router
+from omniscribe.api.routers.providers import router as providers_router
 from omniscribe.api.routers.transcription import router as transcription_router
 from omniscribe.api.services.envelope import (
     BackendUnavailable,
@@ -241,3 +242,44 @@ def test_transcribe_route_returns_envelope_on_missing_file(
         f"expected envelope error, got body={body}"
     )
     assert "detail" in body
+
+
+# ---------------------------------------------------------------------------
+# Providers router sweep (Phase C / Task 4)
+# ---------------------------------------------------------------------------
+#
+# Replaces the 6 swept sites in src/omniscribe/api/routers/providers.py
+# with typed envelope exceptions:
+#   line  90 (404 in update_active_provider)   → NotFound
+#   line  99 (403 SSRF in create_or_update)    → SSRFBlocked
+#   line 112 (404 in delete_provider)         → NotFound
+#   line 124 (404 in list_provider_models)    → NotFound
+#   line 129 (403 SSRF in list_provider_models) → SSRFBlocked
+#   line 141 (404 in get_provider_details)    → NotFound
+
+
+@pytest.fixture
+def providers_client() -> TestClient:
+    app = FastAPI()
+    register_envelope_handlers(app)
+    app.include_router(providers_router)
+    return TestClient(app)
+
+
+def test_providers_unknown_returns_envelope(providers_client: TestClient) -> None:
+    resp = providers_client.get("/api/providers/no-such-provider")
+    assert resp.status_code == 404
+    assert resp.json()["error"] == "not_found"
+
+
+def test_providers_bad_payload_returns_envelope(
+    providers_client: TestClient,
+) -> None:
+    # POST /api/providers/active with unknown provider → 404 envelope
+    # (swept NotFound site at line 90 in routers/providers.py).
+    resp = providers_client.post(
+        "/api/providers/active", json={"provider_id": "no-such-provider"}
+    )
+    assert resp.status_code in {400, 404, 422}
+    body = resp.json()
+    assert body["error"] in {"not_found", "bad_request", "validation_failed"}

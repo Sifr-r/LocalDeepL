@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from omniscribe.api.schemas.requests import (
@@ -14,8 +14,8 @@ from omniscribe.api.schemas.requests import (
     ProviderCreateRequest,
     ProviderTemplate,
 )
+from omniscribe.api.services.envelope import NotFound, SSRFBlocked
 from omniscribe.api.services.provider_manager import get_provider_manager
-from omniscribe.api.services.security import SAFE_API_BASE_ERROR
 from omniscribe.utils.security import is_ssrf_target
 
 router = APIRouter()
@@ -87,16 +87,15 @@ async def update_active_provider(body: ActiveProviderUpdate) -> JSONResponse:
         updated = mgr.set_active_provider(body.provider_id, model=body.model)
         return JSONResponse(content=_format_provider_config(updated))
     except (KeyError, ValueError) as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Provider '{body.provider_id}' not found"
-        ) from exc
+        raise NotFound(detail=f"Provider '{body.provider_id}' not found") from exc
 
 
 @router.post("/api/providers")
 async def create_or_update_provider(body: ProviderCreateRequest) -> JSONResponse:
     """Create or update a provider configuration."""
-    if not (await is_ssrf_target(body.api_url)).allowed:
-        return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
+    ssrf_check = await is_ssrf_target(body.api_url)
+    if not ssrf_check.allowed:
+        raise SSRFBlocked(url=body.api_url, reason=ssrf_check.reason or "blocked")
 
     mgr = get_provider_manager()
     created = mgr.create_provider(body)
@@ -109,9 +108,7 @@ async def delete_provider(provider_id: str) -> JSONResponse:
     mgr = get_provider_manager()
     success = mgr.delete_provider(provider_id)
     if not success:
-        raise HTTPException(
-            status_code=404, detail=f"Provider '{provider_id}' not found"
-        )
+        raise NotFound(detail=f"Provider '{provider_id}' not found")
     return JSONResponse(content={"status": "deleted", "provider_id": provider_id})
 
 
@@ -121,12 +118,14 @@ async def list_provider_models(provider_id: str) -> JSONResponse:
     mgr = get_provider_manager()
     provider = mgr.get_provider(provider_id)
     if provider is None:
-        raise HTTPException(
-            status_code=404, detail=f"Provider '{provider_id}' not found"
-        )
+        raise NotFound(detail=f"Provider '{provider_id}' not found")
 
-    if provider.api_url and not (await is_ssrf_target(provider.api_url)).allowed:
-        return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
+    if provider.api_url:
+        ssrf_check = await is_ssrf_target(provider.api_url)
+        if not ssrf_check.allowed:
+            raise SSRFBlocked(
+                url=provider.api_url, reason=ssrf_check.reason or "blocked"
+            )
 
     models = await mgr.async_list_provider_models(provider_id)
     return JSONResponse(content={"models": models})
@@ -138,9 +137,7 @@ async def get_provider_details(provider_id: str) -> JSONResponse:
     mgr = get_provider_manager()
     provider = mgr.get_provider(provider_id)
     if provider is None:
-        raise HTTPException(
-            status_code=404, detail=f"Provider '{provider_id}' not found"
-        )
+        raise NotFound(detail=f"Provider '{provider_id}' not found")
     return JSONResponse(content=_format_provider_config(provider))
 
 
