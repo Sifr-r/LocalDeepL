@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import binascii
 import logging
-from collections.abc import Callable
 from http import HTTPStatus
 from typing import Any
 from urllib.parse import urlparse
@@ -24,6 +22,12 @@ from omniscribe.api.schemas.requests import (
     GlossaryPreviewResponse,
     GlossaryReorderRequest,
     GlossaryToggleRequest,
+)
+from omniscribe.api.services.envelope import (
+    BackendUnavailable,
+    BadRequest,
+    SSRFBlocked,
+    ValidationFailed,
 )
 from omniscribe.core.glossary_library import (
     GlossaryLibrary,
@@ -91,25 +95,6 @@ def _decode_bytes_payload(value: str) -> bytes:
         ) from exc
 
 
-def _sync_ssrf_blocked(url: str) -> bool:
-    from concurrent.futures import ThreadPoolExecutor
-
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        result = pool.submit(asyncio.run, is_ssrf_target(url)).result()
-    return not result.allowed
-
-
-def _validate_ssrf(url: str) -> None:
-    if not url:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST, detail="URL is required."
-        )
-    if _sync_ssrf_blocked(url):
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST, detail="URL targets a blocked address."
-        )
-
-
 def _is_safe_sql_dsn(dsn: str) -> bool:
     """Reject DSNs with shell metacharacters or query-string injection."""
     if not dsn:
@@ -145,14 +130,13 @@ def _build_csv_kwargs(source: GlossaryImportSource) -> dict[str, Any]:
         )
 
 
-def _build_git_glossary_kwargs(source: GlossaryImportSource) -> dict[str, Any]:
-    """Build parser kwargs for Git Glossary format."""
+async def _build_git_glossary_kwargs(source: GlossaryImportSource) -> dict[str, Any]:
+    """Build parser kwargs for Git Glossary format. Async — awaits SSRF check."""
     if not source.git_url:
-        raise HTTPException(
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
-            detail="git_url is required for git_glossary imports.",
-        )
-    _validate_ssrf(source.git_url)
+        raise BadRequest(detail="git_url is required for git_glossary imports.")
+    ssrf = await is_ssrf_target(source.git_url)
+    if not ssrf.allowed:
+        raise SSRFBlocked(url=source.git_url, reason=ssrf.reason or "blocked")
     return {
         "url": source.git_url,
         "ref": source.git_ref or "HEAD",
@@ -161,8 +145,8 @@ def _build_git_glossary_kwargs(source: GlossaryImportSource) -> dict[str, Any]:
     }
 
 
-def _build_sql_table_kwargs(source: GlossaryImportSource) -> dict[str, Any]:
-    """Build parser kwargs for SQL Table format."""
+async def _build_sql_table_kwargs(source: GlossaryImportSource) -> dict[str, Any]:
+    """Build parser kwargs for SQL Table format. Async — awaits dispatch."""
     if not (
         source.sql_dsn
         and source.sql_source_table
@@ -192,36 +176,34 @@ def _build_sql_table_kwargs(source: GlossaryImportSource) -> dict[str, Any]:
     }
 
 
-_FORMAT_BUILDERS: dict[str, Callable] = {
-    "csv": _build_csv_kwargs,
-    "tsv": _build_csv_kwargs,
-    "xliff": _build_csv_kwargs,
-    "tbx": _build_csv_kwargs,
-    "tmx": _build_csv_kwargs,
-    "json_pairs": _build_csv_kwargs,
-    "git_glossary": _build_git_glossary_kwargs,
-    "sql_table": _build_sql_table_kwargs,
-}
-
-
-def _build_parser_kwargs(source: GlossaryImportSource) -> tuple[dict[str, Any], str]:
-    """Translate the request source spec into parser kwargs.
+async def _build_parser_kwargs(
+    source: GlossaryImportSource,
+) -> tuple[dict[str, Any], str]:
+    """Dispatch to the per-format kwargs builder (all async now).
 
     ``name`` is intentionally omitted here: it is surfaced only by the
     router as the saved glossary's display name, not a parser argument.
     Other metadata (e.g. ``max_entries``) that the router also surfaces is
     popped off inside :func:`parse`.
     """
-    format_name = GlossaryFormat(source.format).value
-    builder = _FORMAT_BUILDERS.get(format_name)
-    if builder is None:
-        raise HTTPException(
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
-            detail=f"Unsupported format: {format_name}.",
-        )
-    kwargs = builder(source)
+    fmt = source.format
+    if fmt == GlossaryFormat.GIT_GLOSSARY:
+        kwargs = await _build_git_glossary_kwargs(source)
+    elif fmt in {
+        GlossaryFormat.CSV,
+        GlossaryFormat.TSV,
+        GlossaryFormat.XLIFF,
+        GlossaryFormat.TBX,
+        GlossaryFormat.TMX,
+        GlossaryFormat.JSON_PAIRS,
+    }:
+        kwargs = _build_csv_kwargs(source)
+    elif fmt == GlossaryFormat.SQL_TABLE:
+        kwargs = await _build_sql_table_kwargs(source)
+    else:
+        raise ValidationFailed(detail=f"Unknown format: {fmt}")
     kwargs["max_entries"] = source.max_entries
-    return kwargs, format_name
+    return kwargs, fmt.value
 
 
 def _resolve_request_name(req: GlossaryImportRequest) -> str | None:
@@ -274,9 +256,12 @@ def _build_async_payload(format_name: str, kwargs: dict[str, Any]) -> dict[str, 
     return payload
 
 
-def _process_sync(req: GlossaryImportRequest) -> GlossaryImportJobResponse:
+def _process_sync(
+    req: GlossaryImportRequest,
+    kwargs: dict[str, Any],
+    format_name: str,
+) -> GlossaryImportJobResponse:
     """Synchronous import path (small to medium files)."""
-    kwargs, format_name = _build_parser_kwargs(req.source)
     summary = parse(format=format_name, **kwargs)
     explicit_name = _resolve_request_name(req)
     display_name = explicit_name or _default_name(format_name, kwargs)
@@ -297,11 +282,14 @@ def _process_sync(req: GlossaryImportRequest) -> GlossaryImportJobResponse:
     )
 
 
-def _process_async(req: GlossaryImportRequest) -> GlossaryImportJobResponse:
+def _process_async(
+    req: GlossaryImportRequest,
+    kwargs: dict[str, Any],
+    format_name: str,
+) -> GlossaryImportJobResponse:
     """Queue the import on Celery; returns a job_id."""
     from omniscribe.api.tasks import process_glossary_import_task
 
-    kwargs, format_name = _build_parser_kwargs(req.source)
     explicit_name = _resolve_request_name(req)
     display_name = explicit_name or _default_name(format_name, kwargs)
     payload = _build_async_payload(format_name, kwargs)
@@ -313,9 +301,7 @@ def _process_async(req: GlossaryImportRequest) -> GlossaryImportJobResponse:
             req.session_token,
         )
     except AsyncTranslationUnavailable as exc:
-        raise HTTPException(
-            status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail=str(exc)
-        ) from exc
+        raise BackendUnavailable(detail=str(exc)) from exc
 
     return GlossaryImportJobResponse(
         job_id=str(result.id),
@@ -328,27 +314,20 @@ def _process_async(req: GlossaryImportRequest) -> GlossaryImportJobResponse:
 
 
 @router.post("/api/glossary/import")
-def import_glossary(req: GlossaryImportRequest) -> GlossaryImportJobResponse:
-    """Import a glossary; sync up to 5,000 entries, otherwise async."""
-    kwargs, _format_name = _build_parser_kwargs(req.source)
+async def import_glossary(req: GlossaryImportRequest) -> GlossaryImportJobResponse:
+    """Import a glossary; sync up to SYNC_THRESHOLD entries, otherwise async."""
+    kwargs, format_name = await _build_parser_kwargs(req.source)
     try:
         estimate = _entry_count_estimate(kwargs)
         if estimate <= SYNC_THRESHOLD:
-            return _process_sync(req)
-        return _process_async(req)
+            return _process_sync(req, kwargs, format_name)
+        return _process_async(req, kwargs, format_name)
     except FormatNotAvailableError as exc:
-        raise HTTPException(
-            status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail=str(exc)
-        ) from exc
+        raise BackendUnavailable(detail=str(exc)) from exc
     except GlossaryImportLimitError as exc:
-        raise HTTPException(
-            status_code=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
-            detail={"error": "Too many entries", "max": exc.limit},
-        ) from exc
+        raise BadRequest(detail=f"Too many entries (max {exc.limit})") from exc
     except ValueError as exc:
-        raise HTTPException(
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY, detail=str(exc)
-        ) from exc
+        raise ValidationFailed(detail=str(exc)) from exc
 
 
 @router.post("/api/glossary/import/url")
@@ -360,14 +339,10 @@ async def import_glossary_from_url(
 ) -> GlossaryImportJobResponse:
     """Infer format from URL extension (or use ?format=) and run the sync path."""
     if not url:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST, detail="URL is required."
-        )
+        raise BadRequest(detail="URL is required.")
     ssrf_check = await is_ssrf_target(url)
     if not ssrf_check.allowed:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST, detail="URL targets a blocked address."
-        )
+        raise SSRFBlocked(url=url, reason=ssrf_check.reason or "blocked")
 
     extension_to_format = {
         "csv": GlossaryFormat.CSV,
@@ -382,8 +357,7 @@ async def import_glossary_from_url(
     suffix = path.rsplit(".", 1)[-1].lower() if "." in path else ""
     fmt = format_param or extension_to_format.get(suffix)
     if fmt is None:
-        raise HTTPException(
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+        raise ValidationFailed(
             detail=(
                 "Could not infer format from URL. Pass ?format=csv|tsv|xliff|tbx|tmx|json_pairs."
             ),
@@ -395,18 +369,14 @@ async def import_glossary_from_url(
         fetch_url_bytes = None  # type: ignore[assignment]
 
     if fetch_url_bytes is None:
-        raise HTTPException(
-            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+        raise BackendUnavailable(
             detail="URL fetching is not configured. Use inline 'text' or 'inline_bytes_b64'.",
         )
 
     try:
         payload = await fetch_url_bytes(url)
     except Exception as exc:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_GATEWAY,
-            detail=f"Failed to fetch URL: {exc}",
-        ) from exc
+        raise BackendUnavailable(detail=f"Failed to fetch URL: {exc}") from exc
 
     source = GlossaryImportSource(
         format=fmt,
@@ -414,7 +384,7 @@ async def import_glossary_from_url(
         encoding=encoding,
         name=name,
     )
-    return import_glossary(GlossaryImportRequest(source=source))
+    return await import_glossary(GlossaryImportRequest(source=source))
 
 
 @router.get("/api/glossary/library")
