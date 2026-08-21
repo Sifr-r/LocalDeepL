@@ -18,7 +18,8 @@ from omniscribe.api.schemas import (
     TranslationConfigUpdate,
 )
 from omniscribe.api.services.config_store import ConfigStore
-from omniscribe.api.services.security import SAFE_API_BASE_ERROR, SERVER_ERROR_MESSAGE
+from omniscribe.api.services.envelope import BackendUnavailable, SSRFBlocked
+from omniscribe.api.services.security import SERVER_ERROR_MESSAGE
 from omniscribe.api.services.security_config import (
     ABSOLUTE_MAX_UPLOAD_MB,
     DEFAULT_MAX_UPLOAD_MB,
@@ -364,25 +365,6 @@ def _is_masked_placeholder(value: object) -> bool:
     return isinstance(value, str) and ("..." in value or value == "********")
 
 
-class _SSRFRejected(Exception):
-    """Internal signal that ``api_base`` failed SSRF validation.
-
-    Allows the route handler to convert the rejection into a 403
-    response with the shared error envelope (``{"error": "..."}``),
-    matching the legacy ``POST /api/config`` contract.
-    """
-
-
-async def _is_ssrf(value: str) -> bool:
-    """Async shim so the in-memory patch path can mock the SSRF check.
-
-    Returns True when :func:`is_ssrf_target` flags the URL as
-    blocked. Wraps the structured :class:`SSRFCheckResult` into a
-    bool for the in-route ``if await _is_ssrf(val):`` callers.
-    """
-    return not (await is_ssrf_target(value)).allowed
-
-
 # ---------------------------------------------------------------------------
 # Settings resolvers — core code should never poke ``_config`` directly.
 # ---------------------------------------------------------------------------
@@ -485,8 +467,13 @@ async def update_config(body: ConfigUpdate):
     ``transcription``.
     """
     values = body.model_dump(exclude_unset=True)
-    if "api_base" in values and not (await is_ssrf_target(values["api_base"])).allowed:
-        return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
+    if "api_base" in values:
+        ssrf_check = await is_ssrf_target(values["api_base"])
+        if not ssrf_check.allowed:
+            raise SSRFBlocked(
+                url=str(values["api_base"]),
+                reason=ssrf_check.reason or "blocked",
+            )
     # Drop masked-placeholders before persisting — keeping them would
     # overwrite a real key with the "ab..wxyz" preview the GET endpoints
     # return.
@@ -506,10 +493,7 @@ async def update_config(body: ConfigUpdate):
     try:
         _persist_config(updates)
     except _ConfigBackendIncompatible as exc:
-        return JSONResponse(
-            status_code=503,
-            content={"error": str(exc)},
-        )
+        raise BackendUnavailable(detail=str(exc)) from exc
     return JSONResponse(content=_build_legacy_view())
 
 
@@ -523,16 +507,18 @@ async def _build_ocr_update(body: OcrConfigUpdate) -> dict[str, Any]:
 
     Returns the subset of ``body`` keys that should land in the store
     (masked-placeholders and SSRF-rejected bases are dropped). Raises
-    :class:`_SSRFRejected` when ``ocr_api_base`` fails SSRF validation
-    so the route handler can convert it to a 403 response.
+    :class:`SSRFBlocked` when ``ocr_api_base`` fails SSRF validation so
+    the envelope handler can convert it to a 403 response.
     """
     values = body.model_dump(exclude_unset=True)
     updates: dict[str, Any] = {}
     for key, val in values.items():
         if key == "ocr_api_key" and _is_masked_placeholder(val):
             continue
-        if key == "ocr_api_base" and isinstance(val, str) and await _is_ssrf(val):
-            raise _SSRFRejected
+        if key == "ocr_api_base" and isinstance(val, str):
+            ssrf_check = await is_ssrf_target(val)
+            if not ssrf_check.allowed:
+                raise SSRFBlocked(url=val, reason=ssrf_check.reason or "blocked")
         if key == "document_processors" and isinstance(val, list):
             updates[key] = [p.value if hasattr(p, "value") else p for p in val]
             continue
@@ -575,19 +561,14 @@ async def update_ocr_namespace_config(body: OcrConfigUpdate):
 
     Writes through the StateBackend's config_store so every worker
     sees the new value (issue H1). When the active backend is the
-    default in-memory one, the request is refused with a 503.
+    default in-memory one, the request is refused with a 503 envelope
+    (``backend_unavailable``).
     """
-    try:
-        updates = await _build_ocr_update(body)
-    except _SSRFRejected:
-        return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
+    updates = await _build_ocr_update(body)
     try:
         _persist_config(updates)
     except _ConfigBackendIncompatible as exc:
-        return JSONResponse(
-            status_code=503,
-            content={"error": str(exc)},
-        )
+        raise BackendUnavailable(detail=str(exc)) from exc
     config = _load_config_from_store()
     return JSONResponse(
         content={
@@ -621,16 +602,14 @@ async def update_translation_namespace_config(body: TranslationConfigUpdate):
 
     Writes through the StateBackend's config_store so every worker
     sees the new value (issue H1). When the active backend is the
-    default in-memory one, the request is refused with a 503.
+    default in-memory one, the request is refused with a 503 envelope
+    (``backend_unavailable``).
     """
     updates = _build_translation_update(body)
     try:
         _persist_config(updates)
     except _ConfigBackendIncompatible as exc:
-        return JSONResponse(
-            status_code=503,
-            content={"error": str(exc)},
-        )
+        raise BackendUnavailable(detail=str(exc)) from exc
     config = _load_config_from_store()
     return JSONResponse(
         content={
@@ -655,15 +634,13 @@ async def update_ocr_auth_token(body: AuthTokenUpdate):
 
     Writes through the StateBackend's config_store so every worker
     sees the new value (issue H1). When the active backend is the
-    default in-memory one, the request is refused with a 503.
+    default in-memory one, the request is refused with a 503 envelope
+    (``backend_unavailable``).
     """
     try:
         _persist_config({"ocr_auth_token": body.auth_token})
     except _ConfigBackendIncompatible as exc:
-        return JSONResponse(
-            status_code=503,
-            content={"error": str(exc)},
-        )
+        raise BackendUnavailable(detail=str(exc)) from exc
     return JSONResponse(content={"ocr_auth_token": body.auth_token})
 
 
@@ -673,15 +650,13 @@ async def update_translation_auth_token(body: AuthTokenUpdate):
 
     Writes through the StateBackend's config_store so every worker
     sees the new value (issue H1). When the active backend is the
-    default in-memory one, the request is refused with a 503.
+    default in-memory one, the request is refused with a 503 envelope
+    (``backend_unavailable``).
     """
     try:
         _persist_config({"translation_auth_token": body.auth_token})
     except _ConfigBackendIncompatible as exc:
-        return JSONResponse(
-            status_code=503,
-            content={"error": str(exc)},
-        )
+        raise BackendUnavailable(detail=str(exc)) from exc
     return JSONResponse(content={"translation_auth_token": body.auth_token})
 
 
@@ -691,15 +666,13 @@ async def update_transcription_auth_token(body: AuthTokenUpdate):
 
     Writes through the StateBackend's config_store so every worker
     sees the new value (issue H1). When the active backend is the
-    default in-memory one, the request is refused with a 503.
+    default in-memory one, the request is refused with a 503 envelope
+    (``backend_unavailable``).
     """
     try:
         _persist_config({"transcription_auth_token": body.auth_token})
     except _ConfigBackendIncompatible as exc:
-        return JSONResponse(
-            status_code=503,
-            content={"error": str(exc)},
-        )
+        raise BackendUnavailable(detail=str(exc)) from exc
     return JSONResponse(content={"transcription_auth_token": body.auth_token})
 
 
@@ -770,8 +743,9 @@ async def list_models():
 
     custom_base = config.get("api_base")
     if custom_base and custom_base != active_provider.api_url:
-        if not (await is_ssrf_target(custom_base)).allowed:
-            return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
+        ssrf_check = await is_ssrf_target(custom_base)
+        if not ssrf_check.allowed:
+            raise SSRFBlocked(url=custom_base, reason=ssrf_check.reason or "blocked")
         try:
             models = await _discover_models_for_endpoint(
                 custom_base, config.get("api_key")
@@ -781,11 +755,13 @@ async def list_models():
             logger.exception("Model discovery failed")
             return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
 
-    if (
-        active_provider.api_url
-        and not (await is_ssrf_target(active_provider.api_url)).allowed
-    ):
-        return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
+    if active_provider.api_url:
+        ssrf_check = await is_ssrf_target(active_provider.api_url)
+        if not ssrf_check.allowed:
+            raise SSRFBlocked(
+                url=active_provider.api_url,
+                reason=ssrf_check.reason or "blocked",
+            )
 
     try:
         models = await mgr.async_list_provider_models(active_provider.id)
@@ -806,12 +782,13 @@ async def list_ocr_models():
 
     if ocr_provider_id and mgr.get_provider(ocr_provider_id):
         provider = mgr.get_provider(ocr_provider_id)
-        if (
-            provider
-            and provider.api_url
-            and not (await is_ssrf_target(provider.api_url)).allowed
-        ):
-            return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
+        if provider and provider.api_url:
+            ssrf_check = await is_ssrf_target(provider.api_url)
+            if not ssrf_check.allowed:
+                raise SSRFBlocked(
+                    url=provider.api_url,
+                    reason=ssrf_check.reason or "blocked",
+                )
         try:
             models = await mgr.async_list_provider_models(ocr_provider_id)
             return JSONResponse(content={"models": models})
@@ -821,8 +798,9 @@ async def list_ocr_models():
 
     api_base = config.get("ocr_api_base") or config["api_base"]
     api_key = config.get("ocr_api_key") or config["api_key"]
-    if not (await is_ssrf_target(api_base)).allowed:
-        return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
+    ssrf_check = await is_ssrf_target(api_base)
+    if not ssrf_check.allowed:
+        raise SSRFBlocked(url=api_base, reason=ssrf_check.reason or "blocked")
     try:
         models = await _discover_models_for_endpoint(api_base, api_key)
         return JSONResponse(content={"models": models})
@@ -842,12 +820,13 @@ async def list_translation_models():
 
     if trans_provider_id and mgr.get_provider(trans_provider_id):
         provider = mgr.get_provider(trans_provider_id)
-        if (
-            provider
-            and provider.api_url
-            and not (await is_ssrf_target(provider.api_url)).allowed
-        ):
-            return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
+        if provider and provider.api_url:
+            ssrf_check = await is_ssrf_target(provider.api_url)
+            if not ssrf_check.allowed:
+                raise SSRFBlocked(
+                    url=provider.api_url,
+                    reason=ssrf_check.reason or "blocked",
+                )
         try:
             models = await mgr.async_list_provider_models(trans_provider_id)
             return JSONResponse(content={"models": models})
@@ -857,8 +836,9 @@ async def list_translation_models():
 
     api_base = config.get("translation_api_base") or config["api_base"]
     api_key = config.get("translation_api_key") or config["api_key"]
-    if not (await is_ssrf_target(api_base)).allowed:
-        return JSONResponse(status_code=403, content={"error": SAFE_API_BASE_ERROR})
+    ssrf_check = await is_ssrf_target(api_base)
+    if not ssrf_check.allowed:
+        raise SSRFBlocked(url=api_base, reason=ssrf_check.reason or "blocked")
     try:
         models = await _discover_models_for_endpoint(api_base, api_key)
         return JSONResponse(content={"models": models})
