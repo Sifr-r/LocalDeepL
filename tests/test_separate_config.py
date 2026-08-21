@@ -34,12 +34,16 @@ from omniscribe.api.services.config_store import (  # noqa: E402
     InMemoryConfigStore,
     SQLiteConfigStore,
 )
+from omniscribe.api.services.envelope import (  # noqa: E402
+    register_envelope_handlers,
+)
 from omniscribe.utils.security import SSRFCheckResult  # noqa: E402
 
 
 @pytest.fixture
 def client() -> TestClient:
     app = FastAPI()
+    register_envelope_handlers(app)
     app.include_router(config.router)
     return TestClient(app)
 
@@ -197,7 +201,9 @@ def test_post_ocr_config_rejects_ssrf_base(client: TestClient) -> None:
         )
 
     assert response.status_code == 403
-    assert "error" in response.json()
+    body = response.json()
+    assert body["error"] == "ssrf_blocked"
+    assert "mock-blocked" in body["detail"]
 
 
 def test_post_translation_config_persists_namespaced_keys(
@@ -418,8 +424,9 @@ def test_post_config_in_memory_store_is_refused_with_503() -> None:
 
     The :class:`~omniscribe.api.services.config_store.InMemoryConfigStore`
     is per-process: accepting the update would silently lie to
-    operators about cross-worker state, so the handler returns 503
-    with a remediation message instead.
+    operators about cross-worker state, so the handler raises
+    :class:`BackendUnavailable` (translated to a 503 envelope by the
+    registered handler) with a remediation message instead.
     """
     # Install a real (not cross-worker-visible) in-memory store.
     original = router_state.backend.config_store
@@ -428,6 +435,7 @@ def test_post_config_in_memory_store_is_refused_with_503() -> None:
     router_state.backend.config_store = store
     try:
         app = FastAPI()
+        register_envelope_handlers(app)
         app.include_router(config.router)
         client = TestClient(app)
 
@@ -438,8 +446,8 @@ def test_post_config_in_memory_store_is_refused_with_503() -> None:
 
         assert response.status_code == 503
         body = response.json()
-        assert "error" in body
-        assert "persistent" in body["error"].lower()
+        assert body["error"] == "backend_unavailable"
+        assert "persistent" in body["detail"].lower()
         # The store must not have been mutated.
         assert "api_base" not in store.get_snapshot()
     finally:
@@ -454,6 +462,7 @@ def test_post_ocr_config_in_memory_store_is_refused_with_503() -> None:
     router_state.backend.config_store = store
     try:
         app = FastAPI()
+        register_envelope_handlers(app)
         app.include_router(config.router)
         client = TestClient(app)
 
@@ -463,6 +472,9 @@ def test_post_ocr_config_in_memory_store_is_refused_with_503() -> None:
         )
 
         assert response.status_code == 503
+        body = response.json()
+        assert body["error"] == "backend_unavailable"
+        assert "persistent" in body["detail"].lower()
     finally:
         router_state.backend.config_store = original
 
@@ -474,6 +486,7 @@ def test_post_translation_config_in_memory_store_is_refused_with_503() -> None:
     router_state.backend.config_store = store
     try:
         app = FastAPI()
+        register_envelope_handlers(app)
         app.include_router(config.router)
         client = TestClient(app)
 
@@ -483,6 +496,9 @@ def test_post_translation_config_in_memory_store_is_refused_with_503() -> None:
         )
 
         assert response.status_code == 503
+        body = response.json()
+        assert body["error"] == "backend_unavailable"
+        assert "persistent" in body["detail"].lower()
     finally:
         router_state.backend.config_store = original
 
@@ -494,6 +510,7 @@ def test_post_ocr_auth_token_in_memory_store_is_refused_with_503() -> None:
     router_state.backend.config_store = store
     try:
         app = FastAPI()
+        register_envelope_handlers(app)
         app.include_router(config.router)
         client = TestClient(app)
 
@@ -503,6 +520,9 @@ def test_post_ocr_auth_token_in_memory_store_is_refused_with_503() -> None:
         )
 
         assert response.status_code == 503
+        body = response.json()
+        assert body["error"] == "backend_unavailable"
+        assert "persistent" in body["detail"].lower()
     finally:
         router_state.backend.config_store = original
 

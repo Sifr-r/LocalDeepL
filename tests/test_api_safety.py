@@ -29,6 +29,7 @@ from omniscribe.api.routers import (
 from omniscribe.api.routers.config import _config
 from omniscribe.api.routers.ocr import _run_ocr_pipeline
 from omniscribe.api.services.artifacts import TextArtifactStore
+from omniscribe.api.services.envelope import register_envelope_handlers
 from omniscribe.api.services.ocr_settings import resolve_process_settings
 from omniscribe.api.services.security import (
     UploadValidationError,
@@ -54,6 +55,7 @@ class _AsyncUpload:
 
 def _api_client() -> TestClient:
     app = FastAPI()
+    register_envelope_handlers(app)
     app.include_router(config.router)
     app.include_router(translation.router)
     app.include_router(extraction.router)
