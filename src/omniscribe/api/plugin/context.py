@@ -33,24 +33,29 @@ Five things the context does
 Thread safety
 -------------
 
-Phase 0 does NOT lock the context. The context is designed to be created
-once at server boot, mutated only during boot, and queried from many
-request handlers. If a Phase 0 caller mutates the context concurrently
-(from two worker threads, for example) the behavior is undefined; the
-expected pattern is "mount during boot, dispatch during request handling,
-dispose at shutdown."
+Every public method on this class is wrapped in a
+``threading.RLock`` instance owned by the context. The lock is
+acquired on entry and released on exit (re-entrant, so a listener
+that calls :meth:`register` / :meth:`on` etc. from inside a dispatch
+will not deadlock). Read-only methods are wrapped too so a
+:meth:`has` / :meth:`service_names` snapshot is consistent across
+concurrent mutations.
 
-A later phase will add a ``threading.RLock`` wrapper for the rare case of
-runtime plugin reloading.
+The intended pattern is still "mount during boot, dispatch during
+request handling, dispose at shutdown" — the lock is for the rare
+runtime-plugin-reload and the multi-worker-restart edge cases
+where two threads briefly race on the registry.
 """
 
 from __future__ import annotations
 
+import functools
+import threading
 from collections.abc import Callable, Iterable
 from contextlib import suppress
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from omniscribe.api.plugin.effects import EffectScope
 from omniscribe.api.plugin.errors import (
@@ -63,6 +68,27 @@ from omniscribe.api.plugin.events import EventMode, EventName
 
 # A disposer is a zero-arg callable that unwinds a single effect.
 Disposer = Callable[[], None]
+
+
+def _locked(method: Any) -> Any:
+    """Decorator: serialize a :class:`PluginContext` method under the lock.
+
+    The lock is re-entrant, so a dispatch that calls back into a
+    locked method (e.g. a listener that registers a service) does
+    not deadlock. The decorator preserves the original signature
+    for IDE introspection via :func:`functools.wraps` and is typed
+    loosely (``Any``) because the precise ``ParamSpec`` /
+    ``Concatenate`` plumbing clashes with mypy's interpretation of
+    :func:`functools.wraps` on instance methods — the runtime
+    behaviour is straightforward and the test suite covers it.
+    """
+
+    @functools.wraps(method)
+    def wrapper(self: PluginContext, *args: Any, **kwargs: Any) -> Any:
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return cast(Any, wrapper)
 
 
 @dataclass
@@ -96,6 +122,9 @@ class PluginContext:
 
     def __init__(self, name: str = "root") -> None:
         self._name = name
+        # Re-entrant so a dispatch listener that calls back into a
+        # mutation method does not deadlock.
+        self._lock = threading.RLock()
         self._services: dict[tuple[type, str], Any] = {}
         self._listeners: dict[str, list[_ListenerEntry]] = {}
         self._effects = EffectScope()
@@ -109,10 +138,12 @@ class PluginContext:
         return self._name
 
     @property
+    @_locked
     def disposed(self) -> bool:
         """True after :meth:`dispose` has been called."""
         return self._disposed
 
+    @_locked
     def __repr__(self) -> str:
         service_count = len(self._services)
         listener_count = sum(len(v) for v in self._listeners.values())
@@ -124,6 +155,7 @@ class PluginContext:
 
     # -- Service registry -------------------------------------------------
 
+    @_locked
     def register(
         self,
         definition: type,
@@ -176,6 +208,7 @@ class PluginContext:
         self._services[key] = impl
         return self._effects.effect(lambda: self._services.pop(key, None))
 
+    @_locked
     def get(self, definition: type, *, name: str = "default") -> Any:
         """Fetch a registered service implementation.
 
@@ -188,15 +221,18 @@ class PluginContext:
         except KeyError:
             raise ServiceNotFoundError(definition, name) from None
 
+    @_locked
     def has(self, definition: type, *, name: str = "default") -> bool:
         """True if an impl exists for the (Protocol, name) key."""
         return (definition, name) in self._services
 
+    @_locked
     def unregister(self, definition: type, *, name: str = "default") -> bool:
         """Remove a service implementation. Returns True if it existed."""
         self._assert_not_disposed("unregister")
         return self._services.pop((definition, name), None) is not None
 
+    @_locked
     def swap(
         self,
         definition: type,
@@ -251,6 +287,7 @@ class PluginContext:
 
         return self._effects.effect(_restore)
 
+    @_locked
     def require(
         self,
         *definitions: type,
@@ -268,6 +305,7 @@ class PluginContext:
             if not self.has(definition, name=name):
                 raise ServiceNotFoundError(definition, name)
 
+    @_locked
     def service_names(self, definition: type) -> list[str]:
         """List every registered name for a given definition.
 
@@ -277,6 +315,7 @@ class PluginContext:
 
     # -- Event listener registry ------------------------------------------
 
+    @_locked
     def on(
         self,
         event: str | EventName,
@@ -315,6 +354,7 @@ class PluginContext:
             bucket.append(entry)
         return self._effects.effect(lambda: self._remove_listener(event_name, entry))
 
+    @_locked
     def off(self, event: str | EventName, listener: Listener) -> bool:
         """Remove a specific listener. Returns True if it was found."""
         self._assert_not_disposed("off")
@@ -326,6 +366,7 @@ class PluginContext:
                 return True
         return False
 
+    @_locked
     def _remove_listener(self, event_name: str, entry: _ListenerEntry) -> None:
         """Internal helper: remove a listener entry by identity. Used by the
         disposer returned by :meth:`on`."""
@@ -337,12 +378,14 @@ class PluginContext:
         if not bucket:
             self._listeners.pop(event_name, None)
 
+    @_locked
     def listeners(self, event: str | EventName) -> list[_ListenerEntry]:
         """Return a snapshot of registered listeners for an event (introspection)."""
         return list(self._listeners.get(self._normalize_event_name(event), ()))
 
     # -- Event dispatch ---------------------------------------------------
 
+    @_locked
     def emit(self, event: str | EventName, **payload: Any) -> None:
         """Observe-only dispatch.
 
@@ -365,6 +408,7 @@ class PluginContext:
             if entry.mode is EventMode.EMIT:
                 entry.listener(**payload)
 
+    @_locked
     def parallel(self, event: str | EventName, **payload: Any) -> None:
         """Parallel dispatch.
 
@@ -381,6 +425,7 @@ class PluginContext:
             if entry.mode is EventMode.PARALLEL:
                 entry.listener(**payload)
 
+    @_locked
     def serial(
         self, event: str | EventName, initial: Any = None, **payload: Any
     ) -> Any:
@@ -415,6 +460,7 @@ class PluginContext:
                 )
         return current
 
+    @_locked
     def waterfall(
         self,
         event: str | EventName,
@@ -479,6 +525,7 @@ class PluginContext:
 
     # -- Reversible effects -----------------------------------------------
 
+    @_locked
     def effect(self, disposer: Disposer) -> Disposer:
         """Register a reversible effect and return its disposer.
 
@@ -489,6 +536,7 @@ class PluginContext:
         self._assert_not_disposed("effect")
         return self._effects.effect(disposer)
 
+    @_locked
     def mount(self, plugin: Any) -> Disposer:
         """Mount a :class:`Plugin` into this context.
 
@@ -511,6 +559,7 @@ class PluginContext:
 
     # -- Teardown ---------------------------------------------------------
 
+    @_locked
     def dispose(self) -> None:
         """Unwind every registered effect, listener, and service.
 
@@ -544,6 +593,7 @@ class PluginContext:
         # NewType("EventName", str) — at runtime the value is a str.
         return str(event)
 
+    @_locked
     def _maybe_log_event(self, event: str | EventName, payload: dict[str, Any]) -> None:
         """If a :class:`SessionLog` is registered, append this dispatch as a log event.
 

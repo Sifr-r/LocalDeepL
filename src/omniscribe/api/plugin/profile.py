@@ -178,7 +178,7 @@ class Patch:
         tracked by the context's effect scope, so a single
         :meth:`PluginContext.dispose` unwinds every active patch.
         """
-        return ctx.swap(self.protocol, self.impl, name=self.name)
+        return ctx.swap(self.protocol, self.impl, name=self.name)  # type: ignore[no-any-return]
 
 
 @dataclass(frozen=True)

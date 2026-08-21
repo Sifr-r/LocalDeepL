@@ -20,15 +20,18 @@ import pytest
 from omniscribe.api.plugin import (
     JobQueue,
     PluginContext,
+    config_store_provider,
     local_job_queue_provider,
 )
 from omniscribe.api.plugin import runtime as plugin_runtime
 from omniscribe.api.plugin.runtime import (
     get_plugin_context,
     get_service,
+    refresh_plugin_context_enabled,
     set_plugin_context,
     set_plugin_context_enabled,
 )
+from omniscribe.api.services.config_store import InMemoryConfigStore
 from omniscribe.api.services.ocr_jobs import OCRJobQueue
 
 # -- Protocol structural conformance -----------------------------------------
@@ -216,6 +219,111 @@ def test_set_plugin_context_enabled_overrides_for_tests() -> None:
         if saved_env is not None:
             os.environ["OMNISCRIBE_PLUGIN_CONTEXT"] = saved_env
         set_plugin_context_enabled(saved_flag)
+
+
+# -- F11: ConfigStore-backed runtime toggle --------------------------------
+
+
+def test_set_plugin_context_enabled_writes_through_to_config_store() -> None:
+    """When a ConfigStore is mounted on the live context, the writer
+    persists the override so it survives across the migration window."""
+    saved_ctx = plugin_runtime._plugin_context
+    saved_flag = plugin_runtime.PLUGIN_CONTEXT_ENABLED
+    saved_env = os.environ.get("OMNISCRIBE_PLUGIN_CONTEXT")
+    try:
+        os.environ.pop("OMNISCRIBE_PLUGIN_CONTEXT", None)
+        store = InMemoryConfigStore()
+        ctx = PluginContext("f11-write-through")
+        ctx.mount(config_store_provider(store=store, name="memory"))
+        set_plugin_context(ctx)
+        # Force the cached flag off so the write-through is observable.
+        plugin_runtime.PLUGIN_CONTEXT_ENABLED = False
+        set_plugin_context_enabled(True)
+        # The store now carries the override.
+        assert store.get_snapshot().get("plugin_context_enabled") is True
+        # The cached flag was updated in lockstep.
+        assert plugin_runtime.PLUGIN_CONTEXT_ENABLED is True
+    finally:
+        if saved_env is not None:
+            os.environ["OMNISCRIBE_PLUGIN_CONTEXT"] = saved_env
+        plugin_runtime._plugin_context = saved_ctx
+        plugin_runtime.PLUGIN_CONTEXT_ENABLED = saved_flag
+
+
+def test_is_plugin_context_enabled_reads_from_config_store_when_present() -> None:
+    """The ConfigStore override takes precedence over the env var so a
+    cross-worker-visible store (Redis / SQLite) wins on every worker."""
+    saved_ctx = plugin_runtime._plugin_context
+    saved_flag = plugin_runtime.PLUGIN_CONTEXT_ENABLED
+    saved_env = os.environ.get("OMNISCRIBE_PLUGIN_CONTEXT")
+    try:
+        # Env var off, store on — the store wins.
+        os.environ.pop("OMNISCRIBE_PLUGIN_CONTEXT", None)
+        store = InMemoryConfigStore({"plugin_context_enabled": True})
+        ctx = PluginContext("f11-read-through")
+        ctx.mount(config_store_provider(store=store, name="memory"))
+        set_plugin_context(ctx)
+        plugin_runtime.PLUGIN_CONTEXT_ENABLED = False  # stale cache
+        assert plugin_runtime.is_plugin_context_enabled() is True
+        # Now flip the store the other way — env var is still off, store is False.
+        store.update({"plugin_context_enabled": False})
+        assert plugin_runtime.is_plugin_context_enabled() is False
+    finally:
+        if saved_env is not None:
+            os.environ["OMNISCRIBE_PLUGIN_CONTEXT"] = saved_env
+        plugin_runtime._plugin_context = saved_ctx
+        plugin_runtime.PLUGIN_CONTEXT_ENABLED = saved_flag
+
+
+def test_refresh_plugin_context_enabled_re_reads_active_source() -> None:
+    """``refresh_plugin_context_enabled`` re-reads after boot so a
+    ConfigStore override that landed between import and create_app
+    takes effect without a restart."""
+    saved_ctx = plugin_runtime._plugin_context
+    saved_flag = plugin_runtime.PLUGIN_CONTEXT_ENABLED
+    saved_env = os.environ.get("OMNISCRIBE_PLUGIN_CONTEXT")
+    try:
+        os.environ.pop("OMNISCRIBE_PLUGIN_CONTEXT", None)
+        store = InMemoryConfigStore({"plugin_context_enabled": True})
+        ctx = PluginContext("f11-refresh")
+        ctx.mount(config_store_provider(store=store, name="memory"))
+        set_plugin_context(ctx)
+        # Stale cache (what the module-import-time _read_env_default would
+        # have produced) is False.
+        plugin_runtime.PLUGIN_CONTEXT_ENABLED = False
+        refreshed = refresh_plugin_context_enabled()
+        assert refreshed is True
+        assert plugin_runtime.PLUGIN_CONTEXT_ENABLED is True
+    finally:
+        if saved_env is not None:
+            os.environ["OMNISCRIBE_PLUGIN_CONTEXT"] = saved_env
+        plugin_runtime._plugin_context = saved_ctx
+        plugin_runtime.PLUGIN_CONTEXT_ENABLED = saved_flag
+
+
+def test_set_plugin_context_enabled_falls_back_without_a_context() -> None:
+    """No plugin context mounted — the writer only updates the cached
+    flag, no store to write through. The next read falls back to the
+    env var (the migration-window contract: the source of truth is the
+    env var when no ConfigStore is mounted)."""
+    saved_ctx = plugin_runtime._plugin_context
+    saved_flag = plugin_runtime.PLUGIN_CONTEXT_ENABLED
+    saved_env = os.environ.get("OMNISCRIBE_PLUGIN_CONTEXT")
+    try:
+        os.environ.pop("OMNISCRIBE_PLUGIN_CONTEXT", None)
+        plugin_runtime._plugin_context = None
+        plugin_runtime.PLUGIN_CONTEXT_ENABLED = False
+        set_plugin_context_enabled(True)
+        # No context, no store — the cached flag is the only thing updated.
+        assert plugin_runtime.PLUGIN_CONTEXT_ENABLED is True
+        # But the canonical read re-reads the env var (now unset) and
+        # returns False — that's the documented fallback.
+        assert plugin_runtime.is_plugin_context_enabled() is False
+    finally:
+        if saved_env is not None:
+            os.environ["OMNISCRIBE_PLUGIN_CONTEXT"] = saved_env
+        plugin_runtime._plugin_context = saved_ctx
+        plugin_runtime.PLUGIN_CONTEXT_ENABLED = saved_flag
 
 
 # -- create_app end-to-end --------------------------------------------------

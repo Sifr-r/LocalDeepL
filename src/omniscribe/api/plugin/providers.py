@@ -66,7 +66,7 @@ def local_job_queue_provider(
         logger.info(
             "Registered JobQueue provider name=%r (%s)", name, type(impl).__name__
         )
-        return disposer
+        return disposer  # type: ignore[no-any-return]
 
     return _plugin
 
@@ -97,7 +97,7 @@ def in_memory_session_log_provider(
         logger.info(
             "Registered SessionLog provider name=%r (%s)", name, type(impl).__name__
         )
-        return disposer
+        return disposer  # type: ignore[no-any-return]
 
     return _plugin
 
@@ -139,7 +139,7 @@ def progress_service_provider(
             name,
             type(impl).__name__,
         )
-        return disposer
+        return disposer  # type: ignore[no-any-return]
 
     return _plugin
 
@@ -181,7 +181,7 @@ def config_store_provider(
         logger.info(
             "Registered ConfigStore provider name=%r (%s)", name, type(impl).__name__
         )
-        return disposer
+        return disposer  # type: ignore[no-any-return]
 
     return _plugin
 
@@ -235,7 +235,7 @@ def text_artifact_store_provider(
             name,
             type(store).__name__,
         )
-        return disposer
+        return disposer  # type: ignore[no-any-return]
 
     return _plugin
 

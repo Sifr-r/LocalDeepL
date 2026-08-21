@@ -61,38 +61,116 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from omniscribe.api.plugin import PluginContext
+
+if TYPE_CHECKING:
+    from omniscribe.api.services.config_store import ConfigStore
 
 logger = logging.getLogger(__name__)
 
 
 _ENV_VAR = "OMNISCRIBE_PLUGIN_CONTEXT"
+_CONFIG_KEY = "plugin_context_enabled"
 
 
-def is_plugin_context_enabled() -> bool:
-    """True when the runtime plugin context is opted in.
+def _read_env_default() -> bool:
+    """Parse :data:`_ENV_VAR` into a boolean.
 
-    Reads the ``OMNISCRIBE_PLUGIN_CONTEXT`` env var. Accepts the same
-    truthy spellings as a typical CLI flag (``1`` / ``true`` / ``yes``
-    / ``on``; case-insensitive). Defaults to ``False`` so the legacy
-    singleton-backed access path remains the default during the
-    migration window.
+    Accepts the same truthy spellings as a typical CLI flag (``1`` /
+    ``true`` / ``yes`` / ``on``; case-insensitive). Returns ``False``
+    when the var is unset or unrecognised.
     """
     raw = os.getenv(_ENV_VAR, "").strip().lower()
     return raw in ("1", "true", "yes", "on")
 
 
-#: Module-level flag. Read once at import; settable for tests via
-#: :func:`set_plugin_context_enabled`.
-PLUGIN_CONTEXT_ENABLED: bool = is_plugin_context_enabled()
+def _lookup_active_config_store() -> ConfigStore | None:
+    """Return the ConfigStore mounted on the live plugin context, if any.
+
+    Returns ``None`` when no plugin context is bootstrapped or no
+    ConfigStore is mounted; :func:`is_plugin_context_enabled` and
+    :func:`refresh_plugin_context_enabled` fall back to the env-var in
+    that case. The lookup name matches the
+    :func:`config_store_provider` default so the in-memory store
+    mounted at server boot is reachable without an explicit name.
+    """
+    from omniscribe.api.plugin import ConfigStore
+
+    ctx = get_plugin_context()
+    if ctx is None or not ctx.has(ConfigStore, name="memory"):
+        return None
+    store = ctx.get(ConfigStore, name="memory")
+    # ``PluginContext.get`` returns ``Any`` by design; the lookup is
+    # gated by ``ctx.has`` above so the value structurally satisfies
+    # the :class:`ConfigStore` Protocol. Cast for mypy.
+    from omniscribe.api.services.config_store import ConfigStore as _ConfigStore
+
+    return cast("_ConfigStore", store)
+
+
+def is_plugin_context_enabled() -> bool:
+    """True when the runtime plugin context is opted in.
+
+    Reads :data:`_CONFIG_KEY` from the active :class:`ConfigStore` if
+    one is mounted on the live plugin context; falls back to the
+    :data:`_ENV_VAR` env var otherwise. The function is the canonical
+    read; the module-level :data:`PLUGIN_CONTEXT_ENABLED` is a cache
+    that :func:`refresh_plugin_context_enabled` and
+    :func:`set_plugin_context_enabled` keep in sync.
+    """
+    store = _lookup_active_config_store()
+    if store is not None:
+        snapshot = store.get_snapshot()
+        if _CONFIG_KEY in snapshot:
+            return bool(snapshot[_CONFIG_KEY])
+    return _read_env_default()
+
+
+#: Module-level flag. Cached value of :func:`is_plugin_context_enabled`
+#: last observed at module import, at :func:`refresh_plugin_context_enabled`
+#: time, or after the most recent :func:`set_plugin_context_enabled`
+#: write. Tests can read or override it directly; production consumers
+#: should call :func:`is_plugin_context_enabled` so a ConfigStore
+#: override that landed after import is honoured.
+PLUGIN_CONTEXT_ENABLED: bool = _read_env_default()
 
 
 def set_plugin_context_enabled(value: bool) -> None:
-    """Override the env-var-driven flag. Intended for tests only."""
+    """Override the runtime toggle.
+
+    Writes through to the active :class:`ConfigStore` when one is
+    mounted on the live plugin context, then updates the cached
+    :data:`PLUGIN_CONTEXT_ENABLED` flag. When no store is mounted
+    (e.g. before server boot, in tests) only the cached flag is
+    updated; the next :func:`refresh_plugin_context_enabled` call
+    will overwrite the flag with the env-var or store value.
+
+    Production code should treat this as a configuration write: the
+    change is durable (when a cross-worker-visible ConfigStore is
+    active) and visible to every uvicorn worker on the next read.
+    Test code may call it freely.
+    """
     global PLUGIN_CONTEXT_ENABLED
-    PLUGIN_CONTEXT_ENABLED = bool(value)
+    new_value = bool(value)
+    PLUGIN_CONTEXT_ENABLED = new_value
+    store = _lookup_active_config_store()
+    if store is not None:
+        store.update({_CONFIG_KEY: new_value})
+
+
+def refresh_plugin_context_enabled() -> bool:
+    """Re-read :data:`PLUGIN_CONTEXT_ENABLED` from the active source.
+
+    Called once during server boot (after the plugin context is
+    mounted) so a ConfigStore override that landed between server
+    start and now takes effect without a restart. Returns the
+    refreshed value.
+    """
+    global PLUGIN_CONTEXT_ENABLED
+    PLUGIN_CONTEXT_ENABLED = is_plugin_context_enabled()
+    return PLUGIN_CONTEXT_ENABLED
 
 
 #: Module-level handle on the live plugin context. ``None`` before

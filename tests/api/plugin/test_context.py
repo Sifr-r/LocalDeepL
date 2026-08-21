@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Protocol, runtime_checkable
 
 import pytest
 
 from omniscribe.api.plugin import (
+    EventName,
     PluginContext,
     ServiceAlreadyRegisteredError,
     ServiceDefinition,
@@ -155,3 +157,107 @@ def test_context_repr_includes_counts() -> None:
     assert "services=0" in repr(ctx)
     ctx.register(Greeter, FriendlyGreeter())
     assert "services=1" in repr(ctx)
+
+
+# -- F27: thread safety ------------------------------------------------------
+
+
+def test_concurrent_registration_with_unique_keys_is_safe() -> None:
+    """Many threads register services under distinct (Protocol, name)
+    pairs concurrently. The lock serialises the registrations so every
+    entry lands in the registry; ``service_names`` returns the full set."""
+    ctx = PluginContext("f27-unique")
+    n_threads = 32
+    barrier = threading.Barrier(n_threads)
+    errors: list[BaseException] = []
+
+    def worker(idx: int) -> None:
+        try:
+            # All threads wait until everyone is ready, so the race is real.
+            barrier.wait(timeout=5.0)
+            ctx.register(Counter, AtomicCounter(), name=f"counter-{idx}")
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=worker, args=(i,), name=f"f27-{i}")
+        for i in range(n_threads)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    names = ctx.service_names(Counter)
+    assert len(names) == n_threads
+    assert set(names) == {f"counter-{i}" for i in range(n_threads)}
+    # Every registered impl is retrievable (no torn writes).
+    for i in range(n_threads):
+        assert isinstance(ctx.get(Counter, name=f"counter-{i}"), AtomicCounter)
+
+
+def test_concurrent_registration_with_the_same_key_serialises_errors() -> None:
+    """Two threads race to register under the same (Protocol, name).
+    Exactly one wins; the other gets :class:`ServiceAlreadyRegisteredError`
+    — no torn writes, no double-registration, no silent overwrite."""
+    ctx = PluginContext("f27-race")
+    barrier = threading.Barrier(2)
+    successes: list[int] = []
+    failures: list[BaseException] = []
+
+    def worker(idx: int, impl: object) -> None:
+        try:
+            barrier.wait(timeout=5.0)
+            ctx.register(Counter, impl, name="shared")
+            successes.append(idx)
+        except BaseException as exc:
+            failures.append(exc)
+
+    a, b = AtomicCounter(), AtomicCounter()
+    t1 = threading.Thread(target=worker, args=(1, a), name="race-a")
+    t2 = threading.Thread(target=worker, args=(2, b), name="race-b")
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+    # Exactly one winner, exactly one loser.
+    assert len(successes) == 1
+    assert len(failures) == 1
+    assert isinstance(failures[0], ServiceAlreadyRegisteredError)
+    # The winner is whichever impl the registry now holds.
+    assert ctx.get(Counter, name="shared") is (a if successes[0] == 1 else b)
+
+
+def test_concurrent_dispatch_and_mutation_does_not_corrupt_registry() -> None:
+    """While one thread emits an event repeatedly, another thread
+    registers a listener under the same event. The lock ensures the
+    dispatch snapshot is consistent (no :class:`RuntimeError` from
+    mutating-during-iteration)."""
+    ctx = PluginContext("f27-emit")
+    received: list[str] = []
+    stop = threading.Event()
+    errors: list[BaseException] = []
+    event_name: EventName = "race.event"  # type: ignore[assignment]
+
+    def emitter() -> None:
+        try:
+            while not stop.is_set():
+                ctx.emit(event_name, n=1)
+        except BaseException as exc:
+            errors.append(exc)
+
+    def registrar() -> None:
+        try:
+            for _i in range(50):
+                ctx.on(event_name, lambda *, n=1: received.append("x"), prepend=False)
+        except BaseException as exc:
+            errors.append(exc)
+
+    t_emit = threading.Thread(target=emitter, name="emit")
+    t_reg = threading.Thread(target=registrar, name="reg")
+    t_emit.start()
+    t_reg.start()
+    t_reg.join()
+    stop.set()
+    t_emit.join()
+    assert errors == [], f"Unexpected errors during concurrent emit/register: {errors}"

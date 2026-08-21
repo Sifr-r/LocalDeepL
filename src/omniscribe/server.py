@@ -94,7 +94,10 @@ def create_app() -> ASGIApplication:
         text_artifact_store_provider,
     )
     from omniscribe.api.plugin.recorders import audit_log_recorder
-    from omniscribe.api.plugin.runtime import set_plugin_context
+    from omniscribe.api.plugin.runtime import (
+        refresh_plugin_context_enabled,
+        set_plugin_context,
+    )
     from omniscribe.api.routers import (
         artifacts,
         config,
@@ -110,6 +113,7 @@ def create_app() -> ASGIApplication:
         translation,
         websocket,
     )
+    from omniscribe.api.services.lifespan import LifespanRunner, LifespanStep
     from omniscribe.api.services.security_config import SecuritySettings
     from omniscribe.api.services.security_middleware import (
         BearerAuthMiddleware,
@@ -155,32 +159,103 @@ def create_app() -> ASGIApplication:
     # persistent session log) can be mounted alongside it.
     plugin_ctx.mount(audit_log_recorder())
     set_plugin_context(plugin_ctx)
+    # F11 (audit-secondary): re-read the toggle now that the ConfigStore
+    # provider is mounted so an override that landed between process start
+    # and boot takes effect without a restart. Falls back to the env var
+    # when no ConfigStore is mounted (e.g. test contexts).
+    refresh_plugin_context_enabled()
 
-    @asynccontextmanager
-    async def lifespan(_app: Any) -> AsyncIterator[None]:
+    # The per-step setup/teardown pairs that the FastAPI lifespan
+    # callback runs in order / reverse. Each closure captures
+    # ``plugin_ctx`` from the enclosing scope so the dispose path
+    # can reach it without a global. ``LifespanStep`` is the
+    # named (setup, teardown) record and ``LifespanRunner`` does
+    # the orchestration (LIFO teardown, fail-open per teardown).
+    async def _setup_lexicon_auto_migration() -> None:
         # Phase 4 of the LanceDB migration: auto-migrate legacy state on
         # first run after the upgrade. Fail-open — a broken migration
         # never blocks server boot. The user can retry with the
         # ``omniscribe-migrate-lexicon`` CLI.
         _run_legacy_lexicon_migration()
+        return None
 
+    async def _teardown_lexicon_noop(_handle: object) -> None:
+        # Fire-and-forget; nothing to unwind.
+        return None
+
+    async def _setup_ocr_job_queue() -> None:
         await state.ocr_job_queue.start()
-        cleanup_task = await _start_artifact_cleanup()
-        try:
-            yield
-        finally:
-            await _stop_artifact_cleanup(cleanup_task)
-            await state.ocr_job_queue.stop()
-            # Release the shared httpx client and its connection pool.
-            # Keeps the process from holding an idle keep-alive socket.
-            from omniscribe.core.ocr.multi_format_client import aclose_shared_client
+        return None
 
-            await aclose_shared_client()
-            # Dispose the plugin context last so any disposers that need
-            # to talk to the live queue (or any other registered service)
-            # still see a working state.
-            set_plugin_context(None)
-            plugin_ctx.dispose()
+    async def _teardown_ocr_job_queue(_handle: object) -> None:
+        await state.ocr_job_queue.stop()
+
+    async def _setup_artifact_cleanup() -> asyncio.Task[None] | None:
+        return await _start_artifact_cleanup()
+
+    async def _teardown_artifact_cleanup(
+        handle: asyncio.Task[None] | None,
+    ) -> None:
+        await _stop_artifact_cleanup(handle)
+
+    async def _setup_shared_httpx_client() -> None:
+        # Lazy import only on first call; nothing to do at setup.
+        return None
+
+    async def _teardown_shared_httpx_client(_handle: object) -> None:
+        # Release the shared httpx client and its connection pool.
+        # Keeps the process from holding an idle keep-alive socket.
+        from omniscribe.core.ocr.multi_format_client import aclose_shared_client
+
+        await aclose_shared_client()
+
+    async def _setup_plugin_context() -> None:
+        # The context is mounted earlier in create_app (before the
+        # lifespan opens); the setup is a no-op so the step is
+        # symmetric with its teardown.
+        return None
+
+    async def _teardown_plugin_context(_handle: object) -> None:
+        # Dispose the plugin context last so any disposers that need
+        # to talk to the live queue (or any other registered service)
+        # still see a working state.
+        set_plugin_context(None)
+        plugin_ctx.dispose()
+
+    _lifespan_runner = LifespanRunner(
+        [
+            LifespanStep(
+                "lexicon_auto_migration",
+                _setup_lexicon_auto_migration,
+                _teardown_lexicon_noop,
+            ),
+            LifespanStep(
+                "ocr_job_queue",
+                _setup_ocr_job_queue,
+                _teardown_ocr_job_queue,
+            ),
+            LifespanStep(
+                "artifact_cleanup",
+                _setup_artifact_cleanup,
+                _teardown_artifact_cleanup,
+            ),
+            LifespanStep(
+                "shared_httpx_client",
+                _setup_shared_httpx_client,
+                _teardown_shared_httpx_client,
+            ),
+            LifespanStep(
+                "plugin_context",
+                _setup_plugin_context,
+                _teardown_plugin_context,
+            ),
+        ]
+    )
+
+    @asynccontextmanager
+    async def lifespan(_app: Any) -> AsyncIterator[None]:
+        async with _lifespan_runner.run():
+            yield
 
     web_app = fastapi.FastAPI(lifespan=lifespan)
     security = SecuritySettings.from_env()
