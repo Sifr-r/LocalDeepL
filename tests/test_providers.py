@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from omniscribe.api.services.envelope import register_envelope_handlers
 from omniscribe.core.providers import PROVIDERS_CATALOG, get_provider
 from omniscribe.server import create_app
 
@@ -81,6 +82,7 @@ def test_get_provider_lookup():
 def test_list_providers_api_route(fresh_provider_manager: None) -> None:
     """Verify GET /api/providers returns full provider catalog."""
     app = create_app()
+    register_envelope_handlers(app)
     client = TestClient(app)
     res = client.get("/api/providers")
     assert res.status_code == 200
@@ -105,6 +107,7 @@ def test_list_providers_api_route(fresh_provider_manager: None) -> None:
 def test_get_single_provider_api_route(fresh_provider_manager: None) -> None:
     """Verify GET /api/providers/{provider_id} route."""
     app = create_app()
+    register_envelope_handlers(app)
     client = TestClient(app)
     res = client.get("/api/providers/kimi")
     assert res.status_code == 200

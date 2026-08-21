@@ -6,13 +6,22 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from omniscribe.api.services.envelope import register_envelope_handlers
 from omniscribe.server import create_app
 from omniscribe.utils.security import SSRFCheckResult
 
 
-def test_get_providers_route():
+def _build_client() -> TestClient:
+    """Create the app and register envelope handlers so swept error sites
+    return the canonical envelope shape rather than bubbling up as 500s.
+    """
     app = create_app()
-    client = TestClient(app)
+    register_envelope_handlers(app)
+    return TestClient(app)
+
+
+def test_get_providers_route():
+    client = _build_client()
     res = client.get("/api/providers")
     assert res.status_code == 200
     data = res.json()
@@ -26,8 +35,7 @@ def test_get_providers_route():
 
 
 def test_get_provider_templates_route():
-    app = create_app()
-    client = TestClient(app)
+    client = _build_client()
     res = client.get("/api/providers/templates")
     assert res.status_code == 200
     data = res.json()
@@ -38,8 +46,7 @@ def test_get_provider_templates_route():
 
 
 def test_get_active_provider_route():
-    app = create_app()
-    client = TestClient(app)
+    client = _build_client()
     res = client.get("/api/providers/active")
     assert res.status_code == 200
     data = res.json()
@@ -48,8 +55,7 @@ def test_get_active_provider_route():
 
 
 def test_update_active_provider_route():
-    app = create_app()
-    client = TestClient(app)
+    client = _build_client()
 
     payload = {"provider_id": "groq", "model": "llama-3.2-90b-vision-preview"}
     res = client.post("/api/providers/active", json=payload)
@@ -65,8 +71,7 @@ def test_update_active_provider_route():
 
 
 def test_create_or_update_provider_route():
-    app = create_app()
-    client = TestClient(app)
+    client = _build_client()
 
     payload = {
         "id": "my-custom-provider",
@@ -99,8 +104,7 @@ def test_create_or_update_provider_route():
 
 
 def test_delete_provider_route():
-    app = create_app()
-    client = TestClient(app)
+    client = _build_client()
 
     payload = {
         "id": "temp-provider-to-delete",
@@ -124,8 +128,7 @@ def test_delete_provider_route():
 
 
 def test_get_provider_models_route():
-    app = create_app()
-    client = TestClient(app)
+    client = _build_client()
 
     with patch(
         "omniscribe.api.services.provider_manager.ProviderManager.list_provider_models",
@@ -147,8 +150,7 @@ def test_get_provider_models_route():
 
 
 def test_get_provider_details_route():
-    app = create_app()
-    client = TestClient(app)
+    client = _build_client()
 
     res = client.get("/api/providers/openai")
     assert res.status_code == 200
