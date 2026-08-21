@@ -25,6 +25,7 @@ from fastapi.testclient import TestClient
 from omniscribe.api.routers import config as config_module
 from omniscribe.api.routers.config import _ConfigBackendIncompatible
 from omniscribe.api.routers.config import router as config_router
+from omniscribe.api.routers.transcription import router as transcription_router
 from omniscribe.api.services.envelope import (
     BackendUnavailable,
     SSRFBlocked,
@@ -199,3 +200,44 @@ def test_backend_unavailable_envelope_matches_assertion() -> None:
     assert err.status_code == 503
     assert err.error == "backend_unavailable"
     assert err.detail == BACKEND_INCOMPATIBLE_MESSAGE
+
+
+# ---------------------------------------------------------------------------
+# Transcription router sweep (Phase C / Task 3)
+# ---------------------------------------------------------------------------
+#
+# Replaces the 6 HTTPException(status_code=...) sites in
+# src/omniscribe/api/routers/transcription.py with typed envelope exceptions:
+#   line  60 (UploadValidationError) → BadRequest
+#   line  72 (SSRF on transcribe)     → SSRFBlocked
+#   line  90 (AudioValidationError)  → BadRequest
+#   line  92 (TranscriptionError)    → BackendUnavailable
+#   line 208 (SSRF on config update) → SSRFBlocked
+#   line 230 (ConfigBackendIncompat) → BackendUnavailable
+
+
+@pytest.fixture
+def transcription_client() -> TestClient:
+    app = FastAPI()
+    register_envelope_handlers(app)
+    app.include_router(transcription_router)
+    return TestClient(app)
+
+
+def test_transcribe_route_returns_envelope_on_missing_file(
+    transcription_client: TestClient,
+) -> None:
+    """An empty POST to /api/transcribe (no multipart file) should return
+    a 400 or 422 envelope, not a raw FastAPI HTTPException detail string.
+    """
+    resp = transcription_client.post("/api/transcribe")
+    # FastAPI may treat missing-file as 422 (validation) at the route level
+    # OR the route may catch MissingFile and re-raise as 400 (BadRequest).
+    assert resp.status_code in {400, 422}, (
+        f"expected 400 or 422, got {resp.status_code}: {resp.text}"
+    )
+    body: dict[str, Any] = resp.json()
+    assert body["error"] in {"validation_failed", "bad_request"}, (
+        f"expected envelope error, got body={body}"
+    )
+    assert "detail" in body

@@ -23,8 +23,12 @@ from omniscribe.api.schemas.responses import (
     TranscriptionJobResponse,
 )
 from omniscribe.api.services.api_helpers import stable_server_error
+from omniscribe.api.services.envelope import (
+    BackendUnavailable,
+    BadRequest,
+    SSRFBlocked,
+)
 from omniscribe.api.services.security import (
-    SAFE_API_BASE_ERROR,
     UploadValidationError,
     cleanup_files,
     save_validated_upload,
@@ -57,7 +61,7 @@ async def transcribe_audio(
     try:
         upload = await save_validated_upload(file)
     except UploadValidationError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        raise BadRequest(detail=str(exc)) from exc
 
     try:
         with open(upload.path, "rb") as f:
@@ -68,8 +72,11 @@ async def transcribe_audio(
             api_base
             or config.get("transcription_api_base", "https://api.openai.com/v1")
         )
-        if not (await is_ssrf_target(resolved_api_base)).allowed:
-            raise HTTPException(status_code=403, detail=SAFE_API_BASE_ERROR)
+        ssrf_check = await is_ssrf_target(resolved_api_base)
+        if not ssrf_check.allowed:
+            raise SSRFBlocked(
+                url=resolved_api_base, reason=ssrf_check.reason or "blocked"
+            )
 
         res = await _service.transcribe_audio(
             file_bytes=file_bytes,
@@ -87,9 +94,9 @@ async def transcribe_audio(
         )
         return res
     except AudioValidationError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+        raise BadRequest(detail=exc.message) from exc
     except TranscriptionError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+        raise BackendUnavailable(detail=exc.message) from exc
     except HTTPException:
         raise
     except Exception:
@@ -204,8 +211,10 @@ async def update_transcription_config(
     active backend is the default in-memory one, the request is
     refused with a 503 + a remediation message.
     """
-    if body.api_base is not None and not (await is_ssrf_target(body.api_base)).allowed:
-        raise HTTPException(status_code=403, detail=SAFE_API_BASE_ERROR)
+    if body.api_base is not None:
+        ssrf_check = await is_ssrf_target(body.api_base)
+        if not ssrf_check.allowed:
+            raise SSRFBlocked(url=body.api_base, reason=ssrf_check.reason or "blocked")
     updates: dict[str, Any] = {}
     if body.api_base is not None:
         updates["transcription_api_base"] = body.api_base
@@ -227,8 +236,8 @@ async def update_transcription_config(
         try:
             _persist_config(updates)
         except _ConfigBackendIncompatible:
-            raise HTTPException(
-                status_code=503, detail=_CONFIG_BACKEND_INCOMPATIBLE_MESSAGE
+            raise BackendUnavailable(
+                detail=_CONFIG_BACKEND_INCOMPATIBLE_MESSAGE
             ) from None
 
     return await get_transcription_config()

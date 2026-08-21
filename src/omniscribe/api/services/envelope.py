@@ -80,6 +80,11 @@ class RateLimited(APIError):
     error = "rate_limited"
 
 
+class BadRequest(APIError):
+    status_code = status.HTTP_400_BAD_REQUEST
+    error = "bad_request"
+
+
 def envelope_error(
     *, status_code: int, error: str, detail: str | None = None
 ) -> JSONResponse:
