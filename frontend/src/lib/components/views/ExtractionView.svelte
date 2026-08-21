@@ -1,7 +1,12 @@
 <script lang="ts">
   import { activeTab, documentStore, configStore, pushToast } from '$lib/stores/appStore';
-  import { fetchApi, fetchFile } from '$lib/api/client';
   import { artifactsApi } from '$lib/api/endpoints';
+  import {
+    extract,
+    exportHtml,
+    exportBlocktree,
+    exportDocxTree
+  } from '$lib/services/extractionService';
   import { downloadBlob } from '$lib/utils/download';
   import { bindArtifactToText } from '$lib/utils/artifactBinding';
   import { reportError } from '$lib/utils/error';
@@ -95,12 +100,11 @@
         api_base: $configStore.api_base,
       };
 
-      const res = await fetchApi<{ extracted_data: Record<string, unknown> }>('/extract', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-
-      extractedData = res.extracted_data;
+      const res = await extract(payload);
+      // ``extract`` returns ``{ extracted_data: unknown }``; narrow to
+      // the view-local ``Record<string, unknown>`` shape since the
+      // template schemas we ship are all object-shaped.
+      extractedData = (res.extracted_data ?? null) as Record<string, unknown> | null;
       pushToast('success', 'Structured data extraction completed!', 3000);
     } catch (err: unknown) {
       reportError(err, 'Extraction failed');
@@ -116,33 +120,26 @@
     }
 
     try {
-      const payload = {
-        text_artifact_id: selectedArtifactId,
-        text_artifact_token: selectedArtifactToken,
-      };
-
       pushToast('info', `Generating ${format.toUpperCase()} export...`, 2000);
 
       if (format === 'html') {
-        const blob = await fetchFile('/export/html', {
-          method: 'POST',
-          body: JSON.stringify(payload),
-          headers: { 'Content-Type': 'application/json' },
+        const blob = await exportHtml({
+          text_artifact_id: selectedArtifactId,
+          text_artifact_token: selectedArtifactToken,
         });
         downloadBlob(blob, `export-${selectedArtifactId}.html`);
         pushToast('success', 'HTML export downloaded.', 3000);
       } else if (format === 'docx') {
-        const blob = await fetchFile('/export/docx-tree', {
-          method: 'POST',
-          body: JSON.stringify(payload),
-          headers: { 'Content-Type': 'application/json' },
+        const blob = await exportDocxTree({
+          text_artifact_id: selectedArtifactId,
+          text_artifact_token: selectedArtifactToken,
         });
         downloadBlob(blob, `export-${selectedArtifactId}.docx`);
         pushToast('success', 'DOCX export downloaded.', 3000);
       } else if (format === 'blocktree') {
-        const res = await fetchApi<unknown>('/export/blocktree', {
-          method: 'POST',
-          body: JSON.stringify(payload),
+        const res = await exportBlocktree({
+          text_artifact_id: selectedArtifactId,
+          text_artifact_token: selectedArtifactToken,
         });
         const blob = new Blob([JSON.stringify(res, null, 2)], { type: 'application/json' });
         downloadBlob(blob, `blocktree-${selectedArtifactId}.json`);

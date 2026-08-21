@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { activeTab, pushToast } from '$lib/stores/appStore';
-  import { fetchApi } from '$lib/api/client';
+  import { list, cancel, clear } from '$lib/services/jobsService';
   import { reportError } from '$lib/utils/error';
   import type { JobRecord } from '$lib/types/api';
   import Card from '../ui/Card.svelte';
@@ -23,7 +23,9 @@
   async function loadJobs() {
     isLoading = true;
     try {
-      const data = await fetchApi<JobRecord[]>('/jobs');
+      // ``list`` returns ``JobRecordResponse[]``; ``JobRecord`` is a
+      // structural alias so the cast stays local to this loader.
+      const data = (await list()) as JobRecord[];
       jobs = data || [];
     } catch (err) {
       console.warn('Failed to load job history:', err);
@@ -42,7 +44,7 @@
 
   async function cancelJob(jobId: string) {
     try {
-      await fetchApi(`/jobs/${jobId}/cancel`, { method: 'POST' });
+      await cancel(jobId);
       pushToast('info', `Job ${jobId} cancellation requested.`, 3000);
       await loadJobs();
     } catch (err: unknown) {
@@ -57,7 +59,7 @@
   async function confirmClearAll() {
     showClearAllModal = false;
     try {
-      await fetchApi('/jobs', { method: 'DELETE' });
+      await clear();
       jobs = [];
       pushToast('success', 'Job history cleared.', 3000);
     } catch (err: unknown) {

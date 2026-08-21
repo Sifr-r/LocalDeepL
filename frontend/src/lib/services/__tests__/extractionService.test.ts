@@ -1,5 +1,12 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { extract, exportDocument, exportDocx } from '../extractionService';
+import {
+  extract,
+  exportBlocktree,
+  exportDocx,
+  exportDocxTree,
+  exportDocument,
+  exportHtml
+} from '../extractionService';
 
 /**
  * Service-level tests for `extractionService.ts`. The wrappers fan out
@@ -69,6 +76,39 @@ describe('extractionService', () => {
     expect(blob).toBeInstanceOf(Blob);
   });
 
+  it('exportHtml posts to /api/export/html and returns a Blob', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response('<html></html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html' }
+      })
+    );
+    const blob = await exportHtml({ text_artifact_id: 'a', text_artifact_token: 't' });
+    const [url, init] = fetchSpy.mock.calls[0] ?? [];
+    expect(url).toContain('/api/export/html');
+    expect(url).not.toContain('/docx');
+    expect(init.method).toBe('POST');
+    expect(blob).toBeInstanceOf(Blob);
+  });
+
+  it('exportDocxTree posts to /api/export/docx-tree and returns a Blob', async () => {
+    fetchSpy.mockResolvedValueOnce(okBlob());
+    const blob = await exportDocxTree({ text_artifact_id: 'a', text_artifact_token: 't' });
+    const [url, init] = fetchSpy.mock.calls[0] ?? [];
+    expect(url).toContain('/api/export/docx-tree');
+    expect(init.method).toBe('POST');
+    expect(blob).toBeInstanceOf(Blob);
+  });
+
+  it('exportBlocktree posts to /api/export/blocktree and parses the JSON response', async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse({ blocks: [{ id: 'b1' }] }));
+    const res = await exportBlocktree({ text_artifact_id: 'a', text_artifact_token: 't' });
+    const [url, init] = fetchSpy.mock.calls[0] ?? [];
+    expect(url).toContain('/api/export/blocktree');
+    expect(init.method).toBe('POST');
+    expect(res).toEqual({ blocks: [{ id: 'b1' }] });
+  });
+
   // Parametrized signal-forwarding test — covers every wrapper so a
   // refactor that drops a wrapper (or forgets to thread `signal`)
   // fails the test for that wrapper specifically.
@@ -82,7 +122,22 @@ describe('extractionService', () => {
           { signal }
         )
     ],
-    ['exportDocx', (signal: AbortSignal) => exportDocx({ text: 'x' }, { signal })]
+    ['exportDocx', (signal: AbortSignal) => exportDocx({ text: 'x' }, { signal })],
+    [
+      'exportHtml',
+      (signal: AbortSignal) =>
+        exportHtml({ text_artifact_id: 'a', text_artifact_token: 't' }, { signal })
+    ],
+    [
+      'exportDocxTree',
+      (signal: AbortSignal) =>
+        exportDocxTree({ text_artifact_id: 'a', text_artifact_token: 't' }, { signal })
+    ],
+    [
+      'exportBlocktree',
+      (signal: AbortSignal) =>
+        exportBlocktree({ text_artifact_id: 'a', text_artifact_token: 't' }, { signal })
+    ]
   ])('%s forwards the AbortSignal to fetch', async (_name, call) => {
     const ctrl = new AbortController();
     await call(ctrl.signal);

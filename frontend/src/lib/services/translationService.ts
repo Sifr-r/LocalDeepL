@@ -50,6 +50,44 @@ export async function translate(
 }
 
 /**
+ * NLLB fast-engine translation payload — raw text plus target language.
+ *
+ * Kept as an inline alias so callers don't need to know the wire
+ * shape; the server endpoint (``POST /api/translate/nllb``) accepts
+ * exactly these two fields.
+ */
+export interface TranslateNllbPayload {
+  text: string;
+  target_language: string;
+}
+
+/**
+ * NLLB fast-engine translation response — ``{ translated_text }``.
+ *
+ * Mirrors the {@link TranslateResponse} shape for parity, but is kept
+ * as its own type so future NLLB-specific fields (source/target lang
+ * detection, confidence) can be added without churn elsewhere.
+ */
+export interface TranslateNllbResponse {
+  translated_text: string;
+}
+
+/**
+ * NLLB fast-engine ``POST /api/translate/nllb`` — returns the
+ * translated text without going through the LangGraph routing layer.
+ *
+ * Phase C / FE-07 (Task 12): exposed via the typed
+ * ``translationService`` so the NLLB branch in ``TranslationView``
+ * doesn't need a raw ``fetchApi`` call site.
+ */
+export async function translateNllb(
+  payload: TranslateNllbPayload,
+  options?: FetchOptions
+): Promise<TranslateNllbResponse> {
+  return translationApi.translateNllb(payload, options);
+}
+
+/**
  * Async `POST /api/translate/async` — returns a job id immediately;
  * callers poll with {@link getTranslationStatus}.
  */

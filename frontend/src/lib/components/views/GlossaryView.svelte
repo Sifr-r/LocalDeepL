@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { SvelteURLSearchParams } from 'svelte/reactivity';
   import { activeTab, pushToast } from '$lib/stores/appStore';
   import {
     glossaryLibrary,
@@ -14,8 +13,9 @@
     deleteGlossaryItem,
   } from '$lib/stores/glossaryStore';
   import { fetchApi } from '$lib/api/client';
+  import { importUrl } from '$lib/services/glossaryService';
   import { reportError } from '$lib/utils/error';
-  import type { GlossaryImportJobResponse } from '$lib/types/api';
+  import type { GlossaryFormat, GlossaryImportJobResponse } from '$lib/types/api';
   import Card from '../ui/Card.svelte';
   import Button from '../ui/Button.svelte';
   import Input from '../ui/Input.svelte';
@@ -31,7 +31,9 @@
   let importName = '';
   let importFormat = 'json_pairs';
   let importText = '';
-  let importUrl = '';
+  // Renamed from ``importUrl`` to ``importUrlValue`` to avoid the
+  // name clash with the typed ``importUrl`` service wrapper.
+  let importUrlValue = '';
   let importFile: File | null = null;
   let isSubmittingImport = false;
 
@@ -76,6 +78,7 @@
         },
       };
 
+      // /glossary/import is invoked with a custom JSON body shape (inline_bytes_b64 / textContent); the typed importFile() wrapper uses FormData, which is a different wire format. Keep this as a raw fetchApi until the server accepts both.
       const res = await fetchApi<GlossaryImportJobResponse>('/glossary/import', {
         method: 'POST',
         body: JSON.stringify(payload),
@@ -94,20 +97,18 @@
   }
 
   async function handleUrlImport() {
-    if (!importUrl.trim()) {
+    if (!importUrlValue.trim()) {
       pushToast('error', 'Provide a valid URL.', 3000);
       return;
     }
 
     isSubmittingImport = true;
     try {
-      const query = new SvelteURLSearchParams({ url: importUrl });
-      if (importName) query.set('name', importName);
-      if (importFormat) query.set('format', importFormat);
-
-      const res = await fetchApi<GlossaryImportJobResponse>(`/glossary/import/url?${query.toString()}`, {
-        method: 'POST',
-      });
+      const res = await importUrl(
+        importUrlValue,
+        importFormat as GlossaryFormat,
+        importName || undefined
+      );
 
       pushToast('success', `URL imported: ${res.name} (${res.entry_count} entries)`, 4000);
       isImportModalOpen = false;
@@ -125,7 +126,7 @@
     importName = '';
     importFormat = 'json_pairs';
     importText = '';
-    importUrl = '';
+    importUrlValue = '';
     importFile = null;
   }
 
@@ -354,7 +355,7 @@
           <input
             id="import-url"
             type="url"
-            bind:value={importUrl}
+            bind:value={importUrlValue}
             placeholder="https://example.com/glossary.csv"
             class="flex-1 h-9 px-3 rounded-md text-sm bg-card text-foreground border border-input focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand"
           />

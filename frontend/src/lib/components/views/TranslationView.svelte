@@ -3,6 +3,12 @@
   import { activeTab, documentStore, configStore, modelStore, refreshModels, pushToast } from '$lib/stores/appStore';
   import { fetchApi } from '$lib/api/client';
   import { artifactsApi } from '$lib/api/endpoints';
+  import {
+    translate,
+    translateAsync,
+    getTranslationStatus,
+    translateNllb
+  } from '$lib/services/translationService';
   import { bindArtifactToText } from '$lib/utils/artifactBinding';
   import { reportError } from '$lib/utils/error';
   import type { TranslationRequest, TreeTranslationRequest } from '$lib/types/api';
@@ -95,12 +101,9 @@
           isTranslating = false;
           return;
         }
-        const res = await fetchApi<{ translated_text: string }>('/translate/nllb', {
-          method: 'POST',
-          body: JSON.stringify({
-            text: sourceText,
-            target_language: targetLanguage,
-          }),
+        const res = await translateNllb({
+          text: sourceText,
+          target_language: targetLanguage,
         });
         translatedOutput = res.translated_text;
         pushToast('success', 'NLLB fast translation complete.', 3000);
@@ -113,6 +116,7 @@
           model: targetModel || $configStore.translation_model || $configStore.model,
           api_base: $configStore.translation_api_base || $configStore.api_base,
         };
+        // /translate/tree is a phase-1 internal endpoint not yet exposed via the typed service layer.
         const res = await fetchApi<unknown>('/translate/tree', {
           method: 'POST',
           body: JSON.stringify(payload),
@@ -129,10 +133,7 @@
           model: targetModel || $configStore.translation_model || $configStore.model,
           api_base: $configStore.translation_api_base || $configStore.api_base,
         };
-        const res = await fetchApi<{ translated_text: string }>('/translate', {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
+        const res = await translate(payload);
         translatedOutput = res.translated_text;
         pushToast('success', 'Translation complete.', 3000);
       }
@@ -160,10 +161,7 @@
         target_language: targetLanguage,
         prompt_template: promptTemplate,
       };
-      const res = await fetchApi<{ job_id: string; status: string }>('/translate/async', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
+      const res = await translateAsync(payload);
 
       asyncJobId = res.job_id;
       asyncStatus = `Job queued: ${res.job_id}. Polling status...`;
@@ -180,7 +178,15 @@
     clearPolling();
     pollTimer = setInterval(async () => {
       try {
-        const res = await fetchApi<{ state?: string; status?: string; result?: unknown; error?: string }>(`/translate/status/${jobId}`, { silent: true });
+        // ``getTranslationStatus`` returns ``unknown`` because the
+        // payload shape varies across job states (queued / running /
+        // complete / error); narrow it at the call site.
+        const res = (await getTranslationStatus(jobId)) as {
+          state?: string;
+          status?: string;
+          result?: unknown;
+          error?: string;
+        };
         asyncStatus = `Status: ${res.state || res.status}`;
         if (res.state === 'SUCCESS') {
           clearPolling();

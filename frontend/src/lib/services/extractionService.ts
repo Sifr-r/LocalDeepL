@@ -9,13 +9,23 @@
  * Phase C / Task 9 follow-on: `exportDocument` and `exportDocx` are
  * exposed through `extractionApi` as well as top-level exports, so
  * callers that prefer namespacing get the same surface.
+ *
+ * Phase C / Task 12: `exportHtml`, `exportDocxTree`, and
+ * `exportBlocktree` are added for the same reason — `ExtractionView`
+ * had three raw `fetchFile`/`fetchApi` export call sites that needed
+ * hoisting onto `extractionApi` first.
  */
 import { extractionApi } from '../api/endpoints';
-import type { DocumentExportResult } from '../api/endpoints';
+import type {
+  DocumentExportResult,
+  ExportDocxTreeRequest
+} from '../api/endpoints';
 import type { FetchOptions } from '../api/fetchOptions';
 import type {
   DocumentExportRequest,
+  ExportBlockTreeRequest,
   ExportDocxRequest,
+  ExportHtmlRequest,
   ExtractionRequest
 } from '../types/api';
 
@@ -29,6 +39,15 @@ export interface ExtractResponse {
 
 /** Document export input — alias of {@link DocumentExportRequest}. */
 export type ExportDocumentPayload = DocumentExportRequest;
+
+/** HTML export input — alias of {@link ExportHtmlRequest}. */
+export type ExportHtmlPayload = ExportHtmlRequest;
+
+/** Block-tree export input — alias of {@link ExportBlockTreeRequest}. */
+export type ExportBlocktreePayload = ExportBlockTreeRequest;
+
+/** DOCX-tree export input — alias of {@link ExportDocxTreeRequest}. */
+export type ExportDocxTreePayload = ExportDocxTreeRequest;
 
 /** POST `/api/extract` — schema-bounded structured extraction. */
 export async function extract(
@@ -61,4 +80,51 @@ export async function exportDocx(
   options?: FetchOptions
 ): Promise<Blob> {
   return extractionApi.exportDocx(payload, options);
+}
+
+/**
+ * POST `/api/export/html` — convert an artifact pair into an ``.html``
+ * blob. Returns the document body as a ``Blob``.
+ *
+ * Phase C / FE-07 (Task 12): hoisted onto ``extractionService`` so the
+ * HTML export button in ``ExtractionView`` no longer needs a raw
+ * ``fetchFile`` call site.
+ */
+export async function exportHtml(
+  payload: ExportHtmlPayload,
+  options?: FetchOptions
+): Promise<Blob> {
+  return extractionApi.exportHtml(payload, options);
+}
+
+/**
+ * POST `/api/export/docx-tree` — convert an artifact pair into a
+ * block-tree-aware ``.docx`` blob. Returns the document body as a
+ * ``Blob``.
+ *
+ * Phase C / FE-07 (Task 12): hoisted onto ``extractionService`` so the
+ * DOCX-tree export button in ``ExtractionView`` no longer needs a raw
+ * ``fetchFile`` call site.
+ */
+export async function exportDocxTree(
+  payload: ExportDocxTreePayload,
+  options?: FetchOptions
+): Promise<Blob> {
+  return extractionApi.exportDocxTree(payload, options);
+}
+
+/**
+ * POST `/api/export/blocktree` — return the document's block tree as
+ * structured JSON. The response shape is server-defined; callers
+ * branch on the actual payload (``unknown``).
+ *
+ * Phase C / FE-07 (Task 12): hoisted onto ``extractionService`` so the
+ * BlockTree export button in ``ExtractionView`` no longer needs a raw
+ * ``fetchApi`` call site.
+ */
+export async function exportBlocktree(
+  payload: ExportBlocktreePayload,
+  options?: FetchOptions
+): Promise<unknown> {
+  return extractionApi.exportBlocktree(payload, options);
 }

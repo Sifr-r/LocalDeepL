@@ -16,7 +16,9 @@ import type {
   TrustSummary,
   DocumentExportFormat,
   DocumentExportRequest,
-  ExportDocxRequest
+  ExportDocxRequest,
+  ExportHtmlRequest,
+  ExportBlockTreeRequest
 } from '../types/api';
 
 export async function getConfig(options?: FetchOptions): Promise<RuntimeConfig> {
@@ -204,6 +206,97 @@ export async function exportDocx(
   });
 }
 
+/**
+ * Translate a raw text blob through the NLLB fast engine.
+ *
+ * Phase C / FE-07 (Task 12): hoisted onto ``translationApi`` so the
+ * typed ``translationService`` can dispatch through a single namespace.
+ */
+export async function translateNllb(
+  payload: { text: string; target_language: string },
+  options?: FetchOptions
+): Promise<{ translated_text: string }> {
+  return fetchApi<{ translated_text: string }>('/translate/nllb', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    signal: options?.signal
+  });
+}
+
+/**
+ * Export a text artifact as an HTML file. Returns the document body as a
+ * ``Blob`` so callers can pipe it straight into a download trigger.
+ *
+ * Phase C / FE-07 (Task 12): hoisted onto ``extractionApi`` so the typed
+ * ``extractionService`` can dispatch through a single namespace.
+ */
+export async function exportHtml(
+  payload: ExportHtmlRequest,
+  options?: FetchOptions
+): Promise<Blob> {
+  return fetchFile('/export/html', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    signal: options?.signal
+  });
+}
+
+/**
+ * Payload for ``POST /api/export/docx-tree`` — convert a text artifact
+ * into a structured ``.docx`` (block-tree-aware DOCX). Kept inline
+ * because the server route only accepts the artifact id + token; no
+ * bespoke request schema lives in ``types/api.ts`` yet.
+ */
+export interface ExportDocxTreeRequest {
+  text_artifact_id: string;
+  text_artifact_token: string;
+}
+
+/**
+ * Export a text artifact as a ``.docx`` built from the document's
+ * block tree. Returns the document body as a ``Blob``.
+ *
+ * Phase C / FE-07 (Task 12): hoisted onto ``extractionApi`` so the typed
+ * ``extractionService`` can dispatch through a single namespace.
+ */
+export async function exportDocxTree(
+  payload: ExportDocxTreeRequest,
+  options?: FetchOptions
+): Promise<Blob> {
+  return fetchFile('/export/docx-tree', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    signal: options?.signal
+  });
+}
+
+/**
+ * Export the document's block tree as structured JSON.
+ *
+ * The response shape is server-defined and varies per pipeline; we keep
+ * the wrapper return type as ``unknown`` so callers branch on the actual
+ * payload (typically ``{ blocks: ... }`` or a flat node array).
+ *
+ * Phase C / FE-07 (Task 12): hoisted onto ``extractionApi`` so the typed
+ * ``extractionService`` can dispatch through a single namespace.
+ */
+export async function exportBlocktree(
+  payload: ExportBlockTreeRequest,
+  options?: FetchOptions
+): Promise<unknown> {
+  return fetchApi<unknown>('/export/blocktree', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    signal: options?.signal
+  });
+}
+
 export const configApi = {
   get: getConfig,
   update: updateConfig,
@@ -239,7 +332,15 @@ export const translationApi = {
       signal: options?.signal
     }),
   getStatus: (jobId: string, options?: FetchOptions) =>
-    fetchApi(`/translate/status/${jobId}`, { signal: options?.signal })
+    fetchApi(`/translate/status/${jobId}`, { signal: options?.signal }),
+  /**
+   * NLLB fast-engine translation. See {@link translateNllb} for the
+   * parameter shape.
+   *
+   * Phase C / FE-07 (Task 12): hoisted onto ``translationApi`` for
+   * namespace parity with ``translate`` / ``translateAsync``.
+   */
+  translateNllb
 };
 
 export const transcriptionApi = {
@@ -380,5 +481,29 @@ export const extractionApi = {
    * Phase C / FE-07: hoisted onto ``extractionApi`` for parity with
    * ``exportDocument``.
    */
-  exportDocx
+  exportDocx,
+  /**
+   * Export a text artifact as an ``.html`` blob. See {@link exportHtml}
+   * for the parameter shape.
+   *
+   * Phase C / FE-07 (Task 12): hoisted onto ``extractionApi`` for
+   * namespace parity with ``exportDocument`` / ``exportDocx``.
+   */
+  exportHtml,
+  /**
+   * Export a text artifact as a block-tree-aware ``.docx`` blob. See
+   * {@link exportDocxTree} for the parameter shape.
+   *
+   * Phase C / FE-07 (Task 12): hoisted onto ``extractionApi`` for
+   * namespace parity with ``exportDocument`` / ``exportDocx``.
+   */
+  exportDocxTree,
+  /**
+   * Export the document's block tree as structured JSON. See
+   * {@link exportBlocktree} for the parameter shape.
+   *
+   * Phase C / FE-07 (Task 12): hoisted onto ``extractionApi`` for
+   * namespace parity with ``exportDocument`` / ``exportDocx``.
+   */
+  exportBlocktree
 };

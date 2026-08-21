@@ -2,7 +2,8 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
   getTranslationStatus,
   translate,
-  translateAsync
+  translateAsync,
+  translateNllb
 } from '../translationService';
 
 /**
@@ -63,6 +64,11 @@ describe('translationService', () => {
     [
       'getTranslationStatus',
       (signal: AbortSignal) => getTranslationStatus('job-1', { signal })
+    ],
+    [
+      'translateNllb',
+      (signal: AbortSignal) =>
+        translateNllb({ text: 'hello', target_language: 'es' }, { signal })
     ]
   ])('%s forwards the AbortSignal to fetch', async (_name, call) => {
     const ctrl = new AbortController();
@@ -75,6 +81,18 @@ describe('translationService', () => {
     const [url, init] = fetchSpy.mock.calls[0] ?? [];
     expect(url).toContain('/api/translate/async');
     expect(init.method).toBe('POST');
+  });
+
+  it('translateNllb posts to /api/translate/nllb', async () => {
+    await translateNllb({ text: 'hello world', target_language: 'es' });
+    const [url, init] = fetchSpy.mock.calls[0] ?? [];
+    expect(url).toContain('/api/translate/nllb');
+    expect(url).not.toContain('/async');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toMatchObject({
+      text: 'hello world',
+      target_language: 'es'
+    });
   });
 
   it('getTranslationStatus GETs /api/translate/status/{id}', async () => {

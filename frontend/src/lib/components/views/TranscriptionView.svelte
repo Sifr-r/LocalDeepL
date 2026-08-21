@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { activeTab, refreshModels, modelStore, pushToast } from '$lib/stores/appStore';
-  import { fetchApi } from '$lib/api/client';
+  import { transcribe } from '$lib/services/transcriptionService';
   import {
     transcriptionResult,
     isTranscribing,
     activeSegmentId,
     audioCurrentTime,
   } from '$lib/stores/transcriptionStore';
-  import type { TranscriptionJobResponse, TranscriptionSegment } from '$lib/types/api';
+  import type { TranscriptionSegment } from '$lib/types/api';
   import { downloadBlob } from '$lib/utils/download';
   import { reportError } from '$lib/utils/error';
   import Card from '../ui/Card.svelte';
@@ -74,10 +74,7 @@
       if (prompt) formData.append('prompt', prompt);
       formData.append('temperature', temperature.toString());
 
-      const res = await fetchApi<TranscriptionJobResponse>('/transcribe', {
-        method: 'POST',
-        body: formData,
-      });
+      const res = await transcribe(formData);
 
       transcriptionResult.set(res);
       pushToast('success', `Transcription complete: ${res.segments.length} segments extracted`, 4000);
