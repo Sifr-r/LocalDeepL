@@ -15,6 +15,7 @@ import type { DocumentExportResult } from '../api/endpoints';
 import type { FetchOptions } from '../api/fetchOptions';
 import type {
   DocumentExportRequest,
+  ExportDocxRequest,
   ExtractionRequest
 } from '../types/api';
 
@@ -56,7 +57,7 @@ export async function exportDocument(
  * binary. Returns the document body as a ``Blob``.
  */
 export async function exportDocx(
-  payload: { text?: string; [key: string]: unknown },
+  payload: ExportDocxRequest,
   options?: FetchOptions
 ): Promise<Blob> {
   return extractionApi.exportDocx(payload, options);

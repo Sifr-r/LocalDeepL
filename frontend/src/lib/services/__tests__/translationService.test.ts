@@ -14,8 +14,8 @@ import {
  *   - Method/JSON body shape on POSTs.
  *
  * The full `client.ts` plumbing (auth header injection, content-type,
- * toast suppression) is exercised by `endpoints.test.ts` and the
- * `WorkstationView` integration test.
+ * toast suppression) is exercised by `endpoints.fetchOptions.test.ts`
+ * and the `WorkstationView` integration test.
  */
 
 const okResponse = (body: unknown = {}): Response =>
@@ -47,11 +47,27 @@ describe('translationService', () => {
     });
   });
 
-  it('translate forwards the signal to fetch', async () => {
+  it.each([
+    [
+      'translate',
+      (signal: AbortSignal) => translate({ text: 'hi', target_language: 'es' }, { signal })
+    ],
+    [
+      'translateAsync',
+      (signal: AbortSignal) =>
+        translateAsync(
+          { text: 'long', target_language: 'fr' },
+          { signal }
+        )
+    ],
+    [
+      'getTranslationStatus',
+      (signal: AbortSignal) => getTranslationStatus('job-1', { signal })
+    ]
+  ])('%s forwards the AbortSignal to fetch', async (_name, call) => {
     const ctrl = new AbortController();
-    await translate({ text: 'hi', target_language: 'es' }, { signal: ctrl.signal });
-    const init = fetchSpy.mock.calls[0]?.[1] as RequestInit;
-    expect(init.signal).toBe(ctrl.signal);
+    await call(ctrl.signal);
+    expect(fetchSpy.mock.calls[0]?.[1]?.signal).toBe(ctrl.signal);
   });
 
   it('translateAsync posts to /api/translate/async', async () => {

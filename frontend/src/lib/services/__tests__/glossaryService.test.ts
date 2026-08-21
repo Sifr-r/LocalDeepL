@@ -90,10 +90,18 @@ describe('glossaryService', () => {
     expect(body).toMatchObject({ url: 'https://example.com/g.csv' });
   });
 
-  it('every wrapper forwards the signal', async () => {
+  it.each([
+    ['getLibraries', (signal: AbortSignal) => getLibraries({ signal })],
+    ['getMerged', (signal: AbortSignal) => getMerged({ signal })],
+    ['getPreview', (signal: AbortSignal) => getPreview({ signal })],
+    ['importFile', (signal: AbortSignal) => importFile(new FormData(), { signal })],
+    [
+      'importUrl',
+      (signal: AbortSignal) => importUrl('https://example.com/g.tbx', 'tbx', undefined, { signal })
+    ]
+  ])('%s forwards the AbortSignal to fetch', async (_name, call) => {
     const ctrl = new AbortController();
-    await getLibraries({ signal: ctrl.signal });
-    const init = fetchSpy.mock.calls[0]?.[1] as RequestInit;
-    expect(init.signal).toBe(ctrl.signal);
+    await call(ctrl.signal);
+    expect(fetchSpy.mock.calls[0]?.[1]?.signal).toBe(ctrl.signal);
   });
 });

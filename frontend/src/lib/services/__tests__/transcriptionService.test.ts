@@ -36,12 +36,11 @@ describe('transcriptionService', () => {
     expect(init.body).toBe(form);
   });
 
-  it('transcribe forwards the signal', async () => {
+  it('transcribe forwards the AbortSignal to fetch', async () => {
     const ctrl = new AbortController();
     const form = new FormData();
     form.append('audio', new File(['binary'], 'rec.wav', { type: 'audio/wav' }));
     await transcribe(form, { signal: ctrl.signal });
-    const init = fetchSpy.mock.calls[0]?.[1] as RequestInit;
-    expect(init.signal).toBe(ctrl.signal);
+    expect(fetchSpy.mock.calls[0]?.[1]?.signal).toBe(ctrl.signal);
   });
 });

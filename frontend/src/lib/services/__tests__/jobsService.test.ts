@@ -48,10 +48,13 @@ describe('jobsService', () => {
     expect(init.method).toBe('POST');
   });
 
-  it('every wrapper forwards the signal', async () => {
+  it.each([
+    ['list', (signal: AbortSignal) => list({ signal })],
+    ['clear', (signal: AbortSignal) => clear({ signal })],
+    ['cancel', (signal: AbortSignal) => cancel('job-1', { signal })]
+  ])('%s forwards the AbortSignal to fetch', async (_name, call) => {
     const ctrl = new AbortController();
-    await list({ signal: ctrl.signal });
-    const init = fetchSpy.mock.calls[0]?.[1] as RequestInit;
-    expect(init.signal).toBe(ctrl.signal);
+    await call(ctrl.signal);
+    expect(fetchSpy.mock.calls[0]?.[1]?.signal).toBe(ctrl.signal);
   });
 });
