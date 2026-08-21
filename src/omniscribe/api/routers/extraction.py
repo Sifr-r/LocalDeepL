@@ -17,7 +17,7 @@ import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import JSONResponse, Response
 
 from omniscribe.api.routers import state
@@ -29,16 +29,15 @@ from omniscribe.api.schemas.requests import (
 )
 from omniscribe.api.services.ai import AIServiceError, extract_structured_data
 from omniscribe.api.services.api_helpers import stable_server_error
+from omniscribe.api.services.envelope import (
+    BadRequest,
+    NotFound,
+    SSRFBlocked,
+    envelope_error,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-def _ai_error_response(exc: AIServiceError) -> JSONResponse:
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"error": exc.public_message},
-    )
 
 
 async def _load_tree_from_artifact(artifact_id: str, token: str) -> Any:
@@ -70,7 +69,7 @@ async def _load_tree_from_artifact(artifact_id: str, token: str) -> Any:
 
         return from_pages_data(pages_data)
     except Exception as exc:
-        raise HTTPException(status_code=404, detail="text artifact not found") from exc
+        raise NotFound(detail="text artifact not found") from exc
 
 
 @router.post("/api/export/docx-tree")
@@ -128,10 +127,22 @@ async def export_blocktree(req: ExportBlockTreeRequest) -> JSONResponse:
 @router.post("/api/extract")
 async def extract_data(body: ExtractionRequest):
     """Extract structured JSON data from OCR text."""
+    if not body.text.strip():
+        raise BadRequest(detail="'text' is required")
     try:
         extracted = await extract_structured_data(body, config=_config)
     except AIServiceError as exc:
-        return _ai_error_response(exc)
+        if exc.status_code == 400:
+            raise BadRequest(detail=exc.public_message) from exc
+        if exc.status_code == 403:
+            raise SSRFBlocked(url="", reason=exc.public_message) from exc
+        # 500 (AIProviderError) and any other status code — keep the
+        # opaque-message envelope shape so we don't leak internal detail.
+        return envelope_error(
+            status_code=exc.status_code,
+            error="ai_error",
+            detail=exc.public_message,
+        )
     except Exception:
         logger.exception("Extraction request failed")
         return stable_server_error()

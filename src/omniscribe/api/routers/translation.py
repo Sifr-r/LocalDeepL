@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import logging
-from http import HTTPStatus
 from typing import Any, cast
 
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter
 
 from omniscribe.api.routers import state
 from omniscribe.api.routers.websocket import manager
@@ -22,10 +20,15 @@ from omniscribe.api.services.ai import (
 from omniscribe.api.services.ai import (
     translate_text as translate_document_text,
 )
-from omniscribe.api.services.security import (
-    SAFE_API_BASE_ERROR,
-    SERVER_ERROR_MESSAGE,
+from omniscribe.api.services.envelope import (
+    BackendUnavailable,
+    BadRequest,
+    NotFound,
+    SSRFBlocked,
+    ValidationFailed,
+    envelope_error,
 )
+from omniscribe.api.services.security import SERVER_ERROR_MESSAGE
 from omniscribe.core.glossary import Glossary
 from omniscribe.core.translation_config import AsyncTranslationUnavailable
 from omniscribe.core.translation_tree import translate_tree
@@ -36,13 +39,6 @@ from .config import _config
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-def _ai_error_response(exc: AIServiceError) -> JSONResponse:
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"error": exc.public_message},
-    )
 
 
 async def _load_pages_from_artifact(artifact_id: str, token: str) -> dict:
@@ -58,18 +54,32 @@ async def _load_pages_from_artifact(artifact_id: str, token: str) -> dict:
         }
         return pages_data
     except Exception as exc:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND, detail="text artifact not found"
-        ) from exc
+        raise NotFound(detail="text artifact not found") from exc
 
 
 @router.post("/api/translate")
 async def translate_text(body: TranslationRequest):
     """Translate OCR text into the requested target language."""
+    if not body.text.strip() and not (
+        body.text_artifact_id and body.text_artifact_token
+    ):
+        raise BadRequest(
+            detail="'text' or 'text_artifact_id'/'text_artifact_token' is required"
+        )
     try:
         translated = await translate_document_text(body, config=_config)
     except AIServiceError as exc:
-        return _ai_error_response(exc)
+        if exc.status_code == 400:
+            raise BadRequest(detail=exc.public_message) from exc
+        if exc.status_code == 403:
+            raise SSRFBlocked(url="", reason=exc.public_message) from exc
+        # 500 (AIProviderError) and any other status code — keep the
+        # opaque-message envelope shape so we don't leak internal detail.
+        return envelope_error(
+            status_code=exc.status_code,
+            error="ai_error",
+            detail=exc.public_message,
+        )
     except Exception:
         logger.exception("Translation request failed")
         return stable_server_error()
@@ -92,9 +102,7 @@ async def translate_text_async(body: TreeTranslationRequest):
             body.glossary or [],
         )
     except AsyncTranslationUnavailable as exc:
-        return JSONResponse(
-            status_code=HTTPStatus.SERVICE_UNAVAILABLE, content={"error": str(exc)}
-        )
+        raise BackendUnavailable(detail=str(exc)) from exc
 
     return {"job_id": task.id, "status": "Processing"}
 
@@ -107,9 +115,7 @@ async def get_translation_status(job_id: str):
     try:
         task = celery_app.AsyncResult(job_id)
     except AsyncTranslationUnavailable as exc:
-        return JSONResponse(
-            status_code=HTTPStatus.SERVICE_UNAVAILABLE, content={"error": str(exc)}
-        )
+        raise BackendUnavailable(detail=str(exc)) from exc
 
     try:
         response: dict[str, Any] = {
@@ -144,10 +150,7 @@ async def upload_glossary(req: GlossaryRequest) -> dict[str, Any]:
     elif req.text:
         glossary = Glossary.from_paired_lines(req.text)
     else:
-        raise HTTPException(
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
-            detail="Provide 'entries' or 'text'.",
-        )
+        raise ValidationFailed(detail="Provide 'entries' or 'text'.")
     return glossary.to_dict()
 
 
@@ -182,7 +185,7 @@ async def translate_tree_endpoint(req: TreeTranslationRequest) -> dict[str, Any]
     config = cast(dict[str, Any], _config)
     api_base = req.api_base or config.get("translation_api_base") or config["api_base"]
     if api_base and not (await is_ssrf_target(api_base)).allowed:
-        raise HTTPException(status_code=403, detail=SAFE_API_BASE_ERROR)
+        raise SSRFBlocked(url=api_base, reason="api_base_blocked")
     api_key = req.api_key or config.get("translation_api_key") or config["api_key"]
     model = req.model or config.get("translation_model") or config.get("model")
 
@@ -271,18 +274,14 @@ async def translate_nllb(req: dict[str, Any]) -> dict[str, Any]:
         else "English"
     )
     if not text:
-        raise HTTPException(
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
-            detail="'text' is required",
-        )
+        raise ValidationFailed(detail="'text' is required")
 
     from omniscribe.core.nllb_engine import NLLBEngine
 
     engine = NLLBEngine()
     if not engine.is_available():
-        raise HTTPException(
-            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
-            detail="NLLBEngine is not available. Install the 'nllb' extra: uv sync --extra nllb",
+        raise BackendUnavailable(
+            detail="NLLBEngine is not available. Install the 'nllb' extra: uv sync --extra nllb"
         )
     result = await engine.translate(text, target)
     return {

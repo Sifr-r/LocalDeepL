@@ -25,8 +25,10 @@ from fastapi.testclient import TestClient
 from omniscribe.api.routers import config as config_module
 from omniscribe.api.routers.config import _ConfigBackendIncompatible
 from omniscribe.api.routers.config import router as config_router
+from omniscribe.api.routers.extraction import router as extraction_router
 from omniscribe.api.routers.providers import router as providers_router
 from omniscribe.api.routers.transcription import router as transcription_router
+from omniscribe.api.routers.translation import router as translation_router
 from omniscribe.api.services.envelope import (
     BackendUnavailable,
     SSRFBlocked,
@@ -283,3 +285,71 @@ def test_providers_bad_payload_returns_envelope(
     assert resp.status_code in {400, 404, 422}
     body = resp.json()
     assert body["error"] in {"not_found", "bad_request", "validation_failed"}
+
+
+# ---------------------------------------------------------------------------
+# Translation + Extraction router sweep (Phase C / Task 5)
+# ---------------------------------------------------------------------------
+#
+# Replaces the 4 HTTPException(status_code=...) sites and the duplicate
+# _ai_error_response helpers in:
+#   src/omniscribe/api/routers/translation.py
+#   src/omniscribe/api/routers/extraction.py
+# with typed envelope exceptions. The /api/translate + /api/extract routes
+# accept TranslationRequest / ExtractionRequest respectively; both bodies have
+# all-default fields, so Pydantic validation alone does not flag an empty
+# body. The post-validation path inside the service layer raises
+# AISettingsError (400) when no source text is provided, which the swept
+# handler converts into the canonical envelope.
+
+
+@pytest.fixture
+def translation_client() -> TestClient:
+    app = FastAPI()
+    register_envelope_handlers(app)
+    app.include_router(translation_router)
+    return TestClient(app)
+
+
+@pytest.fixture
+def extraction_client() -> TestClient:
+    app = FastAPI()
+    register_envelope_handlers(app)
+    app.include_router(extraction_router)
+    return TestClient(app)
+
+
+def test_translate_empty_body_returns_envelope(
+    translation_client: TestClient,
+) -> None:
+    """POST /api/translate with an empty body must return the canonical
+    envelope shape (400 BadRequest or 422 ValidationFailed). Before the
+    sweep the route returned a bare ``{"error": "<public_message>"}``
+    JSONResponse via the duplicated ``_ai_error_response`` helper, which
+    is not the canonical envelope and does not contain a ``detail`` field.
+    """
+    resp = translation_client.post("/api/translate", json={})
+    assert resp.status_code in {400, 422}, (
+        f"expected 400 or 422, got {resp.status_code}: {resp.text}"
+    )
+    body: dict[str, Any] = resp.json()
+    assert body["error"] in {"bad_request", "validation_failed"}, (
+        f"expected envelope error, got body={body}"
+    )
+
+
+def test_extract_empty_body_returns_envelope(
+    extraction_client: TestClient,
+) -> None:
+    """POST /api/extract with an empty body must return the canonical
+    envelope shape (400 BadRequest or 422 ValidationFailed). Same shape
+    contract as the translation counterpart above.
+    """
+    resp = extraction_client.post("/api/extract", json={})
+    assert resp.status_code in {400, 422}, (
+        f"expected 400 or 422, got {resp.status_code}: {resp.text}"
+    )
+    body: dict[str, Any] = resp.json()
+    assert body["error"] in {"bad_request", "validation_failed"}, (
+        f"expected envelope error, got body={body}"
+    )
