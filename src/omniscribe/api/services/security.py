@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import UploadFile
 from fastapi.responses import JSONResponse
 
+from omniscribe.api.services.envelope import envelope_error
 from omniscribe.api.services.security_config import (
     DEFAULT_MAX_UPLOAD_MB as _DEFAULT_MAX_UPLOAD_MB,
 )
@@ -62,20 +63,15 @@ SERVER_ERROR_MESSAGE = "The request could not be completed. Please try again lat
 
 
 def api_error_response(
-    status_code: int,
-    error: str,
-    detail: Any | None = None,
+    status_code: int, error: str, detail: Any | None = None
 ) -> JSONResponse:
-    """Build the standard API error envelope ``{"error": ..., "detail": ...}``.
+    """Back-compat wrapper during the Phase C migration window.
 
-    ``detail`` is omitted when ``None`` so opaque 500s don't leak internals
-    while validation errors and value errors can attach structured detail.
-    See refactor §3.4 in ``deep_refactor_report.md``.
+    Delegates to :func:`omniscribe.api.services.envelope.envelope_error`
+    while preserving the original positional signature so the 8 in-tree
+    callers keep working until Tasks 2-5 sweep them.
     """
-    content: dict[str, Any] = {"error": error}
-    if detail is not None:
-        content["detail"] = detail
-    return JSONResponse(status_code=status_code, content=content)
+    return envelope_error(status_code=status_code, error=error, detail=detail)
 
 
 @dataclass(frozen=True)
