@@ -1,4 +1,4 @@
-"""FastAPI router for voice transcription operations, model discovery, and config."""
+"""FastAPI router for voice transcription operations and config."""
 
 from __future__ import annotations
 
@@ -14,11 +14,13 @@ from omniscribe.api.routers.config import (
     _mask_api_key,
     _persist_config,
 )
+from omniscribe.api.routers.models import (  # noqa: F401  -- back-compat re-export (Phase C / Task 9)
+    get_transcription_models,
+)
 from omniscribe.api.schemas.requests import (
     TranscriptionConfigUpdate,
 )
 from omniscribe.api.schemas.responses import (
-    ModelsResponse,
     TranscriptionConfigResponse,
     TranscriptionJobResponse,
 )
@@ -106,61 +108,10 @@ async def transcribe_audio(
         cleanup_files(upload.path)
 
 
-@router.get("/api/models/transcription", response_model=ModelsResponse)
-async def get_transcription_models() -> Any:
-    """Discover available audio transcription models from the configured backend endpoint."""
-    config = _load_config_from_store()
-    api_base = str(config.get("transcription_api_base", "https://api.openai.com/v1"))
-    api_key = str(config.get("transcription_api_key", "")) or None
-
-    fallback_models = [
-        "whisper-1",
-        "whisper-large-v3",
-        "whisper-medium",
-        "whisper-base",
-        "whisper-small",
-        "whisper-tiny",
-    ]
-
-    if not (await is_ssrf_target(api_base)).allowed:
-        return ModelsResponse(models=fallback_models)
-
-    try:
-        import httpx
-
-        from omniscribe.api.services.provider_manager import (
-            extract_model_ids_from_response,
-        )
-
-        headers = {}
-        if api_key and api_key != "lm-studio":
-            headers["Authorization"] = f"Bearer {api_key}"
-
-        base = api_base.rstrip("/")
-        candidate_urls: list[str] = []
-        if base.endswith("/v1"):
-            candidate_urls.append(f"{base}/models")
-        else:
-            candidate_urls.append(f"{base}/v1/models")
-            candidate_urls.append(f"{base}/models")
-        candidate_urls.append(f"{base}/api/tags")
-
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            for url in candidate_urls:
-                try:
-                    resp = await client.get(url, headers=headers)
-                    if resp.status_code == 200:
-                        models = extract_model_ids_from_response(resp.json())
-                        if models:
-                            return ModelsResponse(models=models)
-                except Exception:
-                    continue
-    except Exception as exc:
-        logger.warning(
-            "Failed to fetch models from transcription api_base %s: %s", api_base, exc
-        )
-
-    return ModelsResponse(models=fallback_models)
+# ---------------------------------------------------------------------------
+# /api/models/transcription was extracted to routers/models.py in Phase C /
+# Task 9 — see the back-compat re-export at the top of this module.
+# ---------------------------------------------------------------------------
 
 
 @router.get("/api/config/transcription", response_model=TranscriptionConfigResponse)

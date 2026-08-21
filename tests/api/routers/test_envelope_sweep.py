@@ -23,9 +23,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from omniscribe.api.routers import config as config_module
+from omniscribe.api.routers import models as models_module
 from omniscribe.api.routers.config import _ConfigBackendIncompatible
 from omniscribe.api.routers.config import router as config_router
 from omniscribe.api.routers.extraction import router as extraction_router
+from omniscribe.api.routers.models import router as models_router
 from omniscribe.api.routers.providers import router as providers_router
 from omniscribe.api.routers.transcription import router as transcription_router
 from omniscribe.api.routers.translation import router as translation_router
@@ -45,24 +47,45 @@ def client() -> TestClient:
     return TestClient(app)
 
 
+@pytest.fixture
+def models_client() -> TestClient:
+    """Test client with only ``routers/models.py`` mounted.
+
+    Phase C / Task 9: ``/api/models*`` was extracted from ``routers/config.py``
+    (3 routes) and ``routers/transcription.py`` (1 route) into
+    ``routers/models.py``. Mounting the new router in isolation lets the
+    SSRF sweep below patch ``models_module.is_ssrf_target`` without
+    affecting the other routers.
+    """
+    app = FastAPI()
+    register_envelope_handlers(app)
+    app.include_router(models_router)
+    return TestClient(app)
+
+
 def _denied_ssrf() -> SSRFCheckResult:
     return SSRFCheckResult(allowed=False, resolved_ip=None, reason="loopback")
 
 
 # ---------------------------------------------------------------------------
-# SSRF sweep — 8 sites across 5 routes.
+# SSRF sweep — 8 sites across 5 routes, split by router after Phase C / Task 9.
 # ---------------------------------------------------------------------------
 #
+# Config router (2 cases, 2 sites):
 #   POST /api/config            : line 488-489 (1 site)
 #   POST /api/config/ocr        : line 534 → 583 (1 site, via _is_ssrf)
+#
+# Models router (3 cases, 6 sites):
 #   GET  /api/models            : lines 773-774, 786-788 (2 sites)
 #   GET  /api/models/ocr        : lines 812-814, 824-825 (2 sites)
 #   GET  /api/models/translation: lines 848-850, 860-861 (2 sites)
 #
 # Each row is one HTTP call against the swept route. The patched
 # ``is_ssrf_target`` always denies, so whichever SSRF branch the route
-# enters first turns into a 403 envelope.
-SSRF_CASES = [
+# enters first turns into a 403 envelope. The two parametrized tests
+# below split by router so the patched module path matches where the
+# handler now resolves ``is_ssrf_target`` from.
+CONFIG_SSRF_CASES = [
     pytest.param(
         "POST",
         "/api/config",
@@ -75,6 +98,9 @@ SSRF_CASES = [
         {"ocr_api_base": "http://127.0.0.1:1"},
         id="POST /api/config/ocr",
     ),
+]
+
+MODELS_SSRF_CASES = [
     pytest.param("GET", "/api/models", None, id="GET /api/models"),
     pytest.param("GET", "/api/models/ocr", None, id="GET /api/models/ocr"),
     pytest.param(
@@ -83,11 +109,11 @@ SSRF_CASES = [
 ]
 
 
-@pytest.mark.parametrize("method,path,payload", SSRF_CASES)
+@pytest.mark.parametrize("method,path,payload", CONFIG_SSRF_CASES)
 def test_ssrf_site_returns_envelope(
     client: TestClient, method: str, path: str, payload: dict[str, Any] | None
 ) -> None:
-    """Mock ``is_ssrf_target`` to deny; assert 403 + canonical envelope."""
+    """Mock ``is_ssrf_target`` on ``routers.config`` to deny; assert 403 + canonical envelope."""
     with patch.object(
         config_module,
         "is_ssrf_target",
@@ -98,6 +124,39 @@ def test_ssrf_site_returns_envelope(
         else:
             assert payload is not None
             resp = client.post(path, json=payload)
+
+    assert resp.status_code == 403, (
+        f"{method} {path}: expected 403, got {resp.status_code} body={resp.text}"
+    )
+    body: dict[str, Any] = resp.json()
+    assert body == {
+        "error": "ssrf_blocked",
+        "detail": "URL targets a blocked address: loopback",
+    }, f"{method} {path}: envelope shape mismatch: {body}"
+
+
+@pytest.mark.parametrize("method,path,payload", MODELS_SSRF_CASES)
+def test_models_ssrf_site_returns_envelope(
+    models_client: TestClient,
+    method: str,
+    path: str,
+    payload: dict[str, Any] | None,
+) -> None:
+    """Mock ``is_ssrf_target`` on ``routers.models`` to deny; assert 403 + canonical envelope.
+
+    Phase C / Task 9: the 3 ``/api/models*`` handlers were extracted from
+    ``routers/config.py`` into ``routers/models.py``. The handler bodies
+    are unchanged but the ``is_ssrf_target`` lookup resolves through
+    ``routers.models.__dict__`` now, so the patch target moves with
+    them.
+    """
+    with patch.object(
+        models_module,
+        "is_ssrf_target",
+        new=AsyncMock(return_value=_denied_ssrf()),
+    ):
+        resp = models_client.get(path)
+        assert payload is None  # all model cases are GETs
 
     assert resp.status_code == 403, (
         f"{method} {path}: expected 403, got {resp.status_code} body={resp.text}"

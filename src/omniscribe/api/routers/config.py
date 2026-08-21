@@ -11,6 +11,17 @@ load_dotenv()
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
+# Back-compat re-exports — Phase C / Task 9 extracted ``/api/models*``
+# into :mod:`omniscribe.api.routers.models`. Old import paths
+# (``from omniscribe.api.routers.config import list_models`` etc.) still
+# work for any plugin-context provider or out-of-tree consumer that
+# registered against them. The 4 route handlers themselves live in
+# ``routers/models.py`` now and are mounted by ``server.create_app``.
+from omniscribe.api.routers.models import (
+    list_models,
+    list_ocr_models,
+    list_translation_models,
+)
 from omniscribe.api.schemas import (
     AuthTokenUpdate,
     ConfigUpdate,
@@ -36,7 +47,6 @@ from omniscribe.api.services.config_helpers import (
     persist_config as _persist_config,
 )
 from omniscribe.api.services.envelope import BackendUnavailable, SSRFBlocked
-from omniscribe.api.services.security import SERVER_ERROR_MESSAGE
 from omniscribe.api.services.security_config import (
     ABSOLUTE_MAX_UPLOAD_MB,
     DEFAULT_MAX_UPLOAD_MB,
@@ -551,175 +561,8 @@ async def update_transcription_auth_token(body: AuthTokenUpdate):
     return JSONResponse(content={"transcription_auth_token": body.auth_token})
 
 
-# ---------------------------------------------------------------------------
-# Model discovery
-# ---------------------------------------------------------------------------
-
-
-async def _discover_models_for_endpoint(
-    api_base: str, api_key: str | None = None
-) -> list[str]:
-    """Query available models from an arbitrary LLM endpoint with multi-URL and multi-format support."""
-    import httpx
-
-    from omniscribe.api.services.provider_manager import extract_model_ids_from_response
-
-    base = api_base.rstrip("/")
-    headers = {}
-    if api_key and api_key != "lm-studio":
-        headers["Authorization"] = f"Bearer {api_key}"
-
-    candidate_urls: list[str] = []
-    if base.endswith("/v1"):
-        candidate_urls.append(f"{base}/models")
-    else:
-        candidate_urls.append(f"{base}/v1/models")
-        candidate_urls.append(f"{base}/models")
-    candidate_urls.append(f"{base}/api/tags")
-
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            for url in candidate_urls:
-                try:
-                    resp = await client.get(url, headers=headers)
-                    if resp.status_code == 200:
-                        models = extract_model_ids_from_response(resp.json())
-                        if models:
-                            return models
-                except Exception:
-                    continue
-    except Exception:
-        pass
-
-    try:
-        from openai import AsyncOpenAI
-
-        client_sdk = AsyncOpenAI(
-            base_url=api_base,
-            api_key=api_key or "lm-studio",
-        )
-        response = await client_sdk.models.list()
-        if response.data:
-            return [m.id for m in response.data]
-    except Exception:
-        pass
-
-    return []
-
-
-@router.get("/api/models")
-async def list_models():
-    """Query available models using the active provider from ProviderManager or configured api_base."""
-    from omniscribe.api.services.provider_manager import get_provider_manager
-
-    mgr = get_provider_manager()
-    active_provider = mgr.get_active_provider()
-    config = _load_config_from_store()
-
-    custom_base = config.get("api_base")
-    if custom_base and custom_base != active_provider.api_url:
-        ssrf_check = await is_ssrf_target(custom_base)
-        if not ssrf_check.allowed:
-            raise SSRFBlocked(url=custom_base, reason=ssrf_check.reason or "blocked")
-        try:
-            models = await _discover_models_for_endpoint(
-                custom_base, config.get("api_key")
-            )
-            return JSONResponse(content={"models": models})
-        except Exception:
-            logger.exception("Model discovery failed")
-            return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
-
-    if active_provider.api_url:
-        ssrf_check = await is_ssrf_target(active_provider.api_url)
-        if not ssrf_check.allowed:
-            raise SSRFBlocked(
-                url=active_provider.api_url,
-                reason=ssrf_check.reason or "blocked",
-            )
-
-    try:
-        models = await mgr.async_list_provider_models(active_provider.id)
-        return JSONResponse(content={"models": models})
-    except Exception:
-        logger.exception("Model discovery failed")
-        return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
-
-
-@router.get("/api/models/ocr")
-async def list_ocr_models():
-    """Model discovery for the OCR namespace (uses ProviderManager or ``ocr_api_base``)."""
-    from omniscribe.api.services.provider_manager import get_provider_manager
-
-    mgr = get_provider_manager()
-    config = _load_config_from_store()
-    ocr_provider_id = config.get("ocr_provider")
-
-    if ocr_provider_id and mgr.get_provider(ocr_provider_id):
-        provider = mgr.get_provider(ocr_provider_id)
-        if provider and provider.api_url:
-            ssrf_check = await is_ssrf_target(provider.api_url)
-            if not ssrf_check.allowed:
-                raise SSRFBlocked(
-                    url=provider.api_url,
-                    reason=ssrf_check.reason or "blocked",
-                )
-        try:
-            models = await mgr.async_list_provider_models(ocr_provider_id)
-            return JSONResponse(content={"models": models})
-        except Exception:
-            logger.exception("OCR model discovery failed")
-            return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
-
-    api_base = config.get("ocr_api_base") or config["api_base"]
-    api_key = config.get("ocr_api_key") or config["api_key"]
-    ssrf_check = await is_ssrf_target(api_base)
-    if not ssrf_check.allowed:
-        raise SSRFBlocked(url=api_base, reason=ssrf_check.reason or "blocked")
-    try:
-        models = await _discover_models_for_endpoint(api_base, api_key)
-        return JSONResponse(content={"models": models})
-    except Exception:
-        logger.exception("OCR model discovery failed")
-        return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
-
-
-@router.get("/api/models/translation")
-async def list_translation_models():
-    """Model discovery for the translation namespace (uses ProviderManager or ``translation_api_base``)."""
-    from omniscribe.api.services.provider_manager import get_provider_manager
-
-    mgr = get_provider_manager()
-    config = _load_config_from_store()
-    trans_provider_id = config.get("translation_provider")
-
-    if trans_provider_id and mgr.get_provider(trans_provider_id):
-        provider = mgr.get_provider(trans_provider_id)
-        if provider and provider.api_url:
-            ssrf_check = await is_ssrf_target(provider.api_url)
-            if not ssrf_check.allowed:
-                raise SSRFBlocked(
-                    url=provider.api_url,
-                    reason=ssrf_check.reason or "blocked",
-                )
-        try:
-            models = await mgr.async_list_provider_models(trans_provider_id)
-            return JSONResponse(content={"models": models})
-        except Exception:
-            logger.exception("Translation model discovery failed")
-            return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
-
-    api_base = config.get("translation_api_base") or config["api_base"]
-    api_key = config.get("translation_api_key") or config["api_key"]
-    ssrf_check = await is_ssrf_target(api_base)
-    if not ssrf_check.allowed:
-        raise SSRFBlocked(url=api_base, reason=ssrf_check.reason or "blocked")
-    try:
-        models = await _discover_models_for_endpoint(api_base, api_key)
-        return JSONResponse(content={"models": models})
-    except Exception:
-        logger.exception("Translation model discovery failed")
-        return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
+# (Model discovery handlers were extracted to routers/models.py in Phase C
+# / Task 9 — see the back-compat re-exports at the top of this module.)
 
 
 # ---------------------------------------------------------------------------
@@ -739,5 +582,11 @@ __all__ = [
     "_persist_config",
     "get_ocr_settings",
     "get_translation_settings",
+    # Phase C / Task 9 back-compat re-exports — the live handlers live in
+    # routers/models.py now; old import paths still work for plugin-context
+    # providers and out-of-tree consumers.
+    "list_models",
+    "list_ocr_models",
+    "list_translation_models",
     "router",
 ]

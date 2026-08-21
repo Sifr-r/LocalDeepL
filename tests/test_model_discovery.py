@@ -186,7 +186,11 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         return_value=SSRFCheckResult(allowed=True, resolved_ip="127.0.0.1", reason=None)
     )
     monkeypatch.setattr("omniscribe.utils.security.is_ssrf_target", allow_mock)
+    # Phase C / Task 9: ``/api/models*`` was extracted into
+    # ``routers/models.py``. The handlers look up ``is_ssrf_target`` via
+    # that module's globals now, so the mock target moves with them.
     monkeypatch.setattr("omniscribe.api.routers.config.is_ssrf_target", allow_mock)
+    monkeypatch.setattr("omniscribe.api.routers.models.is_ssrf_target", allow_mock)
     monkeypatch.setattr("omniscribe.api.routers.providers.is_ssrf_target", allow_mock)
     app = create_app()
     return TestClient(app)
@@ -195,7 +199,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
 def test_get_api_models_endpoint(client: TestClient):
     """Test GET /api/models returns models discovered from configured endpoint."""
     with patch(
-        "omniscribe.api.routers.config._discover_models_for_endpoint",
+        "omniscribe.api.routers.models._discover_models_for_endpoint",
         new=AsyncMock(return_value=["gpt-4o", "gpt-4o-mini"]),
     ):
         resp = client.get("/api/models")
@@ -210,7 +214,7 @@ def test_get_api_models_ocr_endpoint(
 ):
     """Test GET /api/models/ocr endpoint."""
     with patch(
-        "omniscribe.api.routers.config._discover_models_for_endpoint",
+        "omniscribe.api.routers.models._discover_models_for_endpoint",
         new=AsyncMock(return_value=["qwen2.5-vl-72b", "olmocr-2"]),
     ):
         resp = client.get("/api/models/ocr")
@@ -225,7 +229,7 @@ def test_get_api_models_translation_endpoint(
 ):
     """Test GET /api/models/translation endpoint."""
     with patch(
-        "omniscribe.api.routers.config._discover_models_for_endpoint",
+        "omniscribe.api.routers.models._discover_models_for_endpoint",
         new=AsyncMock(return_value=["gpt-4o-mini", "llama-3.3-70b"]),
     ):
         resp = client.get("/api/models/translation")
