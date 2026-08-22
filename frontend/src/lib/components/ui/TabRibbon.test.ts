@@ -3,6 +3,25 @@ import { mount, tick, unmount } from 'svelte';
 import { get } from 'svelte/store';
 import TabRibbon from './TabRibbon.svelte';
 import { activeTab, type ActiveTab } from '../../stores/appStore';
+import { fetchApi as fetchApiSpy } from '../../api/client';
+
+// ``vi.mock`` is hoisted above the imports by Vitest. The abort test
+// below asserts the ``silent: true`` contract at the ``fetchApi`` layer,
+// because ``silent`` is consumed by ``fetchApi`` for toast suppression
+// and is stripped before the underlying global ``fetch`` is called — so
+// spying on the global fetch alone (the existing pattern) would miss
+// the flag. The wrapper still delegates to the actual implementation,
+// so the a11y tests further down — which never assert on fetch behavior
+// — are unaffected.
+vi.mock('../../api/client', async (importOriginal) => {
+  const actual = (await importOriginal()) as typeof import('../../api/client');
+  return {
+    ...actual,
+    fetchApi: vi.fn(actual.fetchApi),
+    fetchApiWithHeaders: vi.fn(actual.fetchApiWithHeaders),
+    fetchFile: vi.fn(actual.fetchFile)
+  };
+});
 
 /**
  * P1 #6: WAI-ARIA tab roles on TabRibbon.
@@ -33,6 +52,11 @@ describe('TabRibbon.svelte WAI-ARIA tab roles (P1 #6)', () => {
     target = document.createElement('div');
     document.body.appendChild(target);
     originalActiveTab = get(activeTab);
+    // The vi.mock-wrapped fetchApi above is a shared spy; clear its
+    // call history between tests so the abort test's
+    // ``fetchApiSpy.mock.calls`` assertions only see calls from this
+    // test rather than accumulating from earlier a11y tests.
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
@@ -132,39 +156,95 @@ describe('TabRibbon.svelte WAI-ARIA tab roles (P1 #6)', () => {
   // and the 15-second setInterval can race a previous ping that is still
   // in flight. This test pins that contract.
   it('cancels in-flight health ping on component destroy', async () => {
-    // RequestInit.signal is typed as AbortSignal | null (the DOM lib
-    // uses null for "no signal"), so ``init?.signal`` widens to include
-    // null; mirror that here so the assignment from the mock's argument
-    // type-checks without a cast.
-    let abortSignal: RequestInit['signal'];
-    // Observe the fetch-side signal (black-box): fetchApi threads the
-    // signal from pingHealth into the underlying global fetch, so
-    // capturing ``init?.signal`` here proves the AbortController is
-    // actually wired all the way through to the request. A never-
-    // resolving Promise keeps the ping in flight for the duration of
-    // the test so we can assert on the abort end-state.
+    // Type the captured signal as ``AbortSignal | null`` so we can
+    // thread it back through fetchApi's ``RequestInit['signal']``
+    // widening. The ``!`` definite-assignment assertion satisfies
+    // ``noUnusedLocals`` without seeding a literal ``null`` value —
+    // TypeScript 5.9 narrows ``let x: T | null = null`` to the literal
+    // ``null`` type and then treats ``x?.aborted`` as a property access
+    // on ``never`` (an optional chain on a known-null value). The
+    // variable is always reassigned by the mock implementation before
+    // any read, so the uninitialized declaration is safe and matches
+    // the pre-existing test's intent.
+    let abortSignal!: AbortSignal | null;
+    // Capture the signal's abort listener (black-box): fetchApi threads
+    // the signal from pingHealth into the underlying global fetch, so
+    // attaching ``addEventListener('abort', ...)`` here proves the
+    // AbortController is actually wired all the way through to the
+    // request. Asserting the listener fires after unmount is the
+    // deterministic proxy for pingHealth's ``AbortError`` catch branch
+    // (which relies on the abort event to swallow a late response as
+    // a no-op). A never-resolving Promise keeps the ping in flight for
+    // the duration of the test so we can assert on the abort end-state
+    // without race-prone timers.
+    let abortListenerFired = false;
     const fetchSpy = vi
       .fn()
       .mockImplementation((_url: string, init?: RequestInit) => {
-        abortSignal = init?.signal;
+        const signal = (init?.signal ?? null) as AbortSignal | null;
+        abortSignal = signal;
+        if (signal) {
+          signal.addEventListener('abort', () => {
+            abortListenerFired = true;
+          });
+        }
         return new Promise<Response>(() => {
           /* never resolves; we abort from the test */
         });
       });
     vi.stubGlobal('fetch', fetchSpy);
+
+    // Declare ``localApp`` outside the try block so the finally clause
+    // can still unmount it if an assertion before unmount fails — the
+    // outer describe block's ``app`` variable is owned by the a11y
+    // tests and must not be polluted by this abort test on failure.
+    let localApp: ReturnType<typeof mount> | null = null;
     try {
-      const localApp = mount(TabRibbon, { target });
+      localApp = mount(TabRibbon, { target });
       await tick();
       // pingHealth ran in onMount and captured the signal in fetchSpy.
       expect(fetchSpy).toHaveBeenCalledTimes(1);
-      expect(abortSignal).toBeDefined();
+      // The captured request signal must be a real AbortSignal instance
+      // — not merely defined — so the AbortController is wired through.
+      // We use ``abortSignal instanceof AbortSignal`` (with the LHS
+      // cast to ``unknown`` because the DOM lib widens ``AbortSignal |
+      // null`` and TypeScript requires a non-nullable LHS for
+      // ``instanceof``) rather than
+      // ``expect(abortSignal).toBeInstanceOf(AbortSignal)`` to avoid
+      // the Vitest matcher narrowing ``abortSignal`` to ``never`` for
+      // the optional-chain accesses further down.
+      expect((abortSignal as unknown) instanceof AbortSignal).toBe(true);
       expect(abortSignal?.aborted).toBe(false);
+      // Health probes must not surface as user-facing toasts on 5xx;
+      // ``silent`` is consumed by ``fetchApi`` (and stripped before the
+      // underlying ``fetch``), so the assertion lives at the fetchApi
+      // boundary — the spy was installed via the ``vi.mock`` wrapper at
+      // the top of this file.
+      expect(fetchApiSpy).toHaveBeenCalledWith(
+        '/health',
+        expect.objectContaining({ silent: true })
+      );
 
       // Unmount — the AbortController in pingHealth must fire so the
       // in-flight request is cancelled and a later ping cannot race it.
       unmount(localApp);
+      localApp = null;
       expect(abortSignal?.aborted).toBe(true);
+      // The signal's abort listener captured on the fetch side must
+      // have fired, which is the deterministic proxy for the signal
+      // being wired end-to-end through fetchApi (the precondition
+      // pingHealth's catch branch relies on to swallow the resulting
+      // AbortError as a no-op).
+      expect(abortListenerFired).toBe(true);
     } finally {
+      if (localApp) {
+        try {
+          unmount(localApp);
+        } catch {
+          /* already torn down */
+        }
+        localApp = null;
+      }
       vi.unstubAllGlobals();
     }
   });

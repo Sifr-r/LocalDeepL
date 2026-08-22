@@ -25,9 +25,18 @@
  * Distinct from the lower-level ``FetchOptions`` exported by ``./client``
  * (which extends ``RequestInit`` and re-declares the same ``silent`` flag for
  * toast suppression). This higher-level interface is the one callers pass
- * through view code; we merge ``signal``, ``silent`` and ``cache`` into the
- * request-init object forwarded to ``fetchApi`` / ``fetchApiWithHeaders`` /
- * ``fetchFile``.
+ * through view code, and it has two forwarding paths:
+ *
+ *  - Endpoint wrappers (``./endpoints``) construct a fresh request-init
+ *    object containing only ``signal`` and ``silent`` for the underlying
+ *    ``fetchApi`` / ``fetchApiWithHeaders`` / ``fetchFile`` call. ``cache``
+ *    is intentionally not forwarded by the wrapper layer.
+ *  - Direct view-level ``fetchApi`` call sites (e.g.
+ *    ``TabRibbon.svelte``'s ``/health`` probe in FE-07 / Phase C Task 13)
+ *    pass the whole options bag — ``signal``, ``silent``, and ``cache``
+ *    — straight through to the client-level ``fetchApi`` call, which is
+ *    the path that actually consumes ``cache`` as part of the underlying
+ *    ``RequestInit``.
  */
 export interface FetchOptions {
   signal?: AbortSignal;
