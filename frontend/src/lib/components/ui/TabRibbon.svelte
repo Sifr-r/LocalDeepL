@@ -3,6 +3,7 @@
   import { activeTab, themeStore, websocketStore, type TabType } from '../../stores/appStore';
   import { fetchApi } from '../../api/client';
   import type { FetchOptions } from '../../api/fetchOptions';
+  import { parseHealthBody, classifyPingError } from '../../utils/health';
 
   const tabs: { id: string; label: string; tabKey: TabType }[] = [
     { id: 'app-tab-btn-workstation', label: 'OCR Workstation', tabKey: 'workstation' },
@@ -25,27 +26,6 @@
   // ``onDestroy`` aborts the latest one so an unmount mid-ping does not
   // keep the network round-trip running after the component is gone.
   let pingAbort: AbortController | null = null;
-
-  /**
-   * Parse the /health response body into a status string.
-   * Returns null when the body is empty or unparseable - we treat that
-   * as "not online" rather than throwing, because the badge should
-   * only flip to "online" on an explicit ok signal from the server.
-   */
-  function parseHealthBody(res: { status: string } | null): 'ok' | 'not-ok' | null {
-    return res === null ? null : res.status === 'ok' ? 'ok' : 'not-ok';
-  }
-
-  /**
-   * Classify a ping error. AbortError means the component unmounted
-   * or a newer ping superseded this one; in both cases the badge
-   * should NOT flip - a superseded ping is not a "backend down"
-   * signal, and an unmount mid-ping shouldn't toggle the indicator
-   * right as the component tears down.
-   */
-  function classifyPingError(err: unknown): 'aborted' | 'down' {
-    return err instanceof DOMException && err.name === 'AbortError' ? 'aborted' : 'down';
-  }
 
   async function pingHealth() {
     pingAbort?.abort(); // cancel any in-flight ping before starting a new one
