@@ -16,7 +16,7 @@
  */
 import { translationApi } from '../api/endpoints';
 import type { FetchOptions } from '../api/fetchOptions';
-import type { TranslationRequest } from '../types/api';
+import type { NLLBTranslationResponse, TranslationRequest } from '../types/api';
 
 /**
  * Canonical translation payload — kept as an alias of
@@ -35,6 +35,16 @@ export interface TranslateAsyncJob {
   job_id: string;
   status: string;
 }
+
+/**
+ * NLLB fast-engine translation response — alias of the
+ * {@link NLLBTranslationResponse} wire type so service consumers
+ * don't have to import it directly.
+ *
+ * Mirrors the {@link TranslateResponse} shape but also carries the
+ * server-side ``source_lang`` / ``target_lang`` echoes.
+ */
+export type TranslateNllbResponse = NLLBTranslationResponse;
 
 /**
  * Synchronous `POST /api/translate` — returns the translated text.
@@ -59,17 +69,6 @@ export async function translate(
 export interface TranslateNllbPayload {
   text: string;
   target_language: string;
-}
-
-/**
- * NLLB fast-engine translation response — ``{ translated_text }``.
- *
- * Mirrors the {@link TranslateResponse} shape for parity, but is kept
- * as its own type so future NLLB-specific fields (source/target lang
- * detection, confidence) can be added without churn elsewhere.
- */
-export interface TranslateNllbResponse {
-  translated_text: string;
 }
 
 /**

@@ -12,14 +12,14 @@ import type {
   GlossaryListItem,
   GlossaryFormat,
   GlossaryPreviewResponse,
+  NLLBTranslationResponse,
   TranscriptionSegment,
   TrustSummary,
   DocumentExportFormat,
   DocumentExportRequest,
   ExportDocxRequest,
   ExportHtmlRequest,
-  ExportBlockTreeRequest,
-  ExportDocxTreeRequest
+  ExportBlockTreeRequest
 } from '../types/api';
 
 export async function getConfig(options?: FetchOptions): Promise<RuntimeConfig> {
@@ -216,8 +216,8 @@ export async function exportDocx(
 export async function translateNllb(
   payload: { text: string; target_language: string },
   options?: FetchOptions
-): Promise<{ translated_text: string }> {
-  return fetchApi<{ translated_text: string }>('/translate/nllb', {
+): Promise<NLLBTranslationResponse> {
+  return fetchApi<NLLBTranslationResponse>('/translate/nllb', {
     method: 'POST',
     body: JSON.stringify(payload),
     signal: options?.signal
@@ -253,7 +253,7 @@ export async function exportHtml(
  * ``extractionService`` can dispatch through a single namespace.
  */
 export async function exportDocxTree(
-  payload: ExportDocxTreeRequest,
+  payload: ExportBlockTreeRequest,
   options?: FetchOptions
 ): Promise<Blob> {
   return fetchFile('/export/docx-tree', {

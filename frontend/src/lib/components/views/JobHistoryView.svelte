@@ -23,9 +23,7 @@
   async function loadJobs() {
     isLoading = true;
     try {
-      // ``list`` returns ``JobRecordResponse[]``; ``JobRecord`` is a
-      // structural alias so the cast stays local to this loader.
-      const data = (await list()) as JobRecord[];
+      const data = await list();
       jobs = data || [];
     } catch (err) {
       console.warn('Failed to load job history:', err);

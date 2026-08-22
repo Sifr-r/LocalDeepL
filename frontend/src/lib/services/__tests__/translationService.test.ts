@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import * as clientModule from '../../api/client';
 import {
   getTranslationStatus,
   translate,
@@ -113,23 +114,46 @@ describe('translationService', () => {
   // We can't observe ``silent`` on the global ``fetch`` spy because
   // ``client.fetchApi`` destructures ``silent`` out of the request-init
   // before calling ``fetch`` (see ``src/lib/api/client.ts``). So we
-  // spy on the lower-level ``translationApi.getStatus`` wrapper and
-  // verify the service forwarded the option verbatim.
-  it('getTranslationStatus propagates { silent: true } to translationApi.getStatus', async () => {
-    const spy = vi.spyOn(translationApi, 'getStatus');
-    await getTranslationStatus('job-silent', { silent: true });
-    expect(spy).toHaveBeenCalledTimes(1);
-    const [, forwarded] = spy.mock.calls[0] ?? [];
-    expect(forwarded).toEqual({ silent: true });
-    spy.mockRestore();
+  // exercise the endpoint wrapper directly and assert ``fetchApi``
+  // itself received the forwarded ``silent`` flag — if the endpoint
+  // were edited to drop ``silent``, this test would fail.
+  it('getTranslationStatus propagates { silent: true } to fetchApi via the endpoint wrapper', async () => {
+    const spy = vi.spyOn(clientModule, 'fetchApi').mockResolvedValue(undefined as never);
+    try {
+      await translationApi.getStatus('job-silent', { silent: true });
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith('/translate/status/job-silent', {
+        signal: undefined,
+        silent: true
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('getTranslationStatus propagates { silent: true } through the service', async () => {
+    const spy = vi.spyOn(clientModule, 'fetchApi').mockResolvedValue(undefined as never);
+    try {
+      await getTranslationStatus('job-silent-service', { silent: true });
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith('/translate/status/job-silent-service', {
+        signal: undefined,
+        silent: true
+      });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('getTranslationStatus omits silent when not requested', async () => {
-    const spy = vi.spyOn(translationApi, 'getStatus');
-    await getTranslationStatus('job-noisy');
-    expect(spy).toHaveBeenCalledTimes(1);
-    const [, forwarded] = spy.mock.calls[0] ?? [];
-    expect(forwarded).toBeUndefined();
-    spy.mockRestore();
+    const spy = vi.spyOn(clientModule, 'fetchApi').mockResolvedValue(undefined as never);
+    try {
+      await getTranslationStatus('job-noisy');
+      expect(spy).toHaveBeenCalledTimes(1);
+      const [, forwarded] = spy.mock.calls[0] ?? [];
+      expect(forwarded).toEqual({ signal: undefined });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

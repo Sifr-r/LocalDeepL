@@ -22,7 +22,6 @@ import type {
   DocumentExportRequest,
   ExportBlockTreeRequest,
   ExportDocxRequest,
-  ExportDocxTreeRequest,
   ExportHtmlRequest,
   ExtractionRequest
 } from '../types/api';
@@ -44,8 +43,8 @@ export type ExportHtmlPayload = ExportHtmlRequest;
 /** Block-tree export input — alias of {@link ExportBlockTreeRequest}. */
 export type ExportBlocktreePayload = ExportBlockTreeRequest;
 
-/** DOCX-tree export input — alias of {@link ExportDocxTreeRequest}. */
-export type ExportDocxTreePayload = ExportDocxTreeRequest;
+/** DOCX-tree export input — alias of {@link ExportBlockTreeRequest}. */
+export type ExportDocxTreePayload = ExportBlockTreeRequest;
 
 /** POST `/api/extract` — schema-bounded structured extraction. */
 export async function extract(

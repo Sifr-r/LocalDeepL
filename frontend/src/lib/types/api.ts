@@ -145,11 +145,6 @@ export interface ExportBlockTreeRequest {
   metadata_artifact_token?: string | null;
 }
 
-export interface ExportDocxTreeRequest {
-  text_artifact_id: string;
-  text_artifact_token: string;
-}
-
 export interface ExtractionRequest {
   text?: string;
   template?: ExtractionTemplate;
