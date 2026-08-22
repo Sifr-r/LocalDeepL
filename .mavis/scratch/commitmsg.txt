@@ -1,0 +1,61 @@
+fix(frontend): accurate FetchOptions doc; deterministic AbortError test (t13 follow-up)
+
+Two surgical follow-ups to commit 4782441:
+
+A. frontend/src/lib/api/fetchOptions.ts: rewrite the wrapper-layer
+   paragraph so it accurately documents what endpoints.ts actually
+   does. Most wrappers (configApi.get/update, ocrApi.process,
+   translationApi.translate/translateAsync, jobsApi.*, glossaryApi.*,
+   providersApi.*, artifactsApi.*, extractionApi.*, the free
+   functions getConfig/updateConfig/getProviders/getProviderDetails/
+   getProviderModels/processOcr/getOcrStatus/getOcrResult/
+   exportDocument/exportDocx/translateNllb/exportHtml/exportDocxTree/
+   exportBlocktree) only forward the signal field from the caller's
+   FetchOptions. The two narrow silent exceptions are spelled out:
+   translationApi.getStatus additionally forwards options.silent,
+   and processOcrAsync hardcodes silent:true. cache is intentionally
+   not forwarded at the wrapper layer; the direct view-level fetchApi
+   call sites (e.g. TabRibbon's /health probe) pass the whole options
+   bag straight through to the client-level fetchApi call. No API
+   redesign.
+
+B. frontend/src/lib/components/ui/TabRibbon.test.ts: replace the
+   never-resolving fetchSpy-based abort test with one that actually
+   exercises pingHealth's AbortError catch deterministically:
+
+   - the file-level vi.mock now returns a never-resolving promise
+     for fetchApi by default, so the five a11y tests do not issue
+     a real /health request when TabRibbon mounts (the previous
+     vi.fn(actual.fetchApi) wrapper delegated to the real
+     implementation, hitting the network on every mount);
+
+   - beforeEach clears mocks and re-applies the never-resolving
+     default, isolating the shared fetchApiSpy per test;
+
+   - the abort test overrides the mock per-test to reject with
+     DOMException('aborted', 'AbortError') when the abort listener
+     fires. Vitest's jsdom environment mixes jsdom's Event with
+     Node's AbortController, so signal.dispatchEvent(new Event('abort'))
+     would throw "must be an instance of Event"; we capture the
+     listener the mock attaches and invoke it directly, which
+     exercises the same code path without the cross-realm mismatch;
+
+   - the test now verifies four contracts deterministically:
+       1. fetchApi receives silent:true at the boundary;
+       2. the captured signal is a real AbortSignal instance;
+       3. pingHealth's catch swallows AbortError, observable as the
+          badge staying 'Checking...' (a non-AbortError rejection
+          would flip it to 'Offline');
+       4. unmount fires pingAbort.abort() -- signal.aborted is
+          genuinely true after unmount.
+
+   - The inaccurate TypeScript narrowing / "proxy" comments are gone,
+     app is typed as ReturnType<typeof mount> | null instead of any,
+     and the mock listener is stored in an object so the type is
+     unambiguous.
+
+The five existing a11y tests are preserved verbatim. No backend or
+unrelated code touched.
+
+Verified: vitest 27 files / 253 tests passing; svelte-check 0
+errors / 0 warnings.
