@@ -119,32 +119,39 @@
       return;
     }
 
-    try {
-      pushToast('info', `Generating ${format.toUpperCase()} export...`, 2000);
-
-      if (format === 'html') {
+    // Per-format handlers. Each returns the file name + the success toast
+    // copy; the wrapper below owns the toast lifecycle and error path.
+    type Handler = () => Promise<{ filename: string; toast: string; blob: Blob }>;
+    const handlers: Record<typeof format, Handler> = {
+      html: async () => {
         const blob = await exportHtml({
           text_artifact_id: selectedArtifactId,
           text_artifact_token: selectedArtifactToken,
         });
-        downloadBlob(blob, `export-${selectedArtifactId}.html`);
-        pushToast('success', 'HTML export downloaded.', 3000);
-      } else if (format === 'docx') {
+        return { filename: `export-${selectedArtifactId}.html`, toast: 'HTML export downloaded.', blob };
+      },
+      docx: async () => {
         const blob = await exportDocxTree({
           text_artifact_id: selectedArtifactId,
           text_artifact_token: selectedArtifactToken,
         });
-        downloadBlob(blob, `export-${selectedArtifactId}.docx`);
-        pushToast('success', 'DOCX export downloaded.', 3000);
-      } else if (format === 'blocktree') {
+        return { filename: `export-${selectedArtifactId}.docx`, toast: 'DOCX export downloaded.', blob };
+      },
+      blocktree: async () => {
         const res = await exportBlocktree({
           text_artifact_id: selectedArtifactId,
           text_artifact_token: selectedArtifactToken,
         });
         const blob = new Blob([JSON.stringify(res, null, 2)], { type: 'application/json' });
-        downloadBlob(blob, `blocktree-${selectedArtifactId}.json`);
-        pushToast('success', 'BlockTree export downloaded.', 3000);
-      }
+        return { filename: `blocktree-${selectedArtifactId}.json`, toast: 'BlockTree export downloaded.', blob };
+      },
+    };
+
+    try {
+      pushToast('info', `Generating ${format.toUpperCase()} export...`, 2000);
+      const { filename, toast, blob } = await handlers[format]();
+      downloadBlob(blob, filename);
+      pushToast('success', toast, 3000);
     } catch (err: unknown) {
       reportError(err, 'Export failed');
     }
