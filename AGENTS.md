@@ -245,7 +245,7 @@ singletons are the production access path. See `audits/2026-08-19-secondary-vali
 - `pages_structured` legacy dict is still the working format inside `HybridEngine`; `DocumentResult` is built at finalize. The output boundary now supports the lossless rich path (`DocumentResultWriter`), but intermediate stages still convert.
 - `dense.pdf` and `notes.pdf` ground-truth fixtures are bootstrapped from hybrid output (regression baseline, not absolute quality).
 - `surya-ocr 0.17.x` used to import `requests` in `surya/common/s3.py` without declaring it; `pyproject.toml` shipped a `requests>=2.31` workaround dep. **Closed in audit-secondary Phase 5 (2026-08-19):** `surya-ocr ≥ 0.22` now declares `requests<3,>=2.28.0` in its own metadata, so the workaround is no longer required. `requests` has been removed from the base deps and moved to `[dependency-groups] dev` (it is only directly imported by `scripts/ingest_lexicon.py`, a dev-only ingestion helper).
-- **Frontend accessibility (a11y) test infrastructure is not in CI.** The Svelte 5 component layer relies on a mix of `axe-core` recommendations and manual review; there is no `vitest-axe` or `@axe-core/playwright` dependency and no Playwright a11y spec in the `test.yml::e2e` job. The `F4.9` audit (Domain 4) flagged this; closing it is a separate track. Today, a button losing its accessible name silently lands without a regression test.
+- **Frontend accessibility (a11y) test infrastructure is in CI.** Unit-level a11y on the key Svelte 5 components (`Toggle`, `SettingsView`, `ExtractionView`, `TranslationView`, `TranscriptionView`, `ExportModal`) is covered by `vitest-axe` in `frontend/src/__tests__/a11y.test.ts` — 10 axe scans run as part of `npm test`; manual `role=`/`aria-*` structural checks remain alongside as defense-in-depth. End-to-end a11y on the rendered workstation DOM is covered by `axe-playwright-python` in `test_ui.py` (the Python port of `@axe-core/playwright`), which runs an axe-core WCAG 2.1 AA scan after the OCR roundtrip completes; the dep is e2e-only and pulled via `uv run --with axe-playwright-python` in `.github/workflows/test.yml::e2e`. Both gates were closed by Phase F (2026-08-22, commits `826c553` + `ab94649`); a button losing its accessible name now fails one of the two gates depending on whether the regression is at the component layer or at the hydration/render stage.
 
 ## Product-Planning Notes (scout plans, not code)
 
@@ -279,4 +279,4 @@ survive into the post-scout roadmap) live in
 - [DEPLOYMENT.md](DEPLOYMENT.md) — local / LAN / public-internet deployment profiles
 - [SECURITY.md](SECURITY.md) — threat model, hardening checklist, vulnerability disclosure
 
-_Last updated: 2026-08-19_
+_Last updated: 2026-08-22_
