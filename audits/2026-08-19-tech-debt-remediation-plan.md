@@ -141,6 +141,18 @@ Each phase ends with a "go" gate. I'll stop, recap, and wait for the next "go".
 
 ---
 
+**Phase F closeout (2026-08-22):** three of Phase 4's six findings landed:
+
+| Finding | Commit | What closed |
+|---|---|---|
+| F24 (`tests/_diag/` → `scripts/diagnostics/`) | `8cc59e1` | Destination directory triaged; only the canonical `test_sse_keepalive.py` remains (the eight `.diag_sse*.py` bisect variants and two intermediate bisect steps were scratch and removed). |
+| F25 (`vitest-axe` + `@axe-core/playwright`) | `826c553`, `ab94649` | vitest-axe was already wired in `frontend/src/__tests__/a11y.test.ts` (closed earlier; F25's second half, the Playwright e2e scan, was missing). Task 2 (`826c553`) added `axe-playwright-python` to `test_ui.py` via the sync Playwright API. Task 3 (`ab94649`) wired the dep into `.github/workflows/test.yml::e2e`'s `uv run --with` chain so CI finds it. The dep is e2e-only and intentionally NOT in `pyproject.toml` proper — see the comment block in `[dependency-groups] dev`. |
+| D4-09 (`tests/test_scripts_smoke.py:40`) | `1cd8b52` | Docstring + `_OPTIONAL_DEPS` mapping now reference `lancedb` instead of `chromadb` (matches the active lexicon stack after Phase 5's migration). |
+
+**Phase 4 status:** ✅ Fully closed (six findings, six commits; F24/F25/D4-09 by Phase F, F26/D4-11/D4-12 by earlier phases).
+
+---
+
 ### Phase 5 — Dep hygiene + operational debt (1 PR, half day)
 
 **Why fifth:** quick wins, low risk, but lower priority than the new-infra hardening.
