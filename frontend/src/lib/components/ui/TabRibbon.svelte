@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
   import { activeTab, themeStore, websocketStore, type TabType } from '../../stores/appStore';
+  import { fetchApi } from '../../api/client';
+  import type { FetchOptions } from '../../api/fetchOptions';
 
   const tabs: { id: string; label: string; tabKey: TabType }[] = [
     { id: 'app-tab-btn-workstation', label: 'OCR Workstation', tabKey: 'workstation' },
@@ -17,12 +19,38 @@
   const HEALTH_POLL_MS = 15000;
   let backendOnline: boolean | null = null; // null = probing
   let pollTimer: ReturnType<typeof setInterval> | null = null;
+  // AbortController for the in-flight /health probe. A new controller is
+  // created per ping (and the previous one aborted) so the 15-s poll
+  // tick does not race an older request that is still in flight, and
+  // ``onDestroy`` aborts the latest one so an unmount mid-ping does not
+  // keep the network round-trip running after the component is gone.
+  let pingAbort: AbortController | null = null;
 
   async function pingHealth() {
+    pingAbort?.abort(); // cancel any in-flight ping before starting a new one
+    pingAbort = new AbortController();
+    const { signal } = pingAbort;
+    const healthOpts: FetchOptions = {
+      signal,
+      cache: 'no-store',
+      // Health probes must NOT surface as user-facing toasts on 5xx;
+      // a flapping backend would otherwise spam the user every 15 s.
+      silent: true
+    };
     try {
-      const res = await fetch('/health', { cache: 'no-store' });
-      backendOnline = res.ok;
-    } catch {
+      const res = await fetchApi<{ status: string }>('/health', healthOpts);
+      // ``res`` may be ``null`` if the response body was empty /
+      // unparseable; treat that as "not online" rather than throwing.
+      backendOnline = res !== null;
+    } catch (err: unknown) {
+      // An AbortError means the component unmounted (or a newer ping
+      // superseded this one). Treat both as a no-op for the visible
+      // badge — a superseded ping is not a "backend is down" signal,
+      // and an unmount mid-ping should not flip the badge right as
+      // the component is being torn down.
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return;
+      }
       backendOnline = false;
     }
   }
@@ -34,6 +62,8 @@
 
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
+    pingAbort?.abort();
+    pingAbort = null;
   });
 
   type ConnState = 'checking' | 'offline' | 'online' | 'live';

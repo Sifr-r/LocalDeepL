@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mount, tick, unmount } from 'svelte';
 import { get } from 'svelte/store';
 import TabRibbon from './TabRibbon.svelte';
@@ -124,5 +124,48 @@ describe('TabRibbon.svelte WAI-ARIA tab roles (P1 #6)', () => {
     );
     expect(workstationTab?.getAttribute('aria-selected')).toBe('false');
     expect(workstationTab?.getAttribute('tabindex')).toBe('-1');
+  });
+
+  // FE-07 / Phase C Task 13: pingHealth must wire fetchApi with an
+  // AbortController whose signal aborts on unmount. Without this, an
+  // unmount mid-ping leaves the request running until the server replies,
+  // and the 15-second setInterval can race a previous ping that is still
+  // in flight. This test pins that contract.
+  it('cancels in-flight health ping on component destroy', async () => {
+    // RequestInit.signal is typed as AbortSignal | null (the DOM lib
+    // uses null for "no signal"), so ``init?.signal`` widens to include
+    // null; mirror that here so the assignment from the mock's argument
+    // type-checks without a cast.
+    let abortSignal: RequestInit['signal'];
+    // Observe the fetch-side signal (black-box): fetchApi threads the
+    // signal from pingHealth into the underlying global fetch, so
+    // capturing ``init?.signal`` here proves the AbortController is
+    // actually wired all the way through to the request. A never-
+    // resolving Promise keeps the ping in flight for the duration of
+    // the test so we can assert on the abort end-state.
+    const fetchSpy = vi
+      .fn()
+      .mockImplementation((_url: string, init?: RequestInit) => {
+        abortSignal = init?.signal;
+        return new Promise<Response>(() => {
+          /* never resolves; we abort from the test */
+        });
+      });
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      const localApp = mount(TabRibbon, { target });
+      await tick();
+      // pingHealth ran in onMount and captured the signal in fetchSpy.
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(abortSignal).toBeDefined();
+      expect(abortSignal?.aborted).toBe(false);
+
+      // Unmount — the AbortController in pingHealth must fire so the
+      // in-flight request is cancelled and a later ping cannot race it.
+      unmount(localApp);
+      expect(abortSignal?.aborted).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
