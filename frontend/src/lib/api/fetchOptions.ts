@@ -27,10 +27,18 @@
  * toast suppression). This higher-level interface is the one callers pass
  * through view code, and it has two forwarding paths:
  *
- *  - Endpoint wrappers (``./endpoints``) construct a fresh request-init
- *    object containing only ``signal`` and ``silent`` for the underlying
- *    ``fetchApi`` / ``fetchApiWithHeaders`` / ``fetchFile`` call. ``cache``
- *    is intentionally not forwarded by the wrapper layer.
+ *  - Endpoint wrappers (``./endpoints``) only forward ``signal`` from the
+ *    caller's ``FetchOptions`` to the underlying ``fetchApi`` /
+ *    ``fetchApiWithHeaders`` / ``fetchFile`` call. ``cache`` is intentionally
+ *    not forwarded at the wrapper layer; the ``silent`` flag has two
+ *    narrow exceptions:
+ *      * ``translationApi.getStatus`` additionally forwards
+ *        ``options.silent`` to ``fetchApi`` (the 2-second polling loop in
+ *        ``TranslationView.pollAsyncStatus`` must not toast-spam the user
+ *        on every transient 5xx).
+ *      * ``processOcrAsync`` hardcodes ``silent: true`` (the async OCR
+ *        submit endpoint takes a job id; the caller is already driving a
+ *        status poll, so a failure would otherwise toast-spam that poll).
  *  - Direct view-level ``fetchApi`` call sites (e.g.
  *    ``TabRibbon.svelte``'s ``/health`` probe in FE-07 / Phase C Task 13)
  *    pass the whole options bag — ``signal``, ``silent``, and ``cache``

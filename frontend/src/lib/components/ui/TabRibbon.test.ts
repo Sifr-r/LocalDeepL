@@ -5,19 +5,19 @@ import TabRibbon from './TabRibbon.svelte';
 import { activeTab, type ActiveTab } from '../../stores/appStore';
 import { fetchApi as fetchApiSpy } from '../../api/client';
 
-// ``vi.mock`` is hoisted above the imports by Vitest. The abort test
-// below asserts the ``silent: true`` contract at the ``fetchApi`` layer,
-// because ``silent`` is consumed by ``fetchApi`` for toast suppression
-// and is stripped before the underlying global ``fetch`` is called — so
-// spying on the global fetch alone (the existing pattern) would miss
-// the flag. The wrapper still delegates to the actual implementation,
-// so the a11y tests further down — which never assert on fetch behavior
-// — are unaffected.
+// ``vi.mock`` is hoisted above the imports by Vitest. The default
+// ``fetchApi`` mock returns a never-resolving promise so the a11y
+// tests do NOT issue a real ``/health`` network request when
+// TabRibbon mounts and ``pingHealth`` fires in ``onMount``. The
+// abort test overrides this default per-test via
+// ``vi.mocked(fetchApiSpy).mockImplementation`` to reject with
+// ``DOMException('aborted', 'AbortError')`` when the captured
+// signal aborts, which drives ``pingHealth``'s ``AbortError`` catch.
 vi.mock('../../api/client', async (importOriginal) => {
   const actual = (await importOriginal()) as typeof import('../../api/client');
   return {
     ...actual,
-    fetchApi: vi.fn(actual.fetchApi),
+    fetchApi: vi.fn(() => new Promise(() => {})),
     fetchApiWithHeaders: vi.fn(actual.fetchApiWithHeaders),
     fetchFile: vi.fn(actual.fetchFile)
   };
@@ -38,10 +38,7 @@ vi.mock('../../api/client', async (importOriginal) => {
  */
 describe('TabRibbon.svelte WAI-ARIA tab roles (P1 #6)', () => {
   let target: HTMLDivElement;
-  // The Svelte 5 `mount` return type is intentionally loose; we only
-  // need it to hand back to `unmount()` in afterEach.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let app: any = null;
+  let app: ReturnType<typeof mount> | null = null;
   // `appStore` persists `activeTab` to `localStorage`; capture the
   // pre-test value so we can restore it in afterEach and avoid leaking
   // store state between test files.
@@ -52,11 +49,13 @@ describe('TabRibbon.svelte WAI-ARIA tab roles (P1 #6)', () => {
     target = document.createElement('div');
     document.body.appendChild(target);
     originalActiveTab = get(activeTab);
-    // The vi.mock-wrapped fetchApi above is a shared spy; clear its
-    // call history between tests so the abort test's
-    // ``fetchApiSpy.mock.calls`` assertions only see calls from this
-    // test rather than accumulating from earlier a11y tests.
+    // Reset the shared ``fetchApi`` spy between tests: clear call
+    // history and re-apply the never-resolving default so the abort
+    // test's mock does not leak into subsequent a11y tests.
     vi.clearAllMocks();
+    vi.mocked(fetchApiSpy).mockImplementation(
+      () => new Promise(() => {})
+    );
   });
 
   afterEach(() => {
@@ -150,92 +149,89 @@ describe('TabRibbon.svelte WAI-ARIA tab roles (P1 #6)', () => {
     expect(workstationTab?.getAttribute('tabindex')).toBe('-1');
   });
 
-  // FE-07 / Phase C Task 13: pingHealth must wire fetchApi with an
-  // AbortController whose signal aborts on unmount. Without this, an
-  // unmount mid-ping leaves the request running until the server replies,
-  // and the 15-second setInterval can race a previous ping that is still
-  // in flight. This test pins that contract.
-  it('cancels in-flight health ping on component destroy', async () => {
-    // Type the captured signal as ``AbortSignal | null`` so we can
-    // thread it back through fetchApi's ``RequestInit['signal']``
-    // widening. The ``!`` definite-assignment assertion satisfies
-    // ``noUnusedLocals`` without seeding a literal ``null`` value —
-    // TypeScript 5.9 narrows ``let x: T | null = null`` to the literal
-    // ``null`` type and then treats ``x?.aborted`` as a property access
-    // on ``never`` (an optional chain on a known-null value). The
-    // variable is always reassigned by the mock implementation before
-    // any read, so the uninitialized declaration is safe and matches
-    // the pre-existing test's intent.
-    let abortSignal!: AbortSignal | null;
-    // Capture the signal's abort listener (black-box): fetchApi threads
-    // the signal from pingHealth into the underlying global fetch, so
-    // attaching ``addEventListener('abort', ...)`` here proves the
-    // AbortController is actually wired all the way through to the
-    // request. Asserting the listener fires after unmount is the
-    // deterministic proxy for pingHealth's ``AbortError`` catch branch
-    // (which relies on the abort event to swallow a late response as
-    // a no-op). A never-resolving Promise keeps the ping in flight for
-    // the duration of the test so we can assert on the abort end-state
-    // without race-prone timers.
-    let abortListenerFired = false;
-    const fetchSpy = vi
-      .fn()
-      .mockImplementation((_url: string, init?: RequestInit) => {
-        const signal = (init?.signal ?? null) as AbortSignal | null;
-        abortSignal = signal;
-        if (signal) {
-          signal.addEventListener('abort', () => {
-            abortListenerFired = true;
-          });
-        }
-        return new Promise<Response>(() => {
-          /* never resolves; we abort from the test */
+  // FE-07 / Phase C Task 13: ``pingHealth`` must (1) thread
+  // ``fetchApi`` with ``silent: true`` so a 5xx probe never surfaces
+  // as a toast, (2) wire a real ``AbortSignal`` through ``RequestInit``
+  // so the request is cancellable, and (3) swallow ``AbortError`` so
+  // an unmount mid-ping does not flip the connection badge to
+  // ``Offline``. This test pins all three contracts deterministically:
+  // a controlled ``fetchApi`` mock that rejects with
+  // ``DOMException('aborted', 'AbortError')`` when the abort listener
+  // fires (vitest's jsdom environment mixes jsdom's ``Event`` with
+  // Node's ``AbortController``, so ``signal.dispatchEvent(new Event(
+  // 'abort'))`` would throw — invoking the captured listener directly
+  // exercises the same code path without the cross-realm mismatch).
+  it('cancels in-flight health ping on component destroy and swallows AbortError', async () => {
+    const fetchApiMock = vi.mocked(fetchApiSpy);
+    // Replace the default never-resolving mock with one that
+    // rejects with a DOMException named 'AbortError' when its abort
+    // listener fires. ``fetchApi`` re-throws
+    // DOMException-with-name-AbortError untouched, so
+    // ``pingHealth``'s catch runs and swallows it without mutating
+    // ``backendOnline``. The captured listener is the same one the
+    // production ``fetch`` would fire on abort.
+    const abortCapture: { current: (() => void) | null } = { current: null };
+    fetchApiMock.mockImplementation(
+      (_url: string, init?: RequestInit) => {
+        return new Promise<Response>((_resolve, reject) => {
+          abortCapture.current = () => {
+            reject(new DOMException('aborted', 'AbortError'));
+          };
+          init?.signal?.addEventListener('abort', abortCapture.current);
         });
-      });
-    vi.stubGlobal('fetch', fetchSpy);
+      }
+    );
 
-    // Declare ``localApp`` outside the try block so the finally clause
-    // can still unmount it if an assertion before unmount fails — the
-    // outer describe block's ``app`` variable is owned by the a11y
-    // tests and must not be polluted by this abort test on failure.
+    // ``localApp`` is declared outside the try block so the finally
+    // clause can still unmount it if a pre-unmount assertion fails
+    // — the outer describe block's ``app`` is owned by the a11y
+    // tests and must not be polluted by this test on failure.
     let localApp: ReturnType<typeof mount> | null = null;
     try {
       localApp = mount(TabRibbon, { target });
       await tick();
-      // pingHealth ran in onMount and captured the signal in fetchSpy.
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
-      // The captured request signal must be a real AbortSignal instance
-      // — not merely defined — so the AbortController is wired through.
-      // We use ``abortSignal instanceof AbortSignal`` (with the LHS
-      // cast to ``unknown`` because the DOM lib widens ``AbortSignal |
-      // null`` and TypeScript requires a non-nullable LHS for
-      // ``instanceof``) rather than
-      // ``expect(abortSignal).toBeInstanceOf(AbortSignal)`` to avoid
-      // the Vitest matcher narrowing ``abortSignal`` to ``never`` for
-      // the optional-chain accesses further down.
-      expect((abortSignal as unknown) instanceof AbortSignal).toBe(true);
-      expect(abortSignal?.aborted).toBe(false);
-      // Health probes must not surface as user-facing toasts on 5xx;
-      // ``silent`` is consumed by ``fetchApi`` (and stripped before the
-      // underlying ``fetch``), so the assertion lives at the fetchApi
-      // boundary — the spy was installed via the ``vi.mock`` wrapper at
-      // the top of this file.
-      expect(fetchApiSpy).toHaveBeenCalledWith(
+
+      // Contract 1: ``silent: true`` is forwarded to ``fetchApi``.
+      // ``silent`` is consumed inside ``fetchApi`` (and stripped
+      // before the underlying fetch), so the assertion lives at the
+      // ``fetchApi`` boundary.
+      expect(fetchApiMock).toHaveBeenCalledWith(
         '/health',
         expect.objectContaining({ silent: true })
       );
+      // Contract 2: the captured signal is a real ``AbortSignal`` —
+      // the ``pingAbort`` controller is wired through the options
+      // bag.
+      const lastCall = fetchApiMock.mock.calls.at(-1);
+      const opts = (lastCall?.[1] ?? {}) as { signal?: AbortSignal };
+      const signal = opts.signal ?? null;
+      expect(signal).toBeInstanceOf(AbortSignal);
+      expect(signal?.aborted).toBe(false);
 
-      // Unmount — the AbortController in pingHealth must fire so the
-      // in-flight request is cancelled and a later ping cannot race it.
+      // While the ping is still in flight, the connection badge
+      // shows 'Checking…' (``backendOnline === null``).
+      expect(target.textContent).toContain('Checking');
+
+      // Contract 3: fire the captured abort listener (the same code
+      // path the production ``fetch`` would drive on abort) while
+      // the component is still mounted. The mocked ``fetchApi``
+      // rejects with ``DOMException('aborted', 'AbortError')``;
+      // ``pingHealth``'s catch swallows it and returns without
+      // mutating ``backendOnline``. The badge stays 'Checking…'
+      // (a non-AbortError rejection would flip it to 'Offline') —
+      // this is the deterministic observable that the
+      // ``AbortError`` catch branch ran.
+      abortCapture.current?.();
+      await tick();
+      expect(target.textContent).toContain('Checking');
+      expect(target.textContent).not.toContain('Offline');
+
+      // Contract 4: unmount fires ``onDestroy``, which calls
+      // ``pingAbort.abort()`` — the production cancellation path.
+      // The signal is genuinely aborted (``signal.aborted === true``).
       unmount(localApp);
       localApp = null;
-      expect(abortSignal?.aborted).toBe(true);
-      // The signal's abort listener captured on the fetch side must
-      // have fired, which is the deterministic proxy for the signal
-      // being wired end-to-end through fetchApi (the precondition
-      // pingHealth's catch branch relies on to swallow the resulting
-      // AbortError as a no-op).
-      expect(abortListenerFired).toBe(true);
+      expect(signal?.aborted).toBe(true);
     } finally {
       if (localApp) {
         try {
@@ -245,7 +241,6 @@ describe('TabRibbon.svelte WAI-ARIA tab roles (P1 #6)', () => {
         }
         localApp = null;
       }
-      vi.unstubAllGlobals();
     }
   });
 });
