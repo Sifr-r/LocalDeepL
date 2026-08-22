@@ -66,7 +66,7 @@ class BackendUnavailable(APIError):
 
 
 class ValidationFailed(APIError):
-    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
     error = "validation_failed"
 
 
@@ -122,7 +122,7 @@ async def _validation_handler(
 ) -> JSONResponse:
     detail = f"{len(exc.errors())} validation error(s)."
     resp = envelope_error(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         error="validation_failed",
         detail=detail,
     )
