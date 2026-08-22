@@ -26,6 +26,27 @@
   // keep the network round-trip running after the component is gone.
   let pingAbort: AbortController | null = null;
 
+  /**
+   * Parse the /health response body into a status string.
+   * Returns null when the body is empty or unparseable - we treat that
+   * as "not online" rather than throwing, because the badge should
+   * only flip to "online" on an explicit ok signal from the server.
+   */
+  function parseHealthBody(res: { status: string } | null): 'ok' | 'not-ok' | null {
+    return res === null ? null : res.status === 'ok' ? 'ok' : 'not-ok';
+  }
+
+  /**
+   * Classify a ping error. AbortError means the component unmounted
+   * or a newer ping superseded this one; in both cases the badge
+   * should NOT flip - a superseded ping is not a "backend down"
+   * signal, and an unmount mid-ping shouldn't toggle the indicator
+   * right as the component tears down.
+   */
+  function classifyPingError(err: unknown): 'aborted' | 'down' {
+    return err instanceof DOMException && err.name === 'AbortError' ? 'aborted' : 'down';
+  }
+
   async function pingHealth() {
     pingAbort?.abort(); // cancel any in-flight ping before starting a new one
     pingAbort = new AbortController();
@@ -38,22 +59,10 @@
       silent: true
     };
     try {
-      const res = await fetchApi<{ status: string }>('/health', healthOpts);
-      // ``res`` may be ``null`` if the response body was empty /
-      // unparseable; treat that as "not online" rather than throwing.
-      // Phase C / Task 21: verify the ``status`` field too so an empty
-      // body or unexpected shape (e.g. ``{}``) cannot flip the badge
-      // to "online" without an actual ok signal from the server.
-      backendOnline = res !== null && res.status === 'ok';
+      const parsed = parseHealthBody(await fetchApi<{ status: string }>('/health', healthOpts));
+      backendOnline = parsed === 'ok';
     } catch (err: unknown) {
-      // An AbortError means the component unmounted (or a newer ping
-      // superseded this one). Treat both as a no-op for the visible
-      // badge — a superseded ping is not a "backend is down" signal,
-      // and an unmount mid-ping should not flip the badge right as
-      // the component is being torn down.
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        return;
-      }
+      if (classifyPingError(err) === 'aborted') return;
       backendOnline = false;
     }
   }
