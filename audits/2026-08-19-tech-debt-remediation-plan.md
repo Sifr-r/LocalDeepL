@@ -202,6 +202,17 @@ Each phase ends with a "go" gate. I'll stop, recap, and wait for the next "go".
 
 **Why deferred:** these touch the new infra at its foundation. Worth a design doc + a "single-provider-wired-at-a-time" migration plan, not bundled into the secondary validation pass.
 
+**Phase 6 closeout (2026-08-22):** all four findings were already closed by incremental Phase C/D/E hardening. This closeout updates the stale documentation that was not refreshed when the wiring landed:
+
+| Finding | What closed | Where (post-closeout) |
+|---|---|---|
+| F11 (`runtime.py:50-72` — `PLUGIN_CONTEXT_ENABLED` → ConfigStore-backed toggle) | `is_plugin_context_enabled()` reads ConfigStore → env-var; `set_plugin_context_enabled(value)` writes through; `refresh_plugin_context_enabled()` re-reads after `create_app()`. The module-level `PLUGIN_CONTEXT_ENABLED` is a cache, not a config. | `api/plugin/runtime.py:113-173` (impl); `:131-137` docstring clarifies the cache contract; `AGENTS.md:200-208` "Toggle" section reflects runtime-toggled state |
+| F13 (`providers.py:43-71` — provider-owned disposal effect) | Every provider's `_plugin` closure returns the `ctx.register` disposer; `plugin_ctx.dispose()` walks them in reverse mount order. | `api/plugin/providers.py:1-11` module docstring codifies the contract |
+| F27 (`context.py:35-44` — `asyncio.Lock` around `mount`/`unmount`) | `threading.RLock` kept; `asyncio.Lock` rejected as gratuitous churn (all methods sync). | `api/plugin/context.py:33-48` docstring explains the choice + revisit condition |
+| F2-deeper (`server.py:117-135` — register the three UNREGISTERED seams OR delete them) | All five seams registered: `JobQueue` (local), `SessionLog` (memory), `ConfigStore` (memory), `ProgressService` (memory), `TextArtifactStore` (text / metadata / export). | `server.py:131-156` wiring; `tests/api/test_server_boot_wiring.py` e2e covers all seven lookups; `AGENTS.md:184-198` table stamps "Last updated: 2026-08-22"; stale "Operator note" at `AGENTS.md:219-221` deleted |
+
+**Phase 6 status:** ✅ Fully closed (four findings; closed incrementally over Phase C/D/E hardening — no Phase G cluster needed).
+
 ---
 
 ## Recommended "go" order

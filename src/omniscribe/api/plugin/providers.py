@@ -8,6 +8,23 @@ Phase 1 ships a single provider — the in-process OCR job queue. Phase 3
 adds the in-memory session log provider. Future phases add providers
 for the rest of the capability seams (state, auth, document export,
 glossary import, provider manager, telemetry, etc.).
+
+Disposal contract
+-----------------
+
+Every provider factory in this module returns a :class:`Plugin` closure.
+When :func:`omniscribe.api.server.create_app` calls
+``plugin_ctx.mount(plugin)``, the closure runs once: it calls
+``ctx.register(Protocol, impl, name=...)`` and returns the resulting
+disposer to :class:`PluginContext` as a reversible effect.
+
+At shutdown, the FastAPI lifespan's ``_teardown_plugin_context`` (see
+``server.py:220-225``) calls ``plugin_ctx.dispose()``, which runs every
+disposer in **reverse mount order**.
+
+Providers should be idempotent and side-effect-free outside the
+``ctx.register`` call; any cleanup work happens in the disposer closure
+returned by the :meth:`ctx.register` implementation.
 """
 
 from __future__ import annotations

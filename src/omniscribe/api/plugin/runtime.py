@@ -128,12 +128,21 @@ def is_plugin_context_enabled() -> bool:
     return _read_env_default()
 
 
-#: Module-level flag. Cached value of :func:`is_plugin_context_enabled`
-#: last observed at module import, at :func:`refresh_plugin_context_enabled`
-#: time, or after the most recent :func:`set_plugin_context_enabled`
-#: write. Tests can read or override it directly; production consumers
-#: should call :func:`is_plugin_context_enabled` so a ConfigStore
-#: override that landed after import is honoured.
+#: Cached value of :func:`is_plugin_context_enabled` last observed at
+#: module import, at :func:`refresh_plugin_context_enabled` time, or
+#: after the most recent :func:`set_plugin_context_enabled` write.
+#:
+#: **Production readers should call :func:`is_plugin_context_enabled`**
+#: so a :class:`ConfigStore` override that landed after module import
+#: is honoured. The cache exists so test code can read it cheaply.
+#:
+#: **Production writers should not touch this directly.** Use
+#: :func:`set_plugin_context_enabled`, which writes through to the
+#: active :class:`ConfigStore` (when one is mounted) and updates this
+#: cache. When no :class:`ConfigStore` is mounted (e.g. before server
+#: boot, in test contexts), only the cache is updated; the next
+#: :func:`refresh_plugin_context_enabled` call will overwrite it with
+#: the env-var or store value.
 PLUGIN_CONTEXT_ENABLED: bool = _read_env_default()
 
 

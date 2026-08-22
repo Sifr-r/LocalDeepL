@@ -187,7 +187,7 @@ The new `src/omniscribe/api/plugin/` package introduces a Cordis-style
 plugin container with Protocol-based seams and a "look up by Protocol,
 fall back to singleton" migration window. This section is the single
 source of truth for which seams are wired at boot and which fall through
-to the legacy `api/routers/state.py` singletons. **Last updated 2026-08-19.**
+to the legacy `api/routers/state.py` singletons. **Last updated: 2026-08-22.**
 
 | Seam | Protocol | Boot provider | Status |
 |---|---|---|---|
@@ -203,10 +203,15 @@ Callers fall through to the legacy `api/routers/state.py` singletons
 when the lookup is `None`. This is intentional — it lets new and old code
 paths coexist on the same request.
 
-**Toggle.** `PLUGIN_CONTEXT_ENABLED` is read at import time from
-`OMNISCRIBE_PLUGIN_CONTEXT` (default `False`). Runtime toggling is not
-yet supported; the seam is "open or closed" for the life of the process.
-`set_plugin_context_enabled()` exists for tests only.
+**Toggle.** `PLUGIN_CONTEXT_ENABLED` is the cached value of
+`is_plugin_context_enabled()`, which is the canonical read. The active
+`ConfigStore` (when one is mounted on the live plugin context) is
+checked first; the `OMNISCRIBE_PLUGIN_CONTEXT` env var is the fallback.
+Runtime toggling IS supported: `set_plugin_context_enabled(value)`
+writes through to the active `ConfigStore` and updates the cache;
+`refresh_plugin_context_enabled()` re-reads after `create_app()` so an
+override that landed between process start and boot takes effect
+without a restart. Tests may call the setter freely.
 
 **Dual-write shim.** `api/services/artifacts.py` `TextArtifactStore.put`
 emits an `artifact.created` event to the plugin context as a
@@ -215,10 +220,6 @@ never blocks on the plugin path. The dual-write `except Exception` is
 intentionally narrow in the new code (only `ServiceNotFoundError` and
 `ContextDisposedError` are swallowed) — programming bugs in
 `ArtifactStoreProjection._apply` propagate to the caller.
-
-**Operator note.** Until the three UNREGISTERED seams get providers,
-you can ignore the plugin package entirely. The legacy `state.py`
-singletons are the production access path. See `audits/2026-08-19-secondary-validation-pass.md` for the build-up debt the new infra introduced.
 
 ## Web Notes
 

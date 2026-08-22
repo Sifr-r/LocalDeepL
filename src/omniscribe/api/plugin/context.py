@@ -45,6 +45,15 @@ The intended pattern is still "mount during boot, dispatch during
 request handling, dispose at shutdown" — the lock is for the rare
 runtime-plugin-reload and the multi-worker-restart edge cases
 where two threads briefly race on the registry.
+
+**Why ``threading.RLock`` and not ``asyncio.Lock``:** every public
+method on this class is sync. The :func:`_locked` decorator holds
+the lock briefly without ``await``-ing. ``asyncio.Lock`` would
+require making every method ``async``, which is gratuitous churn
+for a class whose public methods are all sync today. **Revisit
+this choice if a future method must ``await`` inside the critical
+section** (e.g. a :meth:`register` that has to acquire a network
+resource before completing).
 """
 
 from __future__ import annotations
