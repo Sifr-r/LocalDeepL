@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import { get } from 'svelte/store';
 import * as clientModule from '../api/client';
 import {
@@ -7,13 +7,13 @@ import {
   authStore,
   toastStore,
   pushToast,
-  loadAppConfig
+  loadAppConfig,
+  defaultConfig
 } from '../stores/appStore';
+import type { NamespacedModelsResponse } from '../types/api';
 import {
   cleanupApp,
-  flushAppMount,
-  mountApp,
-  type AppHarness
+  mountApp
 } from './appHarness';
 
 const AUTH_STORAGE_KEY = 'omniscribe.auth.v1';
@@ -147,127 +147,127 @@ describe('appStore', () => {
   // -----------------------------------------------------------------
   // appHarness smoke tests (Phase C Task 14 / FE-01)
   //
-  // These exercise the real ``<App>`` component tree via the
-  // harness in :file:`./appHarness.ts`. The harness owns the mount
-  // lifecycle (Svelte 5 ``mount``/``unmount``); each test owns its
-  // own ``fetchApi`` stub and restores it in ``finally`` so the
-  // store-level tests above (which call ``loadAppConfig`` directly
-  // and rely on the un-stubbed real client) keep passing.
+  // These drive the real ``<App>`` component tree through
+  // :file:`./appHarness.ts`. The harness owns the mount lifecycle
+  // (Svelte 5 ``mount``/``unmount``); each test installs the same
+  // controlled ``fetchApi`` mock so App's async onMount chain
+  // settles deterministically and cleanup is idempotent.
   // -----------------------------------------------------------------
   describe('appHarness', () => {
-    // Always stub ``fetchApi`` before mounting ``<App>`` so the
-    // component's async ``onMount`` chain (``loadAppConfig`` →
-    // ``fetchApi('/config')`` + ``refreshModels`` → four
-    // ``fetchApi('/models*')`` calls) does not leave a dangling
-    // network round-trip if a test fails before its ``finally``
-    // block runs.
-    async function withMountedApp(
-      fn: (harness: AppHarness) => Promise<void> | void
-    ): Promise<void> {
-      const fetchApiSpy = vi
+    // Shared controlled ``fetchApi`` mock used by every harness test.
+    // Resolves the routes App's onMount chain triggers:
+    //   /health         (TabRibbon pingHealth)
+    //   /config         (loadAppConfig)
+    //   /models + /models/ocr + /models/translation +
+    //   /models/transcription          (refreshModels)
+    // The handler is ``async`` so the promise resolves on a single
+    // microtask — bounded, not never-resolving — and App's chain
+    // settles before the test asserts. ``mockRestore`` in each
+    // test's ``finally`` returns the client to its real impl, and
+    // ``vi.unstubAllGlobals`` (in the isolation test's finally
+    // plus ``afterEach``) undoes the ``global.fetch`` swap.
+    function setupControlledFetchApi(): MockInstance {
+      const health = { status: 'ok' };
+      const models: NamespacedModelsResponse = { models: [], ocr: [], translation: [] };
+      return vi
         .spyOn(clientModule, 'fetchApi')
-        // The component subscribes to a Svelte store that wires
-        // fetchApi's resolution through ``configStore.set`` /
-        // ``modelStore.update``; a never-resolving promise keeps
-        // the in-flight request observable (asserted via
-        // ``fetchApiSpy`` calls) without resolving into a real
-        // store mutation.
-        .mockImplementation(() => new Promise(() => {}));
+        .mockImplementation(async (path: string) => {
+          if (path === '/health') return health;
+          if (path === '/config') return { ...defaultConfig };
+          if (path === '/models' || path.startsWith('/models/')) return models;
+          return null;
+        });
+    }
+
+    it('mounts <App> into a fresh <div>, renders its root header, and exposes the activeTab writable', async () => {
+      const fetchApiSpy = setupControlledFetchApi();
       const harness = mountApp();
       try {
-        await fn(harness);
+        // Contract 1: the harness exposes a live HTMLDivElement
+        // appended to ``document.body`` — keeps the prior shape and
+        // proves the test owns a real DOM target.
+        expect(harness.target).toBeInstanceOf(HTMLDivElement);
+        expect(harness.target.parentNode).toBe(document.body);
+
+        // Contract 2: the real ``<App>`` template rendered into the
+        // target, not a stub. ``App.svelte`` mounts ``<TabRibbon>``
+        // whose outer element is a ``<header>``; waiting for that
+        // node proves the async onMount settled and a real App DOM
+        // was produced.
+        await vi.waitFor(() => {
+          expect(harness.target.querySelector('header')).not.toBeNull();
+        });
+
+        // Contract 3: the canonical ``activeTab`` writable surface.
+        // The harness returns the same store the component
+        // subscribes to — no mirror subscription, no leak.
+        expect(typeof harness.activeTab.set).toBe('function');
+        expect(typeof harness.activeTab.update).toBe('function');
+        expect(typeof harness.activeTab.subscribe).toBe('function');
+        expect(get(harness.activeTab)).toBe('workstation');
       } finally {
         await cleanupApp(harness);
         fetchApiSpy.mockRestore();
       }
-    }
-
-    it('mountApp() returns an HTMLDivElement target and an activeTab writable defaulting to "workstation"', async () => {
-      await withMountedApp((harness) => {
-        expect(harness.target).toBeInstanceOf(HTMLDivElement);
-        // The harness returns the canonical ``activeTab`` writable
-        // from ``appStore`` — no mirror subscription is added, so
-        // there is nothing to leak. The store contract is: callable
-        // as a writable (set / update / subscribe).
-        expect(typeof harness.activeTab.set).toBe('function');
-        expect(typeof harness.activeTab.update).toBe('function');
-        expect(typeof harness.activeTab.subscribe).toBe('function');
-        // ``beforeEach`` pins ``activeTab`` to ``workstation``; the
-        // harness returns the same store the component subscribes
-        // to, so the value matches the canonical default.
-        expect(get(harness.activeTab)).toBe('workstation');
-      });
     });
 
-    it('cleanupApp() detaches the target from its parent and tears down the component', async () => {
+    it('cleanupApp() detaches the target and is idempotent across repeated calls', async () => {
+      const fetchApiSpy = setupControlledFetchApi();
       const harness = mountApp();
-      // Sanity: the harness appended the target to ``document.body``
-      // before mounting, so the parent exists before cleanup.
-      expect(harness.target.parentNode).toBe(document.body);
-      // The component renders its own root <div> as the first child
-      // of the target. After cleanup, that child must be gone (the
-      // Svelte destroy lifecycle removed it) and the target must be
-      // detached from its parent.
-      await cleanupApp(harness);
-      expect(harness.target.parentNode).toBeNull();
-      expect(harness.target.childNodes.length).toBe(0);
+      try {
+        // ``mountApp()`` appended the target to ``document.body``.
+        expect(harness.target.parentNode).toBe(document.body);
+
+        await cleanupApp(harness);
+        // First cleanup: Svelte's destroy lifecycle removed the
+        // rendered App children from the target, and the target
+        // itself was detached from its parent.
+        expect(harness.target.parentNode).toBeNull();
+        expect(harness.target.childNodes.length).toBe(0);
+
+        // Second cleanup: idempotent no-op. The harness must not
+        // throw on a re-entrant call.
+        await cleanupApp(harness);
+        expect(harness.target.parentNode).toBeNull();
+        expect(harness.target.childNodes.length).toBe(0);
+      } finally {
+        // ``mockRestore`` is required here even though cleanup ran
+        // — the spy is module-scoped, not harness-scoped.
+        fetchApiSpy.mockRestore();
+      }
     });
 
-    // Phase C Task 14 / FE-01 isolation guarantee: mounting
-    // ``<App>`` must not produce an uncontrolled real backend
-    // request. ``<App>.svelte``'s ``onMount`` calls
-    // ``loadAppConfig()`` → ``fetchApi('/config')`` plus
-    // ``refreshModels()`` → four ``fetchApi('/models*')`` calls.
-    // The plan's "wait one microtask" assertion is invalid here
-    // because the async chain spans at least three microtasks
-    // before it settles; we use ``flushAppMount`` to deterministically
-    // drain the queue.
-    //
-    // We assert two complementary things:
-    //  1. ``fetchApiSpy`` was invoked — the test owns the request
-    //     boundary and the mount triggered the expected config /
-    //     model fetches.
-    //  2. ``global.fetch`` was never called — no real network
-    //     request slipped past the ``fetchApi`` mock.
+    // FE-01 isolation guarantee: mounting ``<App>`` must trigger
+    // the expected ``fetchApi`` chain and must not produce any
+    // uncontrolled real backend request. ``App.svelte``'s
+    // ``onMount`` calls ``loadAppConfig()`` → ``fetchApi('/config')``
+    // plus ``refreshModels()`` → ``fetchApi('/models')``,
+    // ``fetchApi('/models/ocr')``,
+    // ``fetchApi('/models/translation')`` and
+    // ``fetchApi('/models/transcription')``. ``TabRibbon``'s
+    // ``pingHealth`` adds ``fetchApi('/health')``. We wait for all
+    // six calls via ``vi.waitFor`` (deterministic, no fixed
+    // microtask count) and assert ``global.fetch`` was never
+    // invoked.
     it('mounts without making any uncontrolled real network request (FE-01 isolation)', async () => {
-      const fetchApiSpy = vi
-        .spyOn(clientModule, 'fetchApi')
-        .mockImplementation(() => new Promise(() => {}));
-      // ``vi.stubGlobal('fetch', spy)`` replaces the global
-      // ``fetch`` reference; any code path that bypasses the
-      // ``fetchApi`` mock would surface here.
       const fetchSpy = vi.fn();
       vi.stubGlobal('fetch', fetchSpy);
 
+      const fetchApiSpy = setupControlledFetchApi();
       const harness = mountApp();
       try {
-        // Drain the Svelte scheduler + microtask queue. Three
-        // ``Promise.resolve()`` iterations are enough to cover the
-        // ``onMount`` → ``loadAppConfig`` → ``refreshModels`` chain.
-        await flushAppMount();
+        await vi.waitFor(() => {
+          const urls = fetchApiSpy.mock.calls.map((c) => c[0] as string);
+          expect(urls).toContain('/health');
+          expect(urls).toContain('/config');
+          expect(urls).toContain('/models');
+          expect(urls).toContain('/models/ocr');
+          expect(urls).toContain('/models/translation');
+          expect(urls).toContain('/models/transcription');
+        });
 
-        // Contract 1: the harness intercepted at least one
-        // ``fetchApi`` call. We don't pin the exact URL set here
-        // because that would couple this smoke test to the
-        // ``loadAppConfig`` URL contract; we only assert the
-        // boundary was reached.
-        expect(fetchApiSpy).toHaveBeenCalled();
-        const calledUrls = fetchApiSpy.mock.calls.map(
-          (call) => call[0] as string
-        );
-        // ``loadAppConfig`` must hit ``/config``; ``refreshModels``
-        // must hit the model-list endpoints. If either chain were
-        // skipped, the harness would still be considered "mounted"
-        // — pinning at least one of the two URL families proves
-        // the async onMount actually ran.
-        const hasConfigOrModelCall = calledUrls.some(
-          (url) => url.includes('/config') || url.includes('/models')
-        );
-        expect(hasConfigOrModelCall).toBe(true);
-
-        // Contract 2: no uncontrolled real ``fetch`` ever fired.
-        // The ``fetchApi`` mock short-circuits at the client
-        // boundary, so ``global.fetch`` must remain untouched.
+        // No real ``fetch`` ever fired — the controlled ``fetchApi``
+        // mock short-circuited the client boundary.
         expect(fetchSpy).not.toHaveBeenCalled();
       } finally {
         await cleanupApp(harness);
