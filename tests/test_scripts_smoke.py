@@ -14,7 +14,7 @@ update the debug scripts".
 - Heavy dependencies (Surya, LM Studio) are loaded as the scripts need
   them, not stubbed — a renamed symbol in the core package would still
   fail.
-- Scripts that depend on optional extras (``chromadb``, ``rich``,
+- Scripts that depend on optional extras (``lancedb``, ``rich``,
   ``websockets``) gracefully skip if those extras are missing.
 """
 
@@ -37,7 +37,7 @@ _OPTIONAL_DEPS: dict[str, tuple[str, ...]] = {
     "build_fixture.py": ("rich",),
     "confidence_eval.py": ("rich",),
     "confidence_image.py": ("rich",),
-    "ingest_lexicon.py": ("chromadb",),
+    "ingest_lexicon.py": ("lancedb",),
     "probe_routes.py": ("websockets",),
 }
 
