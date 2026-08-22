@@ -113,7 +113,7 @@
     }
   }
 
-  async function downloadExport(format: 'markdown' | 'docx' | 'html' | 'blocktree') {
+  async function downloadExport(format: 'docx' | 'html' | 'blocktree') {
     if (!selectedArtifactId || !selectedArtifactToken) {
       pushToast('warning', 'Export requires an active text artifact ID and token.', 3000);
       return;

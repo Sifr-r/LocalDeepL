@@ -190,6 +190,7 @@
           status?: string;
           result?: unknown;
           error?: string;
+          detail?: string;
         };
         asyncStatus = `Status: ${res.state || res.status}`;
         if (res.state === 'SUCCESS') {
@@ -200,7 +201,12 @@
         } else if (res.state === 'FAILURE' || res.error) {
           clearPolling();
           isTranslating = false;
-          pushToast('error', res.error || 'Async job failed', 4000);
+          // Phase C / Task 21: surface the human-readable ``detail`` (the
+          // server returns ``error: "internal_error"`` as a stable code
+          // and the human message lives in ``detail``), falling back to
+          // ``error`` for any older envelope shape that still embeds
+          // the sentence in the error field.
+          pushToast('error', res.detail || res.error || 'Async job failed', 4000);
         }
       } catch {
         clearPolling();

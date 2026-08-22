@@ -41,7 +41,10 @@
       const res = await fetchApi<{ status: string }>('/health', healthOpts);
       // ``res`` may be ``null`` if the response body was empty /
       // unparseable; treat that as "not online" rather than throwing.
-      backendOnline = res !== null;
+      // Phase C / Task 21: verify the ``status`` field too so an empty
+      // body or unexpected shape (e.g. ``{}``) cannot flip the badge
+      // to "online" without an actual ok signal from the server.
+      backendOnline = res !== null && res.status === 'ok';
     } catch (err: unknown) {
       // An AbortError means the component unmounted (or a newer ping
       // superseded this one). Treat both as a no-op for the visible

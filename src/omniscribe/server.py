@@ -347,7 +347,14 @@ def create_app() -> ASGIApplication:
     @web_app.exception_handler(ValueError)
     async def value_error_handler(request: Any, exc: ValueError) -> Any:
         responses = _load_optional_module("fastapi.responses")
-        return responses.JSONResponse(status_code=400, content={"error": str(exc)})
+        # Phase C / Task 21: route the generic ValueError handler through
+        # the canonical ``ErrorEnvelope`` shape so legacy ``raise
+        # HTTPException(detail=...)`` / bare ``ValueError`` paths don't
+        # leak a non-canonical ``{"error": str(exc)}`` body to clients.
+        return responses.JSONResponse(
+            status_code=400,
+            content={"error": "bad_request", "detail": str(exc)},
+        )
 
     return cast(ASGIApplication, web_app)
 

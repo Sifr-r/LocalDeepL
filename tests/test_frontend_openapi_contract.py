@@ -112,6 +112,7 @@ def _strip_volatile_fields(schema: dict) -> dict:
     """
     cleaned = json.loads(json.dumps(schema))
     cleaned.pop("info", None)
+
     # OpenAPI 3.0 uses ``example`` (singular) on parameters / schemas /
     # components; OpenAPI 3.1 (and a few 3.0 generators) use ``examples``.
     # Drop both recursively.
