@@ -98,6 +98,37 @@ def _live_routes(schema: dict) -> set[tuple[str, str]]:
     }
 
 
+def _strip_volatile_fields(schema: dict) -> dict:
+    """Drop schema fields that are expected to drift without semantic change.
+
+    - ``info.version`` is bumped on releases and produces false-positive diffs.
+    - ``example`` / ``examples`` are illustrative and are easy to regenerate.
+    - ``info.title`` / ``info.description`` are stable metadata, but the
+      generator may insert a build timestamp; strip the whole ``info``
+      block so a release bump does not force snapshot churn.
+
+    The returned dict is a deep-copied, ``json``-roundtrip-stable variant
+    so equality comparison is deterministic.
+    """
+    cleaned = json.loads(json.dumps(schema))
+    cleaned.pop("info", None)
+    # OpenAPI 3.0 uses ``example`` (singular) on parameters / schemas /
+    # components; OpenAPI 3.1 (and a few 3.0 generators) use ``examples``.
+    # Drop both recursively.
+    def _walk(node: object) -> None:
+        if isinstance(node, dict):
+            node.pop("example", None)
+            node.pop("examples", None)
+            for value in node.values():
+                _walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                _walk(item)
+
+    _walk(cleaned)
+    return cleaned
+
+
 @pytest.mark.parametrize(
     ("method", "path"),
     FRONTEND_HTTP_ENDPOINTS,
@@ -159,6 +190,40 @@ def test_no_duplicate_operation_ids(openapi_schema: dict):
                 )
             seen.setdefault(operation_id, f"{method.upper()} {path}")
     assert not duplicates, "Duplicate OpenAPI operation IDs: " + "; ".join(duplicates)
+
+
+def test_openapi_full_schema_matches_snapshot(openapi_schema: dict):
+    """The committed snapshot must equal the live schema (modulo volatile fields).
+
+    Until Phase C / Task 20 the test only compared the route set, which
+    left in-schema drift — e.g. an envelope error response changing from
+    ``{detail: string}`` to ``{error: string, detail: string | null}`` —
+    invisible to the contract test. The snapshot is now regenerated on
+    every release with ``OMNISCRIBE_UPDATE_OPENAPI_SNAPSHOT=1`` and the
+    full schema is diffed against the live ``app.openapi()`` output.
+
+    Volatile fields (``info.version``, ``example``, ``examples``) are
+    stripped first so release-bump / illustrative-example churn does
+    not force regeneration.
+    """
+    live_clean = _strip_volatile_fields(openapi_schema)
+
+    if os.getenv("OMNISCRIBE_UPDATE_OPENAPI_SNAPSHOT"):
+        SNAPSHOT_PATH.write_text(
+            json.dumps(openapi_schema, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        pytest.skip("Snapshot regenerated.")
+
+    snapshot = json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
+    snapshot_clean = _strip_volatile_fields(snapshot)
+
+    assert live_clean == snapshot_clean, (
+        "OpenAPI schema snapshot is out of date (after stripping volatile fields).\n"
+        "Regenerate with: "
+        "OMNISCRIBE_UPDATE_OPENAPI_SNAPSHOT=1 uv run pytest "
+        "tests/test_frontend_openapi_contract.py"
+    )
 
 
 def test_openapi_route_snapshot_matches_live_schema(openapi_schema: dict):
