@@ -190,6 +190,11 @@ cython_debug/
 # Qoder AI IDE scratch state (audit reports, repowiki dumps, canvases)
 .qoder/
 
+# mavis agent scratch state (audit reports, repowiki dumps, ephemeral logs)
+# Files added here never belong in version control.
+.mavis/
+.mavis
+
 # Frontend build artifacts and dependency caches
 frontend/node_modules/
 frontend/dist/
