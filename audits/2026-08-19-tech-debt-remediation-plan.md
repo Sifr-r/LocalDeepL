@@ -174,6 +174,19 @@ Each phase ends with a "go" gate. I'll stop, recap, and wait for the next "go".
 
 **Risk:** low
 
+**Phase 5 closeout (2026-08-22, verified):** all six findings closed by audit-secondary work + Phase C/D/E hardening:
+
+| Finding | What closed | Where |
+|---|---|---|
+| F17 (`pyproject.toml:34` — drop `requests>=2.31`) | `surya-ocr ≥ 0.22` ships `requests<3,>=2.28.0` in its own metadata; base deps no longer pull `requests`; the dep is moved to `[dependency-groups] dev` for the one direct importer (`scripts/ingest_lexicon.py`) | `pyproject.toml:34-39` comment; `AGENTS.md:247` documents the closure |
+| F20 (`pyproject.toml:38` — loosen numpy upper bound) | `numpy>=2.0,<2.5.0` (the audit's first option) | `pyproject.toml:43` |
+| F21 (`frontend/package.json:22` — `@types/node` ↔ Node 20) | `@types/node ^20.0.0`; test.yml Node version is `20` at `test.yml:80` | `frontend/package.json:22` |
+| F22 (`install.sh` — Docker/Redis advisory check) | Mirrors `install.ps1:131` advisory; exits 0 on a Docker-less host with a clear message; async-translation is the only feature that needs Docker | `install.sh:104-125` |
+| F23 (`start_app.vbs:18-44` — log rotation) | `MAX_LOG_BYTES=10485760` (10 MiB), `MAX_LOG_BACKUPS=3`, `RotateLogIfNeeded` sub that shifts `.log.N` → `.log.(N+1)`, dropping the oldest | `start_app.vbs:14-21, 40-65` |
+| F30 (`start_app.vbs` — adaptive backoff) | `INITIAL_BACKOFF_MS=100` doubling each iteration up to `MAX_BACKOFF_MS=2000`; `MAX_POLL_ATTEMPTS=300` cap so a hung child cannot stall the launcher | `start_app.vbs:24-38, 79-95` |
+
+**Phase 5 status:** ✅ Fully closed (six findings; closed incrementally over Phase C/D/E hardening — no Phase G cluster needed).
+
 ---
 
 ### Phase 6 — Plugin context migration completion (deferred to a separate plan)
