@@ -99,13 +99,16 @@ def _live_routes(schema: dict) -> set[tuple[str, str]]:
 
 
 def _strip_volatile_fields(schema: dict) -> dict:
-    """Drop schema fields that are expected to drift without semantic change.
+    """Return a deterministic copy of ``schema`` with volatile fields removed.
 
-    - ``info.version`` is bumped on releases and produces false-positive diffs.
-    - ``example`` / ``examples`` are illustrative and are easy to regenerate.
-    - ``info.title`` / ``info.description`` are stable metadata, but the
-      generator may insert a build timestamp; strip the whole ``info``
-      block so a release bump does not force snapshot churn.
+    The OpenAPI generator emits ``info.version`` (semver, changes every
+    release), ``info.title`` (user-editable at any time), and ``info``
+    in general. We strip the entire ``info`` block rather than picking
+    specific keys because every field under it is either regenerated
+    by the build (version) or free-form project metadata that does not
+    represent a contract change. Schema-level ``example``/``examples``
+    fields are also dropped because they are documentation sugar that
+    varies across generator versions without changing the wire contract.
 
     The returned dict is a deep-copied, ``json``-roundtrip-stable variant
     so equality comparison is deterministic.
