@@ -27,12 +27,12 @@ export default defineConfig({
   resolve: {
     conditions: process.env.VITEST ? ['browser'] : undefined,
     alias: {
-      '$lib': path.resolve(__dirname, './src/lib')
+      '$lib': path.resolve(import.meta.dirname, './src/lib')
     }
   },
   build: {
     // Output directly to omniscribe package static directory
-    outDir: path.resolve(__dirname, '../src/omniscribe/static'),
+    outDir: path.resolve(import.meta.dirname, '../src/omniscribe/static'),
     emptyOutDir: true,
     target: 'esnext',
     // 750 kB catches the actual main-bundle regression (~74 kB) while
@@ -41,7 +41,7 @@ export default defineConfig({
     // no-op for the real outlier.
     chunkSizeWarningLimit: 750,
     rollupOptions: {
-      input: path.resolve(__dirname, 'index.html'),
+      input: path.resolve(import.meta.dirname, 'index.html'),
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
