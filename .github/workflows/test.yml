@@ -374,13 +374,20 @@ jobs:
           exit 1
 
       - name: Run Playwright smoke (test_ui.py)
+        # Audit F25 (e2e half): `axe-playwright-python` is added to the
+        # ``--with`` chain alongside ``playwright``. Both deps are
+        # e2e-only and not in ``pyproject.toml`` proper (the design
+        # rationale lives in pyproject.toml's ``[dependency-groups] dev``
+        # comment block, see ``test_ui.py``'s intro for the matching
+        # rationale). Using ``--with`` keeps the fast-tier matrix
+        # untouched: only this e2e job pays the install cost.
         # SCREENSHOT_PATH points at the workspace; the next step
         # uploads it as an artifact regardless of pass/fail so
         # the maintainer can eyeball the UI state after a manual
         # dispatch. The 180s budget in `test_ui.py` is the
         # OCR-completion timeout and intentionally exceeds the
         # default step timeout.
-        run: uv run --with playwright python test_ui.py
+        run: uv run --with playwright --with axe-playwright-python python test_ui.py
 
       - name: Upload screenshot + server log
         if: always()
