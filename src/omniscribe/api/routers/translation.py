@@ -122,18 +122,20 @@ async def get_translation_status(job_id: str):
             "job_id": job_id,
             "state": task.state,
         }
-
         if task.state == "PENDING":
             response["status"] = "Pending..."
-        elif task.state != "FAILURE":
-            response["info"] = task.info
-            if task.state == "SUCCESS":
-                response["result"] = task.get()
-        else:
+            return response
+        if task.state == "FAILURE":
             logger.error("Async translation task failed: %s", task.info)
-            response["error"] = "internal_error"
-            response["detail"] = SERVER_ERROR_MESSAGE
-
+            return envelope_error(
+                status_code=200,
+                error="internal_error",
+                detail=SERVER_ERROR_MESSAGE,
+                extra={"job_id": job_id, "state": task.state},
+            )
+        response["info"] = task.info
+        if task.state == "SUCCESS":
+            response["result"] = task.get()
         return response
     except Exception:
         logger.exception("Async translation status lookup failed")

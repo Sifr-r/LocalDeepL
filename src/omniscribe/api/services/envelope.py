@@ -86,12 +86,28 @@ class BadRequest(APIError):
 
 
 def envelope_error(
-    *, status_code: int, error: str, detail: str | None = None
+    *,
+    status_code: int,
+    error: str,
+    detail: str | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> JSONResponse:
-    """Build a JSONResponse in the canonical envelope shape."""
+    """Build a JSONResponse in the canonical envelope shape.
+
+    ``extra`` is a small bag of additional response keys to merge into
+    the body alongside ``error`` and ``detail``. Reserved for the rare
+    case where a status-style endpoint has to carry both canonical
+    envelope fields and route-specific identity keys (e.g. ``job_id``
+    on the async translation status endpoint). ``extra`` MUST NOT be
+    used to set ``error`` or ``detail`` — those keys are owned by this
+    helper; any such keys in ``extra`` are silently dropped.
+    """
     body: dict[str, Any] = {"error": error}
     if detail is not None:
         body["detail"] = detail
+    if extra is not None:
+        merged = {k: v for k, v in extra.items() if k not in {"error", "detail"}}
+        body.update(merged)
     return JSONResponse(status_code=status_code, content=body)
 
 
