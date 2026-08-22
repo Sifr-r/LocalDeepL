@@ -5,11 +5,10 @@ from __future__ import annotations
 import base64
 import binascii
 import logging
-from http import HTTPStatus
 from typing import Any
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 
 from omniscribe.api.celery_app import celery_app  # noqa: F401  (re-exported for tasks)
 from omniscribe.api.routers import state
@@ -26,6 +25,7 @@ from omniscribe.api.schemas.requests import (
 from omniscribe.api.services.envelope import (
     BackendUnavailable,
     BadRequest,
+    NotFound,
     SSRFBlocked,
     ValidationFailed,
 )
@@ -81,16 +81,12 @@ def _coerce_format(value: str) -> GlossaryFormat:
 
 def _decode_bytes_payload(value: str) -> bytes:
     if not value:
-        raise HTTPException(
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
-            detail="inline_bytes_b64 is required.",
-        )
+        raise ValidationFailed(detail="inline_bytes_b64 is required.")
 
     try:
         return base64.b64decode(value, validate=True)
     except (ValueError, binascii.Error) as exc:
-        raise HTTPException(
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+        raise ValidationFailed(
             detail="inline_bytes_b64 is not valid base64.",
         ) from exc
 
@@ -124,8 +120,7 @@ def _build_csv_kwargs(source: GlossaryImportSource) -> dict[str, Any]:
             "encoding": source.encoding or "utf-8",
         }
     else:
-        raise HTTPException(
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+        raise ValidationFailed(
             detail="Provide 'text' or 'inline_bytes_b64' for inline formats.",
         )
 
@@ -153,18 +148,14 @@ async def _build_sql_table_kwargs(source: GlossaryImportSource) -> dict[str, Any
         and source.sql_source_col
         and source.sql_target_col
     ):
-        raise HTTPException(
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+        raise ValidationFailed(
             detail=(
                 "sql_dsn, sql_source_table, sql_source_col and sql_target_col "
                 "are required for sql_table imports."
             ),
         )
     if not _is_safe_sql_dsn(source.sql_dsn):
-        raise HTTPException(
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
-            detail="sql_dsn contains unsafe characters.",
-        )
+        raise ValidationFailed(detail="sql_dsn contains unsafe characters.")
     return {
         "dsn": source.sql_dsn,
         "source_table": source.sql_source_table,
@@ -401,9 +392,7 @@ def toggle_library_entry(
     try:
         stored = _library().toggle(glossary_id, enabled=req.enabled)
     except GlossaryNotFoundError as exc:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND, detail="Glossary not found."
-        ) from exc
+        raise NotFound(detail="Glossary not found.") from exc
     return _serialize_item(stored)
 
 
@@ -412,13 +401,9 @@ def reorder_library(req: GlossaryReorderRequest) -> dict[str, Any]:
     try:
         _library().reorder(req.ordered_ids)
     except GlossaryNotFoundError as exc:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND, detail="Glossary not found."
-        ) from exc
+        raise NotFound(detail="Glossary not found.") from exc
     except ValueError as exc:
-        raise HTTPException(
-            status_code=HTTPStatus.UNPROCESSABLE_ENTITY, detail=str(exc)
-        ) from exc
+        raise ValidationFailed(detail=str(exc)) from exc
     return {"ok": True}
 
 
@@ -426,9 +411,7 @@ def reorder_library(req: GlossaryReorderRequest) -> dict[str, Any]:
 def delete_library_entry(glossary_id: str) -> dict[str, Any]:
     deleted = _library().delete(glossary_id)
     if not deleted:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND, detail="Glossary not found."
-        )
+        raise NotFound(detail="Glossary not found.")
     return {"ok": True, "id": glossary_id}
 
 
@@ -452,9 +435,7 @@ def library_preview() -> GlossaryPreviewResponse:
 def library_entries(glossary_id: str) -> dict[str, Any]:
     stored = _library().get(glossary_id)
     if stored is None:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND, detail="Glossary not found."
-        )
+        raise NotFound(detail="Glossary not found.")
     return {
         "id": stored.id,
         "name": stored.name,

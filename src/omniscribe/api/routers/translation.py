@@ -131,7 +131,8 @@ async def get_translation_status(job_id: str):
                 response["result"] = task.get()
         else:
             logger.error("Async translation task failed: %s", task.info)
-            response["error"] = SERVER_ERROR_MESSAGE
+            response["error"] = "internal_error"
+            response["detail"] = SERVER_ERROR_MESSAGE
 
         return response
     except Exception:

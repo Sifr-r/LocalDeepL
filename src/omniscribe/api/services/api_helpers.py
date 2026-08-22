@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from fastapi.responses import JSONResponse
 
+from omniscribe.api.services.envelope import envelope_error
 from omniscribe.api.services.security import (
     SERVER_ERROR_MESSAGE,
-    api_error_response,
     cleanup_files,
 )
 
@@ -46,4 +46,8 @@ def stable_server_error(status_code: int = 500) -> JSONResponse:
     Equivalent to the previous ``_stable_server_error`` in
     ``api/routers/common.py``.
     """
-    return api_error_response(status_code, SERVER_ERROR_MESSAGE)
+    return envelope_error(
+        status_code=status_code,
+        error="internal_error",
+        detail=SERVER_ERROR_MESSAGE,
+    )

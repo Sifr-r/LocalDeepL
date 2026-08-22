@@ -116,7 +116,14 @@ async def list_models():
             return JSONResponse(content={"models": models})
         except Exception:
             logger.exception("Model discovery failed")
-            return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "models": [],
+                    "error": "internal_error",
+                    "detail": SERVER_ERROR_MESSAGE,
+                },
+            )
 
     if active_provider.api_url:
         ssrf_check = await is_ssrf_target(active_provider.api_url)
@@ -131,7 +138,14 @@ async def list_models():
         return JSONResponse(content={"models": models})
     except Exception:
         logger.exception("Model discovery failed")
-        return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
+        return JSONResponse(
+            status_code=200,
+            content={
+                "models": [],
+                "error": "internal_error",
+                "detail": SERVER_ERROR_MESSAGE,
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +176,14 @@ async def list_ocr_models():
             return JSONResponse(content={"models": models})
         except Exception:
             logger.exception("OCR model discovery failed")
-            return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "models": [],
+                    "error": "internal_error",
+                    "detail": SERVER_ERROR_MESSAGE,
+                },
+            )
 
     api_base = config.get("ocr_api_base") or config["api_base"]
     api_key = config.get("ocr_api_key") or config["api_key"]
@@ -174,7 +195,14 @@ async def list_ocr_models():
         return JSONResponse(content={"models": models})
     except Exception:
         logger.exception("OCR model discovery failed")
-        return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
+        return JSONResponse(
+            status_code=200,
+            content={
+                "models": [],
+                "error": "internal_error",
+                "detail": SERVER_ERROR_MESSAGE,
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +233,14 @@ async def list_translation_models():
             return JSONResponse(content={"models": models})
         except Exception:
             logger.exception("Translation model discovery failed")
-            return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "models": [],
+                    "error": "internal_error",
+                    "detail": SERVER_ERROR_MESSAGE,
+                },
+            )
 
     api_base = config.get("translation_api_base") or config["api_base"]
     api_key = config.get("translation_api_key") or config["api_key"]
@@ -217,7 +252,14 @@ async def list_translation_models():
         return JSONResponse(content={"models": models})
     except Exception:
         logger.exception("Translation model discovery failed")
-        return JSONResponse(content={"models": [], "error": SERVER_ERROR_MESSAGE})
+        return JSONResponse(
+            status_code=200,
+            content={
+                "models": [],
+                "error": "internal_error",
+                "detail": SERVER_ERROR_MESSAGE,
+            },
+        )
 
 
 # ---------------------------------------------------------------------------

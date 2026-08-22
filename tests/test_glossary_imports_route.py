@@ -91,6 +91,9 @@ def test_import_requires_text_or_bytes(library_dir):
         json={"source": {"format": "csv"}},
     )
     assert response.status_code == 422
+    body = response.json()
+    assert body["error"] == "validation_failed"
+    assert "detail" in body
 
 
 def test_max_entries_too_small_returns_bad_request(library_dir):

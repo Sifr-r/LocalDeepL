@@ -459,7 +459,8 @@ def test_translation_status_failure_shape_is_stable():
     assert payload == {
         "job_id": "job-9",
         "state": "FAILURE",
-        "error": SERVER_ERROR_MESSAGE,
+        "error": "internal_error",
+        "detail": SERVER_ERROR_MESSAGE,
     }
     assert "super-secret-stack-frame" not in json.dumps(payload)
 
