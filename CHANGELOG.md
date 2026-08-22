@@ -336,6 +336,64 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   code defects. Logged here for future auditors so the
   finding is not re-opened against a green baseline.
 
+- **Phase C — service layers + typed API surface** —
+  - **API**: canonical `ErrorEnvelope`
+    (`{"error": "<stable_code>", "detail": "<human string>"}`) +
+    `APIError` hierarchy (`SSRFBlocked`, `BackendUnavailable`,
+    `ValidationFailed`, `NotFound`, `RateLimited`, `BadRequest`)
+    wired via `register_envelope_handlers(app)`. Sweeps
+    `routers/{config, transcription, providers, translation,
+    extraction}.py` from ad-hoc `HTTPException` /
+    `JSONResponse({...})` to the envelope; the duplicate
+    `_ai_error_response` is deleted from `translation.py` +
+    `extraction.py`. `services/security.py` keeps
+    `api_error_response` as a one-release alias. New
+    `tests/api/services/test_envelope.py` + parametrized
+    `tests/api/routers/test_envelope_sweep.py` pin the
+    contract.
+  - **API**: glossary imports are now fully async —
+    `import_glossary` awaits `is_ssrf_target(...)` directly.
+    The `ThreadPoolExecutor` + `asyncio.run` sync shim
+    (`_sync_ssrf_blocked` + `_validate_ssrf`) is deleted; the
+    function no longer hops the threadpool to call the async
+    SSRF validator.
+    `tests/api/routers/test_glossary_imports_async.py`
+    pins the async path.
+  - **API**: per-route config helpers (`_load_config_from_store`,
+    `_persist_config`, `_mask_api_key`,
+    `_ConfigBackendIncompatible`) lifted from
+    `routers/config.py` into `services/config_helpers.py`; the
+    router re-exports the names for back-compat. The four
+    `/api/models*` routes (3 from `routers/config.py` + 1
+    `get_transcription_models` from `routers/transcription.py`)
+    are consolidated in the new `routers/models.py`.
+    `tests/api/services/test_config_helpers.py` +
+    `tests/api/routers/test_models_router.py` cover the moved
+    code.
+  - **Frontend**: `FetchOptions` (`{ signal, ... }`) propagates
+    through every wrapper in `endpoints.ts`; the new
+    `frontend/src/lib/api/fetchOptions.ts` is the single
+    source for the type + `createAbortController()` helper.
+    Five free-function service modules
+    (`translationService`, `extractionService`,
+    `transcriptionService`, `glossaryService`, `jobsService`)
+    replace every raw `fetchApi<...>('/...')` /
+    `fetchFile('/...')` call across the 5 Svelte views
+    (`TranslationView`, `ExtractionView`,
+    `TranscriptionView`, `GlossaryView`, `JobHistoryView`).
+    `TabRibbon.pingHealth` aborts its in-flight `/health`
+    probe on unmount via `pingAbort.abort()` (and at the
+    start of each new call so a superseded ping does not
+    flip the badge to "backend down").
+  - **Frontend**: `frontend/src/lib/__tests__/appHarness.ts`
+    enables isolated `<App>` mounting in component tests;
+    `mountApp()` returns a harness with the canonical
+    `activeTab` writable, and `cleanupApp()` is idempotent
+    and tears down the `AbortController` + intervals in
+    `onDestroy`. New isolation tests in `appStore.test.ts`
+    exercise the harness against happy-path + failure-
+    injection stubs.
+
 ### Fixed
 
 - **Documentation drift**:
