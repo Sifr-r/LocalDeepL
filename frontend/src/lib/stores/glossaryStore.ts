@@ -28,7 +28,7 @@ export async function loadLibraries(): Promise<void> {
   isGlossaryLoading.set(true);
   try {
     const list = await glossaryApi.getLibraries();
-    glossaryLibraries.set(list.libraries || []);
+    glossaryLibraries.set(Array.isArray(list) ? list : []);
   } catch (err) {
     console.error('Failed to fetch glossary library:', err);
   } finally {

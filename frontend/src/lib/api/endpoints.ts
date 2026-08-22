@@ -347,7 +347,7 @@ export const transcriptionApi = {
 
 export const glossaryApi = {
   getLibraries: (options?: FetchOptions) =>
-    fetchApi<{ libraries: GlossaryListItem[] }>('/glossary/library', { signal: options?.signal }),
+    fetchApi<GlossaryListItem[]>('/glossary/library', { signal: options?.signal }),
   getEntries: (id: string, options?: FetchOptions) =>
     fetchApi<{ entries: GlossaryEntry[] } | GlossaryEntry[]>(`/glossary/library/${id}/entries`, {
       signal: options?.signal

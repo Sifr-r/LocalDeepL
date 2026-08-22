@@ -27,9 +27,16 @@ describe('glossaryService', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    fetchSpy = vi.fn().mockResolvedValue(
-      jsonResponse({ libraries: [], entries: [], preview: {} })
-    );
+    fetchSpy = vi.fn().mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/api/glossary/library/merged')) {
+        return Promise.resolve(jsonResponse({ entries: [] }));
+      }
+      if (typeof url === 'string' && url.includes('/api/glossary/library/preview')) {
+        return Promise.resolve(jsonResponse({ count: 0, conflicts: [], enabled_glossaries: [] }));
+      }
+      // /api/glossary/library (bare array) and /api/glossary/import*
+      return Promise.resolve(jsonResponse([]));
+    });
     vi.stubGlobal('fetch', fetchSpy);
   });
 

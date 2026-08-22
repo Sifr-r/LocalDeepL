@@ -22,11 +22,6 @@ import type {
   GlossaryPreviewResponse
 } from '../types/api';
 
-/** GET `/api/glossary/library` response — list of available libraries. */
-export interface LibrariesResponse {
-  libraries: GlossaryListItem[];
-}
-
 /** GET `/api/glossary/library/merged` response — merged active entries. */
 export interface MergedResponse {
   entries: GlossaryEntry[];
@@ -38,8 +33,11 @@ export type PreviewResponse = GlossaryPreviewResponse;
 /**
  * GET `/api/glossary/library` — list available libraries (enabled or
  * all, depending on the server filter — see the backend route).
+ *
+ * The server returns a bare array (see the OpenAPI schema for
+ * `list_library_api_glossary_library_get`).
  */
-export async function getLibraries(options?: FetchOptions): Promise<LibrariesResponse> {
+export async function getLibraries(options?: FetchOptions): Promise<GlossaryListItem[]> {
   return glossaryApi.getLibraries(options);
 }
 
