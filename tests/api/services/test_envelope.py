@@ -40,6 +40,35 @@ def test_envelope_error_omits_detail_when_none() -> None:
     assert body == {"error": "unavailable"}
 
 
+def test_envelope_error_extra_merges_non_canonical_keys() -> None:
+    resp = envelope_error(
+        status_code=200,
+        error="internal_error",
+        detail="boom",
+        extra={"job_id": "job-9", "state": "FAILURE"},
+    )
+    body: dict[str, Any] = json.loads(resp.body)
+    assert body == {
+        "error": "internal_error",
+        "detail": "boom",
+        "job_id": "job-9",
+        "state": "FAILURE",
+    }
+
+
+def test_envelope_error_extra_cannot_overwrite_canonical_keys() -> None:
+    resp = envelope_error(
+        status_code=200,
+        error="real_error",
+        detail="real detail",
+        extra={"error": "sneaky_error", "detail": "sneaky detail", "job_id": "job-1"},
+    )
+    body: dict[str, Any] = json.loads(resp.body)
+    # Canonical keys keep the values from the explicit kwargs; extra
+    # keys are merged. The "sneaky" overrides are silently dropped.
+    assert body == {"error": "real_error", "detail": "real detail", "job_id": "job-1"}
+
+
 @pytest.mark.parametrize(
     "exc_cls",
     [SSRFBlocked, BackendUnavailable, NotFound, RateLimited, ValidationFailed],
