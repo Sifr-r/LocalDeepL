@@ -105,7 +105,7 @@ class RasterizationSettings:
         Invalid values (non-numeric, out of range, or empty) fall back to
         the per-field defaults rather than raising — env misconfig should
         not crash the server at import time. Same pattern as
-        :meth:`omniscribe.core.translation_config.TranslationSettings.from_env`.
+        :meth:`omniscribe.core.translate.config.TranslationSettings.from_env`.
         """
         return cls(
             max_safe_pixels=_int_env(

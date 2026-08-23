@@ -6,7 +6,7 @@ import os
 import subprocess
 import sys
 
-from omniscribe.core.translation_config import TranslationSettings
+from omniscribe.core.translate.config import TranslationSettings
 
 
 def test_translation_base_imports_do_not_require_async_extras():
@@ -26,7 +26,7 @@ class BlockAsyncExtras(importlib.abc.MetaPathFinder):
 sys.meta_path.insert(0, BlockAsyncExtras())
 
 from omniscribe.api.tasks import process_translation_task
-from omniscribe.core.translation import chunk_text, evaluate_node
+from omniscribe.core.translate.workflow import chunk_text, evaluate_node
 
 assert chunk_text("hello") == ["hello"]
 assert asyncio.run(evaluate_node({"source_chunk": ".", "translated_chunk": "", "attempts": 1}))["evaluation_score"] == 1.0
@@ -94,7 +94,7 @@ async def test_translate_node_uses_injected_settings(monkeypatch):
     fifth call path. After the fix it must go through ``call_llm`` like
     ``evaluate_node`` / ``api.services.ai._complete_text`` already do.
     """
-    import omniscribe.core.translation as translation
+    import omniscribe.core.translate.workflow as translation
 
     captured: dict[str, object] = {}
 
@@ -135,10 +135,10 @@ async def test_translate_node_preserves_error_prefix_on_call_llm_failure(monkeyp
     """Refactor §2.2 — the ``[Translation Error: ...]`` prefix contract is preserved.
 
     ``evaluate_node`` short-circuits on the ``[Translation Error`` substring
-    (line 239 of ``core/translation.py``), so a switch from ``AsyncOpenAI`` to
+    (line 237 of ``core/translate/workflow.py``), so a switch from ``AsyncOpenAI`` to
     ``call_llm`` must keep producing that prefix when the LLM raises.
     """
-    import omniscribe.core.translation as translation
+    import omniscribe.core.translate.workflow as translation
 
     async def boom(**_kwargs):
         raise RuntimeError("upstream gone")
@@ -168,7 +168,7 @@ async def test_translate_node_preserves_error_prefix_on_call_llm_failure(monkeyp
 
 async def test_translate_node_includes_glossary_and_memory(monkeypatch):
     """When the new optional state fields are populated, they must end up in the prompt."""
-    from omniscribe.core import translation as translation_mod
+    from omniscribe.core.translate import workflow as translation_mod
 
     captured: dict[str, object] = {}
 

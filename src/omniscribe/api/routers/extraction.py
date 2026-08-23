@@ -75,7 +75,7 @@ async def _load_tree_from_artifact(artifact_id: str, token: str) -> Any:
 @router.post("/api/export/docx-tree")
 async def export_docx_tree(req: ExportBlockTreeRequest) -> Response:
     """Generate a structured .docx from a stored DocumentTree artifact."""
-    from omniscribe.core.docx_tree_writer import convert_tree_to_docx
+    from omniscribe.core.writers.docx_tree import convert_tree_to_docx
 
     tree = await _load_tree_from_artifact(req.text_artifact_id, req.text_artifact_token)
     stream = convert_tree_to_docx(tree)
@@ -91,7 +91,7 @@ async def export_docx_tree(req: ExportBlockTreeRequest) -> Response:
 @router.post("/api/export/html")
 async def export_html(req: ExportHtmlRequest) -> Response:
     """Generate a structured HTML document from a text artifact."""
-    from omniscribe.core.html_writer import render_html
+    from omniscribe.core.writers.html import render_html
 
     tree = await _load_tree_from_artifact(req.text_artifact_id, req.text_artifact_token)
     html = render_html(tree)
@@ -105,7 +105,7 @@ async def export_html(req: ExportHtmlRequest) -> Response:
 @router.post("/api/export/blocktree")
 async def export_blocktree(req: ExportBlockTreeRequest) -> JSONResponse:
     """Return the block-tree JSON for a stored text artifact."""
-    from omniscribe.core.tree_export import export_json
+    from omniscribe.core.writers.tree_json import export_json
 
     tree = await _load_tree_from_artifact(req.text_artifact_id, req.text_artifact_token)
 

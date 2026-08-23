@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 
 from omniscribe.api.tasks import process_translation_task
-from omniscribe.core.translation import chunk_text, evaluate_node
+from omniscribe.core.translate.workflow import chunk_text, evaluate_node
 from omniscribe.utils.security import is_blocked_host, is_ssrf_target
 
 

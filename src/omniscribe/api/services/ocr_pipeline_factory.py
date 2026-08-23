@@ -30,12 +30,12 @@ from omniscribe import (
 from omniscribe.api.schemas import ProcessSettings
 from omniscribe.core.aligner import get_shared_hybrid_aligner
 from omniscribe.core.callbacks import BlockCallbackSet
-from omniscribe.core.ocr.resilience import get_default_circuit_breaker_registry
-from omniscribe.core.ocr_quality import build_trust_orchestrator
-from omniscribe.core.preprocessing import (
+from omniscribe.core.imaging.page_preprocess import (
     PagePreprocessingOptions,
     PagePreprocessor,
 )
+from omniscribe.core.ocr.resilience import get_default_circuit_breaker_registry
+from omniscribe.core.ocr_quality import build_trust_orchestrator
 
 # Cloud-hosted model name prefixes — model verification (LM Studio's
 # ``GET /v1/models`` semantics) doesn't apply to these, so we skip it.
@@ -187,7 +187,7 @@ def build_pipeline(
             trust_orchestrator=trust_orchestrator,
         )
     else:
-        from omniscribe.core.trocr_engine import TrOCREngine
+        from omniscribe.core.ocr.trocr import TrOCREngine
 
         preprocessing_options = PagePreprocessingOptions(
             enabled=settings.preprocess_pages,
@@ -248,7 +248,7 @@ def _build_page_preprocessor(
     requests neither, we don't pay the cost of instantiating either.
     """
     if settings.handwriting_hint:
-        from omniscribe.core.preprocessing import (
+        from omniscribe.core.imaging.page_preprocess import (
             CompositePagePreprocessor,
             HandwritingPagePreprocessor,
             LocalPagePreprocessor,
@@ -260,7 +260,7 @@ def _build_page_preprocessor(
             )
         return HandwritingPagePreprocessor()
     if preprocessing_options.enabled:
-        from omniscribe.core.preprocessing import LocalPagePreprocessor
+        from omniscribe.core.imaging.page_preprocess import LocalPagePreprocessor
 
         return LocalPagePreprocessor()
     return None

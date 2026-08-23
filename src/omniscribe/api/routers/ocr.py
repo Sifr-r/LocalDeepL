@@ -64,8 +64,8 @@ from omniscribe.api.services.security import (
     api_error_response,
     save_validated_upload,
 )
-from omniscribe.core.preprocessing import PagePreprocessingOptions
-from omniscribe.core.routing import QualityRoutingOptions
+from omniscribe.core.imaging.page_preprocess import PagePreprocessingOptions
+from omniscribe.core.ocr_quality.routing import QualityRoutingOptions
 from omniscribe.core.workflows.base import OCRCancelled
 from omniscribe.core.workflows.repair import RepairOptions
 from omniscribe.utils import is_ssrf_target
@@ -886,7 +886,7 @@ async def process_status(job_id: str):
 
     try:
         from omniscribe.api.celery_app import celery_app
-        from omniscribe.core.translation_config import AsyncTranslationUnavailable
+        from omniscribe.core.translate.config import AsyncTranslationUnavailable
 
         task = celery_app.AsyncResult(job_id)
         if task is not None and getattr(task, "state", None):

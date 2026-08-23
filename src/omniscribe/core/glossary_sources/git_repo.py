@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from omniscribe.core.glossary import Glossary
+from omniscribe.core.translate.glossary import Glossary
 from omniscribe.utils.security import is_ssrf_target
 
 from ._common import decode_source, entry_dict

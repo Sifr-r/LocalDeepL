@@ -1,10 +1,10 @@
-"""Tests for :mod:`omniscribe.core.dual_translator`."""
+"""Tests for :mod:`omniscribe.core.translate.dual`."""
 
 from __future__ import annotations
 
 import asyncio
 
-from omniscribe.core.dual_translator import dual_translate
+from omniscribe.core.translate.dual import dual_translate
 
 
 def test_dual_translate_chooser():

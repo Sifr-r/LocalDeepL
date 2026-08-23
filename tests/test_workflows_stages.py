@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 from PIL import Image
 
 from omniscribe.core.document import BBox, DenseMode
-from omniscribe.core.preprocessing import PagePreprocessingOptions
+from omniscribe.core.imaging.page_preprocess import PagePreprocessingOptions
 from omniscribe.core.workflows.stages.conversion import HybridConverter
 from omniscribe.core.workflows.stages.layout import (
     HybridLayoutDetector,

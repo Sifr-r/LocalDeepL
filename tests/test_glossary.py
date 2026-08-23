@@ -1,8 +1,8 @@
-"""Tests for :mod:`omniscribe.core.glossary` (Glossary / GlossaryEntry)."""
+"""Tests for :mod:`omniscribe.core.translate.glossary` (Glossary / GlossaryEntry)."""
 
 from __future__ import annotations
 
-from omniscribe.core.glossary import Glossary, GlossaryEntry
+from omniscribe.core.translate.glossary import Glossary, GlossaryEntry
 
 
 def test_glossary_paired_lines_parsing():

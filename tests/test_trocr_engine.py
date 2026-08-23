@@ -1,8 +1,8 @@
-"""Tests for :mod:`omniscribe.core.trocr_engine`."""
+"""Tests for :mod:`omniscribe.core.ocr.trocr`."""
 
 from __future__ import annotations
 
-from omniscribe.core.trocr_engine import _heuristic_confidence
+from omniscribe.core.ocr.trocr import _heuristic_confidence
 
 
 def test_trocr_heuristic_confidence():
@@ -15,7 +15,7 @@ def test_trocr_heuristic_confidence():
 
 
 def test_trocr_engine_is_available():
-    from omniscribe.core.trocr_engine import TrOCREngine
+    from omniscribe.core.ocr.trocr import TrOCREngine
 
     eng = TrOCREngine()
     # The function must return a bool; the actual value depends on env

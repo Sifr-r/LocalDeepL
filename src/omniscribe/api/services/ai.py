@@ -12,8 +12,8 @@ from omniscribe.api.schemas.requests import (
     TranslationRequest,
 )
 from omniscribe.api.services.security import SAFE_API_BASE_ERROR, SERVER_ERROR_MESSAGE
-from omniscribe.core.llm_client import call_llm
-from omniscribe.core.llm_temperatures import (
+from omniscribe.core.llm.client import call_llm
+from omniscribe.core.llm.temperatures import (
     TEMPERATURE_EXTRACTION,
     TEMPERATURE_TRANSLATION,
 )

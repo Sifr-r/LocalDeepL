@@ -1,6 +1,6 @@
 """Embedding model ownership for the lexicon store.
 
-The store owns the model; ``core/translation.py`` and the migration CLI
+The store owns the model; ``core/translate/workflow.py`` and the migration CLI
 never import ``sentence-transformers`` directly. This keeps a single source
 of truth for the embedding model version and dimension, and makes it easy
 to swap the model in one place if ever needed (with a re-embed step on

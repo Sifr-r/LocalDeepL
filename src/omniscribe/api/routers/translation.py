@@ -29,9 +29,9 @@ from omniscribe.api.services.envelope import (
     envelope_error,
 )
 from omniscribe.api.services.security import SERVER_ERROR_MESSAGE
-from omniscribe.core.glossary import Glossary
-from omniscribe.core.translation_config import AsyncTranslationUnavailable
-from omniscribe.core.translation_tree import translate_tree
+from omniscribe.core.translate.config import AsyncTranslationUnavailable
+from omniscribe.core.translate.glossary import Glossary
+from omniscribe.core.translate.tree import translate_tree
 from omniscribe.utils.security import is_ssrf_target
 
 from ..services.api_helpers import stable_server_error
@@ -192,9 +192,9 @@ async def translate_tree_endpoint(req: TreeTranslationRequest) -> dict[str, Any]
     api_key = req.api_key or config.get("translation_api_key") or config["api_key"]
     model = req.model or config.get("translation_model") or config.get("model")
 
-    from omniscribe.core.llm_client import call_llm
-    from omniscribe.core.llm_temperatures import TEMPERATURE_TRANSLATION_TREE
-    from omniscribe.core.translation import TRANSLATION_SYSTEM_MESSAGE
+    from omniscribe.core.llm.client import call_llm
+    from omniscribe.core.llm.temperatures import TEMPERATURE_TRANSLATION_TREE
+    from omniscribe.core.translate.workflow import TRANSLATION_SYSTEM_MESSAGE
 
     async def _llm_translate(prompt: str, lang: str) -> str:
         return await call_llm(
@@ -214,7 +214,7 @@ async def translate_tree_endpoint(req: TreeTranslationRequest) -> dict[str, Any]
 
         second = _secondary
 
-    from omniscribe.core.entity_memory import EntityMemory
+    from omniscribe.core.translate.entity_memory import EntityMemory
 
     memory = EntityMemory()
     for _page_lines in pages_data.values():
@@ -279,7 +279,7 @@ async def translate_nllb(req: dict[str, Any]) -> dict[str, Any]:
     if not text:
         raise ValidationFailed(detail="'text' is required")
 
-    from omniscribe.core.nllb_engine import NLLBEngine
+    from omniscribe.core.translate.nllb import NLLBEngine
 
     engine = NLLBEngine()
     if not engine.is_available():

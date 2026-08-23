@@ -20,7 +20,7 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, cast
 
 from omniscribe.core.block_tree import TableNode
-from omniscribe.core.document_exporters.base_exporter import BaseDocumentExporter
+from omniscribe.core.writers.exporter_base import BaseDocumentExporter
 
 if TYPE_CHECKING:
     from omniscribe.core.block_tree import (

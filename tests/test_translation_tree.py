@@ -1,4 +1,4 @@
-"""Tests for :mod:`omniscribe.core.translation_tree`."""
+"""Tests for :mod:`omniscribe.core.translate.tree`."""
 
 from __future__ import annotations
 
@@ -11,9 +11,9 @@ from omniscribe.core.block_tree import (
     PageTree,
     TableNode,
 )
-from omniscribe.core.entity_memory import EntityMemory
-from omniscribe.core.glossary import Glossary, GlossaryEntry
-from omniscribe.core.translation_tree import (
+from omniscribe.core.translate.entity_memory import EntityMemory
+from omniscribe.core.translate.glossary import Glossary, GlossaryEntry
+from omniscribe.core.translate.tree import (
     build_context_block,
     translate_tree,
 )

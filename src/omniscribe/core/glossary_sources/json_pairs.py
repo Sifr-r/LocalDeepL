@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from omniscribe.core.glossary import Glossary
+from omniscribe.core.translate.glossary import Glossary
 
 from ._common import decode_source, require_bytes
 from .summary import GlossaryImportSummary

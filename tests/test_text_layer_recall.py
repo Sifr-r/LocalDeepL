@@ -1,4 +1,4 @@
-"""Unit tests for the PDF text-layer recall source (``core/text_layer_recall.py``).
+"""Unit tests for the PDF text-layer recall source (``core/recall/text_layer.py``).
 
 The source recovers text lines Surya missed by reading the input PDF's
 embedded text layer. These tests build real one/two-line PDFs with
@@ -13,7 +13,7 @@ from pathlib import Path
 import pymupdf as fitz
 import pytest
 
-from omniscribe.core.text_layer_recall import (
+from omniscribe.core.recall.text_layer import (
     PdfTextLayerRecall,
     TextLayerRecallOptions,
 )

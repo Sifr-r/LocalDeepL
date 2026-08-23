@@ -24,8 +24,8 @@ from omniscribe.core.workflows.utils import (
 )
 
 if TYPE_CHECKING:
-    from omniscribe.core.text_layer_recall import PdfTextLayerRecall
-    from omniscribe.core.text_recall import WhitespaceRecallBooster
+    from omniscribe.core.recall.text_layer import PdfTextLayerRecall
+    from omniscribe.core.recall.whitespace import WhitespaceRecallBooster
 
 logger = logging.getLogger("omniscribe.core.workflows.hybrid")
 

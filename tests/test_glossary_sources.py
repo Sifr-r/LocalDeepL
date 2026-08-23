@@ -11,13 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from omniscribe.core.glossary import Glossary
 from omniscribe.core.glossary_sources import (
     FormatNotAvailableError,
     GlossaryImportLimitError,
     parse,
     redact_dsn,
 )
+from omniscribe.core.translate.glossary import Glossary
 
 FIXTURES = Path(__file__).parent / "fixtures" / "glossary"
 

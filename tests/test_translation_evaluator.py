@@ -18,20 +18,20 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
-from omniscribe.core import translation
-from omniscribe.core.translation import (
+from omniscribe.core.translate import workflow as translation
+from omniscribe.core.translate.config import (
+    DEFAULT_TRANSLATION_ACCEPTANCE_SCORE,
+    DEFAULT_TRANSLATION_MAX_ATTEMPTS,
+    DEFAULT_TRANSLATION_MIN_LENGTH_RATIO,
+    TranslationSettings,
+)
+from omniscribe.core.translate.workflow import (
     TranslationState,
     _Chunker,
     build_evaluation_prompt,
     chunk_text,
     evaluate_node,
     parse_evaluation_response,
-)
-from omniscribe.core.translation_config import (
-    DEFAULT_TRANSLATION_ACCEPTANCE_SCORE,
-    DEFAULT_TRANSLATION_MAX_ATTEMPTS,
-    DEFAULT_TRANSLATION_MIN_LENGTH_RATIO,
-    TranslationSettings,
 )
 
 

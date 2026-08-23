@@ -13,9 +13,9 @@ from typing import Any
 
 import httpx
 
+from omniscribe.core.llm.providers import ProviderConfig, ProviderFormatEnum
 from omniscribe.core.ocr.exceptions import LLMCallError
 from omniscribe.core.ocr.resilience import RETRYABLE_STATUS_CODES, is_transient_error
-from omniscribe.core.provider_config import ProviderConfig, ProviderFormatEnum
 
 logger = logging.getLogger(__name__)
 

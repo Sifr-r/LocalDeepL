@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 
 from omniscribe.core.ocr.resilience import CircuitOpenError
-from omniscribe.core.routing import QualityRoutingOptions
+from omniscribe.core.ocr_quality.routing import QualityRoutingOptions
 from omniscribe.core.workflows.hybrid import HybridEngine
 from tests.conftest import _StubOCR
 from tests.test_pipeline import _make_tiny_b64_image, _StubAligner, _StubPDF
@@ -86,7 +86,7 @@ class TestHybridConvertPages:
 
         preprocessor = _RecordingPreprocessor()
 
-        from omniscribe.core.preprocessing import PagePreprocessingOptions
+        from omniscribe.core.imaging.page_preprocess import PagePreprocessingOptions
 
         engine = HybridEngine(
             aligner=_StubAligner(),

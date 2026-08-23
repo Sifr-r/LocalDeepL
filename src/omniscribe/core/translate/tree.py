@@ -14,14 +14,14 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from omniscribe.core.block_tree import BlockNode
-from omniscribe.core.entity_memory import EntityMemory
-from omniscribe.core.glossary import Glossary
+from omniscribe.core.translate.entity_memory import EntityMemory
+from omniscribe.core.translate.glossary import Glossary
 from omniscribe.utils.prompt_safety import sanitize_prompt_input
 
 if TYPE_CHECKING:
     from omniscribe.core.block_tree import DocumentTree
     from omniscribe.core.callbacks import TranslateChunkCallback
-    from omniscribe.core.translation_config import TranslationSettings
+    from omniscribe.core.translate.config import TranslationSettings
 
 logger = logging.getLogger(__name__)
 

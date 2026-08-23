@@ -181,7 +181,7 @@ class EngineBase:
             return document_result
 
         from omniscribe.core.document import DocumentResult
-        from omniscribe.core.image_utils import decode_base64_image
+        from omniscribe.core.imaging.utils import decode_base64_image
 
         orchestrator = self.trust_orchestrator
 

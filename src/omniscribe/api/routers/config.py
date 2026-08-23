@@ -52,7 +52,7 @@ from omniscribe.api.services.security_config import (
     DEFAULT_MAX_UPLOAD_MB,
     SecuritySettings,
 )
-from omniscribe.core.translation_config import (
+from omniscribe.core.translate.config import (
     DEFAULT_TRANSLATION_API_BASE,
     DEFAULT_TRANSLATION_API_KEY,
     DEFAULT_TRANSLATION_MODEL,

@@ -36,8 +36,8 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
 from omniscribe.config import load_settings
-from omniscribe.core.llm_client import call_llm
-from omniscribe.core.llm_temperatures import TEMPERATURE_OCR
+from omniscribe.core.llm.client import call_llm
+from omniscribe.core.llm.temperatures import TEMPERATURE_OCR
 from omniscribe.core.ocr.client import (
     _format_model_not_loaded,
     _list_loaded_model_ids,
@@ -68,7 +68,7 @@ from omniscribe.core.ocr.resilience import (
 from omniscribe.utils.env import env_int
 
 if TYPE_CHECKING:
-    from omniscribe.core.trocr_engine import TrOCREngine
+    from omniscribe.core.ocr.trocr import TrOCREngine
 
 load_dotenv()
 
@@ -331,7 +331,7 @@ class OCRProcessor:
         try:
             import base64
 
-            from omniscribe.core.trocr_engine import _heuristic_confidence
+            from omniscribe.core.ocr.trocr import _heuristic_confidence
 
             image_bytes = base64.b64decode(image_base64)
             trocr_res = await self.trocr_engine.recognize(image_bytes)
@@ -426,7 +426,7 @@ class OCRProcessor:
         # Phase A.2 (review M3) — TrOCR dual-engine arbitration.
         # See _run_trocr_arbitration() for details on the arbitration logic.
         if getattr(self, "handwriting_mode", False) and self.trocr_engine is not None:
-            from omniscribe.core.trocr_engine import _heuristic_confidence
+            from omniscribe.core.ocr.trocr import _heuristic_confidence
 
             vlm_conf = _heuristic_confidence(result)
             if vlm_conf < self.confidence_threshold:

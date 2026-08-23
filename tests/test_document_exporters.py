@@ -14,14 +14,14 @@ from omniscribe.core.block_tree import (
     TableNode,
 )
 from omniscribe.core.document import DocumentBlock, DocumentPage, DocumentResult
-from omniscribe.core.document_exporters import (
+from omniscribe.core.workflows.utils import validate_bbox_coordinates
+from omniscribe.core.writers.docx import DocxMarkdownExporter
+from omniscribe.core.writers.docx_tree import DocxTreeExporter, convert_tree_to_docx
+from omniscribe.core.writers.exporter_base import (
     BaseDocumentExporter,
     DocumentExportProtocol,
 )
-from omniscribe.core.docx_tree_writer import DocxTreeExporter, convert_tree_to_docx
-from omniscribe.core.docx_writer import DocxMarkdownExporter
-from omniscribe.core.html_writer import HtmlExporter, render_html
-from omniscribe.core.workflows.utils import validate_bbox_coordinates
+from omniscribe.core.writers.html import HtmlExporter, render_html
 
 
 def test_document_export_protocol_conformance() -> None:

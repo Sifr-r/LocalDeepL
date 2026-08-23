@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from docx import Document
 from docx.shared import Inches, Pt
 
-from omniscribe.core.document_exporters.base_exporter import BaseDocumentExporter
+from omniscribe.core.writers.exporter_base import BaseDocumentExporter
 
 if TYPE_CHECKING:
     from docx.text.paragraph import Paragraph
@@ -30,7 +30,7 @@ class DocxMarkdownExporter(BaseDocumentExporter):
 
     def export_tree(self, tree: DocumentTree, **kwargs: Any) -> io.BytesIO:
         """Render a DocumentTree to a Word document stream."""
-        from omniscribe.core.docx_tree_writer import convert_tree_to_docx
+        from omniscribe.core.writers.docx_tree import convert_tree_to_docx
 
         return convert_tree_to_docx(tree)
 

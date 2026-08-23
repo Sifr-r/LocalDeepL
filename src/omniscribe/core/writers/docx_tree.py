@@ -16,7 +16,7 @@ from docx import Document
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.shared import Inches, Pt, RGBColor
 
-from omniscribe.core.document_exporters.base_exporter import BaseDocumentExporter
+from omniscribe.core.writers.exporter_base import BaseDocumentExporter
 
 if TYPE_CHECKING:
     from omniscribe.core.block_tree import BlockNode, DocumentTree, TableNode

@@ -1,4 +1,4 @@
-"""Tests for :mod:`omniscribe.core.docx_tree_writer`."""
+"""Tests for :mod:`omniscribe.core.writers.docx_tree`."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from omniscribe.core.block_tree import (
     Span,
     TableNode,
 )
-from omniscribe.core.docx_tree_writer import convert_tree_to_docx
+from omniscribe.core.writers.docx_tree import convert_tree_to_docx
 
 
 def test_docx_tree_writer_creates_real_structure():

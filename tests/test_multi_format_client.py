@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from omniscribe.api.schemas.requests import ProviderConfig, ProviderFormatEnum
-from omniscribe.core.llm_client import call_llm, call_vlm
+from omniscribe.core.llm.client import call_llm, call_vlm
 from omniscribe.core.ocr.exceptions import LLMCallError
 from omniscribe.core.ocr.multi_format_client import complete_vlm_prompt
 

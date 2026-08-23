@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from PIL import Image, ImageOps
 
-from omniscribe.core.image_utils import decode_base64_image, encode_image_base64
+from omniscribe.core.imaging.utils import decode_base64_image, encode_image_base64
 
 if TYPE_CHECKING:
     import numpy as np
@@ -91,7 +91,7 @@ class HandwritingPagePreprocessor:
         images: Mapping[int, str],
         options: PagePreprocessingOptions,
     ) -> PagePreprocessingResult:
-        from omniscribe.core.handwriting_preprocessor import (
+        from omniscribe.core.imaging.handwriting import (
             HandwritingOptions,
             preprocess_for_ocr,
         )

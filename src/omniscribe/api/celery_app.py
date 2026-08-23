@@ -2,7 +2,7 @@ import os
 from collections.abc import Callable
 from typing import Any
 
-from omniscribe.core.translation_config import AsyncTranslationUnavailable
+from omniscribe.core.translate.config import AsyncTranslationUnavailable
 
 try:
     from celery import Celery as CeleryClass

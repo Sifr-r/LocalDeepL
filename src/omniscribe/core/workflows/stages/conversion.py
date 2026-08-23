@@ -8,7 +8,10 @@ from omniscribe.core.workflows.base import ProgressCallback, notify
 from omniscribe.core.workflows.utils import parse_page_range
 
 if TYPE_CHECKING:
-    from omniscribe.core.preprocessing import PagePreprocessingOptions, PagePreprocessor
+    from omniscribe.core.imaging.page_preprocess import (
+        PagePreprocessingOptions,
+        PagePreprocessor,
+    )
 
 
 class HybridConverter:

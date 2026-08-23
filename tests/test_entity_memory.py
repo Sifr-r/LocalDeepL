@@ -1,8 +1,8 @@
-"""Tests for :mod:`omniscribe.core.entity_memory` (EntityMemory)."""
+"""Tests for :mod:`omniscribe.core.translate.entity_memory` (EntityMemory)."""
 
 from __future__ import annotations
 
-from omniscribe.core.entity_memory import EntityMemory
+from omniscribe.core.translate.entity_memory import EntityMemory
 
 
 def test_entity_memory_extracts_names_dates_acronyms():

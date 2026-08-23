@@ -16,7 +16,7 @@ import io
 from PIL import Image
 
 from omniscribe.core.ocr import OCRProcessor
-from omniscribe.core.trocr_engine import TrOCRResult
+from omniscribe.core.ocr.trocr import TrOCRResult
 
 
 class _FakeTrOCREngine:

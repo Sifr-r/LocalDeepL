@@ -41,7 +41,7 @@ from omniscribe.core.lexicon import (
     merged_enabled_glossary,
     preview,
 )
-from omniscribe.core.translation_config import AsyncTranslationUnavailable
+from omniscribe.core.translate.config import AsyncTranslationUnavailable
 from omniscribe.utils.security import is_ssrf_target
 
 router = APIRouter()

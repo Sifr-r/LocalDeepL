@@ -67,7 +67,7 @@ def _decode(b64: str) -> np.ndarray:
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
         # PIL fallback
-        from omniscribe.core.image_utils import decode_base64_image
+        from omniscribe.core.imaging.utils import decode_base64_image
 
         pil = decode_base64_image(b64)
         img = cv2.cvtColor(np.asarray(pil), cv2.COLOR_RGB2BGR)

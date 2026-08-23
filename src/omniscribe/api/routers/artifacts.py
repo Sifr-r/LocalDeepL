@@ -193,7 +193,7 @@ async def export_docx(body: ExportDocxRequest):
     Export raw markdown text directly to a Word Document (.docx) file.
     """
     try:
-        from omniscribe.core.docx_writer import convert_markdown_to_docx
+        from omniscribe.core.writers.docx import convert_markdown_to_docx
 
         docx_stream = convert_markdown_to_docx(body.text)
         return StreamingResponse(

@@ -9,9 +9,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from omniscribe.core.llm.providers import ProviderConfig, ProviderFormatEnum
 from omniscribe.core.ocr.exceptions import LLMCallError
 from omniscribe.core.ocr.multi_format_client import complete_vlm_prompt
-from omniscribe.core.provider_config import ProviderConfig, ProviderFormatEnum
 
 logger = logging.getLogger(__name__)
 

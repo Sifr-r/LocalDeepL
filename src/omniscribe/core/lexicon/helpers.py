@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from omniscribe.core.glossary import Glossary, GlossaryEntry
 from omniscribe.core.lexicon.lancedb_store import GlossaryNotFoundError
 from omniscribe.core.lexicon.store import LexiconEntry, LexiconStore
+from omniscribe.core.translate.glossary import Glossary, GlossaryEntry
 
 
 def _legacy_entry_from_lexicon(entry: LexiconEntry) -> GlossaryEntry:

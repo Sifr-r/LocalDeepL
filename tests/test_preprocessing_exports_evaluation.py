@@ -13,15 +13,18 @@ from omniscribe.api.services.document_exports import (
 )
 from omniscribe.core.document import DocumentResult
 from omniscribe.core.evaluation import evaluate_document
-from omniscribe.core.preprocessing import (
+from omniscribe.core.imaging.page_preprocess import (
     LocalPagePreprocessor,
     PagePreprocessingOptions,
+)
+from omniscribe.core.ocr_quality.routing import (
+    QualityRoutingOptions,
+    QualityRoutingPolicy,
 )
 from omniscribe.core.processors import (
     LayoutEnrichmentProcessor,
     TableExtractionProcessor,
 )
-from omniscribe.core.routing import QualityRoutingOptions, QualityRoutingPolicy
 
 
 def _image_b64() -> str:

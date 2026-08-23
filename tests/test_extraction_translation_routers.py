@@ -35,9 +35,9 @@ from omniscribe.api.services.envelope import register_envelope_handlers  # noqa:
 from omniscribe.api.services.security import SERVER_ERROR_MESSAGE  # noqa: E402
 from omniscribe.api.services.tree_artifact import write_tree_atomic  # noqa: E402
 from omniscribe.core.block_tree import from_pages_data  # noqa: E402
-from omniscribe.core.glossary import Glossary  # noqa: E402
-from omniscribe.core.nllb_engine import NLLBResult  # noqa: E402
-from omniscribe.core.translation_config import AsyncTranslationUnavailable  # noqa: E402
+from omniscribe.core.translate.config import AsyncTranslationUnavailable  # noqa: E402
+from omniscribe.core.translate.glossary import Glossary  # noqa: E402
+from omniscribe.core.translate.nllb import NLLBResult  # noqa: E402
 from omniscribe.utils.security import SSRFCheckResult  # noqa: E402
 
 _DOCX_MEDIA_TYPE = (
@@ -269,7 +269,7 @@ def test_translate_tree_translates_artifact_blocks(artifact_store):
                 return_value=SSRFCheckResult(allowed=True, resolved_ip="203.0.113.1")
             ),
         ),
-        patch("omniscribe.core.llm_client.call_llm", fake_call_llm),
+        patch("omniscribe.core.llm.client.call_llm", fake_call_llm),
     ):
         response = client.post("/api/translate/tree", json=_tree_request(handle))
 
@@ -497,7 +497,7 @@ def test_translate_nllb_503_when_engine_unavailable():
             raise AssertionError("translate must not run when unavailable")
 
     client = _client()
-    with patch("omniscribe.core.nllb_engine.NLLBEngine", _StubEngine):
+    with patch("omniscribe.core.translate.nllb.NLLBEngine", _StubEngine):
         response = client.post(
             "/api/translate/nllb",
             json={"text": "hello", "target_language": "French"},
@@ -518,7 +518,7 @@ def test_translate_nllb_success_shape():
             )
 
     client = _client()
-    with patch("omniscribe.core.nllb_engine.NLLBEngine", _StubEngine):
+    with patch("omniscribe.core.translate.nllb.NLLBEngine", _StubEngine):
         response = client.post(
             "/api/translate/nllb",
             json={"text": "hello", "target_language": "French"},

@@ -1,8 +1,8 @@
-"""Tests for :mod:`omniscribe.core.nllb_engine`."""
+"""Tests for :mod:`omniscribe.core.translate.nllb`."""
 
 from __future__ import annotations
 
-from omniscribe.core.nllb_engine import LANGUAGE_CODE_MAP, resolve_nllb_code
+from omniscribe.core.translate.nllb import LANGUAGE_CODE_MAP, resolve_nllb_code
 
 
 def test_nllb_resolve_nllb_code_known():

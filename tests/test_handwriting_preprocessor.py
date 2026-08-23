@@ -1,10 +1,10 @@
-"""Tests for :mod:`omniscribe.core.handwriting_preprocessor`."""
+"""Tests for :mod:`omniscribe.core.imaging.handwriting`."""
 
 from __future__ import annotations
 
 import numpy as np
 
-from omniscribe.core.handwriting_preprocessor import (
+from omniscribe.core.imaging.handwriting import (
     HandwritingOptions,
     estimate_stroke_width,
     is_handwritten_page,
@@ -65,7 +65,7 @@ def test_sauvola_binarize_matches_pre_hoist_formulation():
     """
     import cv2
 
-    from omniscribe.core.handwriting_preprocessor import sauvola_binarize
+    from omniscribe.core.imaging.handwriting import sauvola_binarize
 
     rng = np.random.default_rng(2026)
     gray = rng.integers(0, 256, size=(64, 64), dtype=np.uint8)

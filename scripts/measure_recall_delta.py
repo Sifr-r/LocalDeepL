@@ -19,7 +19,7 @@ from pathlib import Path
 from omniscribe.confidence_eval import load_ground_truth
 from omniscribe.core.aligner import HybridAligner
 from omniscribe.core.pdf import PDFHandler
-from omniscribe.core.text_recall import WhitespaceRecallBooster
+from omniscribe.core.recall.whitespace import WhitespaceRecallBooster
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests" / "fixtures"

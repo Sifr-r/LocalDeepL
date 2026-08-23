@@ -22,8 +22,8 @@ from omniscribe.core.block_tree import (
     DocumentTree,
     PageTree,
 )
-from omniscribe.core.glossary import Glossary
-from omniscribe.core.translation_tree import translate_tree
+from omniscribe.core.translate.glossary import Glossary
+from omniscribe.core.translate.tree import translate_tree
 
 
 def _build_tree_with_n_blocks(n: int, text_prefix: str = "block") -> DocumentTree:

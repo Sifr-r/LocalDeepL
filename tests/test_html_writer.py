@@ -1,4 +1,4 @@
-"""Tests for :mod:`omniscribe.core.html_writer`."""
+"""Tests for :mod:`omniscribe.core.writers.html`."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from omniscribe.core.block_tree import (
     PageTree,
     TableNode,
 )
-from omniscribe.core.html_writer import render_html
+from omniscribe.core.writers.html import render_html
 
 
 def test_html_writer_emits_semantic_tags():

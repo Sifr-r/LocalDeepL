@@ -8,18 +8,18 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from omniscribe.core.document import DenseMode, PipelineMode, SpellcheckMode
-from omniscribe.core.ocr_quality import OCrQualitySettings
-from omniscribe.core.provider_config import (
+from omniscribe.core.llm.providers import (
     ProviderConfig as _CoreProviderConfig,
 )
-from omniscribe.core.provider_config import (
+from omniscribe.core.llm.providers import (
     ProviderFormatEnum,
 )
+from omniscribe.core.ocr_quality import OCrQualitySettings
 
 # Re-export the core-owned ProviderConfig and ProviderFormatEnum so existing
 # imports (`from omniscribe.api.schemas.requests import ProviderConfig`)
 # continue to work. The core types are the canonical definition; this alias
-# is the only definition. See ``omniscribe.core.provider_config`` for the
+# is the only definition. See ``omniscribe.core.llm.providers`` for the
 # layering rationale.
 #
 # Field names and types are stable. Note: the previous API version used
@@ -754,7 +754,7 @@ class TranscriptionRequest(BaseModel):
 # Provider schemas
 # ---------------------------------------------------------------------------
 # ``ProviderConfig`` and ``ProviderFormatEnum`` are re-exported from
-# ``omniscribe.core.provider_config`` (see top of file). The core types are
+# ``omniscribe.core.llm.providers`` (see top of file). The core types are
 # the canonical definition; the API module never redefines them.
 
 

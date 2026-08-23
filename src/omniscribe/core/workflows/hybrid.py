@@ -10,15 +10,21 @@ from PIL import Image
 
 from omniscribe.core.aligner import HybridAligner
 from omniscribe.core.document import BBox, DenseMode, SpellcheckMode
+from omniscribe.core.imaging.page_preprocess import (
+    PagePreprocessingOptions,
+    PagePreprocessor,
+)
 from omniscribe.core.ocr import OCRProcessor
 from omniscribe.core.ocr.resilience import CircuitOpenError
 from omniscribe.core.ocr_quality import TrustOrchestrator
+from omniscribe.core.ocr_quality.routing import (
+    QualityRoutingOptions,
+    QualityRoutingPolicy,
+)
 from omniscribe.core.pdf import PDFHandler
-from omniscribe.core.preprocessing import PagePreprocessingOptions, PagePreprocessor
 from omniscribe.core.processors import DocumentProcessor
-from omniscribe.core.routing import QualityRoutingOptions, QualityRoutingPolicy
-from omniscribe.core.text_layer_recall import PdfTextLayerRecall
-from omniscribe.core.text_recall import WhitespaceRecallBooster
+from omniscribe.core.recall.text_layer import PdfTextLayerRecall
+from omniscribe.core.recall.whitespace import WhitespaceRecallBooster
 from omniscribe.core.workflows.base import (
     AnyOutputWriter,
     CancelCheck,

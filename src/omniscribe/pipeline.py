@@ -18,12 +18,18 @@ from typing import TYPE_CHECKING, cast
 
 from omniscribe.core.document import DenseMode, SpellcheckMode
 from omniscribe.core.grounded import GroundedOCRBackend
+from omniscribe.core.imaging.page_preprocess import (
+    PagePreprocessingOptions,
+    PagePreprocessor,
+)
 from omniscribe.core.ocr_quality import TrustOrchestrator
-from omniscribe.core.preprocessing import PagePreprocessingOptions, PagePreprocessor
+from omniscribe.core.ocr_quality.routing import QualityRoutingOptions
 from omniscribe.core.processors import DocumentProcessor
-from omniscribe.core.routing import QualityRoutingOptions
-from omniscribe.core.text_layer_recall import PdfTextLayerRecall, TextLayerRecallOptions
-from omniscribe.core.text_recall import WhitespaceRecallBooster, WhitespaceRecallOptions
+from omniscribe.core.recall.text_layer import PdfTextLayerRecall, TextLayerRecallOptions
+from omniscribe.core.recall.whitespace import (
+    WhitespaceRecallBooster,
+    WhitespaceRecallOptions,
+)
 from omniscribe.core.workflows import (
     AnyOutputWriter,
     DocumentResultWriter,

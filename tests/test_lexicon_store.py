@@ -23,7 +23,6 @@ from pathlib import Path
 
 import pytest
 
-from omniscribe.core.glossary import Glossary
 from omniscribe.core.lexicon import (
     LanceDBLexiconStore,
     LexiconHit,
@@ -36,6 +35,7 @@ from omniscribe.core.lexicon.embedding import (
     EMBEDDING_DIM,
     EmbeddingModel,
 )
+from omniscribe.core.translate.glossary import Glossary
 
 # ---------------------------------------------------------------------------
 # Test doubles — a tiny deterministic embedding model for fast tests.

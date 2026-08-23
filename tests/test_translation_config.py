@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from omniscribe.core.translation_config import (
+from omniscribe.core.translate.config import (
     DEFAULT_TRANSLATION_ACCEPTANCE_SCORE,
     DEFAULT_TRANSLATION_API_BASE,
     DEFAULT_TRANSLATION_API_KEY,

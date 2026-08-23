@@ -1,7 +1,7 @@
 """Tests for the centralized LLM temperature constants.
 
 The values themselves are documented in
-``omniscribe.core.llm_temperatures`` — these tests just make sure
+``omniscribe.core.llm.temperatures`` — these tests just make sure
 the module exports the right names, the right values, and that
 every documented constant is referenced by at least one call site
 in the production code. If a new constant is added without a
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from omniscribe.core.llm_temperatures import (
+from omniscribe.core.llm.temperatures import (
     TEMPERATURE_EVALUATION,
     TEMPERATURE_EXTRACTION,
     TEMPERATURE_GROUNDED,
@@ -30,7 +30,7 @@ class TestConstants:
     def test_all_exports_are_defined(self) -> None:
         # ``__all__`` is the public contract. Every name on it must
         # actually resolve to a module-level binding.
-        import omniscribe.core.llm_temperatures as mod
+        import omniscribe.core.llm.temperatures as mod
 
         for name in __all__:
             assert hasattr(mod, name), f"{name} is in __all__ but missing"
@@ -97,8 +97,11 @@ class TestCallerCoverage:
         # Filter out the constant's own definition file
         # (the import / assignment counts as a "reference" but
         # doesn't prove the constant is wired up).
-        real_files = [f for f in files if not f.endswith("llm_temperatures.py")]
+        definition_suffixes = ("llm_temperatures.py", "llm/temperatures.py")
+        real_files = [
+            f for f in files if not Path(f).as_posix().endswith(definition_suffixes)
+        ]
         assert real_files, (
             f"{constant_name} has no production call site — "
-            f"either wire it up or remove it from llm_temperatures.py"
+            f"either wire it up or remove it from core/llm/temperatures.py"
         )

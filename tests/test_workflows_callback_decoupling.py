@@ -57,7 +57,7 @@ _CORE_FILES_TO_CHECK = [
     Path("src/omniscribe/core/processors/table.py"),
     Path("src/omniscribe/core/block_tree.py"),
     Path("src/omniscribe/core/document.py"),
-    Path("src/omniscribe/core/translation_tree.py"),
+    Path("src/omniscribe/core/translate/tree.py"),
 ]
 
 

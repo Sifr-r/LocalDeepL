@@ -11,7 +11,7 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from omniscribe.core.translation_tree import TranslatorFn
+    from omniscribe.core.translate.tree import TranslatorFn
 
 
 async def dual_translate(

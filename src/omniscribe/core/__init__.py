@@ -3,13 +3,13 @@
 from omniscribe.core.aligner import HybridAligner
 from omniscribe.core.document import DocumentBlock, DocumentPage, DocumentResult
 from omniscribe.core.evaluation import EvaluationMetrics, evaluate_document
-from omniscribe.core.ocr import OCRProcessor
-from omniscribe.core.pdf import PDFHandler
-from omniscribe.core.preprocessing import (
+from omniscribe.core.imaging.page_preprocess import (
     LocalPagePreprocessor,
     PagePreprocessingOptions,
     PagePreprocessingResult,
 )
+from omniscribe.core.ocr import OCRProcessor
+from omniscribe.core.pdf import PDFHandler
 from omniscribe.core.processors import (
     LOCAL_DOCUMENT_PROCESSOR_NAMES,
     DocumentProcessor,

@@ -6,12 +6,12 @@ import re
 from functools import lru_cache
 from typing import Any, TypedDict
 
-from omniscribe.core.llm_client import call_llm
-from omniscribe.core.llm_temperatures import (
+from omniscribe.core.llm.client import call_llm
+from omniscribe.core.llm.temperatures import (
     TEMPERATURE_EVALUATION,
     TEMPERATURE_TRANSLATION,
 )
-from omniscribe.core.translation_config import (
+from omniscribe.core.translate.config import (
     AsyncTranslationUnavailable,
     TranslationSettings,
 )
@@ -49,7 +49,7 @@ EVALUATION_SYSTEM_MESSAGE = (
 
 # --- Quality thresholds ----------------------------------------------------
 # Defaults for the translate/evaluate loop. The runtime values come from
-# :class:`omniscribe.core.translation_config.TranslationSettings` (env-driven
+# :class:`omniscribe.core.translate.config.TranslationSettings` (env-driven
 # via ``OMNISCRIBE_TRANSLATION_*``); see refactor §2.8.
 LEXICON_RESULT_COUNT = 3
 
@@ -147,13 +147,13 @@ async def translate_node(state: TranslationState) -> dict[str, str | int]:
     Optional state fields (Phase 4 additions):
 
     - ``glossary_prompt_block``: a DeepL-style ``style_rules`` block built
-      from a :class:`omniscribe.core.glossary.Glossary`.
+      from a :class:`omniscribe.core.translate.glossary.Glossary`.
     - ``entity_memory_prompt_block``: a context block listing proper nouns
-      and dates from :class:`omniscribe.core.entity_memory.EntityMemory`.
+      and dates from :class:`omniscribe.core.translate.entity_memory.EntityMemory`.
     - ``sliding_window``: a tail of the previous translation, used as
       auxiliary consistency context.
 
-    Routes the LLM call through :func:`omniscribe.core.llm_client.call_llm`
+    Routes the LLM call through :func:`omniscribe.core.llm.client.call_llm`
     (same dispatcher as ``evaluate_node`` and ``api.services.ai._complete_text``)
     so retry / backoff / circuit-breaker behavior stays consistent across
     every code path — see refactor §2.2. Errors are surfaced as the

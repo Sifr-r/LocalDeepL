@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, cast
 
 from omniscribe.api.celery_app import celery_app
-from omniscribe.core.translation_config import TranslationSettings
+from omniscribe.core.translate.config import TranslationSettings
 
 try:
     from celery import Task as _CeleryTask
@@ -224,15 +224,15 @@ def process_translation_task(
     except TreeArtifactError as exc:
         raise ValueError(f"DocumentTree at {tree_path} is unreadable: {exc}") from exc
 
-    from omniscribe.core.glossary import Glossary
-    from omniscribe.core.translation_tree import translate_tree
+    from omniscribe.core.translate.glossary import Glossary
+    from omniscribe.core.translate.tree import translate_tree
 
     glossary = Glossary()
     if glossary_entries:
         glossary = Glossary.from_dict({"entries": glossary_entries})
 
     # Initialize translation graph
-    from omniscribe.core.translation import run_translation
+    from omniscribe.core.translate.workflow import run_translation
 
     async def translator_fn(prompt: str, lang: str) -> str:
         # ``run_translation`` is a sync function that runs the compiled

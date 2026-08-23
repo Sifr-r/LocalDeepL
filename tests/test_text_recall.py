@@ -1,4 +1,4 @@
-"""Unit tests for the whitespace recall booster (core/text_recall.py)."""
+"""Unit tests for the whitespace recall booster (core/recall/whitespace.py)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from PIL import Image, ImageDraw
 
-from omniscribe.core.text_recall import (
+from omniscribe.core.recall.whitespace import (
     WhitespaceRecallBooster,
     WhitespaceRecallOptions,
     _overlaps_surya,
@@ -329,7 +329,7 @@ def _photo_edge_page(
     The line has the given pixel height, width, and ink ``density``. The
     density is the *pre-dilation* ink fraction inside the line rect, which
     maps directly to the booster's ``_MIN_INK_DENSITY`` / ``_MAX_INK_DENSITY``
-    checks at ``src/omniscribe/core/text_recall.py:51-52``. Dilation in the
+    checks at ``src/omniscribe/core/recall/whitespace.py:51-52``. Dilation in the
     booster will inflate connectivity but the density check uses the
     pre-dilation mask, so the asserted density must be the pre-dilation value.
 
@@ -381,7 +381,7 @@ def test_photo_edge_passes_filters_as_known_limitation(
     """Document the line-shape photo-edge limitation.
 
     A horizontal line that satisfies the booster's height, density,
-    aspect, and area filters (see ``src/omniscribe/core/text_recall.py:65-71``)
+    aspect, and area filters (see ``src/omniscribe/core/recall/whitespace.py:65-71``)
     is emitted as a recall box. The shape described here is a line-shaped
     photo edge or figure border that survives every filter. This test pins
     the current behavior: exactly 1 box is emitted for each parameter case.

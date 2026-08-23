@@ -8,7 +8,7 @@ new LanceDB-backed LexiconStore (replacing the legacy ChromaDB
 - The new path degrades gracefully when the store is empty.
 - The new path filters by source/target language when those are present
   in the state.
-- The ChromaDB module is no longer imported by ``core.translation``.
+- The ChromaDB module is no longer imported by ``core.translate.workflow``.
 
 The legacy ChromaDB collection path is exercised by the migration test
 suite; this file is about the *new* path only.
@@ -28,7 +28,7 @@ from omniscribe.core.lexicon import (
     reset_default_store,
 )
 from omniscribe.core.lexicon.embedding import EmbeddingModel
-from omniscribe.core.translation import retrieve_lexicon_context
+from omniscribe.core.translate.workflow import retrieve_lexicon_context
 
 
 class _FakeEmbeddingModel:
@@ -192,10 +192,10 @@ def test_retrieve_filters_by_language_pair(
 
 
 def test_translation_module_does_not_import_chromadb() -> None:
-    """Phase 3 acceptance: the ChromaDB query path is gone from translation.py."""
+    """Phase 3 acceptance: the ChromaDB query path is gone from translate/workflow.py."""
     # Re-import to be sure
-    importlib.reload(importlib.import_module("omniscribe.core.translation"))
-    from omniscribe.core import translation
+    importlib.reload(importlib.import_module("omniscribe.core.translate.workflow"))
+    from omniscribe.core.translate import workflow as translation
 
     # The module no longer exposes the ChromaDB-specific symbols
     assert not hasattr(translation, "CHROMA_COLLECTION_NAME")
@@ -210,7 +210,7 @@ def test_translation_module_does_not_import_chromadb() -> None:
 
 def test_translation_state_supports_optional_language_fields() -> None:
     """TranslationState now has optional source_lang/target_lang for hybrid filtering."""
-    from omniscribe.core.translation import TranslationState
+    from omniscribe.core.translate.workflow import TranslationState
 
     # total=False on the TypedDict means missing fields are allowed.
     state: TranslationState = {

@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from omniscribe.api.routers import ocr
-from omniscribe.core.docx_writer import convert_markdown_to_docx
+from omniscribe.core.writers.docx import convert_markdown_to_docx
 
 
 def test_convert_markdown_to_docx_structure():

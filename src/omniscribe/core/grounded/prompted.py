@@ -33,8 +33,8 @@ from omniscribe.core.grounded.models import (
 )
 from omniscribe.core.grounded.parsers import _parse_grounded_json
 from omniscribe.core.grounded.rasterize import _rasterize_to_jpeg_pages
-from omniscribe.core.llm_client import call_llm
-from omniscribe.core.llm_temperatures import TEMPERATURE_GROUNDED
+from omniscribe.core.llm.client import call_llm
+from omniscribe.core.llm.temperatures import TEMPERATURE_GROUNDED
 from omniscribe.core.ocr import (
     ModelNotLoadedError,
     _format_model_not_loaded,

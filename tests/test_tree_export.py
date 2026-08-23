@@ -1,4 +1,4 @@
-"""Tests for :mod:`omniscribe.core.tree_export`."""
+"""Tests for :mod:`omniscribe.core.writers.tree_json`."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from omniscribe.core.block_tree import (
     DocumentTree,
     PageTree,
 )
-from omniscribe.core.tree_export import export_json, export_json_bytes
+from omniscribe.core.writers.tree_json import export_json, export_json_bytes
 
 
 def test_tree_export_json_round_trip():
