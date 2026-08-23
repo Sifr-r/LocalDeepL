@@ -109,6 +109,18 @@ class RuntimeSettings(BaseSettings):
         validation_alias="OMNISCRIBE_STATE_DB_PATH",
     )
 
+    # Cordis-style harness boot config. ``cordis_config_path`` is the base
+    # plugin tree (the package ships one under ``resources/cordis.yml``);
+    # patch files are layered on top by :meth:`cordis_patch_paths`.
+    cordis_config_path: Path = Field(
+        default_factory=lambda: Path(__file__).parent / "resources" / "cordis.yml",
+        validation_alias="OMNISCRIBE_CORDIS_CONFIG",
+    )
+    cordis_patch_paths_raw: str | None = Field(
+        default=None,
+        validation_alias="OMNISCRIBE_CORDIS_PATCH",
+    )
+
     allow_ssrf_local: bool = Field(default=False, validation_alias="ALLOW_SSRF_LOCAL")
     log_level: str = Field(default="INFO", validation_alias="OMNISCRIBE_LOG_LEVEL")
     log_format: str = Field(default="json", validation_alias="OMNISCRIBE_LOG_FORMAT")
@@ -291,6 +303,25 @@ class RuntimeSettings(BaseSettings):
         if not self.chroma_db:
             return None
         return Path(self.chroma_db).expanduser().resolve()
+
+    @property
+    def cordis_patch_paths(self) -> tuple[Path, ...]:
+        """Return the cordis.yml patch files layered onto the base tree.
+
+        ``OMNISCRIBE_CORDIS_PATCH`` supplies an explicit comma-separated
+        list; otherwise the operator-local default is
+        ``<OMNISCRIBE_ARTIFACT_DIR>/cordis.patch.yml``. Entries that do not
+        exist on disk are dropped so the loader only sees real files.
+        """
+        if self.cordis_patch_paths_raw:
+            candidates = [
+                Path(item.strip()).expanduser()
+                for item in self.cordis_patch_paths_raw.split(",")
+                if item.strip()
+            ]
+        else:
+            candidates = [self.artifact_base_dir / "cordis.patch.yml"]
+        return tuple(path for path in candidates if path.is_file())
 
 
 def load_settings(**overrides: Any) -> RuntimeSettings:
