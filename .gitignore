@@ -241,3 +241,8 @@ redis-password.txt
 # for the canonical SSE keepalive smoke test).
 /.diag_*.py
 
+# Token-efficiency restructure (C1): generated artifacts must never be tracked.
+# (*.log, .coverage, .hypothesis/, .fallow/, .mavis/ already covered above.)
+*_report.txt
+*_report.json
+

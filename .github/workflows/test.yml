@@ -224,7 +224,7 @@ jobs:
           sarif_file: trivy-results.sarif
           category: trivy
 
-  # Audit L9: hardens the Playwright E2E (`test_ui.py`) and gives it a
+  # Audit L9: hardens the Playwright E2E (`e2e/test_ui.py`) and gives it a
   # first-class CI seat. The script was previously run by hand against a
   # local `start_app.vbs` boot; this job makes that same path reproducible
   # on a `ubuntu-latest` runner with a headless Chromium and a built
@@ -373,21 +373,21 @@ jobs:
           cat server.log
           exit 1
 
-      - name: Run Playwright smoke (test_ui.py)
+      - name: Run Playwright smoke (e2e/test_ui.py)
         # Audit F25 (e2e half): `axe-playwright-python` is added to the
         # ``--with`` chain alongside ``playwright``. Both deps are
         # e2e-only and not in ``pyproject.toml`` proper (the design
         # rationale lives in pyproject.toml's ``[dependency-groups] dev``
-        # comment block, see ``test_ui.py``'s intro for the matching
+        # comment block, see ``e2e/test_ui.py``'s intro for the matching
         # rationale). Using ``--with`` keeps the fast-tier matrix
         # untouched: only this e2e job pays the install cost.
         # SCREENSHOT_PATH points at the workspace; the next step
         # uploads it as an artifact regardless of pass/fail so
         # the maintainer can eyeball the UI state after a manual
-        # dispatch. The 180s budget in `test_ui.py` is the
+        # dispatch. The 180s budget in `e2e/test_ui.py` is the
         # OCR-completion timeout and intentionally exceeds the
         # default step timeout.
-        run: uv run --with playwright --with axe-playwright-python python test_ui.py
+        run: uv run --with playwright --with axe-playwright-python python e2e/test_ui.py
 
       - name: Upload screenshot + server log
         if: always()

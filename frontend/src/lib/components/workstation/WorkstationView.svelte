@@ -248,7 +248,7 @@
 
   <!-- Processing overlay. The #process-view element must stay in the DOM
        at all times with `hidden` toggled on/off: the Playwright smoke test
-       in test_ui.py and the WorkstationView vitest both assert on the
+       in e2e/test_ui.py and the WorkstationView vitest both assert on the
        `hidden` class. So we keep the legacy hook, drop the `transition-all`
        that could never transition `display`, and add the dialog ARIA
        attributes the previous version was missing. -->

@@ -9,10 +9,10 @@ from playwright.sync_api import expect, sync_playwright
 
 # Import the canonical example-PDF list from tests/conftest.py so the file
 # we exercise here stays in lock-step with the parametrize sites in
-# tests/test_integration.py. ``test_ui.py`` lives at the repo root rather
+# tests/test_integration.py. ``test_ui.py`` lives under ``e2e/`` rather
 # than under tests/, so we add the tests/ directory to sys.path before
 # importing the conftest module.
-_TESTS_DIR = Path(__file__).resolve().parent / "tests"
+_TESTS_DIR = Path(__file__).resolve().parent.parent / "tests"
 if str(_TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(_TESTS_DIR))
 from conftest import EXAMPLE_PDF_NAMES  # noqa: E402
@@ -45,33 +45,41 @@ def run() -> None:
         page.wait_for_load_state("networkidle")
         expect(page.locator("input#file-input")).to_be_visible()
 
-        # Upload a test document
-        file_path = os.path.join("examples", _DENSE_PDF_NAME)
-        if os.path.exists(file_path):
-            page.locator("input#file-input").set_input_files(file_path)
-
-            # The start button is disabled until the file-select handler
-            # dispatches its event; wait on that transition instead of
-            # a fixed 1s sleep.
-            expect(page.locator("button#start-btn")).to_be_enabled()
-            page.locator("button#start-btn").click()
-            print("Started OCR, waiting for it to finish...")
-
-            # Same condition as the old `wait_for_function` (process view
-            # gains the `hidden` class once OCR finishes), but expressed as
-            # a Playwright locator assertion so the engine polls with its
-            # own auto-wait and the 180s budget applies uniformly.
-            expect(page.locator("#process-view")).to_have_class(
-                re.compile(r"\bhidden\b"),
-                timeout=180_000,
+        # Upload a test document — resolve the fixture against this file,
+        # not the CWD, so the smoke test behaves identically from any
+        # working directory.
+        file_path = Path(__file__).resolve().parents[1] / "examples" / _DENSE_PDF_NAME
+        if not file_path.exists():  # pragma: no cover — guarded below
+            # Fail loud instead of silently taking an empty screenshot:
+            # a missing fixture must never masquerade as a passing smoke
+            # test (the old CWD-relative path degraded silently from any
+            # non-root working directory).
+            raise RuntimeError(
+                f"test_ui.py requires the fixture 'examples/{_DENSE_PDF_NAME}'; "
+                f"expected it at {file_path}"
             )
-            # Let any post-completion fetches (download link, summary) settle
-            # before screenshotting. `networkidle` is the right primitive
-            # here: the old fixed 1s sleep was approximating the same wait
-            # against non-deterministic fetch timing.
-            page.wait_for_load_state("networkidle")
-        else:
-            print("dense.pdf not found, just taking empty screenshot.")
+        page.locator("input#file-input").set_input_files(str(file_path))
+
+        # The start button is disabled until the file-select handler
+        # dispatches its event; wait on that transition instead of
+        # a fixed 1s sleep.
+        expect(page.locator("button#start-btn")).to_be_enabled()
+        page.locator("button#start-btn").click()
+        print("Started OCR, waiting for it to finish...")
+
+        # Same condition as the old `wait_for_function` (process view
+        # gains the `hidden` class once OCR finishes), but expressed as
+        # a Playwright locator assertion so the engine polls with its
+        # own auto-wait and the 180s budget applies uniformly.
+        expect(page.locator("#process-view")).to_have_class(
+            re.compile(r"\bhidden\b"),
+            timeout=180_000,
+        )
+        # Let any post-completion fetches (download link, summary) settle
+        # before screenshotting. `networkidle` is the right primitive
+        # here: the old fixed 1s sleep was approximating the same wait
+        # against non-deterministic fetch timing.
+        page.wait_for_load_state("networkidle")
 
         # Take screenshot
         screenshot_path = os.getenv("SCREENSHOT_PATH", "screenshot.png")

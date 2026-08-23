@@ -16,7 +16,7 @@
   
   CRITICAL PRESERVATION:
   Ensures all legacy HTML element IDs and structure remain present so end-to-end Playwright tests
-  (`test_ui.py`) and legacy JS scripts continue to pass without modifications.
+  (`e2e/test_ui.py`) and legacy JS scripts continue to pass without modifications.
   
   Accessibility:
   - Theme class is applied reactively to <html> so the toggle works without a reload

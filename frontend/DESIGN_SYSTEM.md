@@ -418,7 +418,7 @@ on the view, not inside cards.
 active tab uses `bg-brand text-brand-foreground`; inactive tabs are
 `text-foreground-muted hover:text-foreground hover:bg-muted`. Tab IDs
 (`app-tab-btn-*`) are preserved for the Playwright smoke test in
-`test_ui.py` — do not rename them.
+`e2e/test_ui.py` — do not rename them.
 
 ### 4.8 Toast
 

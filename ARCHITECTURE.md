@@ -129,11 +129,11 @@ and each pass logs one INFO run summary per job.
 | `src/omniscribe/static/` | Built Svelte 5 workstation assets served by FastAPI |
 | `frontend/` | Svelte 5 + Tailwind CSS v4 source, Vite configuration, and production build pipeline |
 | `scripts/` | Repo-root developer utilities: confidence eval, fixture builder, debug/inspection scripts, bbox visualizers |
-| `examples/` | Sample PDFs and images used by `tests/`, `test_ui.py`, and the confidence scripts |
+| `examples/` | Sample PDFs and images used by `tests/`, `e2e/test_ui.py`, and the confidence scripts |
 | `tests/` | Unit, integration, security, and slow-path validation |
 | `install.bat` / `install.ps1` | Windows one-click install: `uv` bootstrap, `uv sync --extra web --extra preprocessing`, Docker check, Desktop/Start-Menu shortcuts, post-install verification |
 | `start_app.vbs` | Windows terminal launcher for Redis + Celery + uvicorn; writes a timestamped append log to `start_app.log` |
-| `test_ui.py` | Headless Playwright smoke test against the running web UI |
+| `e2e/test_ui.py` | Headless Playwright smoke test against the running web UI |
 
 ## Extension Points
 
