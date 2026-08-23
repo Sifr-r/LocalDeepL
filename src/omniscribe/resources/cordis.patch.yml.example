@@ -1,0 +1,12 @@
+# Example operator-local patch for the OmniScribe plugin tree.
+#
+# Copy this file to `<artifact_dir>/cordis.patch.yml` (or point
+# OMNISCRIBE_CORDIS_PATCH at any path) to override fields from the shipped
+# `resources/cordis.yml`. Rows are deep-merged by `id`: listed fields
+# override, unlisted fields are inherited, lists are replaced. A row's `use`
+# may also be replaced to swap the plugin implementation itself.
+plugins:
+  - id: jobs
+    use: omniscribe.plugins.jobs:plugin
+    config:
+      worker_count: 2

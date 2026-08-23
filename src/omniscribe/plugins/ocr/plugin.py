@@ -33,7 +33,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 
 from fastapi import APIRouter, Body, Header, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from omniscribe.config import RuntimeSettings
 from omniscribe.harness.context import Context
@@ -151,12 +151,18 @@ class OCRServiceImpl:
         *,
         progress: ProgressService | None,
         max_upload_mb: int,
+        quality_defaults: Mapping[str, bool | float | int] | None = None,
     ) -> None:
         self._settings = settings
         self._queue = queue
         self._artifacts = artifacts
         self._progress = progress
         self._max_upload_mb = max_upload_mb
+        # cordis.yml-seeded defaults for the quality repair loop; applied to
+        # uploads whose form omits the corresponding field.
+        self._quality_defaults: Mapping[str, bool | float | int] = (
+            quality_defaults or {}
+        )
         self._submission_to_job: dict[str, str] = {}
         self._config: dict[str, Any] = _seed_config(settings)
         self._event_buffers: dict[str, deque[dict[str, Any]]] = {}
@@ -447,11 +453,13 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
                 status_code=413,
                 detail=f"upload exceeds {service._max_upload_mb} MB limit",
             )
-        fields = {
+        fields: dict[str, Any] = {
             key: value
             for key, value in form.items()
             if key != "file" and isinstance(value, str)
         }
+        for key, value in service._quality_defaults.items():
+            fields.setdefault(key, value)
         try:
             # model_validate (not **kwargs): form values are all strings and
             # the before-validators coerce them at runtime.
@@ -556,6 +564,9 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
 
 class OCRSchema(BaseModel):
     max_upload_mb: int | None = None
+    quality_loop_enabled: bool = True
+    quality_target: float = Field(default=0.85, ge=0.5, le=1.0)
+    quality_max_retries: int = Field(default=2, ge=0, le=5)
 
 
 class OCRPlugin(Plugin):
@@ -574,12 +585,18 @@ class OCRPlugin(Plugin):
         max_upload_mb = (
             int(configured) if configured else runtime.settings.max_upload_mb
         )
+        schema = OCRSchema(**self.config)
         service = OCRServiceImpl(
             runtime.settings,
             queue,
             artifacts,
             progress=progress,
             max_upload_mb=max_upload_mb,
+            quality_defaults={
+                "quality_loop_enabled": schema.quality_loop_enabled,
+                "quality_target": schema.quality_target,
+                "quality_max_retries": schema.quality_max_retries,
+            },
         )
         ctx.service(OCRService, service)
         ctx.service(JobRunner, service.run_job)

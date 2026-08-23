@@ -1,0 +1,60 @@
+# OmniScribe default plugin tree.
+#
+# Loaded by the server lifespan via `omniscribe.harness.loader.Loader`.
+# Patch layering order: this base file -> patch files (default
+# `<artifact_dir>/cordis.patch.yml`) -> `OMNISCRIBE_PLUGIN_<ID>__<FIELD>`
+# env overrides. Each layer deep-merges by row `id`; a row's `use` may be
+# replaced to swap the implementation itself.
+#
+# Deviation from the design spec: `max_upload_mb` is deliberately NOT set on
+# the ocr row. The historical upload cap comes from RuntimeSettings
+# (`OMNISCRIBE_MAX_UPLOAD_MB`, default 10 GB); the plugin falls back to it
+# when this row omits the field. Add `max_upload_mb: <int>` here (or via
+# `OMNISCRIBE_PLUGIN_OCR__MAX_UPLOAD_MB`) to pin a tighter cap.
+plugins:
+  - id: runtime
+    use: omniscribe.plugins.runtime:plugin
+    config:
+      cleanup_interval_seconds: 60
+      artifact_ttl_seconds: 86400
+      channel_ttl_seconds: 600
+
+  - id: logging
+    use: omniscribe.plugins.logging:plugin
+    config:
+      format: ${OMNISCRIBE_LOG_FORMAT:-text}
+      level: ${OMNISCRIBE_LOG_LEVEL:-INFO}
+
+  - id: state_backend
+    use: omniscribe.plugins.state_backend:plugin
+    config:
+      backend: ${OMNISCRIBE_STATE_BACKEND:-memory}
+      sqlite_path: ${OMNISCRIBE_STATE_DB_PATH:-}
+
+  - id: artifacts
+    use: omniscribe.plugins.artifacts:plugin
+
+  - id: jobs
+    use: omniscribe.plugins.jobs:plugin
+    config:
+      worker_count: 1
+
+  - id: progress
+    use: omniscribe.plugins.progress:plugin
+    config:
+      frame_cap: 1000
+
+  - id: providers
+    use: omniscribe.plugins.providers:plugin
+    config:
+      discovery_timeout_seconds: 5
+
+  - id: health
+    use: omniscribe.plugins.health:plugin
+
+  - id: ocr
+    use: omniscribe.plugins.ocr:plugin
+    config:
+      quality_loop_enabled: ${OMNISCRIBE_QUALITY_LOOP:-true}
+      quality_target: ${OMNISCRIBE_QUALITY_TARGET:-0.85}
+      quality_max_retries: ${OMNISCRIBE_QUALITY_MAX_RETRIES:-2}
