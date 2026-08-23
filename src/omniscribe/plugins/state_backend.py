@@ -58,6 +58,7 @@ class JobRecord:
     status: JobStatus
     request_meta: dict[str, Any] = field(default_factory=dict)
     result_artifact_id: str | None = None
+    result_artifact_token: str | None = None
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     error: str | None = None
@@ -281,6 +282,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     status TEXT NOT NULL,
     request_meta TEXT NOT NULL,
     result_artifact_id TEXT,
+    result_artifact_token TEXT,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL,
     error TEXT
@@ -439,12 +441,14 @@ class SQLiteStateBackend:
                 conn.execute(
                     "INSERT OR REPLACE INTO jobs "
                     "(job_id, status, request_meta, result_artifact_id, "
-                    "created_at, updated_at, error) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "result_artifact_token, created_at, updated_at, error) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         record.job_id,
                         record.status,
                         json.dumps(record.request_meta),
                         record.result_artifact_id,
+                        record.result_artifact_token,
                         record.created_at,
                         record.updated_at,
                         record.error,
@@ -462,7 +466,8 @@ class SQLiteStateBackend:
                     self._require_conn()
                     .execute(
                         "SELECT job_id, status, request_meta, result_artifact_id, "
-                        "created_at, updated_at, error FROM jobs WHERE job_id = ?",
+                        "result_artifact_token, created_at, updated_at, error "
+                        "FROM jobs WHERE job_id = ?",
                         (job_id,),
                     )
                     .fetchone()
@@ -479,8 +484,8 @@ class SQLiteStateBackend:
                     self._require_conn()
                     .execute(
                         "SELECT job_id, status, request_meta, result_artifact_id, "
-                        "created_at, updated_at, error FROM jobs "
-                        "ORDER BY created_at DESC LIMIT ?",
+                        "result_artifact_token, created_at, updated_at, error "
+                        "FROM jobs ORDER BY created_at DESC LIMIT ?",
                         (limit,),
                     )
                     .fetchall()
@@ -610,9 +615,10 @@ def _job_from_row(row: Any) -> JobRecord:
         status=row[1],
         request_meta=json.loads(row[2]) if row[2] else {},
         result_artifact_id=row[3],
-        created_at=row[4],
-        updated_at=row[5],
-        error=row[6],
+        result_artifact_token=row[4],
+        created_at=row[5],
+        updated_at=row[6],
+        error=row[7],
     )
 
 
