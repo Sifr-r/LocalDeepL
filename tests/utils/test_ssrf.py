@@ -1,4 +1,4 @@
-"""SSRF fail-closed guard and config-validation safety tests.
+"""SSRF fail-closed guard safety tests.
 
 Split out of the former monolithic ``tests/test_api_safety.py``.
 """
@@ -15,7 +15,13 @@ import pytest
 pytest.importorskip("fastapi")
 
 from omniscribe.utils.security import is_blocked_host, is_ssrf_target
-from tests.api._safety_helpers import _api_client, _public_dns
+
+
+def _public_dns(host: str, port, *args, **kwargs):
+    """Stub ``socket.getaddrinfo``: only ``api.openai.com`` resolves."""
+    if host == "api.openai.com":
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("104.18.3.161", 443))]
+    raise socket.gaierror(-2, "Name or service not known")
 
 
 def test_ssrf_fails_closed_and_requires_explicit_local_allowance():
@@ -55,20 +61,6 @@ def test_ssrf_fails_closed_and_requires_explicit_local_allowance():
             asyncio.run(is_ssrf_target("http://metadata.google.internal/v1")).allowed
             is False
         )
-
-
-def test_config_update_rejects_string_booleans_and_local_api_base():
-    client = _api_client()
-
-    response = client.post("/api/config", json={"refine": "false"})
-    assert response.status_code == 422
-
-    with patch.dict(os.environ, {}, clear=True):
-        response = client.post(
-            "/api/config", json={"api_base": "http://127.0.0.1:1234/v1"}
-        )
-    assert response.status_code == 403
-    assert "127.0.0.1" not in response.json()["error"]
 
 
 # ---------------------------------------------------------------------------

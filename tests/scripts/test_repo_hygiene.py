@@ -366,102 +366,74 @@ def _is_workflow_internal(module: str) -> bool:
 
 
 def test_ocr_router_does_not_import_workflow_internals():
-    """``api/routers/ocr.py`` is a thin orchestrator per ARCHITECTURE.md.
+    """``plugins/ocr/plugin.py`` is a thin orchestrator per ARCHITECTURE.md.
 
-    It must delegate to ``OCRPipeline`` + ``api/services/ocr_*.py`` and
-    never reach into ``omniscribe.core.workflows.hybrid`` /
+    It must delegate to ``OCRPipeline`` via ``plugins/ocr/pipeline_bridge``
+    and never reach into ``omniscribe.core.workflows.hybrid`` /
     ``omniscribe.core.workflows.grounded`` directly. Importing either
     engine implementation would collapse the ``OCRPipeline`` facade and
     let the FastAPI router depend on internal engine layout that the
     engine-split refactor intentionally hid behind the public package
     surface.
     """
-    ocr_path = ROOT / "src/omniscribe/api/routers/ocr.py"
+    ocr_path = ROOT / "src/omniscribe/plugins/ocr/plugin.py"
     offenders = [
         (mod, lineno)
         for mod, lineno in _imports_from(ocr_path, "omniscribe.core.workflows")
         if _is_workflow_internal(mod)
     ]
     assert not offenders, (
-        "OCR router must not import `omniscribe.core.workflows.{hybrid,grounded,utils}` "
-        "directly; go through `omniscribe.OCRPipeline` and `api/services/ocr_*.py`. "
-        f"Found: {offenders}"
+        "OCR plugin must not import `omniscribe.core.workflows.{hybrid,grounded,utils}` "
+        "directly; go through `omniscribe.pipeline.OCRPipeline` and "
+        f"`plugins/ocr/pipeline_bridge`. Found: {offenders}"
     )
 
 
-def test_api_layer_does_not_import_workflow_internals():
-    """Generalization of the OCR router boundary to the whole API surface.
+def test_plugin_layer_does_not_import_workflow_internals():
+    """Generalization of the OCR plugin boundary to the whole plugin tree.
 
-    Every router and service under ``src/omniscribe/api/`` must keep the
-    engine implementation details behind the ``OCRPipeline`` facade.
-    This walker-driven test catches the same boundary violation in any
-    router or service, not just the one highlighted by the dedicated
-    OCR router test above.
+    Every module under ``src/omniscribe/plugins/`` must keep the engine
+    implementation details behind the ``OCRPipeline`` facade. This
+    walker-driven test catches the same boundary violation in any
+    plugin, not just the one highlighted by the dedicated OCR test above.
     """
-    api_root = ROOT / "src/omniscribe/api"
+    plugins_root = ROOT / "src/omniscribe/plugins"
     offenders: list[str] = []
-    for path in sorted(api_root.rglob("*.py")):
+    for path in sorted(plugins_root.rglob("*.py")):
         for mod, lineno in _imports_from(path, "omniscribe.core.workflows"):
             if _is_workflow_internal(mod):
                 rel = path.relative_to(ROOT).as_posix()
                 offenders.append(f"{rel}:{lineno}: {mod}")
     assert not offenders, (
-        "API layer must not import `omniscribe.core.workflows.{hybrid,grounded,utils}` "
-        "directly; go through `omniscribe.OCRPipeline` and `api/services/ocr_*.py`.\n"
-        + "\n".join(offenders)
+        "Plugin layer must not import `omniscribe.core.workflows.{hybrid,grounded,utils}` "
+        "directly; go through `omniscribe.pipeline.OCRPipeline` and "
+        "`plugins/ocr/pipeline_bridge`.\n" + "\n".join(offenders)
     )
 
 
-def test_state_module_is_singleton_boundary():
-    """``api/routers/state.py`` is the single source of state singletons.
+def test_state_backend_plugin_is_the_single_state_seam():
+    """``plugins/state_backend.py`` is the single source of state backends.
 
-    Per ARCHITECTURE.md, the ``StateBackend`` protocol is the swap-point
-    for alternative backends (Redis, file-backed). To keep that promise,
-    the module must hold exactly one ``backend`` instance and every
-    module-level alias must point at the same instance on the backend;
-    otherwise a backend swap would leave orphan references behind.
-
-    ``glossary_library`` is intentionally a peer instance (its
-    ``artifact_dir`` is configured separately so the on-disk glossary
-    index is preserved across swaps), so this test only asserts the six
-    backend-backed aliases.
+    The harness rebuild replaced the ``api/routers/state.py`` singleton
+    module with dependency injection: exactly one plugin registers the
+    ``StateBackend`` service on the harness Context, and the selector
+    only accepts the shipped backends. A second registration site (or a
+    new unlisted backend name) would silently fork the state surface, so
+    both facts are pinned here.
     """
-    state_path = ROOT / "src/omniscribe/api/routers/state.py"
-    state_text = _read(state_path)
-
-    # Exactly one `backend = ...` assignment at module level. A second
-    # one would be a recipe for two state surfaces with no clear winner.
-    backend_assignments = re.findall(r"^backend\s*=", state_text, re.MULTILINE)
-    assert len(backend_assignments) == 1, (
-        f"state.py must declare exactly one `backend = ...` assignment; "
-        f"found {len(backend_assignments)}"
+    plugins_root = ROOT / "src/omniscribe/plugins"
+    registrars: list[str] = []
+    for path in sorted(plugins_root.rglob("*.py")):
+        text = _read(path)
+        if re.search(r"ctx\.service\(StateBackend\b", text):
+            registrars.append(path.relative_to(ROOT).as_posix())
+    assert registrars == ["src/omniscribe/plugins/state_backend.py"], (
+        f"exactly one plugin may register the StateBackend service; found: {registrars}"
     )
 
-    # Runtime: the singleton is a LocalStateBackend and the six
-    # backend-backed aliases resolve to the same instance on the backend.
-    from omniscribe.api.routers import state as router_state
-    from omniscribe.api.services.state.base import (
-        LocalStateBackend,
-        StateBackend,
-    )
+    from omniscribe.plugins.state_backend import _ALLOWED_BACKENDS
 
-    assert isinstance(router_state.backend, LocalStateBackend)
-    assert isinstance(router_state.backend, StateBackend)
-
-    for name in (
-        "text_artifacts",
-        "metadata_artifacts",
-        "export_artifacts",
-        "job_history",
-        "progress_service",
-        "ocr_job_queue",
-    ):
-        bound = getattr(router_state.backend, name)
-        aliased = getattr(router_state, name)
-        assert bound is not None and aliased is bound, (
-            f"state.{name} must be the same instance as state.backend.{name} "
-            "so a backend swap stays transparent to all consumers"
-        )
+    assert sorted(_ALLOWED_BACKENDS) == ["memory", "sqlite"]
 
 
 def test_scripts_are_in_ruff_scope():

@@ -153,40 +153,6 @@ def test_agents_md_documents_slow_dataset_marker() -> None:
 
 
 # ---------------------------------------------------------------------------
-# F4.12 — synthetic_pdf fixture is session-scoped
-# ---------------------------------------------------------------------------
-
-
-def test_synthetic_pdf_fixture_is_session_scoped() -> None:
-    """The 60-page PDF fixture in ``test_chunked_runner.py`` is built
-    once per pytest run, not once per test.
-    """
-    from tests.api.services.ocr import test_chunked_runner
-
-    marker = test_chunked_runner.synthetic_pdf._fixture_function_marker
-    assert marker.scope == "session", (
-        f"synthetic_pdf scope is {marker.scope!r}; F4.12 audit fix moved it "
-        "to 'session' to avoid the per-test 60-page PyMuPDF rebuild."
-    )
-
-
-def test_chunked_runner_autouse_session_tmp_path() -> None:
-    """The session-scoped synthetic PDF depends on a session-temp helper
-    that the file autouses — verify both pieces are wired so a
-    future refactor doesn't break the session-scoped path.
-    """
-    from tests.api.services.ocr import test_chunked_runner
-
-    assert hasattr(test_chunked_runner, "_session_tmp_path")
-    marker = test_chunked_runner._session_tmp_path._fixture_function_marker
-    assert marker.scope == "session"
-    assert marker.autouse is True, (
-        "_session_tmp_path must be autouse=True so the PathFactory root is "
-        "initialised before synthetic_pdf first runs."
-    )
-
-
-# ---------------------------------------------------------------------------
 # F4.14 — test_docuverse_upgrade.py renamed to a non-test_*.py file
 # ---------------------------------------------------------------------------
 
@@ -207,27 +173,27 @@ def test_docuverse_shim_no_longer_collectable() -> None:
 
 
 # ---------------------------------------------------------------------------
-# F4.15 — test_health_endpoints.py: no module-level pytestmark.asyncio
+# F4.15 — no module-level pytestmark.asyncio anywhere in the suite
 # ---------------------------------------------------------------------------
 
 
-def test_health_endpoints_drops_module_asyncio_pytestmark() -> None:
-    """The module-level ``pytestmark = pytest.mark.asyncio`` was removed
+def test_no_test_module_uses_asyncio_pytestmark() -> None:
+    """Module-level ``pytestmark = pytest.mark.asyncio`` is redundant
     because ``asyncio_mode = "auto"`` already covers every
-    ``async def test_*`` in the file.
+    ``async def test_*`` in the suite.
     """
-    text = (TESTS_DIR / "api" / "routers" / "test_health_endpoints.py").read_text(
-        encoding="utf-8"
-    )
-    # Match only the assignment form, not a comment that mentions
-    # the marker in prose.
     pattern = re.compile(
         r"^[ \t]*pytestmark\s*=\s*pytest\.mark\.asyncio\s*$",
         re.MULTILINE,
     )
-    assert not pattern.search(text), (
-        "F4.15 audit fix removed the module-level pytestmark; "
-        "asyncio_mode='auto' is sufficient."
+    offenders = [
+        path.relative_to(TESTS_DIR).as_posix()
+        for path in sorted(TESTS_DIR.rglob("test_*.py"))
+        if pattern.search(path.read_text(encoding="utf-8"))
+    ]
+    assert not offenders, (
+        "Module-level pytestmark = pytest.mark.asyncio is redundant under "
+        f"asyncio_mode='auto'; found in: {offenders}"
     )
 
 
@@ -366,28 +332,3 @@ def test_durations_meet_fast_tier_budget(module: str) -> None:
         "If the regression is real, the test should carry "
         "@pytest.mark.slow and this budget test should drop the module."
     )
-
-
-def test_runtime_settings_filesystem_test_is_platform_independent() -> None:
-    """F4.19 reclassified: ``test_startup_validation_rejects_artifact_file``
-    is a directory-vs-file check using ``tmp_path``, not a
-    filesystem-permission probe. The audit's "flakier than other
-    tests" note was based on a misread of the source — the test
-    runs identically on Unix and Windows.
-    """
-    from tests.api import test_runtime_settings
-
-    target = test_runtime_settings.test_startup_validation_rejects_artifact_file
-    src = Path(target.__code__.co_filename).read_text(encoding="utf-8")
-    # The test writes a file at the artifact_dir path and expects
-    # ``_validate_runtime_settings`` to raise because the path
-    # is a file, not a directory. No chmod, no os.access, no
-    # permission bits involved — the assertion is a
-    # directory-vs-file structural check, not a permission check.
-    assert "chmod" not in src
-    assert "os.access" not in src
-    assert "stat.S_IRUSR" not in src
-    # Confirm the test exists and is not skip-marked for any platform.
-    assert "skipif" not in target.__name__  # marker check is more involved;
-    # the absence of skip markers in the source is the practical test.
-    assert "@pytest.mark.skip" not in src

@@ -6,10 +6,13 @@ Shared fixtures.
   (Surya model load is ~5s, so we only want to pay it once).
 - `stub_ocr` — an OCRProcessor replacement that returns canned text without
   hitting LM Studio, so tests can run offline.
+- `cordis_env` / `harness_ctx` / `api_client` — plugin-harness boot
+  fixtures: a temp nine-row ``cordis.yml`` (memory backend, small TTLs),
+  a loaded harness Context, and a TestClient over ``create_app()``.
 - `EXAMPLE_PDF_NAMES` — the canonical list of on-disk example PDF filenames
-  (and the few images). Re-exported by ``tests/api/test_integration.py`` and
-  imported by ``e2e/test_ui.py`` so the parametrize/IO surface stays in lock
-  step with the fixtures in this module.
+  (and the few images), imported by ``e2e/test_ui.py`` so the
+  parametrize/IO surface stays in lock step with the fixtures in this
+  module.
 """
 
 from __future__ import annotations
@@ -101,6 +104,107 @@ def stub_ocr():
 def make_stub_ocr():
     """Factory fixture for tests that need a customised stub."""
     return _StubOCR
+
+
+# ---------------------------------------------------------------------------
+# Plugin-harness boot fixtures
+# ---------------------------------------------------------------------------
+
+# Nine-row test tree: same plugins as the shipped resources/cordis.yml with
+# a forced memory backend and small TTLs so tests stay fast and offline.
+_TEST_CORDIS_YML = """\
+plugins:
+  - id: runtime
+    use: omniscribe.plugins.runtime:plugin
+    config:
+      cleanup_interval_seconds: 60
+      artifact_ttl_seconds: 60
+      channel_ttl_seconds: 60
+
+  - id: logging
+    use: omniscribe.plugins.logging:plugin
+    config:
+      format: text
+      level: INFO
+
+  - id: state_backend
+    use: omniscribe.plugins.state_backend:plugin
+    config:
+      backend: memory
+
+  - id: artifacts
+    use: omniscribe.plugins.artifacts:plugin
+
+  - id: jobs
+    use: omniscribe.plugins.jobs:plugin
+    config:
+      worker_count: 1
+
+  - id: progress
+    use: omniscribe.plugins.progress:plugin
+    config:
+      frame_cap: 100
+
+  - id: providers
+    use: omniscribe.plugins.providers:plugin
+    config:
+      discovery_timeout_seconds: 1
+
+  - id: health
+    use: omniscribe.plugins.health:plugin
+
+  - id: ocr
+    use: omniscribe.plugins.ocr:plugin
+"""
+
+_CORDIS_ENV_VARS = (
+    "OMNISCRIBE_STATE_BACKEND",
+    "OMNISCRIBE_STATE_DB_PATH",
+    "OMNISCRIBE_LOG_FORMAT",
+    "OMNISCRIBE_LOG_LEVEL",
+    "OMNISCRIBE_QUALITY_LOOP",
+    "OMNISCRIBE_QUALITY_TARGET",
+    "OMNISCRIBE_QUALITY_MAX_RETRIES",
+    "OMNISCRIBE_CORDIS_CONFIG",
+    "OMNISCRIBE_CORDIS_PATCH",
+)
+
+
+@pytest.fixture
+def cordis_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Deterministic harness boot: isolated artifact dir + temp cordis.yml."""
+    for name in _CORDIS_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("OMNISCRIBE_ARTIFACT_DIR", str(tmp_path))
+    cordis_yml = tmp_path / "cordis.yml"
+    cordis_yml.write_text(_TEST_CORDIS_YML, encoding="utf-8")
+    return cordis_yml
+
+
+@pytest.fixture
+async def harness_ctx(cordis_env: Path):
+    """A loaded harness Context for the nine-plugin test tree."""
+    from omniscribe.harness.context import Context
+    from omniscribe.harness.loader import Loader
+
+    ctx = Context()
+    await Loader(ctx).load(cordis_env)
+    try:
+        yield ctx
+    finally:
+        await ctx.dispose()
+
+
+@pytest.fixture
+def api_client(cordis_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """TestClient over ``create_app()`` booted from the temp cordis.yml."""
+    from fastapi.testclient import TestClient
+
+    from omniscribe.server import create_app
+
+    monkeypatch.setenv("OMNISCRIBE_CORDIS_CONFIG", str(cordis_env))
+    with TestClient(create_app()) as client:
+        yield client
 
 
 # Audit-secondary F24 (Phase 4): the Phase 0/1 debug shelf was moved
