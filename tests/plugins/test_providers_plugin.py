@@ -1,0 +1,198 @@
+"""Providers plugin: catalog shape, discovery, active provider, routes."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import httpx
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from omniscribe.config import load_settings
+from omniscribe.harness.context import Context
+from omniscribe.plugins import providers as prov
+from omniscribe.plugins.providers import (
+    PROVIDER_TEMPLATES,
+    ProviderManager,
+    ProviderManagerImpl,
+    build_providers_router,
+)
+
+
+class _FakeResponse:
+    def __init__(self, payload: dict[str, Any]) -> None:
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict[str, Any]:
+        return self._payload
+
+
+class FakeHttpClient:
+    """Records discovery calls and answers with a canned payload."""
+
+    def __init__(
+        self, payload: dict[str, Any] | None = None, *, fail: Exception | None = None
+    ) -> None:
+        self.payload = payload or {}
+        self.fail = fail
+        self.calls: list[tuple[str, dict[str, str]]] = []
+
+    async def get(
+        self, url: str, headers: dict[str, str] | None = None
+    ) -> _FakeResponse:
+        self.calls.append((url, dict(headers or {})))
+        if self.fail is not None:
+            raise self.fail
+        return _FakeResponse(self.payload)
+
+    async def aclose(self) -> None:
+        return None
+
+
+def _manager(
+    client: FakeHttpClient | None = None,
+) -> tuple[ProviderManagerImpl, FakeHttpClient]:
+    http = client or FakeHttpClient()
+    return (
+        ProviderManagerImpl(
+            load_settings(), discovery_timeout_seconds=1.0, http_client=http
+        ),
+        http,
+    )
+
+
+# -- catalog ------------------------------------------------------------------
+
+
+def test_list_providers_maps_every_template_onto_preset_shape() -> None:
+    manager, _ = _manager()
+    presets = manager.list_providers()
+    assert len(presets) == len(PROVIDER_TEMPLATES)
+    ids = {preset["id"] for preset in presets}
+    assert ids == set(PROVIDER_TEMPLATES)
+    for preset in presets:
+        assert set(preset) == {
+            "id",
+            "name",
+            "category",
+            "description",
+            "recommended_base_url",
+            "api_base",
+            "default_model",
+            "requires_key",
+            "notes",
+        }
+    lmstudio = next(preset for preset in presets if preset["id"] == "lmstudio")
+    assert lmstudio["category"] == "local"
+    assert lmstudio["requires_key"] is False
+    openai = next(preset for preset in presets if preset["id"] == "openai")
+    assert openai["category"] == "cloud"
+    assert openai["requires_key"] is True
+
+
+def test_get_provider_returns_none_for_unknown_id() -> None:
+    manager, _ = _manager()
+    assert manager.get_provider("lmstudio") is not None
+    assert manager.get_provider("nope") is None
+
+
+# -- active provider ----------------------------------------------------------
+
+
+def test_get_active_reflects_runtime_settings() -> None:
+    manager, _ = _manager()
+    active = manager.get_active()
+    settings = load_settings()
+    assert active == {
+        "api_base": settings.llm_api_base,
+        "model": settings.llm_model,
+    }
+
+
+def test_set_active_writes_back_into_settings() -> None:
+    manager, _ = _manager()
+    active = manager.set_active(
+        provider_id="openai", api_base="https://api.openai.com/v1", model="gpt-4o"
+    )
+    assert active == {"api_base": "https://api.openai.com/v1", "model": "gpt-4o"}
+    assert manager.get_active() == active
+    # the shared settings object observed the write-through
+    assert manager._settings.llm_model == "gpt-4o"
+
+
+# -- discovery ------------------------------------------------------------------
+
+
+async def test_discover_models_openai_compatible_parses_data_ids() -> None:
+    manager, http = _manager(
+        FakeHttpClient({"data": [{"id": "model-a"}, {"id": "model-b"}]})
+    )
+    result = await manager.discover_models("openai", api_key="sk-test")
+    assert result == {"models": ["model-a", "model-b"], "error": None}
+    url, headers = http.calls[0]
+    assert url == "https://api.openai.com/v1/models"
+    assert headers == {"Authorization": "Bearer sk-test"}
+
+
+async def test_discover_models_ollama_uses_api_tags() -> None:
+    manager, http = _manager(
+        FakeHttpClient({"models": [{"name": "llama3"}, {"name": "qwen2.5vl"}]})
+    )
+    result = await manager.discover_models("ollama")
+    assert result == {"models": ["llama3", "qwen2.5vl"], "error": None}
+    url, headers = http.calls[0]
+    assert url == "http://localhost:11434/api/tags"
+    assert headers == {}
+
+
+async def test_discover_models_failure_falls_back_to_presets() -> None:
+    manager, _ = _manager(FakeHttpClient(fail=httpx.ConnectError("connection refused")))
+    result = await manager.discover_models("lmstudio")
+    assert result["models"] == list(PROVIDER_TEMPLATES["lmstudio"].models)
+    assert result["error"] is not None
+
+
+async def test_discover_models_without_base_url_reports_error() -> None:
+    manager, http = _manager()
+    result = await manager.discover_models("azure")
+    assert result["models"] == []
+    assert result["error"] == "no base URL for provider"
+    assert http.calls == []
+
+
+# -- routes ------------------------------------------------------------------
+
+
+def test_router_catalog_details_and_models() -> None:
+    manager, _ = _manager(
+        FakeHttpClient({"data": [{"id": "model-a"}, {"id": "model-b"}]})
+    )
+    app = FastAPI()
+    app.include_router(build_providers_router(manager))
+    with TestClient(app) as client:
+        listing = client.get("/api/providers")
+        assert listing.status_code == 200
+        assert len(listing.json()["providers"]) == len(PROVIDER_TEMPLATES)
+
+        details = client.get("/api/providers/lmstudio")
+        assert details.status_code == 200
+        assert details.json()["id"] == "lmstudio"
+
+        assert client.get("/api/providers/nope").status_code == 404
+        assert client.get("/api/providers/nope/models").status_code == 404
+
+        models = client.get("/api/providers/openai/models")
+        assert models.status_code == 200
+        assert models.json() == {"models": ["model-a", "model-b"], "error": None}
+
+
+async def test_plugin_registers_provider_manager_service() -> None:
+    ctx = Context()
+    await ctx.plugin(prov.ProvidersPlugin(), config={})
+    manager = ctx.inject(ProviderManager)
+    assert len(manager.list_providers()) == len(PROVIDER_TEMPLATES)
+    assert ctx.routes()
+    await ctx.dispose()
