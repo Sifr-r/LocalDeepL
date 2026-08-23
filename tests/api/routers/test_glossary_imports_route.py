@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from omniscribe.api.routers import glossary_imports, state  # noqa: E402
 
-FIXTURES = Path(__file__).parent.parent / "fixtures" / "glossary"
+FIXTURES = Path(__file__).parent.parent.parent / "fixtures" / "glossary"
 
 
 @pytest.fixture

@@ -1,7 +1,7 @@
 """App-level security middleware wiring via ``server.create_app()``.
 
 Unit-level ASGI coverage of each middleware lives in
-``tests/api/test_security_middleware.py``; this suite proves the full app
+``tests/api/middleware/test_security_middleware.py``; this suite proves the full app
 actually mounts them and honors the env-driven ``SecuritySettings``.
 
 Split out of the former monolithic ``tests/test_api_safety.py``.

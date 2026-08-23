@@ -22,7 +22,7 @@ from urllib.parse import urlparse
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 STATIC_DIR = ROOT / "src" / "omniscribe" / "static"
 INDEX_HTML = STATIC_DIR / "index.html"
 

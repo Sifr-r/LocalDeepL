@@ -21,15 +21,6 @@ upward dependency. The API layer can still import this module and
 add HTTP-bound validation (e.g. ``extra="forbid"`` on request models)
 on top.
 
-Note on filename
-----------------
-The audit's recommendation was ``omniscribe/core/providers.py`` but
-that filename was already in use for the LLM provider catalog
-(``LLMProvider`` dataclass + ``PROVIDERS_CATALOG`` list). Using a
-distinct filename (``provider_config.py``) keeps the two concerns
-separable; the LLM provider catalog is metadata about external
-services, while this module is the runtime configuration type.
-
 Compatibility
 -------------
 The field names and types are intentionally identical to the previous

@@ -397,7 +397,7 @@ the three services.
 | `src/omniscribe/api/schemas/requests.py` | New `ExtractionTemplate` StrEnum (`invoice`, `resume`, `academic`, `custom`) and the `ExtractionRequest` model with `template` and `custom_prompt` fields |
 | `src/omniscribe/api/routers/ai.py` | New `extract_structured_data` service with fenced-JSON parsing, retry, and stable error mapping |
 | `src/omniscribe/api/routers/extraction.py` | New router that wires the schema, the AI service, and the SSRF guard for `api_base` |
-| `tests/api/test_extraction_translation_routers.py` | Cover template dispatch, custom-prompt fallback, and SSRF fail-closed behavior |
+| `tests/api/routers/test_extraction_translation_routers.py` | Cover template dispatch, custom-prompt fallback, and SSRF fail-closed behavior |
 | `ARCHITECTURE.md` | Document the new router and the four extraction templates in the Web API surface |
 
 ### 2026-06-09: Local document processors exposed to web/API
@@ -410,7 +410,7 @@ the three services.
 | `src/omniscribe/api/routers/ocr.py` | Instantiate selected processors, pass them into `OCRPipeline`, and expose quality metadata through `X-Document-Quality` when available |
 | `src/omniscribe/static/js/state_and_api.js` | Persist and submit web-selected document processors |
 | `src/omniscribe/static/index.html` | Expose Reading Order, Quality Analysis, Structure Analysis, and Section Analysis toggles in Advanced Configuration |
-| `tests/api/test_document_processor_selection.py` | Cover processor selection parsing, validation, and factory mapping |
+| `tests/api/services/test_document_processor_selection.py` | Cover processor selection parsing, validation, and factory mapping |
 
 ### 2026-06-09: Stage 2 local structure analysis processor
 
@@ -436,7 +436,7 @@ the three services.
 | --- | --- |
 | `src/omniscribe/api/services/document_metadata.py` | Build compact JSON-safe metadata reports from `DocumentResult` page/block processor annotations and write them atomically as temporary artifacts |
 | `src/omniscribe/api/routers/ocr.py` | Issue `X-Document-Metadata-Artifact-Id` and `X-Document-Metadata-Artifact-Token` only when report content exists, and serve protected `GET /metadata/{artifact_id}` |
-| `tests/api/test_artifacts.py` | Cover token-bound metadata artifact access and payload shape without changing text artifact behavior (formerly the monolithic API-safety suite) |
+| `tests/api/routers/test_artifacts.py` | Cover token-bound metadata artifact access and payload shape without changing text artifact behavior (formerly the monolithic API-safety suite) |
 
 ### 2026-06-09: Stage 5-12 Web/API document intelligence
 
@@ -455,7 +455,7 @@ the three services.
 | File | Responsibility |
 | --- | --- |
 | `src/omniscribe/core/grounded/rasterize.py` | Convert PDF pixmaps directly into Pillow images before emitting the final grounded OCR thumbnail JPEG |
-| `tests/core/test_grounded.py` | Guard against restoring the redundant intermediate JPEG decode |
+| `tests/core/grounded/test_grounded.py` | Guard against restoring the redundant intermediate JPEG decode |
 | `ARCHITECTURE.md` | Record the existing module layout and the direct pixmap conversion invariant |
 
 ### 2026-06-02: Stage 1 API and browser safety hardening
@@ -470,8 +470,8 @@ the three services.
 | `src/omniscribe/static/js/app.js` | Use server-issued text artifact IDs and render extraction status/errors/cards without HTML injection |
 | `src/omniscribe/static/js/state_and_api.js` | Build model select placeholder with DOM APIs before appending model-controlled option text |
 | `src/omniscribe/static/js/workspace_ui.js` | Provide safe DOM helpers for clearing elements and rendering extraction status cards |
-| `tests/api/test_ssrf.py`, `tests/api/test_uploads.py`, `tests/api/test_artifacts.py`, `tests/api/test_process_routes.py` | Cover config validation, SSRF fail-closed behavior, streaming upload validation, opaque text artifacts, stable API errors, and static JS sink removal (formerly the monolithic API-safety suite) |
-| `tests/api/test_security_qa.py` | Keep extraction JSON parsing deterministic under fail-closed SSRF validation |
+| `tests/utils/test_ssrf.py`, `tests/api/services/test_uploads.py`, `tests/api/routers/test_artifacts.py`, `tests/api/routers/test_process_routes.py` | Cover config validation, SSRF fail-closed behavior, streaming upload validation, opaque text artifacts, stable API errors, and static JS sink removal (formerly the monolithic API-safety suite) |
+| `tests/api/middleware/test_security_qa.py` | Keep extraction JSON parsing deterministic under fail-closed SSRF validation |
 
 ### 2026-06-03: Optional async translation boundary
 
@@ -484,7 +484,7 @@ the three services.
 | `src/omniscribe/api/tasks.py` | Validate async translation task inputs and pass explicit translation settings into the core workflow |
 | `src/omniscribe/api/routers/ocr.py` | Validate async translation route inputs and return deterministic 503 responses when optional async extras are unavailable |
 | `pyproject.toml` | Move Celery, Redis, LangGraph, ChromaDB, and sentence-transformers into the `async-translation` extra with `translation` as an alias extra |
-| `tests/core/test_translation_boundary.py` | Cover guarded imports without async extras and explicit translation settings injection |
+| `tests/core/translate/test_translation_boundary.py` | Cover guarded imports without async extras and explicit translation settings injection |
 
 ### 2026-06-03: Spellcheck resource package cleanup
 
@@ -536,9 +536,9 @@ the three services.
 | `src/omniscribe/api/schemas/requests.py` | `ProviderFormatEnum`, `ProviderConfig`, `ProviderTemplate`, `ActiveProviderUpdate`, `ProviderCreateRequest` schemas |
 | `src/omniscribe/core/llm/client.py` | Directs VLM/LLM completion calls through `ocr/multi_format_client.py` based on active provider configuration |
 | `src/omniscribe/api/routers/config.py` | Connects `/api/models` discovery endpoints to `ProviderManager` |
-| `tests/api/test_provider_manager.py` | Unit tests for provider configuration manager, env-var discovery, and persistence |
+| `tests/api/services/test_provider_manager.py` | Unit tests for provider configuration manager, env-var discovery, and persistence |
 | `tests/api/test_multi_format_client.py` | Unit tests for OpenAI, Anthropic, and Ollama multi-format completion execution |
-| `tests/api/test_provider_api_routes.py` | Unit tests for provider REST management API routes |
+| `tests/api/routers/test_provider_api_routes.py` | Unit tests for provider REST management API routes |
 
 
 ### 2026-08-12: Full Svelte 5 + TailwindCSS v4 Frontend Migration & Legacy Cleanup
@@ -573,7 +573,7 @@ Conducted a comprehensive 4-domain audit (Core Pipeline, Backend API/Security, F
 | --- | --- |
 | `.github/workflows/test.yml` | Integrated Node.js v20 setup, frontend dependency installation, checks/tests (`svelte-check` + `vitest`), and frontend production build prior to Python test execution |
 | `.github/workflows/release.yml` | Added frontend build step before `uv build` packaging so release wheels contain compiled frontend assets |
-| `tests/api/test_static_wiring.py` | Added graceful skip guards for when frontend static assets have not yet been built locally |
+| `tests/api/routers/test_static_wiring.py` | Added graceful skip guards for when frontend static assets have not yet been built locally |
 
 ### 2026-08-14: Core Dependencies Update (Redis & ChromaDB)
 
@@ -592,7 +592,7 @@ Conducted a comprehensive 4-domain audit (Core Pipeline, Backend API/Security, F
 ### 2026-08-18: Comprehensive 5-Domain Multi-Agent Codebase Audit
 
 | `src/omniscribe/api/routers/extraction.py` | New router that wires the schema, the AI service, and the SSRF guard for `api_base` |
-| `tests/api/test_extraction_translation_routers.py` | Cover template dispatch, custom-prompt fallback, and SSRF fail-closed behavior |
+| `tests/api/routers/test_extraction_translation_routers.py` | Cover template dispatch, custom-prompt fallback, and SSRF fail-closed behavior |
 | `ARCHITECTURE.md` | Document the new router and the four extraction templates in the Web API surface |
 
 ### 2026-06-09: Local document processors exposed to web/API
@@ -605,7 +605,7 @@ Conducted a comprehensive 4-domain audit (Core Pipeline, Backend API/Security, F
 | `src/omniscribe/api/routers/ocr.py` | Instantiate selected processors, pass them into `OCRPipeline`, and expose quality metadata through `X-Document-Quality` when available |
 | `src/omniscribe/static/js/state_and_api.js` | Persist and submit web-selected document processors |
 | `src/omniscribe/static/index.html` | Expose Reading Order, Quality Analysis, Structure Analysis, and Section Analysis toggles in Advanced Configuration |
-| `tests/api/test_document_processor_selection.py` | Cover processor selection parsing, validation, and factory mapping |
+| `tests/api/services/test_document_processor_selection.py` | Cover processor selection parsing, validation, and factory mapping |
 
 ### 2026-06-09: Stage 2 local structure analysis processor
 
@@ -631,7 +631,7 @@ Conducted a comprehensive 4-domain audit (Core Pipeline, Backend API/Security, F
 | --- | --- |
 | `src/omniscribe/api/services/document_metadata.py` | Build compact JSON-safe metadata reports from `DocumentResult` page/block processor annotations and write them atomically as temporary artifacts |
 | `src/omniscribe/api/routers/ocr.py` | Issue `X-Document-Metadata-Artifact-Id` and `X-Document-Metadata-Artifact-Token` only when report content exists, and serve protected `GET /metadata/{artifact_id}` |
-| `tests/api/test_artifacts.py` | Cover token-bound metadata artifact access and payload shape without changing text artifact behavior (formerly the monolithic API-safety suite) |
+| `tests/api/routers/test_artifacts.py` | Cover token-bound metadata artifact access and payload shape without changing text artifact behavior (formerly the monolithic API-safety suite) |
 
 ### 2026-06-09: Stage 5-12 Web/API document intelligence
 
@@ -650,7 +650,7 @@ Conducted a comprehensive 4-domain audit (Core Pipeline, Backend API/Security, F
 | File | Responsibility |
 | --- | --- |
 | `src/omniscribe/core/grounded/rasterize.py` | Convert PDF pixmaps directly into Pillow images before emitting the final grounded OCR thumbnail JPEG |
-| `tests/core/test_grounded.py` | Guard against restoring the redundant intermediate JPEG decode |
+| `tests/core/grounded/test_grounded.py` | Guard against restoring the redundant intermediate JPEG decode |
 | `ARCHITECTURE.md` | Record the existing module layout and the direct pixmap conversion invariant |
 
 ### 2026-06-02: Stage 1 API and browser safety hardening
@@ -665,8 +665,8 @@ Conducted a comprehensive 4-domain audit (Core Pipeline, Backend API/Security, F
 | `src/omniscribe/static/js/app.js` | Use server-issued text artifact IDs and render extraction status/errors/cards without HTML injection |
 | `src/omniscribe/static/js/state_and_api.js` | Build model select placeholder with DOM APIs before appending model-controlled option text |
 | `src/omniscribe/static/js/workspace_ui.js` | Provide safe DOM helpers for clearing elements and rendering extraction status cards |
-| `tests/api/test_ssrf.py`, `tests/api/test_uploads.py`, `tests/api/test_artifacts.py`, `tests/api/test_process_routes.py` | Cover config validation, SSRF fail-closed behavior, streaming upload validation, opaque text artifacts, stable API errors, and static JS sink removal (formerly the monolithic API-safety suite) |
-| `tests/api/test_security_qa.py` | Keep extraction JSON parsing deterministic under fail-closed SSRF validation |
+| `tests/utils/test_ssrf.py`, `tests/api/services/test_uploads.py`, `tests/api/routers/test_artifacts.py`, `tests/api/routers/test_process_routes.py` | Cover config validation, SSRF fail-closed behavior, streaming upload validation, opaque text artifacts, stable API errors, and static JS sink removal (formerly the monolithic API-safety suite) |
+| `tests/api/middleware/test_security_qa.py` | Keep extraction JSON parsing deterministic under fail-closed SSRF validation |
 
 ### 2026-06-03: Optional async translation boundary
 
@@ -679,7 +679,7 @@ Conducted a comprehensive 4-domain audit (Core Pipeline, Backend API/Security, F
 | `src/omniscribe/api/tasks.py` | Validate async translation task inputs and pass explicit translation settings into the core workflow |
 | `src/omniscribe/api/routers/ocr.py` | Validate async translation route inputs and return deterministic 503 responses when optional async extras are unavailable |
 | `pyproject.toml` | Move Celery, Redis, LangGraph, ChromaDB, and sentence-transformers into the `async-translation` extra with `translation` as an alias extra |
-| `tests/core/test_translation_boundary.py` | Cover guarded imports without async extras and explicit translation settings injection |
+| `tests/core/translate/test_translation_boundary.py` | Cover guarded imports without async extras and explicit translation settings injection |
 
 ### 2026-06-03: Spellcheck resource package cleanup
 
@@ -731,9 +731,9 @@ Conducted a comprehensive 4-domain audit (Core Pipeline, Backend API/Security, F
 | `src/omniscribe/api/schemas/requests.py` | `ProviderFormatEnum`, `ProviderConfig`, `ProviderTemplate`, `ActiveProviderUpdate`, `ProviderCreateRequest` schemas |
 | `src/omniscribe/core/llm/client.py` | Directs VLM/LLM completion calls through `ocr/multi_format_client.py` based on active provider configuration |
 | `src/omniscribe/api/routers/config.py` | Connects `/api/models` discovery endpoints to `ProviderManager` |
-| `tests/api/test_provider_manager.py` | Unit tests for provider configuration manager, env-var discovery, and persistence |
+| `tests/api/services/test_provider_manager.py` | Unit tests for provider configuration manager, env-var discovery, and persistence |
 | `tests/api/test_multi_format_client.py` | Unit tests for OpenAI, Anthropic, and Ollama multi-format completion execution |
-| `tests/api/test_provider_api_routes.py` | Unit tests for provider REST management API routes |
+| `tests/api/routers/test_provider_api_routes.py` | Unit tests for provider REST management API routes |
 
 
 ### 2026-08-12: Full Svelte 5 + TailwindCSS v4 Frontend Migration & Legacy Cleanup
@@ -768,7 +768,7 @@ Conducted a comprehensive 4-domain audit (Core Pipeline, Backend API/Security, F
 | --- | --- |
 | `.github/workflows/test.yml` | Integrated Node.js v20 setup, frontend dependency installation, checks/tests (`svelte-check` + `vitest`), and frontend production build prior to Python test execution |
 | `.github/workflows/release.yml` | Added frontend build step before `uv build` packaging so release wheels contain compiled frontend assets |
-| `tests/api/test_static_wiring.py` | Added graceful skip guards for when frontend static assets have not yet been built locally |
+| `tests/api/routers/test_static_wiring.py` | Added graceful skip guards for when frontend static assets have not yet been built locally |
 
 ### 2026-08-14: Core Dependencies Update (Redis & ChromaDB)
 
@@ -804,7 +804,7 @@ Conducted an exhaustive 5-domain audit (66 findings across Core Pipeline, API & 
 | `tests/core/test_pipeline_recall.py` | Replaced `pytest.skip` on empty pipeline results with strict `assert doc_result is not None` and `assert len(captured) > 0` |
 | `tests/api/test_integration.py` | Replaced `pytest.skip` on empty boxes with strict `assert len(boxes) > 0` and `assert len(boxes) >= 3` |
 | `compose.yaml` | Overrode container healthcheck for Celery `worker` service with native `celery inspect ping` |
-| `tests/api/test_security_middleware.py` | Added regression test `test_management_routes_protected_when_only_subsystem_token_set` (formerly the separate-auth suite) |
+| `tests/api/middleware/test_security_middleware.py` | Added regression test `test_management_routes_protected_when_only_subsystem_token_set` (formerly the separate-auth suite) |
 
 ### 2026-08-18: Phase 1 High-Priority Reliability & Security Remediations
 
@@ -826,7 +826,7 @@ Conducted an exhaustive 5-domain audit (66 findings across Core Pipeline, API & 
 | `frontend/src/lib/stores/pdfPreview.ts` | Explicitly call `pdfDoc.destroy()` in `resetTransient()` and `page.cleanup()` in `renderPage()` to prevent PDF.js canvas/worker memory leaks |
 | `pyproject.toml` | Set `mypy_path = "src"` for consistent import resolution |
 | `Dockerfile` | Use `COPY --chown=app:app` and remove redundant `RUN chown -R` layer, reducing image size by ~1.5 GB |
-| `tests/core/test_glossary_sources_sql_git.py` | Added regression test `test_ssrf_blocked_dsn_rejected` |
+| `tests/core/glossary_sources/test_glossary_sources_sql_git.py` | Added regression test `test_ssrf_blocked_dsn_rejected` |
 
 ### 2026-08-18: Comprehensive Audit Phase 2 Remediations (Polish & Maintainability)
 
@@ -871,9 +871,9 @@ Conducted an exhaustive 5-domain audit (66 findings across Core Pipeline, API & 
 | `src/omniscribe/api/middleware/rate_limit.py` | Implement `OrderedDict` sliding window with LRU eviction and strict 10,000 active IP bound in `RateLimitMiddleware` to prevent unbounded memory growth |
 | `src/omniscribe/utils/security.py` | Unconditionally block IMDS (`169.254.0.0/16`, `fe80::/10`), CGNAT (`100.64.0.0/10`), and `0.0.0.0/8` regardless of `ALLOW_SSRF_LOCAL` setting in `is_ssrf_target` and `is_blocked_host` |
 | `src/omniscribe/api/routers/common.py` | Emit `DeprecationWarning` and warning log when `?token=` query param is used in `get_access_token`, prioritizing `Authorization: Bearer` and `X-Artifact-Token` headers |
-| `tests/api/test_distributed_ocr_tasks.py` | Unit tests for Celery `process_ocr_task` execution, error handling, Redis-mode dispatch, and status resolution |
-| `tests/api/test_security_middleware.py` | Unit tests for `RateLimitMiddleware` LRU bounds (10,000 cap, LRU eviction), `BearerAuthMiddleware`, and `MaxUploadSizeMiddleware` |
-| `tests/api/test_token_deprecation.py` | Unit tests for token sunset deprecation warning emission, log warning, and header precedence |
+| `tests/api/services/test_distributed_ocr_tasks.py` | Unit tests for Celery `process_ocr_task` execution, error handling, Redis-mode dispatch, and status resolution |
+| `tests/api/middleware/test_security_middleware.py` | Unit tests for `RateLimitMiddleware` LRU bounds (10,000 cap, LRU eviction), `BearerAuthMiddleware`, and `MaxUploadSizeMiddleware` |
+| `tests/api/middleware/test_token_deprecation.py` | Unit tests for token sunset deprecation warning emission, log warning, and header precedence |
 
 ### 2026-08-23: Core Workflow & Engine Decomposition (Phase 3)
 

@@ -12,7 +12,7 @@ Sub-package layout:
 
 This ``__init__`` re-exports the *public* surface exactly as it appeared
 on the old ``omniscribe/core/ocr.py`` module — both the test suite
-(``tests/core/test_ocr.py``) and downstream callers (the ground engine,
+(``tests/core/ocr/test_ocr.py``) and downstream callers (the ground engine,
 processors, routers) import against ``omniscribe.core.ocr`` and must
 keep working without modification.
 """

@@ -161,7 +161,7 @@ def test_synthetic_pdf_fixture_is_session_scoped() -> None:
     """The 60-page PDF fixture in ``test_chunked_runner.py`` is built
     once per pytest run, not once per test.
     """
-    from tests.api import test_chunked_runner
+    from tests.api.services.ocr import test_chunked_runner
 
     marker = test_chunked_runner.synthetic_pdf._fixture_function_marker
     assert marker.scope == "session", (
@@ -175,7 +175,7 @@ def test_chunked_runner_autouse_session_tmp_path() -> None:
     that the file autouses — verify both pieces are wired so a
     future refactor doesn't break the session-scoped path.
     """
-    from tests.api import test_chunked_runner
+    from tests.api.services.ocr import test_chunked_runner
 
     assert hasattr(test_chunked_runner, "_session_tmp_path")
     marker = test_chunked_runner._session_tmp_path._fixture_function_marker
@@ -216,7 +216,9 @@ def test_health_endpoints_drops_module_asyncio_pytestmark() -> None:
     because ``asyncio_mode = "auto"`` already covers every
     ``async def test_*`` in the file.
     """
-    text = (TESTS_DIR / "api" / "test_health_endpoints.py").read_text(encoding="utf-8")
+    text = (TESTS_DIR / "api" / "routers" / "test_health_endpoints.py").read_text(
+        encoding="utf-8"
+    )
     # Match only the assignment form, not a comment that mentions
     # the marker in prose.
     pattern = re.compile(
@@ -305,8 +307,8 @@ _PER_TEST_BUDGET_S = 1.0
 @pytest.mark.parametrize(
     "module",
     [
-        "tests/core/test_pdf.py",  # F4.7
-        "tests/core/test_text_layer_recall.py",  # F4.8
+        "tests/core/pdf/test_pdf.py",  # F4.7
+        "tests/core/recall/test_text_layer_recall.py",  # F4.8
         "tests/core/workflows/test_phase5_env_and_spellcheck.py",  # F4.13
     ],
 )

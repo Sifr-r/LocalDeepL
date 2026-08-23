@@ -37,7 +37,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 # ---------------------------------------------------------------------------
-# Shared form helpers (same shape as tests/api/test_api_quality_options.py)
+# Shared form helpers (same shape as tests/api/routers/test_api_quality_options.py)
 # ---------------------------------------------------------------------------
 
 

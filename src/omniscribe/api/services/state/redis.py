@@ -288,6 +288,6 @@ class RedisStateBackend:
         )
         self.ocr_job_queue = OCRJobQueue()
         # Duck-typed config-store attribute (see
-        # ``services/state_backend.py`` module docstring). Not part of
+        # ``api/services/state/base.py`` module docstring). Not part of
         # the :class:`StateBackend` Protocol.
         self.config_store = RedisConfigStore(redis_url)

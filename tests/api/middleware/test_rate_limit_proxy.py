@@ -44,7 +44,7 @@ from omniscribe.api.middleware.settings import SecuritySettings
 def _scope(*, client_ip: str, xff: str | None = None) -> dict:
     """Build a minimal ASGI ``http`` scope for ``_client_key`` to read.
 
-    Mirrors the shape used by ``tests/api/test_security_middleware_app.py``'s
+    Mirrors the shape used by ``tests/api/middleware/test_security_middleware_app.py``'s
     rate-limit test so a future refactor that renames fields surfaces
     here too.
     """

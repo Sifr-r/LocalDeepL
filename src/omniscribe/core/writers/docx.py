@@ -1,5 +1,5 @@
 """
-docx_writer - Utility for exporting OCR text to Word Documents (.docx).
+core/writers/docx - Utility for exporting OCR text to Word Documents (.docx).
 """
 
 from __future__ import annotations

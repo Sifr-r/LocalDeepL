@@ -441,7 +441,7 @@ class SQLiteStateBackend:
     lexicon_store: LexiconStore
     ocr_job_queue: OCRJobQueue
     # Duck-typed config-store attribute (see
-    # ``services/state_backend.py`` module docstring). Not part of the
+    # ``api/services/state/base.py`` module docstring). Not part of the
     # :class:`StateBackend` Protocol.
     config_store: SQLiteConfigStore
 

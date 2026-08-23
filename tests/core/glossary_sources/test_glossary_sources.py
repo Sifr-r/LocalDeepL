@@ -19,7 +19,7 @@ from omniscribe.core.glossary_sources import (
 )
 from omniscribe.core.translate.glossary import Glossary
 
-FIXTURES = Path(__file__).parent.parent / "fixtures" / "glossary"
+FIXTURES = Path(__file__).parent.parent.parent / "fixtures" / "glossary"
 
 
 def _read(name: str) -> bytes:

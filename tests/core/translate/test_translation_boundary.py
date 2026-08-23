@@ -63,7 +63,7 @@ def test_optional_extras_split_lexicon_rag_dependencies():
     import tomllib
     from pathlib import Path
 
-    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    pyproject = Path(__file__).resolve().parents[3] / "pyproject.toml"
     data = tomllib.loads(pyproject.read_bytes().decode("utf-8"))
     extras = data["project"]["optional-dependencies"]
 

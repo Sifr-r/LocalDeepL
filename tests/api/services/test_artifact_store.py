@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 ARTIFACTS_PATH = ROOT / "src" / "omniscribe" / "api" / "services" / "artifacts.py"
 SPEC = util.spec_from_file_location("artifact_service_under_test", ARTIFACTS_PATH)
 assert SPEC is not None

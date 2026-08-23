@@ -450,7 +450,7 @@ class TestProcessRouteCancel:
 
         # Manually seed the manager's cancel flag for this channel so
         # ``is_cancelled`` returns True. (The real WebSocket connect
-        # path is exercised in tests/api/test_websocket_auth.py; here we
+        # path is exercised in tests/api/routers/test_websocket_auth.py; here we
         # only verify the cancel callback is wired to the manager.) The
         # flag is a synchronous ``.is_set()`` call, so use a regular
         # MagicMock — not an AsyncMock.

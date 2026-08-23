@@ -1,14 +1,14 @@
 """Embedded-text-layer recall source for the hybrid pipeline.
 
-Second box source alongside the pixel-statistics ``text_recall`` booster
-(TODOS.md "PDF text-layer recall alternative", independent CEO voice):
-digital PDFs already carry exact glyph positions, so text lines Surya
-missed can be recovered from ``page.get_text("words")`` with no image
-analysis at all. Scanned pages have no text layer and contribute nothing,
-making the pass a strict no-op there. ``HybridEngine._detect_layout``
-merges the recovered line boxes into the detected boxes before dense
-selection, OCR, and DP alignment — boxes only, so recovered lines flow
-through the same OCR / alignment / trust stack as detected ones.
+Second box source alongside the pixel-statistics whitespace booster
+(``core/recall/whitespace.py``): digital PDFs already carry exact glyph
+positions, so text lines Surya missed can be recovered from
+``page.get_text("words")`` with no image analysis at all. Scanned pages
+have no text layer and contribute nothing, making the pass a strict no-op
+there. ``HybridEngine._detect_layout`` merges the recovered line boxes
+into the detected boxes before dense selection, OCR, and DP alignment —
+boxes only, so recovered lines flow through the same OCR / alignment /
+trust stack as detected ones.
 
 Known limitation: candidate granularity is the PDF's own extraction
 lines, so PDFs with poor positional fidelity in their text layer
@@ -44,7 +44,7 @@ _MIN_WORDS_ON_PAGE = 3
 # existing box is the same line, not a miss.
 _MAX_CONTAINMENT = 0.6
 _MAX_IOU = 0.3
-# Straddle guard (mirrors ``text_recall``): a candidate overlapping >= 2
+# Straddle guard (mirrors the whitespace booster): a candidate overlapping >= 2
 # existing boxes this much (as a fraction of its own area) spans a gutter
 # or stacked lines and is rejected rather than merged — a wide box would
 # feed garbled multi-region text to per-box OCR.

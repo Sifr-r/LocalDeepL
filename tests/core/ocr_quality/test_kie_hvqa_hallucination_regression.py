@@ -41,7 +41,7 @@ import pytest
 from omniscribe.core.ocr_quality.hallucination import evaluate
 from omniscribe.core.ocr_quality.types import HallucinationRisk
 
-DATASETS_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "datasets"
+DATASETS_DIR = Path(__file__).resolve().parent.parent.parent / "fixtures" / "datasets"
 MINI_FIXTURE = DATASETS_DIR / "kie_hvqa_mini.json"
 FULL_FIXTURE = DATASETS_DIR / "kie_hvqa_full.json"
 

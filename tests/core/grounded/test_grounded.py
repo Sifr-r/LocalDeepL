@@ -37,7 +37,7 @@ from omniscribe.core.ocr import LLMCallError, ModelNotLoadedError
 from omniscribe.core.pdf import PDFHandler
 from omniscribe.pipeline import OCRPipeline
 
-FIXTURES = Path(__file__).parent.parent / "fixtures"
+FIXTURES = Path(__file__).parent.parent.parent / "fixtures"
 
 
 def test_grounded_pdf_rasterization_skips_intermediate_jpeg_decode(

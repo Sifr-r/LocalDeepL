@@ -114,8 +114,8 @@ class BlockNode:
     spans: list[Span] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     # In-memory cross-reference to the parent FigureNode. Lives here
-    # only so `html_writer` (which iterates `PageTree.children`, not
-    # `DocumentTree.figures`) can inline the image without a second
+    # only so `core/writers/html.py` (which iterates `PageTree.children`,
+    # not `DocumentTree.figures`) can inline the image without a second
     # pass. Not serialized in `to_dict`; the canonical bytes are
     # carried by `FigureNode.image_bytes` and round-trip through its
     # base64-encoded `image_bytes_b64` key.
@@ -486,9 +486,9 @@ def from_document_result(document: DocumentResult) -> DocumentTree:
                 tree.figures.append(fig_node)
                 # Keep a BlockNode in the page children too, just mark
                 # it as figure. `image_bytes` is a real field on
-                # BlockNode now (added so html_writer can inline the
-                # figure from a page-children walk without a second
-                # pass over DocumentTree.figures); we mirror the
+                # BlockNode now (added so core/writers/html.py can
+                # inline the figure from a page-children walk without a
+                # second pass over DocumentTree.figures); we mirror the
                 # FigureNode's bytes here.
                 node = BlockNode(
                     block_type=BlockType.FIGURE,
