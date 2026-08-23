@@ -12,7 +12,7 @@ import pytest
 pytest.importorskip("fastapi")
 
 from omniscribe.api.routers import state
-from omniscribe.api.services.security import api_error_response
+from omniscribe.api.services.uploads import api_error_response
 from tests.api._safety_helpers import _api_client
 
 

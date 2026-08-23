@@ -440,7 +440,7 @@ def test_state_module_is_singleton_boundary():
     # Runtime: the singleton is a LocalStateBackend and the six
     # backend-backed aliases resolve to the same instance on the backend.
     from omniscribe.api.routers import state as router_state
-    from omniscribe.api.services.state_backend import (
+    from omniscribe.api.services.state.base import (
         LocalStateBackend,
         StateBackend,
     )

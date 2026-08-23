@@ -107,7 +107,7 @@ def test_rate_limit_isolates_per_client_ip(monkeypatch):
     the same client; the underlying deque-by-key isolation is what
     the property is exercising.
     """
-    from omniscribe.api.services.security_middleware import RateLimitMiddleware
+    from omniscribe.api.middleware import RateLimitMiddleware
 
     fake_app_calls: list[str] = []
 

@@ -11,6 +11,12 @@ load_dotenv()
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
+from omniscribe.api.middleware.settings import (
+    ABSOLUTE_MAX_UPLOAD_MB,
+    DEFAULT_MAX_UPLOAD_MB,
+    SecuritySettings,
+)
+
 # Back-compat re-exports — Phase C / Task 9 extracted ``/api/models*``
 # into :mod:`omniscribe.api.routers.models`. Old import paths
 # (``from omniscribe.api.routers.config import list_models`` etc.) still
@@ -28,29 +34,24 @@ from omniscribe.api.schemas import (
     OcrConfigUpdate,
     TranslationConfigUpdate,
 )
-from omniscribe.api.services.config_helpers import (
+from omniscribe.api.services.envelope import BackendUnavailable, SSRFBlocked
+from omniscribe.api.services.helpers import (
     CONFIG_BACKEND_INCOMPATIBLE_MESSAGE as _CONFIG_BACKEND_INCOMPATIBLE_MESSAGE,
 )
-from omniscribe.api.services.config_helpers import (
+from omniscribe.api.services.helpers import (
     ConfigBackendIncompatible as _ConfigBackendIncompatible,
 )
-from omniscribe.api.services.config_helpers import (
+from omniscribe.api.services.helpers import (
     _get_config_store as _get_config_store,
 )
-from omniscribe.api.services.config_helpers import (
+from omniscribe.api.services.helpers import (
     load_config_from_store as _load_config_from_store,
 )
-from omniscribe.api.services.config_helpers import (
+from omniscribe.api.services.helpers import (
     mask_api_key as _mask_api_key,
 )
-from omniscribe.api.services.config_helpers import (
+from omniscribe.api.services.helpers import (
     persist_config as _persist_config,
-)
-from omniscribe.api.services.envelope import BackendUnavailable, SSRFBlocked
-from omniscribe.api.services.security_config import (
-    ABSOLUTE_MAX_UPLOAD_MB,
-    DEFAULT_MAX_UPLOAD_MB,
-    SecuritySettings,
 )
 from omniscribe.core.translate.config import (
     DEFAULT_TRANSLATION_API_BASE,
@@ -231,11 +232,11 @@ _config: RuntimeConfigDict = {
 # Phase C / Task 8: the helpers (``_get_config_store``,
 # ``_load_config_from_store``, ``_persist_config``, ``_mask_api_key``,
 # ``_ConfigBackendIncompatible``) live in
-# :mod:`omniscribe.api.services.config_helpers` now. The legacy module-level
+# :mod:`omniscribe.api.services.helpers` now. The legacy module-level
 # ``_config`` dict below remains the canonical env-derived seed source and
 # the in-process cache that ``load_config_from_store`` writes through.
 #
-# See ``services/config_helpers.py`` for the rationale + ``StateBackend``
+# See ``services/helpers.py`` for the rationale + ``StateBackend``
 # contract. The helpers are re-exported above for backwards compat with
 # code that already imports them from ``routers.config``.
 

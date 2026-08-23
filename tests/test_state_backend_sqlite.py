@@ -25,12 +25,12 @@ import pytest
 
 from omniscribe.api.services.artifacts import ArtifactNotFoundError
 from omniscribe.api.services.jobs import JobHistory
-from omniscribe.api.services.state_backend import (
+from omniscribe.api.services.state.base import (
     LocalStateBackend,
     StateBackend,
     build_state_backend,
 )
-from omniscribe.api.services.state_backend_sqlite import (
+from omniscribe.api.services.state.sqlite import (
     SQLiteJobHistory,
     SQLiteStateBackend,
     SQLiteTextArtifactStore,

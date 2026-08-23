@@ -17,8 +17,8 @@ import json
 
 from fastapi.responses import JSONResponse
 
-from omniscribe.api.services.api_helpers import stable_server_error
-from omniscribe.api.services.security import SERVER_ERROR_MESSAGE
+from omniscribe.api.services.helpers import stable_server_error
+from omniscribe.api.services.uploads import SERVER_ERROR_MESSAGE
 
 
 def _body(response: JSONResponse) -> dict:

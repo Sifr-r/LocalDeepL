@@ -15,10 +15,10 @@ from omniscribe.api.routers import ocr, state
 from omniscribe.api.routers.config import _config
 from omniscribe.api.services.artifacts import TextArtifactHandle
 from omniscribe.api.services.jobs import JobRecord
-from omniscribe.api.services.ocr_jobs import OCRJobRecord, OCRJobStatus
-from omniscribe.api.services.ocr_settings import resolve_process_settings
-from omniscribe.api.services.state_backend import LocalStateBackend
-from omniscribe.api.services.state_backend_redis import RedisStateBackend
+from omniscribe.api.services.ocr.jobs import OCRJobRecord, OCRJobStatus
+from omniscribe.api.services.ocr.settings import resolve_process_settings
+from omniscribe.api.services.state.base import LocalStateBackend
+from omniscribe.api.services.state.redis import RedisStateBackend
 from omniscribe.api.tasks import _CeleryTaskBase, _OCRTask, process_ocr_task
 
 

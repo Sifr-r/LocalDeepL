@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from omniscribe.api.routers import state as router_state
-from omniscribe.api.services.state_backend import (
+from omniscribe.api.services.state.base import (
     LocalStateBackend,
     build_state_backend,
 )
@@ -61,8 +61,8 @@ def test_sqlite_backend_wired_through_factory(
     """With ``OMNISCRIBE_STATE_BACKEND=sqlite``, a fresh import of
     ``state.py`` must produce a :class:`SQLiteStateBackend`.
     """
-    pytest.importorskip("omniscribe.api.services.state_backend_sqlite")
-    from omniscribe.api.services.state_backend_sqlite import SQLiteStateBackend
+    pytest.importorskip("omniscribe.api.services.state.sqlite")
+    from omniscribe.api.services.state.sqlite import SQLiteStateBackend
 
     monkeypatch.setenv("OMNISCRIBE_STATE_BACKEND", "sqlite")
     monkeypatch.setenv("OMNISCRIBE_ARTIFACT_DIR", str(tmp_path))
@@ -70,7 +70,7 @@ def test_sqlite_backend_wired_through_factory(
 
     assert isinstance(router_state.backend, SQLiteStateBackend)
     # And it must satisfy the StateBackend Protocol (duck-typed).
-    from omniscribe.api.services.state_backend import StateBackend
+    from omniscribe.api.services.state.base import StateBackend
 
     assert isinstance(router_state.backend, StateBackend)
     # The module-level alias must track the new backend (this is what the
@@ -91,7 +91,7 @@ def test_redis_backend_wired_through_factory(
     acceptable for the wiring test — the constructor never opens a socket.
     """
     pytest.importorskip("redis")
-    from omniscribe.api.services.state_backend_redis import RedisStateBackend
+    from omniscribe.api.services.state.redis import RedisStateBackend
 
     monkeypatch.setenv("OMNISCRIBE_STATE_BACKEND", "redis")
     monkeypatch.setenv("OMNISCRIBE_ARTIFACT_DIR", str(tmp_path))
@@ -102,7 +102,7 @@ def test_redis_backend_wired_through_factory(
     importlib.reload(router_state)
 
     assert isinstance(router_state.backend, RedisStateBackend)
-    from omniscribe.api.services.state_backend import StateBackend
+    from omniscribe.api.services.state.base import StateBackend
 
     assert isinstance(router_state.backend, StateBackend)
     assert router_state.lexicon_store is router_state.backend.lexicon_store

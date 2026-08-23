@@ -24,11 +24,12 @@ import pytest
 
 pytest.importorskip("fastapi")
 
-from omniscribe.api.routers import ocr, state
+from omniscribe.api.routers import state
 from omniscribe.api.routers.config import _config
 from omniscribe.api.routers.ocr import _run_ocr_pipeline
 from omniscribe.api.services.artifacts import TextArtifactStore
-from omniscribe.api.services.ocr_settings import resolve_process_settings
+from omniscribe.api.services.ocr import execution as ocr_execution
+from omniscribe.api.services.ocr.settings import resolve_process_settings
 from tests.api._safety_helpers import _process_form_kwargs
 
 
@@ -83,8 +84,8 @@ def test_run_ocr_pipeline_dispatches_to_thread_pool_worker(tmp_path: Path):
         )
 
         with (
-            patch("omniscribe.api.routers.ocr.build_pipeline") as mock_build,
-            patch("omniscribe.api.routers.ocr.verify_backend_model"),
+            patch("omniscribe.api.services.ocr.execution.build_pipeline") as mock_build,
+            patch("omniscribe.api.services.ocr.execution.verify_backend_model"),
         ):
             pipeline = _ThreadProbingPipeline()
             mock_build.return_value = (pipeline, None)
@@ -175,8 +176,8 @@ def test_run_ocr_pipeline_progress_bridge_does_not_block_worker_thread(
         async def send_quality_summary(self, *args, **kwargs):
             return None
 
-    original_manager = ocr.manager
-    ocr.manager = _SlowConnectionManager()  # type: ignore[assignment]
+    original_manager = ocr_execution.manager
+    ocr_execution.manager = _SlowConnectionManager()  # type: ignore[assignment]
     original_text_store = state.text_artifacts
     state.text_artifacts = TextArtifactStore(artifact_dir=tmp_path / "text")
     try:
@@ -187,8 +188,8 @@ def test_run_ocr_pipeline_progress_bridge_does_not_block_worker_thread(
         )
 
         with (
-            patch("omniscribe.api.routers.ocr.build_pipeline") as mock_build,
-            patch("omniscribe.api.routers.ocr.verify_backend_model"),
+            patch("omniscribe.api.services.ocr.execution.build_pipeline") as mock_build,
+            patch("omniscribe.api.services.ocr.execution.verify_backend_model"),
         ):
             pipeline = _CountingPipeline()
             mock_build.return_value = (pipeline, None)
@@ -204,7 +205,7 @@ def test_run_ocr_pipeline_progress_bridge_does_not_block_worker_thread(
             )
             elapsed = time.monotonic() - started
     finally:
-        ocr.manager = original_manager  # type: ignore[assignment]
+        ocr_execution.manager = original_manager  # type: ignore[assignment]
         state.text_artifacts = original_text_store
 
     # 3 progress frames × 0.1s = 0.3s if the bridge is fire-and-forget.

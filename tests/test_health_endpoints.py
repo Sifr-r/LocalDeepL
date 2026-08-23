@@ -19,7 +19,7 @@ from typing import Any, cast
 
 import pytest
 
-from omniscribe.api.services.security_middleware import BearerAuthMiddleware
+from omniscribe.api.middleware import BearerAuthMiddleware
 
 # F4.15 audit fix: ``pytestmark = pytest.mark.asyncio`` is redundant
 # under ``asyncio_mode = "auto"`` (set in pyproject.toml). The

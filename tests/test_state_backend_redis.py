@@ -13,14 +13,14 @@ from pathlib import Path
 import fakeredis
 import pytest
 
-from omniscribe.api.services import state_backend_redis as redis_backend_mod
 from omniscribe.api.services.artifacts import (
     ArtifactAccessDeniedError,
     ArtifactNotFoundError,
 )
 from omniscribe.api.services.jobs import JobStatus
-from omniscribe.api.services.state_backend import StateBackend
-from omniscribe.api.services.state_backend_redis import (
+from omniscribe.api.services.state import redis as redis_backend_mod
+from omniscribe.api.services.state.base import StateBackend
+from omniscribe.api.services.state.redis import (
     RedisJobHistory,
     RedisStateBackend,
     RedisTextArtifactStore,

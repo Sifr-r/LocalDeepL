@@ -30,7 +30,7 @@ from omniscribe.api.plugin import (
     in_memory_session_log_provider,
     local_job_queue_provider,
 )
-from omniscribe.api.services.ocr_jobs import OCRJobQueue
+from omniscribe.api.services.ocr.jobs import OCRJobQueue
 
 # -- LogEvent envelope -------------------------------------------------------
 

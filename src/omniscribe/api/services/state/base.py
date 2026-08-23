@@ -67,7 +67,7 @@ from typing import Protocol, runtime_checkable
 from omniscribe.api.services.artifacts import TextArtifactStore
 from omniscribe.api.services.config_store import InMemoryConfigStore
 from omniscribe.api.services.jobs import JobHistory
-from omniscribe.api.services.ocr_jobs import OCRJobQueue
+from omniscribe.api.services.ocr.jobs import OCRJobQueue
 from omniscribe.api.services.progress import ProgressService
 from omniscribe.core.lexicon import (
     LanceDBLexiconStore,
@@ -196,7 +196,7 @@ def build_state_backend(settings: object) -> StateBackend:
                 "`redis` package. Install it with `uv add redis` "
                 "(or `pip install redis`)."
             ) from exc
-        from omniscribe.api.services.state_backend_redis import RedisStateBackend
+        from omniscribe.api.services.state.redis import RedisStateBackend
 
         artifact_dir = getattr(settings, "artifact_directory", None)
         redis_kwargs: dict[str, object] = {}
@@ -206,7 +206,7 @@ def build_state_backend(settings: object) -> StateBackend:
             redis_kwargs["artifact_dir"] = artifact_dir
         return RedisStateBackend(**redis_kwargs)  # type: ignore[arg-type,return-value]
     if backend_name == "sqlite":
-        from omniscribe.api.services.state_backend_sqlite import SQLiteStateBackend
+        from omniscribe.api.services.state.sqlite import SQLiteStateBackend
 
         artifact_dir = getattr(settings, "artifact_directory", None)
         db_path = getattr(settings, "state_db_path", None)

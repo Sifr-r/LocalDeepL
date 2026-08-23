@@ -50,11 +50,11 @@ def test_process_surfaces_partial_page_failures_in_headers_and_history(tmp_path:
     with (
         patch("omniscribe.utils.security.socket.getaddrinfo", side_effect=_public_dns),
         patch(
-            "omniscribe.api.services.ocr_pipeline_factory.OCRPipeline",
+            "omniscribe.api.services.ocr.pipeline_factory.OCRPipeline",
             _FailingDummyPipeline,
         ),
-        patch("omniscribe.api.services.ocr_pipeline_factory.get_shared_hybrid_aligner"),
-        patch("omniscribe.api.services.ocr_pipeline_factory.PDFHandler"),
+        patch("omniscribe.api.services.ocr.pipeline_factory.get_shared_hybrid_aligner"),
+        patch("omniscribe.api.services.ocr.pipeline_factory.PDFHandler"),
     ):
         response = client.post(
             "/process",

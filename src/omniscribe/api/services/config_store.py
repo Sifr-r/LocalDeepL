@@ -4,7 +4,7 @@ A small key/value abstraction layered on top of the StateBackend so the
 ``/api/config`` POST handler can persist updates in a way that all
 uvicorn workers see. Each StateBackend implementation owns a
 ``config_store`` attribute (duck-typed, not part of the
-:class:`omniscribe.api.services.state_backend.StateBackend` Protocol)
+:class:`omniscribe.api.services.state.base.StateBackend` Protocol)
 so the existing Protocol surface is preserved and the seven existing
 attributes remain the only "required" ones.
 
@@ -13,10 +13,10 @@ Three implementations ship:
 - :class:`InMemoryConfigStore` — per-process dict, **not** cross-worker
   visible. The default when ``OMNISCRIBE_STATE_BACKEND`` is unset.
 - :class:`SQLiteConfigStore` — single-row table in the same SQLite file
-  the :class:`~omniscribe.api.services.state_backend_sqlite.SQLiteStateBackend`
+  the :class:`~omniscribe.api.services.state.sqlite.SQLiteStateBackend`
   uses. Cross-worker visible.
 - :class:`RedisConfigStore` — single key in the same Redis instance
-  the :class:`~omniscribe.api.services.state_backend_redis.RedisStateBackend`
+  the :class:`~omniscribe.api.services.state.redis.RedisStateBackend`
   uses. Cross-worker visible.
 
 The /api/config POST handler calls :meth:`is_cross_worker_visible`
@@ -38,7 +38,7 @@ from typing import Any, Protocol, cast, runtime_checkable
 class ConfigStore(Protocol):
     """Cross-worker-visible runtime config store.
 
-    The :class:`~omniscribe.api.services.state_backend.StateBackend`
+    The :class:`~omniscribe.api.services.state.base.StateBackend`
     Protocol does not list ``config_store``; every concrete backend
     still owns one as a duck-typed extra attribute so the Protocol
     surface stays at seven. This protocol is for the *value* of that
@@ -57,8 +57,8 @@ class ConfigStore(Protocol):
 class InMemoryConfigStore:
     """Per-process config store. NOT cross-worker visible.
 
-    The default when :class:`~omniscribe.api.services.state_backend.LocalStateBackend`
-    is the active :class:`~omniscribe.api.services.state_backend.StateBackend`.
+    The default when :class:`~omniscribe.api.services.state.base.LocalStateBackend`
+    is the active :class:`~omniscribe.api.services.state.base.StateBackend`.
     The /api/config POST handler refuses updates with a 503 when this
     is the active store so operators get a clear error instead of a
     silently-broken multi-worker deployment (issue H1).
@@ -100,7 +100,7 @@ class SQLiteConfigStore:
     succeeds without a separate migration step.
 
     Threading matches the rest of
-    :mod:`~omniscribe.api.services.state_backend_sqlite`: each
+    :mod:`~omniscribe.api.services.state.sqlite`: each
     operation opens and closes its own ``sqlite3.Connection`` with
     WAL mode so concurrent readers do not block each other.
     """

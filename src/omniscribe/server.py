@@ -90,6 +90,7 @@ def create_app() -> ASGIApplication:
         MaxUploadSizeMiddleware,
         RateLimitMiddleware,
     )
+    from omniscribe.api.middleware.settings import SecuritySettings
     from omniscribe.api.plugin import (
         PluginContext,
         config_store_provider,
@@ -121,7 +122,6 @@ def create_app() -> ASGIApplication:
     from omniscribe.api.routers.models import router as models_router
     from omniscribe.api.services.envelope import register_envelope_handlers
     from omniscribe.api.services.lifespan import LifespanRunner, LifespanStep
-    from omniscribe.api.services.security_config import SecuritySettings
 
     plugin_ctx = PluginContext("omniscribe")
     # Always mount the local job queue provider so the seam is available

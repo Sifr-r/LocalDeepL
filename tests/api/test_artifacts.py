@@ -41,18 +41,18 @@ def test_process_issues_opaque_text_artifact_ids_and_prevents_client_id_lookup(
     with (
         patch("omniscribe.utils.security.socket.getaddrinfo", side_effect=_public_dns),
         patch(
-            "omniscribe.api.services.ocr_pipeline_factory.OCRPipeline", DummyPipeline
+            "omniscribe.api.services.ocr.pipeline_factory.OCRPipeline", DummyPipeline
         ),
         patch(
-            "omniscribe.api.services.ocr_pipeline_factory.OCRProcessor",
+            "omniscribe.api.services.ocr.pipeline_factory.OCRProcessor",
             lambda *args, **kwargs: SimpleNamespace(),
         ),
         patch(
-            "omniscribe.api.services.ocr_pipeline_factory.get_shared_hybrid_aligner",
+            "omniscribe.api.services.ocr.pipeline_factory.get_shared_hybrid_aligner",
             lambda *args, **kwargs: SimpleNamespace(),
         ),
         patch(
-            "omniscribe.api.services.ocr_pipeline_factory.PDFHandler",
+            "omniscribe.api.services.ocr.pipeline_factory.PDFHandler",
             lambda *args, **kwargs: SimpleNamespace(),
         ),
     ):
@@ -149,13 +149,13 @@ def test_process_omits_document_metadata_artifact_when_no_report(tmp_path: Path)
                 side_effect=_public_dns,
             ),
             patch(
-                "omniscribe.api.services.ocr_pipeline_factory.OCRPipeline",
+                "omniscribe.api.services.ocr.pipeline_factory.OCRPipeline",
                 DummyPipeline,
             ),
             patch(
-                "omniscribe.api.services.ocr_pipeline_factory.get_shared_hybrid_aligner"
+                "omniscribe.api.services.ocr.pipeline_factory.get_shared_hybrid_aligner"
             ),
-            patch("omniscribe.api.services.ocr_pipeline_factory.PDFHandler"),
+            patch("omniscribe.api.services.ocr.pipeline_factory.PDFHandler"),
         ):
             response = client.post(
                 "/process", data=_process_form(), files={"file": _pdf_upload()}
@@ -228,13 +228,13 @@ def test_process_exposes_token_bound_document_metadata_artifact(tmp_path: Path):
                 side_effect=_public_dns,
             ),
             patch(
-                "omniscribe.api.services.ocr_pipeline_factory.OCRPipeline",
+                "omniscribe.api.services.ocr.pipeline_factory.OCRPipeline",
                 DummyPipeline,
             ),
             patch(
-                "omniscribe.api.services.ocr_pipeline_factory.get_shared_hybrid_aligner"
+                "omniscribe.api.services.ocr.pipeline_factory.get_shared_hybrid_aligner"
             ),
-            patch("omniscribe.api.services.ocr_pipeline_factory.PDFHandler"),
+            patch("omniscribe.api.services.ocr.pipeline_factory.PDFHandler"),
         ):
             response = client.post(
                 "/process", data=_process_form(), files={"file": _pdf_upload()}

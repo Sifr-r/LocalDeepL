@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from omniscribe.api.plugin.runtime import get_job_queue
 from omniscribe.api.routers import state
 from omniscribe.api.routers.common import get_access_token
-from omniscribe.api.services.ocr_jobs import OCRJobStatus
+from omniscribe.api.services.ocr.jobs import OCRJobStatus
 
 router = APIRouter()
 

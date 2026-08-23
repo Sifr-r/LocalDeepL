@@ -32,7 +32,7 @@ from omniscribe.api.services.jobs import (
     _clean_status,
     _current_timestamp,
 )
-from omniscribe.api.services.ocr_jobs import OCRJobQueue
+from omniscribe.api.services.ocr.jobs import OCRJobQueue
 from omniscribe.api.services.progress import ProgressService
 from omniscribe.core.lexicon import (
     LanceDBLexiconStore,

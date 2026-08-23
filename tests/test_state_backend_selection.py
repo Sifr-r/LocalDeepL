@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from omniscribe.api.routers.state import build_state_backend
-from omniscribe.api.services.state_backend import LocalStateBackend, StateBackend
+from omniscribe.api.services.state.base import LocalStateBackend, StateBackend
 from omniscribe.config import RuntimeSettings, load_settings
 
 
@@ -67,7 +67,7 @@ def test_build_state_backend_redis_path_without_redis_package(
 
     class _FakeFinder:
         def find_module(self, name: str, path: Any = None) -> None:
-            if name == "omniscribe.api.services.state_backend_redis":
+            if name == "omniscribe.api.services.state.redis":
                 return None
             return None
 

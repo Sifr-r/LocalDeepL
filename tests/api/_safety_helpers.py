@@ -83,7 +83,7 @@ def _process_form_kwargs() -> dict[str, str]:
     Tests that drive :func:`omniscribe.api.routers.ocr._run_ocr_pipeline`
     directly (rather than via :class:`fastapi.testclient.TestClient`) need
     a ``ProcessSettings`` instance, which means going through
-    :func:`omniscribe.api.services.ocr_settings.resolve_process_settings`.
+    :func:`omniscribe.api.services.ocr.settings.resolve_process_settings`.
     That resolver accepts the same fields as ``_process_form`` but spread
     as keyword arguments.
     """

@@ -9,7 +9,7 @@ import logging
 
 import pytest
 
-from omniscribe.api.services.security_config import (
+from omniscribe.api.middleware.settings import (
     ABSOLUTE_MAX_UPLOAD_MB,
     DEFAULT_MAX_UPLOAD_MB,
     SecuritySettings,
@@ -290,9 +290,7 @@ def test_from_env_warns_when_only_some_namespace_tokens_set(
         "OMNISCRIBE_OCR_AUTH_TOKEN", "ocr-secret-with-sufficient-length-32"
     )
 
-    with caplog.at_level(
-        logging.WARNING, logger="omniscribe.api.services.security_config"
-    ):
+    with caplog.at_level(logging.WARNING, logger="omniscribe.api.middleware.settings"):
         SecuritySettings.from_env()
 
     warnings = [r for r in caplog.records if "Mixed auth configuration" in r.message]
@@ -322,9 +320,7 @@ def test_from_env_silent_when_all_tokens_set(
         "transcription-secret-with-sufficient-len",
     )
 
-    with caplog.at_level(
-        logging.WARNING, logger="omniscribe.api.services.security_config"
-    ):
+    with caplog.at_level(logging.WARNING, logger="omniscribe.api.middleware.settings"):
         SecuritySettings.from_env()
 
     warnings = [r for r in caplog.records if "Mixed auth configuration" in r.message]
@@ -378,7 +374,7 @@ def test_security_settings_upload_deadline_invalid_falls_back(
 )
 def test_validate_auth_token_redacts_offending_value(token: str) -> None:
     """The startup RuntimeError never contains the raw token."""
-    from omniscribe.api.services.security_config import _validate_auth_token
+    from omniscribe.api.middleware.settings import _validate_auth_token
 
     with pytest.raises(RuntimeError) as exc_info:
         _validate_auth_token("OMNISCRIBE_AUTH_TOKEN", token)
@@ -395,7 +391,7 @@ def test_validate_auth_token_redacts_offending_value(token: str) -> None:
 
 def test_validate_auth_token_preserves_env_name_in_error() -> None:
     """The error still identifies the offending env var."""
-    from omniscribe.api.services.security_config import _validate_auth_token
+    from omniscribe.api.middleware.settings import _validate_auth_token
 
     with pytest.raises(RuntimeError) as exc_info:
         _validate_auth_token("OMNISCRIBE_OCR_AUTH_TOKEN", "short")
@@ -405,14 +401,14 @@ def test_validate_auth_token_preserves_env_name_in_error() -> None:
 
 def test_redact_token_handles_empty_string() -> None:
     """An empty input returns ``<empty>`` (defensive)."""
-    from omniscribe.api.services.security_config import _redact_token
+    from omniscribe.api.middleware.settings import _redact_token
 
     assert _redact_token("") == "<empty>"
 
 
 def test_redact_token_shape_is_deterministic_for_same_input() -> None:
     """Same input produces the same redaction (operator can correlate)."""
-    from omniscribe.api.services.security_config import _redact_token
+    from omniscribe.api.middleware.settings import _redact_token
 
     sample = "abcdefghijklmnopqrstuvwxyz0123456789"  # 36 chars
     assert _redact_token(sample) == _redact_token(sample)
@@ -423,7 +419,7 @@ def test_redact_token_shape_is_deterministic_for_same_input() -> None:
 
 def test_validate_auth_token_valid_token_returns_unchanged() -> None:
     """A valid-length, non-placeholder token is returned trimmed."""
-    from omniscribe.api.services.security_config import _validate_auth_token
+    from omniscribe.api.middleware.settings import _validate_auth_token
 
     valid = "a" * 64
     assert _validate_auth_token("OMNISCRIBE_AUTH_TOKEN", valid) == valid
@@ -440,7 +436,7 @@ def test_security_settings_default_cors_methods_are_explicit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Default CORS methods are the explicit (non-wildcard) set."""
-    from omniscribe.api.services.security_config import (
+    from omniscribe.api.middleware.settings import (
         DEFAULT_CORS_ALLOWED_METHODS,
     )
 
@@ -459,7 +455,7 @@ def test_security_settings_default_cors_headers_are_explicit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Default CORS headers are the explicit (non-wildcard) set."""
-    from omniscribe.api.services.security_config import (
+    from omniscribe.api.middleware.settings import (
         DEFAULT_CORS_ALLOWED_HEADERS,
     )
 
@@ -486,14 +482,12 @@ def test_security_settings_cors_wildcard_falls_back(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """A wildcard-only override warns and falls back to the default surface."""
-    from omniscribe.api.services.security_config import (
+    from omniscribe.api.middleware.settings import (
         DEFAULT_CORS_ALLOWED_HEADERS,
         DEFAULT_CORS_ALLOWED_METHODS,
     )
 
-    with caplog.at_level(
-        logging.WARNING, logger="omniscribe.api.services.security_config"
-    ):
+    with caplog.at_level(logging.WARNING, logger="omniscribe.api.middleware.settings"):
         monkeypatch.setenv("OMNISCRIBE_CORS_ALLOWED_METHODS", "*")
         monkeypatch.setenv("OMNISCRIBE_CORS_ALLOWED_HEADERS", "*")
         s = SecuritySettings.from_env()
@@ -511,9 +505,7 @@ def test_from_env_silent_when_no_tokens_set(
     """Dev default: no tokens at all is the legacy open mode and is silent."""
     _clear_token_env(monkeypatch)
 
-    with caplog.at_level(
-        logging.WARNING, logger="omniscribe.api.services.security_config"
-    ):
+    with caplog.at_level(logging.WARNING, logger="omniscribe.api.middleware.settings"):
         SecuritySettings.from_env()
 
     warnings = [r for r in caplog.records if "Mixed auth configuration" in r.message]

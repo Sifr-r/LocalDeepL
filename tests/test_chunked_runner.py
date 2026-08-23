@@ -1,4 +1,4 @@
-"""Tests for the chunked OCR runner (``api/services/ocr_chunked_runner.py``).
+"""Tests for the chunked OCR runner (``api/services/ocr/chunked_runner.py``).
 
 Two layers:
 
@@ -139,13 +139,13 @@ def _settings(chunk_pages: int | None = None) -> Any:
 
 
 def test_count_pdf_pages_returns_correct_count(synthetic_pdf: Path):
-    from omniscribe.api.services.ocr_chunked_runner import _count_pdf_pages
+    from omniscribe.api.services.ocr.chunked_runner import _count_pdf_pages
 
     assert _count_pdf_pages(str(synthetic_pdf)) == 60
 
 
 def test_split_pdf_pages_preserves_page_order(synthetic_pdf: Path, tmp_path: Path):
-    from omniscribe.api.services.ocr_chunked_runner import _split_pdf_pages
+    from omniscribe.api.services.ocr.chunked_runner import _split_pdf_pages
 
     out = tmp_path / "chunk.pdf"
     _split_pdf_pages(str(synthetic_pdf), [3, 1, 2, 5], str(out))
@@ -159,7 +159,7 @@ def test_split_pdf_pages_drops_out_of_range_indices(
     synthetic_pdf: Path, tmp_path: Path
 ):
     """Out-of-range indices are silently dropped, mirroring engine semantics."""
-    from omniscribe.api.services.ocr_chunked_runner import _split_pdf_pages
+    from omniscribe.api.services.ocr.chunked_runner import _split_pdf_pages
 
     out = tmp_path / "chunk.pdf"
     _split_pdf_pages(
@@ -171,7 +171,7 @@ def test_split_pdf_pages_drops_out_of_range_indices(
 
 def test_merge_pdfs_concatenates_in_order(tmp_path: Path):
     """``_merge_pdfs`` concatenates per-chunk PDFs in the order given."""
-    from omniscribe.api.services.ocr_chunked_runner import _merge_pdfs
+    from omniscribe.api.services.ocr.chunked_runner import _merge_pdfs
 
     a = tmp_path / "a.pdf"
     b = tmp_path / "b.pdf"
@@ -186,7 +186,7 @@ def test_merge_pdfs_concatenates_in_order(tmp_path: Path):
 
 def test_merge_pdfs_with_single_input_copies(tmp_path: Path):
     """A single PDF passes through unchanged (covered branch)."""
-    from omniscribe.api.services.ocr_chunked_runner import _merge_pdfs
+    from omniscribe.api.services.ocr.chunked_runner import _merge_pdfs
 
     a = tmp_path / "a.pdf"
     c = tmp_path / "merged.pdf"
@@ -199,7 +199,7 @@ def test_merge_pdfs_with_single_input_copies(tmp_path: Path):
 
 def test_format_page_range_compacts_runs():
     """``_format_page_range`` collapses consecutive pages into runs."""
-    from omniscribe.api.services.ocr_chunked_runner import _format_page_range
+    from omniscribe.api.services.ocr.chunked_runner import _format_page_range
 
     assert _format_page_range([]) == ""
     assert _format_page_range([1]) == "1"
@@ -210,7 +210,7 @@ def test_format_page_range_compacts_runs():
 
 def test_read_chunk_text_artifact_remaps_to_real_pages(tmp_path: Path):
     """Chunk-local page indices are re-mapped to document-level page numbers."""
-    from omniscribe.api.services.ocr_chunked_runner import _read_chunk_text_artifact
+    from omniscribe.api.services.ocr.chunked_runner import _read_chunk_text_artifact
 
     artifact = tmp_path / "chunk_text.json"
     # local page 1 = document page 26, local 2 = doc 27, local 3 = doc 28.
@@ -227,7 +227,7 @@ def test_read_chunk_text_artifact_remaps_to_real_pages(tmp_path: Path):
 
 def test_read_chunk_text_artifact_handles_missing_file(tmp_path: Path):
     """A missing artifact file returns an empty mapping (chunk may have failed)."""
-    from omniscribe.api.services.ocr_chunked_runner import _read_chunk_text_artifact
+    from omniscribe.api.services.ocr.chunked_runner import _read_chunk_text_artifact
 
     aggregated, char_count = _read_chunk_text_artifact(
         str(tmp_path / "no-such-file.json"), chunk_pages=[1, 2]
@@ -341,7 +341,7 @@ async def test_run_ocr_in_chunks_emits_one_frame_per_chunk(
     synthetic_pdf: Path, tmp_path: Path, monkeypatch
 ):
     """A 60-page PDF at chunk_size=25 yields 3 chunks + 3 chunk_complete frames."""
-    from omniscribe.api.services import ocr_chunked_runner
+    from omniscribe.api.services.ocr import chunked_runner as ocr_chunked_runner
 
     stub, calls = _make_chunk_pipeline_stub(synthetic_pdf)
     # The runner imports ``_run_ocr_pipeline`` locally from
@@ -394,7 +394,7 @@ async def test_run_ocr_in_chunks_merges_output_pdf_and_text(
     synthetic_pdf: Path, tmp_path: Path, monkeypatch
 ):
     """The merged output PDF + text artifact contain every page in order."""
-    from omniscribe.api.services import ocr_chunked_runner
+    from omniscribe.api.services.ocr import chunked_runner as ocr_chunked_runner
 
     stub, _calls = _make_chunk_pipeline_stub(synthetic_pdf)
     monkeypatch.setattr("omniscribe.api.routers.ocr._run_ocr_pipeline", stub)
@@ -447,7 +447,7 @@ async def test_run_ocr_in_chunks_small_doc_falls_through_to_single_shot(
     synthetic_pdf: Path, tmp_path: Path, monkeypatch
 ):
     """A doc with fewer pages than ``chunk_pages`` delegates to single-shot."""
-    from omniscribe.api.services import ocr_chunked_runner
+    from omniscribe.api.services.ocr import chunked_runner as ocr_chunked_runner
 
     # Build a 10-page PDF — under any reasonable chunk size.
     small_pdf = tmp_path / "small.pdf"
@@ -505,7 +505,7 @@ async def test_run_ocr_in_chunks_continues_after_chunk_failure(
     synthetic_pdf: Path, tmp_path: Path, monkeypatch
 ):
     """A failing chunk is recorded in ``failed_pages`` but doesn't abort the run."""
-    from omniscribe.api.services import ocr_chunked_runner
+    from omniscribe.api.services.ocr import chunked_runner as ocr_chunked_runner
 
     counter = {"calls": 0}
 
@@ -582,7 +582,7 @@ async def test_run_ocr_in_chunks_honors_cancel_between_chunks(
     synthetic_pdf: Path, tmp_path: Path, monkeypatch
 ):
     """A cancel raised before chunk 2 stops the run cleanly."""
-    from omniscribe.api.services import ocr_chunked_runner
+    from omniscribe.api.services.ocr import chunked_runner as ocr_chunked_runner
 
     stub, calls = _make_chunk_pipeline_stub(synthetic_pdf)
     monkeypatch.setattr("omniscribe.api.routers.ocr._run_ocr_pipeline", stub)
@@ -632,8 +632,8 @@ async def test_run_ocr_in_chunks_drops_per_chunk_text_artifacts(
     per-chunk one is gone.
     """
     from omniscribe.api.routers import state as router_state
-    from omniscribe.api.services import ocr_chunked_runner
     from omniscribe.api.services.artifacts import ArtifactNotFoundError
+    from omniscribe.api.services.ocr import chunked_runner as ocr_chunked_runner
 
     per_chunk_handles: list[Any] = []
 

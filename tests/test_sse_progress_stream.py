@@ -46,7 +46,7 @@ pytest.importorskip("fastapi")
 
 from omniscribe.api.routers import events as events_module
 from omniscribe.api.routers import state as router_state
-from omniscribe.api.services.ocr_jobs import (
+from omniscribe.api.services.ocr.jobs import (
     OCRJobQueue,
     OCRJobRecord,
     OCRJobStatus,

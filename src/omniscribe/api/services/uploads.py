@@ -12,10 +12,10 @@ from typing import Any
 from fastapi import UploadFile
 from fastapi.responses import JSONResponse
 
-from omniscribe.api.services.envelope import envelope_error
-from omniscribe.api.services.security_config import (
+from omniscribe.api.middleware.settings import (
     DEFAULT_MAX_UPLOAD_MB as _DEFAULT_MAX_UPLOAD_MB,
 )
+from omniscribe.api.services.envelope import envelope_error
 
 logger = logging.getLogger(__name__)
 

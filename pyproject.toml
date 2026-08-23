@@ -167,7 +167,7 @@ dev = [
     "pip-audit>=2.10.1",
     "cyclonedx-bom>=7.3.1",
     "rich>=15.0.0",
-    "fakeredis>=2.0",  # in-memory Redis for state_backend_redis tests
+    "fakeredis>=2.0",  # in-memory Redis for state.redis tests
     # Direct `requests` import — only `scripts/ingest_lexicon.py` needs it
     # in this repo. Runtime deps get it transitively via surya-ocr.
     "requests>=2.34.2",
@@ -269,7 +269,7 @@ ignore = [
 # the suppressed exception is the cleanup task itself.
 "src/omniscribe/server.py" = ["SIM105"]
 "src/omniscribe/api/routers/ocr.py" = ["RUF003"]
-"src/omniscribe/api/services/security.py" = ["SIM115"]
+"src/omniscribe/api/services/uploads.py" = ["SIM115"]
 # RUF022 in core/{ocr,grounded}/__init__.py: the public/private grouping in
 # __all__ is intentional and more scannable than strict alphabetical.
 "src/omniscribe/core/grounded/__init__.py" = ["RUF022"]

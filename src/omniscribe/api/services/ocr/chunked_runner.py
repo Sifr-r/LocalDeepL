@@ -22,7 +22,7 @@ The runner honors ``manager.is_cancelled(progress_target)`` between
 chunks so a user-initiated cancel propagates without interrupting the
 in-flight per-chunk pipeline call.
 
-This module deliberately lives next to ``ocr_pipeline_factory.py``: it
+This module deliberately lives next to ``pipeline_factory.py``: it
 reuses the same artifacts/text-store plumbing and only adds the
 orchestration glue. No engine code is touched.
 """
@@ -197,7 +197,8 @@ async def run_ocr_in_chunks(
     pipeline, used by callers that read ``last_document_result`` for
     response headers.
     """
-    # Late import — see module docstring.
+    # Late import: execution.py imports this module (routers.ocr imports execution),
+    # so a top-level import cycles; lazy lookup keeps test monkeypatching effective.
     from omniscribe.api.routers import state as router_state
     from omniscribe.api.routers.ocr import (
         _create_document_metadata_artifact,

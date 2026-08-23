@@ -6,8 +6,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from omniscribe.api.middleware import BearerAuthMiddleware
 from omniscribe.api.routers import config, transcription
-from omniscribe.api.services.security_middleware import BearerAuthMiddleware
 from omniscribe.core.transcription import (
     AudioValidationError,
     GenericAudioAPIEngine,

@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from omniscribe.api.services.ocr_jobs import (
+from omniscribe.api.services.ocr.jobs import (
     OCRJobQueue,
     OCRJobRecord,
     OCRJobResult,

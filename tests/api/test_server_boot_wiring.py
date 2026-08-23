@@ -214,7 +214,7 @@ def test_server_passes_cors_allowlist_to_middleware(
     _reset_plugin_context,
 ) -> None:
     """``create_app()`` threads the configured methods/headers to ``CORSMiddleware``."""
-    from omniscribe.api.services import security_config as sc_module
+    from omniscribe.api.middleware import settings as sc_module
     from omniscribe.server import create_app
 
     fake_settings = sc_module.SecuritySettings(

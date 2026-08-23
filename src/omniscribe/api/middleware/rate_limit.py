@@ -27,7 +27,7 @@ _SWEEP_INTERVAL_S: float = 5.0
 
 def _get_sweep_interval() -> float:
     """Return the effective sweep interval, checking legacy compatibility shim."""
-    sm = sys.modules.get("omniscribe.api.services.security_middleware")
+    sm = sys.modules.get("omniscribe.api.middleware")
     if (
         sm is not None
         and hasattr(sm, "_SWEEP_INTERVAL_S")

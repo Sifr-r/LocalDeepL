@@ -32,7 +32,7 @@ from omniscribe.api.plugin.runtime import (
     set_plugin_context_enabled,
 )
 from omniscribe.api.services.config_store import InMemoryConfigStore
-from omniscribe.api.services.ocr_jobs import OCRJobQueue
+from omniscribe.api.services.ocr.jobs import OCRJobQueue
 
 # -- Protocol structural conformance -----------------------------------------
 

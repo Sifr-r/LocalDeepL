@@ -24,18 +24,18 @@ from omniscribe.api.schemas.responses import (
     TranscriptionConfigResponse,
     TranscriptionJobResponse,
 )
-from omniscribe.api.services.api_helpers import stable_server_error
 from omniscribe.api.services.envelope import (
     BackendUnavailable,
     BadRequest,
     SSRFBlocked,
 )
-from omniscribe.api.services.security import (
+from omniscribe.api.services.helpers import stable_server_error
+from omniscribe.api.services.transcription import TranscriptionService
+from omniscribe.api.services.uploads import (
     UploadValidationError,
     cleanup_files,
     save_validated_upload,
 )
-from omniscribe.api.services.transcription import TranscriptionService
 from omniscribe.core.transcription import AudioValidationError, TranscriptionError
 from omniscribe.utils.security import is_ssrf_target
 
@@ -123,7 +123,7 @@ async def get_transcription_config() -> Any:
     a value written by another worker is visible here in a multi-worker
     deployment.
     """
-    from omniscribe.api.services.security_config import SecuritySettings
+    from omniscribe.api.middleware.settings import SecuritySettings
 
     sec = SecuritySettings.from_env()
     config = _load_config_from_store()

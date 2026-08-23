@@ -16,7 +16,7 @@ resumes from the last artifact that was explicitly written to disk,
 never from in-memory state.
 
 The single source of truth is :class:`LocalStateBackend` (imported
-from :mod:`omniscribe.api.services.state_backend`). The module-level
+from :mod:`omniscribe.api.services.state.base`). The module-level
 aliases (``state.text_artifacts`` etc.) are kept so existing call sites
 continue to work; new code should prefer ``state.backend.text_artifacts``
 so an alternative backend (Redis, file-backed) can be swapped in
@@ -38,9 +38,9 @@ from typing import TYPE_CHECKING
 from omniscribe.api.services.artifacts import TextArtifactStore  # noqa: F401
 from omniscribe.api.services.config_store import ConfigStore
 from omniscribe.api.services.jobs import JobHistory  # noqa: F401
-from omniscribe.api.services.ocr_jobs import OCRJobQueue  # noqa: F401
+from omniscribe.api.services.ocr.jobs import OCRJobQueue  # noqa: F401
 from omniscribe.api.services.progress import ProgressService  # noqa: F401
-from omniscribe.api.services.state_backend import (  # noqa: F401
+from omniscribe.api.services.state.base import (  # noqa: F401
     LocalStateBackend,
     build_state_backend,
 )

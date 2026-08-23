@@ -13,7 +13,7 @@ context providers + tests.
 The bodies below are lifted verbatim from the source modules with only
 import-path adjustments (the private ``_load_config_from_store`` was
 replaced with the public ``load_config_from_store`` from
-:mod:`omniscribe.api.services.config_helpers` per Task 8).
+:mod:`omniscribe.api.services.helpers` per Task 8).
 """
 
 from __future__ import annotations
@@ -25,9 +25,9 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from omniscribe.api.schemas.responses import ModelsResponse
-from omniscribe.api.services.config_helpers import load_config_from_store
 from omniscribe.api.services.envelope import SSRFBlocked
-from omniscribe.api.services.security import SERVER_ERROR_MESSAGE
+from omniscribe.api.services.helpers import load_config_from_store
+from omniscribe.api.services.uploads import SERVER_ERROR_MESSAGE
 from omniscribe.utils.security import is_ssrf_target
 
 router = APIRouter()

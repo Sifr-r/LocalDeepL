@@ -108,7 +108,7 @@ class TextArtifactStore:
     async def create(self, page_text: PageText) -> TextArtifactHandle:
         """Write page text to a temporary JSON file and register its access token.
 
-        Async because :mod:`omniscribe.api.services.ocr_chunked_runner`
+        Async because :mod:`omniscribe.api.services.ocr.chunked_runner`
         awaits it directly in its per-chunk orchestration loop.
         """
 

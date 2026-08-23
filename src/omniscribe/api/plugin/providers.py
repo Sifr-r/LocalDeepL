@@ -51,7 +51,7 @@ from omniscribe.api.services.config_store import (
 from omniscribe.api.services.config_store import (
     InMemoryConfigStore,
 )
-from omniscribe.api.services.ocr_jobs import OCRJobQueue
+from omniscribe.api.services.ocr.jobs import OCRJobQueue
 from omniscribe.api.services.progress import ProgressService as _ProgressService
 
 logger = logging.getLogger(__name__)

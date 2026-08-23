@@ -26,7 +26,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from omniscribe.api.plugin.session_log import SessionLog as _SessionLog
 from omniscribe.api.services.config_store import ConfigStore as _ConfigStore
-from omniscribe.api.services.ocr_jobs import (
+from omniscribe.api.services.ocr.jobs import (
     OCRJobRecord,
     OCRJobRunner,
 )
@@ -51,7 +51,7 @@ ProgressChannel = _ProgressChannel
 class JobQueue(Protocol):
     """Service definition for a background OCR job queue.
 
-    The :class:`~omniscribe.api.services.ocr_jobs.OCRJobQueue` is the
+    The :class:`~omniscribe.api.services.ocr.jobs.OCRJobQueue` is the
     canonical in-process implementation; a future :class:`CeleryJobQueue`
     provider will satisfy the same Protocol so consumers can swap
     implementations via the plugin context without code changes.

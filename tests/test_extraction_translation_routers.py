@@ -32,8 +32,8 @@ from omniscribe.api.routers import (  # noqa: E402
 )
 from omniscribe.api.services.artifacts import TextArtifactStore  # noqa: E402
 from omniscribe.api.services.envelope import register_envelope_handlers  # noqa: E402
-from omniscribe.api.services.security import SERVER_ERROR_MESSAGE  # noqa: E402
 from omniscribe.api.services.tree_artifact import write_tree_atomic  # noqa: E402
+from omniscribe.api.services.uploads import SERVER_ERROR_MESSAGE  # noqa: E402
 from omniscribe.core.block_tree import from_pages_data  # noqa: E402
 from omniscribe.core.translate.config import AsyncTranslationUnavailable  # noqa: E402
 from omniscribe.core.translate.glossary import Glossary  # noqa: E402

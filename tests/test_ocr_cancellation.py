@@ -444,6 +444,7 @@ class TestProcessRouteCancel:
 
         from omniscribe.api.routers import ocr as ocr_router
         from omniscribe.api.routers.websocket import manager
+        from omniscribe.api.services.ocr import execution as ocr_execution
 
         channel = "test-channel-cancel-" + "x" * 16
 
@@ -470,11 +471,11 @@ class TestProcessRouteCancel:
 
             with (
                 patch.object(
-                    ocr_router,
+                    ocr_execution,
                     "build_pipeline",
                     return_value=(pipeline_stub, MagicMock()),
                 ),
-                patch.object(ocr_router, "verify_backend_model", new=AsyncMock()),
+                patch.object(ocr_execution, "verify_backend_model", new=AsyncMock()),
             ):
                 with pytest.raises(OCRCancelled):
                     await ocr_router._run_ocr_pipeline(

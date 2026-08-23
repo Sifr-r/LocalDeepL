@@ -16,7 +16,7 @@ import pytest
 
 pytest.importorskip("fastapi")
 
-from omniscribe.api.services.ocr_response import (
+from omniscribe.api.services.ocr.response import (
     _document_trust_summary,
     _trust_header_from_pipeline,
 )

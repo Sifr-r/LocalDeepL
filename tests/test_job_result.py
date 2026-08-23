@@ -31,7 +31,7 @@ from fastapi.testclient import TestClient
 
 from omniscribe.api.routers import jobs
 from omniscribe.api.routers import state as router_state
-from omniscribe.api.services.ocr_jobs import (
+from omniscribe.api.services.ocr.jobs import (
     OCRJobQueue,
     OCRJobRecord,
     OCRJobStatus,

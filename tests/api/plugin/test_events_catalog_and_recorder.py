@@ -194,7 +194,7 @@ def test_job_queue_seam_and_audit_recorder_coexist() -> None:
     be mounted into the same context without interfering with each
     other."""
     from omniscribe.api.plugin import JobQueue, local_job_queue_provider
-    from omniscribe.api.services.ocr_jobs import OCRJobQueue
+    from omniscribe.api.services.ocr.jobs import OCRJobQueue
 
     ctx = PluginContext("test")
     queue = OCRJobQueue()

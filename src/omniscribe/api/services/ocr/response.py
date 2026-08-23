@@ -29,7 +29,7 @@ from starlette.responses import JSONResponse
 from omniscribe import OCRPipeline
 from omniscribe.api.schemas import ProcessSettings
 from omniscribe.api.services.artifacts import TextArtifactHandle
-from omniscribe.api.services.security import api_error_response
+from omniscribe.api.services.uploads import api_error_response
 from omniscribe.api.services.workflow import build_workflow_summary
 
 _METADATA_HEADER_FIELDS = ("quality", "structure", "sections")

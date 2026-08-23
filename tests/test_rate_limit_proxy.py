@@ -33,8 +33,8 @@ import ipaddress
 
 import pytest
 
-from omniscribe.api.services.security_config import SecuritySettings
-from omniscribe.api.services.security_middleware import RateLimitMiddleware
+from omniscribe.api.middleware import RateLimitMiddleware
+from omniscribe.api.middleware.settings import SecuritySettings
 
 # ---------------------------------------------------------------------------
 # Scope builder + key extraction
@@ -574,7 +574,7 @@ def test_rate_limit_sweep_is_amortized_across_overflows(
     interval skip the sweep and trust the next interval to
     clean up.
     """
-    import omniscribe.api.services.security_middleware as sm
+    import omniscribe.api.middleware as sm
 
     # Speed up the interval so the test runs in < 1 s.
     monkeypatch.setattr(sm, "_SWEEP_INTERVAL_S", 0.5)

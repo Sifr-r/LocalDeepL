@@ -31,6 +31,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from omniscribe.api.routers import ocr
+from omniscribe.api.services.ocr import execution as ocr_execution
 
 # ---------------------------------------------------------------------------
 # ProcessSettings validation
@@ -215,7 +216,7 @@ class TestPipelineFactoryTrustWiring:
         # Patch out heavy factory dependencies *where they are imported* —
         # the factory imports them at module top, so patching at the
         # factory's namespace is the only place the swap takes effect.
-        from omniscribe.api.services import ocr_pipeline_factory
+        from omniscribe.api.services.ocr import pipeline_factory as ocr_pipeline_factory
 
         monkeypatch.setattr(
             ocr_pipeline_factory, "get_shared_hybrid_aligner", lambda: object()
@@ -235,7 +236,7 @@ class TestPipelineFactoryTrustWiring:
         assert pipeline._engine.trust_orchestrator is None
 
     def test_enabled_submodule_means_orchestrator_injected(self, monkeypatch):
-        from omniscribe.api.services import ocr_pipeline_factory
+        from omniscribe.api.services.ocr import pipeline_factory as ocr_pipeline_factory
 
         monkeypatch.setattr(
             ocr_pipeline_factory, "get_shared_hybrid_aligner", lambda: object()
@@ -320,7 +321,7 @@ def _capture_quality_options_in_orchestrator(monkeypatch):
     the orchestrator that was constructed (or ``None``).
     """
     captured: list = []
-    from omniscribe.api.services import ocr_pipeline_factory
+    from omniscribe.api.services.ocr import pipeline_factory as ocr_pipeline_factory
 
     original = ocr_pipeline_factory._build_trust_orchestrator
 
@@ -407,7 +408,7 @@ class TestProcessRouteQualityOptions:
         async def no_verify(*a, **kw):
             return None
 
-        monkeypatch.setattr(ocr, "verify_backend_model", no_verify)
+        monkeypatch.setattr(ocr_execution, "verify_backend_model", no_verify)
 
         # build_ocr_file_response constructs a starlette FileResponse on the
         # (non-existent) output_path; stub it so the test doesn't need a

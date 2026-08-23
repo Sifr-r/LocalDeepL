@@ -43,7 +43,7 @@ synchronously inside the caller's thread, which matches the
 existing uvicorn single-worker request loop.
 
 The :class:`StateBackend` Protocol in
-:mod:`omniscribe.api.services.state_backend` is the single source
+:mod:`omniscribe.api.services.state.base` is the single source
 of truth for the surface this module exposes.
 
 See the *Known Tech Debt* section of ``AGENTS.md`` for the
@@ -90,7 +90,7 @@ from omniscribe.api.services.jobs import (
     _clean_status,
     _current_timestamp,
 )
-from omniscribe.api.services.ocr_jobs import OCRJobQueue
+from omniscribe.api.services.ocr.jobs import OCRJobQueue
 from omniscribe.api.services.progress import ProgressService
 from omniscribe.core.lexicon import (
     LanceDBLexiconStore,

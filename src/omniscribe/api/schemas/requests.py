@@ -638,11 +638,11 @@ def _validate_auth_token_value(value: str | None) -> str | None:
     ``ValueError`` (mapped to 422 by FastAPI) for placeholder values
     or tokens shorter than :data:`MIN_AUTH_TOKEN_LENGTH`. The full
     placeholder denylist also lives in
-    :mod:`omniscribe.api.services.security_config`; this validator
+    :mod:`omniscribe.api.middleware.settings`; this validator
     mirrors the production rule so the same error envelope is shown
     whether the token came from the env or from a runtime POST.
     """
-    from omniscribe.api.services.security_config import (
+    from omniscribe.api.middleware.settings import (
         MIN_AUTH_TOKEN_LENGTH,
         PLACEHOLDER_AUTH_TOKENS,
     )

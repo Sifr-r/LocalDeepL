@@ -29,6 +29,7 @@ from pydantic import ValidationError
 
 from omniscribe.api.routers import ocr
 from omniscribe.api.schemas import ProcessSettings
+from omniscribe.api.services.ocr import execution as ocr_execution
 from omniscribe.core.workflows.repair import RepairOptions
 
 pytest.importorskip("fastapi")
@@ -151,7 +152,7 @@ class TestProcessSettingsQualityLoop:
 
 class TestResolveQualityLoopSettings:
     def test_form_params_reach_settings(self) -> None:
-        from omniscribe.api.services.ocr_settings import resolve_process_settings
+        from omniscribe.api.services.ocr.settings import resolve_process_settings
 
         # The required ProcessSettings fields (api_base, pipeline_mode, ...)
         # have no schema defaults, so the base form supplies them; the
@@ -169,7 +170,7 @@ class TestResolveQualityLoopSettings:
         assert settings.quality_max_retries == 3
 
     def test_config_store_fallback(self) -> None:
-        from omniscribe.api.services.ocr_settings import resolve_process_settings
+        from omniscribe.api.services.ocr.settings import resolve_process_settings
 
         settings = resolve_process_settings(
             settings_store={
@@ -297,7 +298,7 @@ class TestProcessRouteRepairOptions:
         async def no_verify(*a, **kw) -> None:
             return None
 
-        monkeypatch.setattr(ocr, "verify_backend_model", no_verify)
+        monkeypatch.setattr(ocr_execution, "verify_backend_model", no_verify)
 
         from fastapi.responses import JSONResponse
 
@@ -444,7 +445,7 @@ class TestFactoryRepairCallbackWiring:
         return calls, senders
 
     async def test_bound_channel_forwards_repair_frames(self) -> None:
-        from omniscribe.api.services.ocr_pipeline_factory import build_block_callbacks
+        from omniscribe.api.services.ocr.pipeline_factory import build_block_callbacks
 
         async def noop_block(*a, **kw) -> None:
             return None
@@ -474,7 +475,7 @@ class TestFactoryRepairCallbackWiring:
         assert calls["summary"] == [("chan-1", "page", 0)]
 
     async def test_no_channel_is_a_noop(self) -> None:
-        from omniscribe.api.services.ocr_pipeline_factory import build_block_callbacks
+        from omniscribe.api.services.ocr.pipeline_factory import build_block_callbacks
 
         async def noop_block(*a, **kw) -> None:
             return None

@@ -1,26 +1,49 @@
-"""Per-route helpers for the config router.
-
-Phase C: these lived inline in ``routers/config.py``. They have no
-HTTP-aware behaviour — pure data plumbing over the ``ConfigStore``
-Protocol — so they belong with the rest of the services.
-
-Backwards-compat re-exports in ``routers/config.py`` keep the old import
-path (``from omniscribe.api.routers.config import _load_config_from_store``)
-working for in-tree tests and any out-of-tree importers.
-
-The legacy module-level ``_config`` dict stays in ``routers/config.py``
-because out-of-tree callers (``extraction.py``, ``provider_manager.py``,
-``tasks.py``, etc.) read it directly. The helpers below lazy-import it
-at call time so they keep writing through the same in-memory cache the
-legacy code expects.
-"""
+"""Shared router/config helper functions."""
 
 from __future__ import annotations
 
 import os
 from typing import Any, cast
 
+from fastapi.responses import JSONResponse
+
 from omniscribe.api.services.config_store import ConfigStore
+from omniscribe.api.services.envelope import envelope_error
+from omniscribe.api.services.uploads import (
+    SERVER_ERROR_MESSAGE,
+    cleanup_files,
+)
+
+
+def cleanup_files_dispatcher(*paths: str | None) -> None:
+    """Delete each path if it exists; tolerate ``None`` and missing files.
+
+    Thin wrapper over :func:`omniscribe.api.services.uploads.cleanup_files`
+    kept as a named entry point so the routers don't need to import the
+    uploads module directly for the common ``finally: cleanup_files(...)``
+    pattern. Equivalent to the previous ``_cleanup`` in
+    ``api/routers/common.py``.
+    """
+    cleanup_files(*paths)
+
+
+def stable_server_error(status_code: int = 500) -> JSONResponse:
+    """Return a stable error envelope for unexpected failures.
+
+    The message is intentionally generic (it is the same one for every
+    internal failure) so we don't leak implementation details to
+    clients. Status code is configurable so the same envelope works
+    for both 500 and 503, but the wording stays opaque.
+
+    Equivalent to the previous ``_stable_server_error`` in
+    ``api/routers/common.py``.
+    """
+    return envelope_error(
+        status_code=status_code,
+        error="internal_error",
+        detail=SERVER_ERROR_MESSAGE,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Cross-worker persistence helpers (issue H1)
@@ -192,7 +215,9 @@ def mask_api_key(value: str | None) -> str | None:
 __all__ = [
     "CONFIG_BACKEND_INCOMPATIBLE_MESSAGE",
     "ConfigBackendIncompatible",
+    "cleanup_files_dispatcher",
     "load_config_from_store",
     "mask_api_key",
     "persist_config",
+    "stable_server_error",
 ]

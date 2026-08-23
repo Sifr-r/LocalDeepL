@@ -284,7 +284,7 @@ def test_ws_send_progress_with_unknown_channel_is_noop():
 
 def test_bearer_middleware_is_transparent_to_websocket_scope():
     """Set ``Authorization: Bearer x`` on a WS scope - middleware passes through."""
-    from omniscribe.api.services.security_middleware import BearerAuthMiddleware
+    from omniscribe.api.middleware import BearerAuthMiddleware
 
     forward_called = {"yes": False}
     forwarded_scope: dict[str, Any] = {}
@@ -314,7 +314,7 @@ def test_bearer_middleware_is_transparent_to_websocket_scope():
 
 def test_bearer_middleware_rejects_http_without_token():
     """Sanity: the same middleware still rejects HTTP without a token."""
-    from omniscribe.api.services.security_middleware import BearerAuthMiddleware
+    from omniscribe.api.middleware import BearerAuthMiddleware
 
     captured_status: list[int] = []
 

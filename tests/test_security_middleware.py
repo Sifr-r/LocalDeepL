@@ -23,7 +23,7 @@ from unittest.mock import patch
 
 import pytest
 
-from omniscribe.api.services.security_middleware import (
+from omniscribe.api.middleware import (
     BearerAuthMiddleware,
     MaxUploadSizeMiddleware,
     RateLimitMiddleware,
@@ -1294,9 +1294,7 @@ def test_get_active_tokens_logs_warning_on_config_store_failure(
         side_effect=boom,
         create=True,
     ):
-        with caplog.at_level(
-            logging.WARNING, logger="omniscribe.api.services.security_middleware"
-        ):
+        with caplog.at_level(logging.WARNING, logger="omniscribe.api.middleware"):
             tokens = middleware._get_active_tokens()
 
     # The env fallback is still used — the warning is non-fatal.

@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import pytest
 
-from omniscribe.api.services.config_helpers import (
+from omniscribe.api.services.config_store import InMemoryConfigStore
+from omniscribe.api.services.helpers import (
     ConfigBackendIncompatible,
     load_config_from_store,
     mask_api_key,
     persist_config,
 )
-from omniscribe.api.services.config_store import InMemoryConfigStore
 
 
 def test_mask_api_key_returns_none_for_none() -> None:

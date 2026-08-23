@@ -9,7 +9,7 @@ Pins the new default upload cap (10 GB) and the absolute ceiling (100 GB):
   or under the cap pass through, and returns the documented 413 envelope
   (with the ``limit_bytes`` / ``limit_bytes_mb`` / ``hint`` fields) when
   the body exceeds the cap.
-* ``MAX_UPLOAD_BYTES`` in :mod:`omniscribe.api.services.security` matches
+* ``MAX_UPLOAD_BYTES`` in :mod:`omniscribe.api.services.uploads` matches
   the security-config default so the in-process upload validator can't
   silently fall behind the middleware cap.
 
@@ -42,7 +42,7 @@ def test_security_settings_default_is_at_least_10gb(monkeypatch: pytest.MonkeyPa
     """Default upload cap is at least 10 GB (10240 MB)."""
     monkeypatch.delenv("OMNISCRIBE_MAX_UPLOAD_MB", raising=False)
 
-    from omniscribe.api.services.security_config import (
+    from omniscribe.api.middleware.settings import (
         ABSOLUTE_MAX_UPLOAD_MB,
         DEFAULT_MAX_UPLOAD_MB,
         SecuritySettings,
@@ -63,7 +63,7 @@ def test_security_settings_accepts_10gb_override(monkeypatch: pytest.MonkeyPatch
     """An explicit 10240 MB override is honoured verbatim."""
     monkeypatch.setenv("OMNISCRIBE_MAX_UPLOAD_MB", "10240")
 
-    from omniscribe.api.services.security_config import SecuritySettings
+    from omniscribe.api.middleware.settings import SecuritySettings
 
     settings = SecuritySettings.from_env()
     assert settings.max_upload_bytes == 10240 * 1024 * 1024
@@ -76,7 +76,7 @@ def test_security_settings_accepts_large_overrides(
     """Operators can dial the cap anywhere between 10 GB and 100 GB."""
     monkeypatch.setenv("OMNISCRIBE_MAX_UPLOAD_MB", str(mb_value))
 
-    from omniscribe.api.services.security_config import SecuritySettings
+    from omniscribe.api.middleware.settings import SecuritySettings
 
     settings = SecuritySettings.from_env()
     assert settings.max_upload_bytes == mb_value * 1024 * 1024
@@ -88,7 +88,7 @@ def test_security_settings_clamps_ridiculous_overrides(
     """Anything above the absolute ceiling is clamped, not honoured verbatim."""
     monkeypatch.setenv("OMNISCRIBE_MAX_UPLOAD_MB", "99999999")
 
-    from omniscribe.api.services.security_config import (
+    from omniscribe.api.middleware.settings import (
         ABSOLUTE_MAX_UPLOAD_MB,
         SecuritySettings,
     )
@@ -101,7 +101,7 @@ def test_security_settings_clamps_zero_and_negative(monkeypatch: pytest.MonkeyPa
     """Operators can't lock themselves out by setting a zero/negative cap."""
     for raw in ("0", "-5"):
         monkeypatch.setenv("OMNISCRIBE_MAX_UPLOAD_MB", raw)
-        from omniscribe.api.services.security_config import SecuritySettings
+        from omniscribe.api.middleware.settings import SecuritySettings
 
         settings = SecuritySettings.from_env()
         assert settings.max_upload_bytes >= 1024 * 1024
@@ -115,8 +115,8 @@ def test_security_settings_module_constant_matches_default():
     a request rejected by one layer can be silently accepted by the
     other.
     """
-    from omniscribe.api.services.security import MAX_UPLOAD_BYTES
-    from omniscribe.api.services.security_config import DEFAULT_MAX_UPLOAD_MB
+    from omniscribe.api.middleware.settings import DEFAULT_MAX_UPLOAD_MB
+    from omniscribe.api.services.uploads import MAX_UPLOAD_BYTES
 
     assert MAX_UPLOAD_BYTES == DEFAULT_MAX_UPLOAD_MB * 1024 * 1024
 
@@ -134,7 +134,7 @@ async def _drive_middleware(
     ``body_dict`` is the decoded JSON body for 413 responses, or ``None``
     when the request passes through to the downstream app.
     """
-    from omniscribe.api.services.security_middleware import MaxUploadSizeMiddleware
+    from omniscribe.api.middleware import MaxUploadSizeMiddleware
 
     forwarded: dict[str, Any] = {}
 
@@ -331,7 +331,7 @@ async def _drive_middleware_chunked(
       * ``inner_called`` records whether the inner app ran (sanity check
         that the test is exercising the real middleware path).
     """
-    from omniscribe.api.services.security_middleware import MaxUploadSizeMiddleware
+    from omniscribe.api.middleware import MaxUploadSizeMiddleware
 
     inner_called = {"called": False}
 
@@ -471,7 +471,7 @@ async def _drive_middleware_capture_all(
       ASGI protocol contract (exactly one start, at most one body).
     * ``inner_called`` records whether the inner app ran (sanity).
     """
-    from omniscribe.api.services.security_middleware import MaxUploadSizeMiddleware
+    from omniscribe.api.middleware import MaxUploadSizeMiddleware
 
     inner_called = {"called": False}
 

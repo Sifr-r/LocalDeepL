@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from omniscribe.api.services.ocr_response import (
+from omniscribe.api.services.ocr.response import (
     _METADATA_HEADER_FIELDS,
     _METADATA_VALUE_MAX_CHARS,
     _SENSITIVE_KEY_TOKENS,

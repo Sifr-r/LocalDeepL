@@ -28,13 +28,13 @@ from omniscribe.api.services.envelope import (
     ValidationFailed,
     envelope_error,
 )
-from omniscribe.api.services.security import SERVER_ERROR_MESSAGE
+from omniscribe.api.services.helpers import stable_server_error
+from omniscribe.api.services.uploads import SERVER_ERROR_MESSAGE
 from omniscribe.core.translate.config import AsyncTranslationUnavailable
 from omniscribe.core.translate.glossary import Glossary
 from omniscribe.core.translate.tree import translate_tree
 from omniscribe.utils.security import is_ssrf_target
 
-from ..services.api_helpers import stable_server_error
 from .config import _config
 
 logger = logging.getLogger(__name__)

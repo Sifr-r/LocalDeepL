@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from omniscribe.api.services.security import (
+from omniscribe.api.services.uploads import (
     UploadValidationError,
     save_validated_upload,
 )

@@ -1,7 +1,7 @@
 """Canonical API error envelope (Phase C).
 
 Replaces four idioms:
-  - `api_error_response(...)` (services/security.py)
+  - `api_error_response(...)` (services/uploads.py)
   - `_ai_error_response(...)` (duplicated in translation.py + extraction.py)
   - raw `JSONResponse(status_code=..., content={"error": ..., "detail": ...})`
   - `HTTPException(detail="string")` for user-facing errors

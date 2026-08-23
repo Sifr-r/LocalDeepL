@@ -28,7 +28,7 @@ import secrets
 import urllib.parse
 from typing import Any, Final
 
-_LOGGER = logging.getLogger("omniscribe.api.services.security_middleware")
+_LOGGER = logging.getLogger("omniscribe.api.middleware")
 
 _UNAUTHORIZED: Final[dict[str, str]] = {"error": "Unauthorized"}
 _INVALID_PATH: Final[dict[str, str]] = {"error": "Invalid path"}

@@ -28,13 +28,13 @@ from omniscribe.api.schemas.requests import (
     ExtractionRequest,
 )
 from omniscribe.api.services.ai import AIServiceError, extract_structured_data
-from omniscribe.api.services.api_helpers import stable_server_error
 from omniscribe.api.services.envelope import (
     BadRequest,
     NotFound,
     SSRFBlocked,
     envelope_error,
 )
+from omniscribe.api.services.helpers import stable_server_error
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
