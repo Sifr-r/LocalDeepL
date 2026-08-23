@@ -13,15 +13,13 @@ import contextvars
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Any, TypeVar
+from typing import Any, cast
 
 from omniscribe.harness.effects import Cleanup, EffectRef, EffectScope, effect_scope
 from omniscribe.harness.errors import ContextDisposedError, ServiceNotFoundError
 from omniscribe.harness.events import Event
 
 _LOGGER = logging.getLogger("omniscribe.harness")
-
-T = TypeVar("T")
 
 EventHandler = Callable[[Event], Awaitable[None] | None]
 
@@ -69,7 +67,7 @@ class Context:
 
     # -- services -----------------------------------------------------------
 
-    def service(self, protocol: type[T], instance: T) -> EffectRef:
+    def service(self, protocol: type, instance: Any) -> EffectRef:
         """Register ``instance`` under ``protocol``; duplicate keys fail loud."""
         self._check_not_disposed("register service")
         if protocol in self._services:
@@ -80,11 +78,11 @@ class Context:
         ref = EffectRef(plugin_id=self._current_plugin(), kind="service", key=protocol)
         return self._track(ref)
 
-    def inject(self, protocol: type[T]) -> T:
+    def inject(self, protocol: type) -> Any:
         """Return the instance registered for ``protocol`` or raise."""
         if protocol not in self._services:
             raise ServiceNotFoundError(protocol.__name__)
-        return self._services[protocol]  # type: ignore[no-any-return]
+        return cast(Any, self._services[protocol])
 
     def has(self, protocol: type) -> bool:
         return protocol in self._services
