@@ -42,6 +42,12 @@ dependencies = [
     "redis>=8.1.0",
     "numpy>=2.0,<2.5.0",
     "defusedxml>=0.7.1",  # XLIFF/TBX/TMX glossary parsing without XXE/DTD
+    # Cordis-style harness: RuntimeSettings (pydantic-settings), plugin
+    # Schemas (pydantic), and cordis.yml parsing (pyyaml) are direct
+    # imports — declared here instead of relying on transitive edges.
+    "pydantic>=2.7",
+    "pydantic-settings>=2.5",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -161,7 +167,6 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.16.2",
     "mypy>=1.9.0",
-    "pyyaml>=6.0",
     "hypothesis>=6.100.0",
     "pytest-cov>=7.1.0",
     "pip-audit>=2.10.1",
