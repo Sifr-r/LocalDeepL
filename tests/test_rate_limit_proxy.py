@@ -44,8 +44,9 @@ from omniscribe.api.services.security_middleware import RateLimitMiddleware
 def _scope(*, client_ip: str, xff: str | None = None) -> dict:
     """Build a minimal ASGI ``http`` scope for ``_client_key`` to read.
 
-    Mirrors the shape used by ``test_api_safety.py``'s rate-limit test
-    so a future refactor that renames fields surfaces here too.
+    Mirrors the shape used by ``tests/api/test_security_middleware_app.py``'s
+    rate-limit test so a future refactor that renames fields surfaces
+    here too.
     """
     headers: list[tuple[bytes, bytes]] = []
     if xff is not None:

@@ -8,7 +8,6 @@ composable API extensions:
 - :class:`Plugin` — a callable that mounts capabilities into a context.
 - :class:`EventMode` — one of four dispatch modes for typed events
   (``emit`` / ``waterfall`` / ``serial`` / ``parallel``).
-- :class:`EffectScope` — group reversible effects under a single disposer.
 - :mod:`omniscribe.api.plugin.seams` — Service Definitions for swappable capabilities.
 - :mod:`omniscribe.api.plugin.providers` — concrete Service Providers.
 
@@ -22,7 +21,6 @@ into the context instead of being imported by name.
 from __future__ import annotations
 
 from omniscribe.api.plugin.context import PluginContext
-from omniscribe.api.plugin.effects import EffectScope
 from omniscribe.api.plugin.errors import (
     ContextDisposedError,
     EventModeMismatchError,
@@ -31,11 +29,6 @@ from omniscribe.api.plugin.errors import (
     ServiceNotFoundError,
 )
 from omniscribe.api.plugin.events import EventMode, EventName
-from omniscribe.api.plugin.profile import Bundle, Patch, Profile
-from omniscribe.api.plugin.projections import (
-    ArtifactStoreProjection,
-    JobHistoryProjection,
-)
 from omniscribe.api.plugin.providers import (
     config_store_provider,
     in_memory_session_log_provider,
@@ -59,23 +52,17 @@ from omniscribe.api.plugin.session_log import (
 )
 
 __all__ = [
-    "ArtifactStoreProjection",
-    "Bundle",
     "ConfigStore",
     "ContextDisposedError",
-    "EffectScope",
     "EventMode",
     "EventModeMismatchError",
     "EventName",
     "InMemoryLogStore",
-    "JobHistoryProjection",
     "JobQueue",
     "LogEvent",
-    "Patch",
     "Plugin",
     "PluginContext",
     "PluginError",
-    "Profile",
     "ProgressChannel",
     "ProgressService",
     "ServiceAlreadyRegisteredError",

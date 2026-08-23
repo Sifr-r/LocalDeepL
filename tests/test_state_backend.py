@@ -13,7 +13,7 @@ from omniscribe.api.services.state_backend import (
     LocalStateBackend,
     StateBackend,
 )
-from omniscribe.core.glossary_library import GlossaryLibrary
+from omniscribe.core.lexicon import LexiconStore
 
 
 def test_local_state_backend_from_env_has_seven_attributes():
@@ -23,7 +23,7 @@ def test_local_state_backend_from_env_has_seven_attributes():
     assert isinstance(backend.export_artifacts, TextArtifactStore)
     assert isinstance(backend.job_history, JobHistory)
     assert isinstance(backend.progress_service, ProgressService)
-    assert isinstance(backend.glossary_library, GlossaryLibrary)
+    assert isinstance(backend.lexicon_store, LexiconStore)
     assert isinstance(backend.ocr_job_queue, OCRJobQueue)
 
 
@@ -36,8 +36,7 @@ def test_local_state_backend_isinstance_of_state_backend_protocol():
 def test_module_level_backend_is_local_state_backend():
     assert isinstance(router_state.backend, LocalStateBackend)
     # Module-level aliases point at the same objects as backend.* at
-    # import time. Other tests may rebind the aliases (e.g.
-    # test_glossary_imports_route reassigns state.glossary_library); the
+    # import time. Other tests may rebind the aliases; the
     # ``state.backend.X`` access path stays stable across such patches.
     # Verify the structural invariant via a fresh LocalStateBackend.
     fresh = LocalStateBackend.from_env()
@@ -56,9 +55,7 @@ def test_module_level_backend_is_local_state_backend():
     assert type(router_state.progress_service) is type(
         router_state.backend.progress_service
     )
-    assert type(router_state.glossary_library) is type(
-        router_state.backend.glossary_library
-    )
+    assert type(router_state.lexicon_store) is type(router_state.backend.lexicon_store)
     assert type(router_state.ocr_job_queue) is type(router_state.backend.ocr_job_queue)
 
 

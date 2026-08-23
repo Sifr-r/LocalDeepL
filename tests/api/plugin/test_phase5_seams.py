@@ -32,12 +32,10 @@ from typing import Any
 import pytest
 
 from omniscribe.api.plugin import (
-    Bundle,
     ConfigStore,
     InMemoryLogStore,
     JobQueue,
     PluginContext,
-    Profile,
     ProgressChannel,
     ProgressService,
     SessionLog,
@@ -222,38 +220,14 @@ def test_default_server_profile_has_all_five_capabilities(
     meta_store = _TextArtifactStore(artifact_dir=tmp_path / "meta", kind="metadata")
     export_store = _TextArtifactStore(artifact_dir=tmp_path / "export", kind="export")
 
-    profile = Profile(
-        name="default",
-        bundles=(
-            Bundle(
-                name="job-queue",
-                providers=(local_job_queue_provider(queue=queue),),
-            ),
-            Bundle(
-                name="session-log",
-                providers=(in_memory_session_log_provider(log=log),),
-            ),
-            Bundle(
-                name="progress",
-                providers=(progress_service_provider(service=progress),),
-            ),
-            Bundle(
-                name="config",
-                providers=(config_store_provider(store=config),),
-            ),
-            Bundle(
-                name="artifacts",
-                providers=(
-                    text_artifact_store_provider(text_store, name="text"),
-                    text_artifact_store_provider(meta_store, name="metadata"),
-                    text_artifact_store_provider(export_store, name="export"),
-                ),
-            ),
-        ),
-    )
-
     ctx = PluginContext("root")
-    profile.apply(ctx)
+    ctx.mount(local_job_queue_provider(queue=queue))
+    ctx.mount(in_memory_session_log_provider(log=log))
+    ctx.mount(progress_service_provider(service=progress))
+    ctx.mount(config_store_provider(store=config))
+    ctx.mount(text_artifact_store_provider(text_store, name="text"))
+    ctx.mount(text_artifact_store_provider(meta_store, name="metadata"))
+    ctx.mount(text_artifact_store_provider(export_store, name="export"))
 
     assert ctx.get(JobQueue, name="local") is queue
     assert ctx.get(SessionLog, name="memory") is log

@@ -85,6 +85,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://api.openai.com/v1",
         env_key="OPENAI_API_KEY",
         models=["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"],
+        get_api_key_url="https://platform.openai.com/api-keys",
         requires_auth=True,
     ),
     "anthropic": ProviderTemplate(
@@ -98,6 +99,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
             "claude-3-5-haiku-20241022",
             "claude-3-opus-20240229",
         ],
+        get_api_key_url="https://console.anthropic.com/settings/keys",
         requires_auth=True,
     ),
     "openrouter": ProviderTemplate(
@@ -111,6 +113,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
             "openai/gpt-4o",
             "google/gemini-flash-1.5",
         ],
+        get_api_key_url="https://openrouter.ai/keys",
         requires_auth=True,
     ),
     "ollama": ProviderTemplate(
@@ -139,6 +142,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         env_host="DATABRICKS_HOST",
         env_key="DATABRICKS_TOKEN",
         models=[],
+        get_api_key_url="https://docs.databricks.com/en/dev-tools/auth.html",
         requires_auth=True,
     ),
     "azure": ProviderTemplate(
@@ -149,6 +153,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         env_host="AZURE_OPENAI_ENDPOINT",
         env_key="AZURE_OPENAI_API_KEY",
         models=[],
+        get_api_key_url="https://ai.azure.com/",
         requires_auth=True,
     ),
     "groq": ProviderTemplate(
@@ -158,6 +163,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://api.groq.com/openai/v1",
         env_key="GROQ_API_KEY",
         models=["llama-3.2-90b-vision-preview", "llama-3.2-11b-vision-preview"],
+        get_api_key_url="https://console.groq.com/keys",
         requires_auth=True,
     ),
     "deepseek": ProviderTemplate(
@@ -167,6 +173,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://api.deepseek.com/v1",
         env_key="DEEPSEEK_API_KEY",
         models=["deepseek-chat", "deepseek-coder", "deepseek-reasoner"],
+        get_api_key_url="https://platform.deepseek.com/api_keys",
         requires_auth=True,
     ),
     "minimax": ProviderTemplate(
@@ -176,6 +183,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://api.minimax.io/v1",
         env_key="MINIMAX_API_KEY",
         models=["MiniMax-M3", "MiniMax-Text-01"],
+        get_api_key_url="https://intl.minimaxi.com/user-center/basic-information/interface-key",
         requires_auth=True,
     ),
     "litellm": ProviderTemplate(
@@ -198,6 +206,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
         env_key="DASHSCOPE_API_KEY",
         models=["qwen-vl-max", "qwen2.5-vl-72b-instruct", "qwen2.5-vl-7b-instruct"],
+        get_api_key_url="https://dashscope.console.aliyun.com/apiKey",
         requires_auth=True,
     ),
     "alibaba-singapore": ProviderTemplate(
@@ -211,6 +220,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
         env_key="DASHSCOPE_API_KEY",
         models=["qwen-vl-max", "qwen2.5-vl-72b-instruct"],
+        get_api_key_url="https://alibabacloud.com/help/en/model-studio/developer-reference/use-qwen-by-calling-api",
         requires_auth=True,
     ),
     "alibaba-us": ProviderTemplate(
@@ -220,6 +230,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://dashscope-us.aliyuncs.com/compatible-mode/v1",
         env_key="DASHSCOPE_API_KEY",
         models=["qwen-vl-max", "qwen2.5-vl-72b-instruct"],
+        get_api_key_url="https://alibabacloud.com/help/en/model-studio/",
         requires_auth=True,
     ),
     "zai-china": ProviderTemplate(
@@ -229,6 +240,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://open.bigmodel.cn/api/paas/v4",
         env_key="ZHIPU_API_KEY",
         models=["glm-4v-flash", "glm-4v-plus", "glm-4v"],
+        get_api_key_url="https://open.bigmodel.cn/usercenter/apikeys",
         requires_auth=True,
     ),
     "zai-international": ProviderTemplate(
@@ -238,6 +250,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://api.z.ai/v1",
         env_key="ZHIPU_API_KEY",
         models=["glm-4v-flash", "glm-4v-plus"],
+        get_api_key_url="https://z.ai/developers",
         requires_auth=True,
     ),
     "kimi": ProviderTemplate(
@@ -247,6 +260,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://api.moonshot.cn/v1",
         env_key="MOONSHOT_API_KEY",
         models=["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
+        get_api_key_url="https://platform.moonshot.cn/console/api-keys",
         requires_auth=True,
     ),
     "kimi-global": ProviderTemplate(
@@ -261,6 +275,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
             "moonshot-v1-32k",
             "moonshot-v1-128k",
         ],
+        get_api_key_url="https://platform.moonshot.ai/console/api-keys",
         requires_auth=True,
     ),
     "minimax-china": ProviderTemplate(
@@ -274,6 +289,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://api.minimaxi.com/v1",
         env_key="MINIMAX_API_KEY",
         models=["minimax-text-01", "abab6.5s-chat"],
+        get_api_key_url="https://platform.minimaxi.com/user-center/basic-information/interface-key",
         requires_auth=True,
     ),
     "google-gemini": ProviderTemplate(
@@ -283,6 +299,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://generativelanguage.googleapis.com/v1beta/openai/",
         env_key="GEMINI_API_KEY",
         models=["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash"],
+        get_api_key_url="https://aistudio.google.com/app/apikey",
         requires_auth=True,
     ),
     "siliconflow": ProviderTemplate(
@@ -292,6 +309,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://api.siliconflow.cn/v1",
         env_key="SILICONFLOW_API_KEY",
         models=["Qwen/Qwen2.5-VL-72B-Instruct", "deepseek-ai/DeepSeek-V3"],
+        get_api_key_url="https://cloud.siliconflow.cn/account/ak",
         requires_auth=True,
     ),
     "mistral": ProviderTemplate(
@@ -301,6 +319,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://api.mistral.ai/v1",
         env_key="MISTRAL_API_KEY",
         models=["pixtral-12b-2409", "pixtral-large-2411"],
+        get_api_key_url="https://console.mistral.ai/api-keys/",
         requires_auth=True,
     ),
     "novita": ProviderTemplate(
@@ -312,6 +331,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://api.novita.ai/openai",
         env_key="NOVITA_API_KEY",
         models=["qwen/qwen-2.5-vl-72b-instruct"],
+        get_api_key_url="https://novita.ai/dashboard/key",
         requires_auth=True,
     ),
     "together": ProviderTemplate(
@@ -323,6 +343,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://api.together.ai/v1",
         env_key="TOGETHER_API_KEY",
         models=["meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo"],
+        get_api_key_url="https://api.together.ai/settings/api-keys",
         requires_auth=True,
     ),
     "vllm": ProviderTemplate(
@@ -442,6 +463,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
             "Phi-3.5-vision-instruct",
             "meta-llama/Llama-3.2-11B-Vision-Instruct",
         ],
+        get_api_key_url="https://ai.azure.com/",
         requires_auth=True,
     ),
     "bailian-coding-plan": ProviderTemplate(
@@ -455,6 +477,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
         env_key="DASHSCOPE_API_KEY",
         models=["qwen-vl-max", "qwen2.5-vl-72b-instruct", "qwen3-vl-plus"],
+        get_api_key_url="https://bailian.console.aliyun.com/",
         requires_auth=True,
     ),
     "chutes": ProviderTemplate(
@@ -464,6 +487,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://llm.chutes.ai/v1",
         env_key="CHUTES_API_KEY",
         models=["Qwen/Qwen2.5-VL-72B-Instruct", "deepseek-ai/DeepSeek-V3"],
+        get_api_key_url="https://chutes.ai/",
         requires_auth=True,
     ),
     "clarifai": ProviderTemplate(
@@ -475,6 +499,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://api.clarifai.com/v2/ext/openai/v1",
         env_key="CLARIFAI_PAT",
         models=[],
+        get_api_key_url="https://clarifai.com/settings/security",
         requires_auth=True,
     ),
     "cloudflare-ai": ProviderTemplate(
@@ -487,6 +512,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://api.cloudflare.com/client/v4/accounts/<account_id>/ai/v1",
         env_key="CLOUDFLARE_API_TOKEN",
         models=["@cf/meta/llama-3.2-11b-vision-instruct", "@cf/llava-1.5-7b-hf"],
+        get_api_key_url="https://dash.cloudflare.com/profile/api-tokens",
         requires_auth=True,
     ),
     "fireworks": ProviderTemplate(
@@ -499,6 +525,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
             "accounts/fireworks/models/llama-3.2-11b-vision-instruct",
             "accounts/fireworks/models/qwen2-vl-72b-instruct",
         ],
+        get_api_key_url="https://fireworks.ai/account/api-keys",
         requires_auth=True,
     ),
     "github-models": ProviderTemplate(
@@ -517,6 +544,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
             "meta-llama/Llama-3.2-11B-Vision-Instruct",
             "Phi-3.5-vision-instruct",
         ],
+        get_api_key_url="https://github.com/settings/tokens",
         requires_auth=True,
     ),
     "huggingface": ProviderTemplate(
@@ -529,6 +557,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://router.huggingface.co/v1",
         env_key="HF_TOKEN",
         models=[],
+        get_api_key_url="https://huggingface.co/settings/tokens",
         requires_auth=True,
     ),
     "hyperbolic": ProviderTemplate(
@@ -541,6 +570,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
             "meta-llama/Llama-3.2-90B-Vision-Instruct",
             "Qwen/Qwen2.5-VL-72B-Instruct",
         ],
+        get_api_key_url="https://app.hyperbolic.ai/settings",
         requires_auth=True,
     ),
     "lambda-ai": ProviderTemplate(
@@ -553,6 +583,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://api.lambda.ai/v1",
         env_key="LAMBDA_API_KEY",
         models=[],
+        get_api_key_url="https://cloud.lambdalabs.com/api-keys",
         requires_auth=True,
     ),
     "nvidia": ProviderTemplate(
@@ -566,6 +597,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
             "nvidia/neva-22b",
             "qwen/qwen2-vl-72b-instruct",
         ],
+        get_api_key_url="https://build.nvidia.com/",
         requires_auth=True,
     ),
     "requesty": ProviderTemplate(
@@ -576,6 +608,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://router.requesty.ai/v1",
         env_key="REQUESTY_API_KEY",
         models=[],
+        get_api_key_url="https://requesty.ai/keys",
         requires_auth=True,
     ),
     "sambanova": ProviderTemplate(
@@ -588,6 +621,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
             "Meta-Llama-3.2-11B-Vision-Instruct",
             "Llama-3.2-90B-Vision-Instruct",
         ],
+        get_api_key_url="https://cloud.sambanova.ai/dashboard",
         requires_auth=True,
     ),
     "scaleway": ProviderTemplate(
@@ -601,6 +635,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
             "llama-3.2-11b-vision-instruct",
             "qwen2.5-vl-72b-instruct",
         ],
+        get_api_key_url="https://console.scaleway.com/iam/api-keys",
         requires_auth=True,
     ),
     "stepfun": ProviderTemplate(
@@ -612,6 +647,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://api.stepfun.com/v1",
         env_key="STEPFUN_API_KEY",
         models=["step-1v-8k", "step-1o-vision-32k"],
+        get_api_key_url="https://platform.stepfun.ai/",
         requires_auth=True,
     ),
     "vercel-ai-gateway": ProviderTemplate(
@@ -621,6 +657,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://ai-gateway.vercel.sh/v1",
         env_key="VERCEL_AI_GATEWAY_API_KEY",
         models=[],
+        get_api_key_url="https://vercel.com/dashboard/ai-gateway",
         requires_auth=True,
     ),
     "vertex": ProviderTemplate(
@@ -639,6 +676,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
             "gemini-2.0-flash-exp",
             "claude-3-5-sonnet@20240620",
         ],
+        get_api_key_url="https://console.cloud.google.com/vertex-ai",
         requires_auth=True,
     ),
     "xai": ProviderTemplate(
@@ -648,6 +686,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://api.x.ai/v1",
         env_key="XAI_API_KEY",
         models=["grok-2-vision-1212", "grok-vision-beta"],
+        get_api_key_url="https://console.x.ai/",
         requires_auth=True,
     ),
     "xiaomi-mimo": ProviderTemplate(
@@ -660,6 +699,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://api.xiaomimimo.com/v1",
         env_key="MIMO_API_KEY",
         models=["mimo-v2.5-vl", "mimo-v2-vl-72b"],
+        get_api_key_url="https://mimo.mi.com/",
         requires_auth=True,
     ),
     "zenmux": ProviderTemplate(
@@ -669,6 +709,7 @@ PROVIDER_TEMPLATES: dict[str, ProviderTemplate] = {
         api_url="https://zenmux.ai/api/v1",
         env_key="ZENMUX_API_KEY",
         models=[],
+        get_api_key_url="https://zenmux.ai/",
         requires_auth=True,
     ),
 }
@@ -713,6 +754,7 @@ class ProviderManager:
                 api_url=api_url,
                 api_key=api_key,
                 models=tmpl.models.copy(),
+                get_api_key_url=tmpl.get_api_key_url,
                 requires_auth=tmpl.requires_auth,
                 configured=configured,
                 enabled=True,
@@ -875,6 +917,7 @@ class ProviderManager:
             display_name="OpenAI",
             format=ProviderFormatEnum.OPENAI_COMPATIBLE,
             api_url="https://api.openai.com/v1",
+            get_api_key_url="https://platform.openai.com/api-keys",
         )
         self._providers["openai"] = default_config
         self._active_provider_id = "openai"
@@ -962,6 +1005,7 @@ class ProviderManager:
             api_key=request.api_key,
             models=request.models.copy(),
             headers=request.headers.copy(),
+            get_api_key_url=request.get_api_key_url,
             supports_streaming=request.supports_streaming,
             requires_auth=request.requires_auth,
             configured=configured,

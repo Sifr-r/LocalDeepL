@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from omniscribe.api.schemas.requests import (
     ActiveProviderUpdate,
     ProviderConfig,
@@ -231,3 +233,123 @@ def test_singleton_accessor(tmp_path: Path):
     pm2 = get_provider_manager()
     assert pm1 is pm2
     reset_provider_manager()
+
+
+# ---------------------------------------------------------------------------
+# F2.6 — ProviderCreateRequest.headers validation
+# (re-homed from test_audit_medium_d2.py)
+# ---------------------------------------------------------------------------
+
+
+def test_provider_create_request_accepts_benign_headers() -> None:
+    """Custom headers (e.g. tenant-id, x-trace-id) are accepted unchanged."""
+    req = ProviderCreateRequest(
+        id="custom",
+        display_name="Custom",
+        api_url="https://api.example.com/v1",
+        headers={"X-Tenant-Id": "abc", "x-trace-id": "trace-1"},
+    )
+    assert req.headers == {"X-Tenant-Id": "abc", "x-trace-id": "trace-1"}
+
+
+@pytest.mark.parametrize(
+    "bad_key",
+    [
+        "Host",
+        "host",
+        "X-Forwarded-Host",
+        "x-forwarded-for",
+        "X-Real-IP",
+        "Forwarded",
+        ":authority",
+        ":scheme",
+        "content-length",
+        "transfer-encoding",
+        "Authorization",
+        "authorization",
+        "Proxy-Authorization",
+        "Cookie",
+    ],
+)
+def test_provider_create_request_rejects_routing_and_auth_headers(bad_key: str) -> None:
+    """Routing-affecting, body-framing, and credential headers are rejected."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as exc_info:
+        ProviderCreateRequest(
+            id="custom",
+            display_name="Custom",
+            api_url="https://api.example.com/v1",
+            headers={bad_key: "value"},
+        )
+    msg = str(exc_info.value)
+    assert "routing- or auth-affecting keys" in msg
+    assert bad_key in msg or bad_key.lower() in msg
+
+
+def test_provider_create_request_error_lists_all_bad_keys() -> None:
+    """The error message lists every offending key, not just the first."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as exc_info:
+        ProviderCreateRequest(
+            id="custom",
+            display_name="Custom",
+            api_url="https://api.example.com/v1",
+            headers={"Host": "x", "Authorization": "y", "X-Tenant-Id": "ok"},
+        )
+    msg = str(exc_info.value)
+    assert "Host" in msg
+    assert "Authorization" in msg
+    # The benign key is still present in the model (validation
+    # happens on assignment; the model is built before the validator
+    # raises). What matters is that the validator raises, not that
+    # partial state is preserved.
+    assert "X-Tenant-Id" not in msg or "routing" in msg
+
+
+# ---------------------------------------------------------------------------
+# Masked-key preservation (merged from test_phase2_provider_masked_key.py)
+# ---------------------------------------------------------------------------
+
+
+def test_provider_manager_preserves_masked_api_key(tmp_path):
+    """Audit-secondary F26 / Phase 2 fix: ``ProviderManager.save_provider``
+    detects masked previews (``"sk-...XXXX"`` or ``"***"``) and preserves
+    the existing real key instead of overwriting it when an operator
+    re-submits the form with the masked value displayed by the UI.
+    """
+    mgr = ProviderManager(config_path=tmp_path / "providers.yaml")
+    original = ProviderConfig(
+        id="test-prov",
+        display_name="Test Provider",
+        format="openai_compatible",
+        api_url="http://localhost:1234/v1",
+        api_key="sk-real-secret-key-12345",
+        configured=True,
+    )
+    mgr.save_provider(original)
+
+    # Submit update with masked preview
+    updated = ProviderConfig(
+        id="test-prov",
+        display_name="Updated Provider",
+        format="openai_compatible",
+        api_url="http://localhost:1234/v1",
+        api_key="sk-r...2345",
+        configured=True,
+    )
+    saved = mgr.save_provider(updated)
+    assert saved.api_key == "sk-real-secret-key-12345"
+
+    # Also test '***'
+    updated_stars = ProviderConfig(
+        id="test-prov",
+        display_name="Updated Stars",
+        format="openai_compatible",
+        api_url="http://localhost:1234/v1",
+        api_key="***",
+        configured=True,
+    )
+    saved_stars = mgr.save_provider(updated_stars)
+    assert saved_stars.api_key == "sk-real-secret-key-12345"

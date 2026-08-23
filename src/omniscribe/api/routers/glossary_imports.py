@@ -29,15 +29,17 @@ from omniscribe.api.services.envelope import (
     SSRFBlocked,
     ValidationFailed,
 )
-from omniscribe.core.glossary_library import (
-    GlossaryLibrary,
-    GlossaryNotFoundError,
-    StoredGlossary,
-)
 from omniscribe.core.glossary_sources import (
     FormatNotAvailableError,
     GlossaryImportLimitError,
     parse,
+)
+from omniscribe.core.lexicon import (
+    GlossaryMeta,
+    GlossaryNotFoundError,
+    LexiconStore,
+    merged_enabled_glossary,
+    preview,
 )
 from omniscribe.core.translation_config import AsyncTranslationUnavailable
 from omniscribe.utils.security import is_ssrf_target
@@ -48,27 +50,32 @@ logger = logging.getLogger(__name__)
 SYNC_THRESHOLD = 5_000
 
 
-def _library() -> GlossaryLibrary:
+def _library() -> LexiconStore:
     from typing import cast
 
-    return cast(GlossaryLibrary, state.glossary_library)
+    store = getattr(state, "lexicon_store", None)
+    if store is None:
+        raise BackendUnavailable(
+            detail="Lexicon store is not available. Install with: uv sync --extra lexicon"
+        )
+    return cast(LexiconStore, store)
 
 
-def _serialize_item(item: StoredGlossary) -> GlossaryListItem:
+def _serialize_item(item: GlossaryMeta) -> GlossaryListItem:
     return GlossaryListItem(
         id=item.id,
         name=item.name,
         format=_coerce_format(item.format),
         source_uri=item.source_uri,
         encoding=item.encoding,
-        entry_count=len(item.entries),
+        entry_count=item.entry_count,
         enabled=item.enabled,
         priority=item.priority,
         group=item.group,
     )
 
 
-def _serialize_items(items: list[StoredGlossary]) -> list[GlossaryListItem]:
+def _serialize_items(items: list[GlossaryMeta]) -> list[GlossaryListItem]:
     return [_serialize_item(item) for item in items]
 
 
@@ -256,7 +263,7 @@ def _process_sync(
     summary = parse(format=format_name, **kwargs)
     explicit_name = _resolve_request_name(req)
     display_name = explicit_name or _default_name(format_name, kwargs)
-    stored = _library().save(
+    meta = _library().save_glossary(
         name=display_name,
         format=format_name,
         entries=summary.entries,
@@ -264,9 +271,9 @@ def _process_sync(
         encoding=summary.encoding,
     )
     return GlossaryImportJobResponse(
-        glossary_id=stored.id,
+        glossary_id=meta.id,
         format=GlossaryFormat(format_name),
-        name=stored.name,
+        name=meta.name,
         entry_count=len(summary.entries),
         warnings=list(summary.warnings),
         queued=False,
@@ -381,7 +388,7 @@ async def import_glossary_from_url(
 @router.get("/api/glossary/library")
 def list_library() -> list[GlossaryListItem]:
     """Return every stored glossary in priority/insertion order."""
-    return _serialize_items(_library().items())
+    return _serialize_items(_library().list_glossaries())
 
 
 @router.post("/api/glossary/library/{glossary_id}/enable")
@@ -390,16 +397,16 @@ def toggle_library_entry(
     req: GlossaryToggleRequest,
 ) -> GlossaryListItem:
     try:
-        stored = _library().toggle(glossary_id, enabled=req.enabled)
+        meta = _library().toggle_glossary(glossary_id, enabled=req.enabled)
     except GlossaryNotFoundError as exc:
         raise NotFound(detail="Glossary not found.") from exc
-    return _serialize_item(stored)
+    return _serialize_item(meta)
 
 
 @router.post("/api/glossary/library/reorder")
 def reorder_library(req: GlossaryReorderRequest) -> dict[str, Any]:
     try:
-        _library().reorder(req.ordered_ids)
+        _library().reorder_glossaries(req.ordered_ids)
     except GlossaryNotFoundError as exc:
         raise NotFound(detail="Glossary not found.") from exc
     except ValueError as exc:
@@ -409,7 +416,7 @@ def reorder_library(req: GlossaryReorderRequest) -> dict[str, Any]:
 
 @router.delete("/api/glossary/library/{glossary_id}")
 def delete_library_entry(glossary_id: str) -> dict[str, Any]:
-    deleted = _library().delete(glossary_id)
+    deleted = _library().delete_glossary(glossary_id)
     if not deleted:
         raise NotFound(detail="Glossary not found.")
     return {"ok": True, "id": glossary_id}
@@ -417,7 +424,7 @@ def delete_library_entry(glossary_id: str) -> dict[str, Any]:
 
 @router.get("/api/glossary/library/preview")
 def library_preview() -> GlossaryPreviewResponse:
-    payload = _library().preview()
+    payload = preview(_library())
     conflicts_value = payload.get("conflicts", [])
     enabled_value = payload.get("enabled_glossaries", [])
     if not isinstance(conflicts_value, list):
@@ -433,18 +440,28 @@ def library_preview() -> GlossaryPreviewResponse:
 
 @router.get("/api/glossary/library/{glossary_id}/entries")
 def library_entries(glossary_id: str) -> dict[str, Any]:
-    stored = _library().get(glossary_id)
-    if stored is None:
+    store = _library()
+    meta = store.get_glossary(glossary_id)
+    if meta is None:
         raise NotFound(detail="Glossary not found.")
+    entries = store.list_entries(glossary_id)
     return {
-        "id": stored.id,
-        "name": stored.name,
-        "format": stored.format,
-        "entries": [dict(item) for item in stored.entries],
+        "id": meta.id,
+        "name": meta.name,
+        "format": meta.format,
+        "entries": [
+            {
+                "source": e.source_text,
+                "target": e.target_text,
+                "case_sensitive": e.case_sensitive,
+                "notes": e.notes,
+            }
+            for e in entries
+        ],
     }
 
 
 @router.get("/api/glossary/library/merged")
 def merged_entries() -> dict[str, Any]:
     """Return the merged enabled glossary for use by translation requests."""
-    return _library().merged_enabled().to_dict()
+    return merged_enabled_glossary(_library()).to_dict()

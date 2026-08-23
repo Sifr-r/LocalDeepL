@@ -64,9 +64,8 @@ from collections.abc import Callable, Iterable
 from contextlib import suppress
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
-from omniscribe.api.plugin.effects import EffectScope
 from omniscribe.api.plugin.errors import (
     ContextDisposedError,
     EventModeMismatchError,
@@ -78,26 +77,18 @@ from omniscribe.api.plugin.events import EventMode, EventName
 # A disposer is a zero-arg callable that unwinds a single effect.
 Disposer = Callable[[], None]
 
+_F = TypeVar("_F", bound=Callable[..., Any])
 
-def _locked(method: Any) -> Any:
-    """Decorator: serialize a :class:`PluginContext` method under the lock.
 
-    The lock is re-entrant, so a dispatch that calls back into a
-    locked method (e.g. a listener that registers a service) does
-    not deadlock. The decorator preserves the original signature
-    for IDE introspection via :func:`functools.wraps` and is typed
-    loosely (``Any``) because the precise ``ParamSpec`` /
-    ``Concatenate`` plumbing clashes with mypy's interpretation of
-    :func:`functools.wraps` on instance methods — the runtime
-    behaviour is straightforward and the test suite covers it.
-    """
+def _locked(method: _F) -> _F:
+    """Decorator: serialize a :class:`PluginContext` method under the lock."""
 
     @functools.wraps(method)
-    def wrapper(self: PluginContext, *args: Any, **kwargs: Any) -> Any:
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
         with self._lock:
             return method(self, *args, **kwargs)
 
-    return cast(Any, wrapper)
+    return cast(_F, wrapper)
 
 
 @dataclass
@@ -136,7 +127,7 @@ class PluginContext:
         self._lock = threading.RLock()
         self._services: dict[tuple[type, str], Any] = {}
         self._listeners: dict[str, list[_ListenerEntry]] = {}
-        self._effects = EffectScope()
+        self._effects: list[Disposer] = []
         self._disposed = False
 
     # -- Introspection ----------------------------------------------------
@@ -215,7 +206,7 @@ class PluginContext:
         if key in self._services and not replace:
             raise ServiceAlreadyRegisteredError(definition, name)
         self._services[key] = impl
-        return self._effects.effect(lambda: self._services.pop(key, None))
+        return self.effect(lambda: self._services.pop(key, None))
 
     @_locked
     def get(self, definition: type, *, name: str = "default") -> Any:
@@ -251,8 +242,7 @@ class PluginContext:
     ) -> Disposer:
         """Replace a service and return a disposer that restores the previous state.
 
-        Phase 4 primitive that backs the :class:`Patch` abstraction:
-        unlike :meth:`register` (which raises on duplicate, or
+        Unlike :meth:`register` (which raises on duplicate, or
         overwrites with a non-restoring disposer when ``replace=True``),
         :meth:`swap` snapshots whatever is currently registered for
         ``(definition, name)`` before installing ``impl`` and restores
@@ -294,7 +284,7 @@ class PluginContext:
                 else:
                     self._services[key] = previous
 
-        return self._effects.effect(_restore)
+        return self.effect(_restore)
 
     @_locked
     def require(
@@ -361,7 +351,7 @@ class PluginContext:
             bucket.insert(0, entry)
         else:
             bucket.append(entry)
-        return self._effects.effect(lambda: self._remove_listener(event_name, entry))
+        return self.effect(lambda: self._remove_listener(event_name, entry))
 
     @_locked
     def off(self, event: str | EventName, listener: Listener) -> bool:
@@ -543,7 +533,22 @@ class PluginContext:
         effects added implicitly by :meth:`register` / :meth:`on`).
         """
         self._assert_not_disposed("effect")
-        return self._effects.effect(disposer)
+        if not callable(disposer):
+            raise TypeError(
+                f"Effect disposer must be callable, got {type(disposer).__name__}"
+            )
+        fired = False
+
+        def scoped() -> None:
+            nonlocal fired
+            if fired:
+                return
+            fired = True
+            with suppress(Exception):
+                disposer()
+
+        self._effects.append(scoped)
+        return scoped
 
     @_locked
     def mount(self, plugin: Any) -> Disposer:
@@ -553,7 +558,7 @@ class PluginContext:
         the callable is expected to register services/listeners/effects
         via the context and return a top-level disposer that unwinds
         everything. The returned disposer is also registered with the
-        context's effect scope so it is called during :meth:`dispose`.
+        context's effect list so it is called during :meth:`dispose`.
         """
         self._assert_not_disposed("mount")
         if not callable(plugin):
@@ -564,7 +569,7 @@ class PluginContext:
                 f"Plugin {plugin!r} must return a callable disposer, "
                 f"got {type(plugin_disposer).__name__}"
             )
-        return self._effects.effect(plugin_disposer)
+        return self.effect(plugin_disposer)
 
     # -- Teardown ---------------------------------------------------------
 
@@ -579,8 +584,11 @@ class PluginContext:
         if self._disposed:
             return
         self._disposed = True
-        # Unwind effects in LIFO order. The EffectScope handles this.
-        self._effects.dispose()
+        # Unwind effects in LIFO order.
+        while self._effects:
+            effect_fn = self._effects.pop()
+            with suppress(Exception):
+                effect_fn()
         # Drop the registries so any accidental access after dispose is
         # caught by the disposed check rather than returning a stale ref.
         self._services.clear()

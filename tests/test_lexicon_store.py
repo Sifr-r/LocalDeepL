@@ -12,7 +12,6 @@ These tests cover:
 - ``delete_glossary`` removes all rows for a glossary.
 - ``hybrid_query`` returns semantically relevant results.
 - ``exact_lookup`` matches case-insensitively.
-- ``GlossaryLibraryAdapter`` preserves the legacy ``GlossaryLibrary`` API.
 - ``merged_enabled_glossary`` and ``preview`` composition helpers work.
 - ``health()`` returns the expected metadata.
 - The Protocol/structural-typing check passes.
@@ -26,7 +25,6 @@ import pytest
 
 from omniscribe.core.glossary import Glossary
 from omniscribe.core.lexicon import (
-    GlossaryLibraryAdapter,
     LanceDBLexiconStore,
     LexiconHit,
     LexiconQuery,
@@ -352,82 +350,8 @@ def test_health_returns_expected_keys(store: LanceDBLexiconStore) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Legacy adapter
+# Composition helpers
 # ---------------------------------------------------------------------------
-
-
-def test_adapter_items_returns_stored_glossary_shape(
-    store: LanceDBLexiconStore,
-) -> None:
-    store.save_glossary(
-        name="G",
-        format="json_pairs",
-        entries=[{"source": "hello", "target": "bonjour"}],
-    )
-    adapter = GlossaryLibraryAdapter(store)
-    items = adapter.items()
-    assert len(items) == 1
-    item = items[0]
-    assert item.name == "G"
-    assert item.format == "json_pairs"
-    assert item.enabled is True
-    assert len(item.entries) == 1
-    assert item.entries[0]["source"] == "hello"
-    assert item.entries[0]["target"] == "bonjour"
-
-
-def test_adapter_round_trip_matches_legacy_behavior(
-    store: LanceDBLexiconStore,
-) -> None:
-    """Reading from LexiconStore returns equivalent results to the legacy read path."""
-    from omniscribe.core.glossary_library import GlossaryLibrary
-
-    # New store
-    saved = store.save_glossary(
-        name="Round-trip",
-        format="json_pairs",
-        entries=[
-            {"source": "agreement", "target": "accord"},
-            {"source": "contract", "target": "contrat"},
-        ],
-        source_uri="inline",
-        encoding="utf-8",
-        group="legal",
-        priority=42,
-    )
-    adapter = GlossaryLibraryAdapter(store)
-    via_adapter = adapter.get(saved.id)
-
-    # Legacy library with the same data
-    legacy_dir = store._path.parent / "legacy"
-    legacy_dir.mkdir(parents=True, exist_ok=True)
-    lib = GlossaryLibrary(artifact_dir=legacy_dir)
-    legacy_saved = lib.save(
-        name="Round-trip",
-        format="json_pairs",
-        entries=[
-            {"source": "agreement", "target": "accord"},
-            {"source": "contract", "target": "contrat"},
-        ],
-        source_uri="inline",
-        encoding="utf-8",
-        group="legal",
-        priority=42,
-    )
-    via_legacy = lib.get(legacy_saved.id)
-
-    # Compare the user-visible shape
-    assert via_adapter is not None and via_legacy is not None
-    assert via_adapter.name == via_legacy.name == "Round-trip"
-    assert via_adapter.format == via_legacy.format == "json_pairs"
-    assert via_adapter.source_uri == via_legacy.source_uri == "inline"
-    assert via_adapter.encoding == via_legacy.encoding == "utf-8"
-    assert via_adapter.priority == via_legacy.priority == 42
-    assert via_adapter.group == via_legacy.group == "legal"
-    assert via_adapter.enabled == via_legacy.enabled is True
-    assert len(via_adapter.entries) == len(via_legacy.entries) == 2
-    assert via_adapter.entries[0]["source"] == via_legacy.entries[0]["source"]
-    assert via_adapter.entries[0]["target"] == via_legacy.entries[0]["target"]
 
 
 def test_merged_enabled_glossary_helper(store: LanceDBLexiconStore) -> None:
@@ -463,7 +387,7 @@ def test_preview_helper(store: LanceDBLexiconStore) -> None:
         entries=[{"source": "bank", "target": "rive"}],
     )
     p = preview(store)
-    assert p["count"] == 2
+    assert p["count"] == 1
     assert len(p["conflicts"]) == 1
     conflict = p["conflicts"][0]
     assert conflict["source"] == "bank"

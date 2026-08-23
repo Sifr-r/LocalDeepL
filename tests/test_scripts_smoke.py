@@ -34,7 +34,6 @@ SCRIPTS_DIR = ROOT / "scripts"
 # skip rather than fail. The extras themselves are documented in
 # pyproject.toml (`memory`, `web`, etc.).
 _OPTIONAL_DEPS: dict[str, tuple[str, ...]] = {
-    "build_fixture.py": ("rich",),
     "confidence_eval.py": ("rich",),
     "confidence_image.py": ("rich",),
     "ingest_lexicon.py": ("lancedb",),
@@ -66,7 +65,10 @@ def _load_script(script_name: str) -> types.ModuleType:
     """Import scripts/<script_name> in isolation and return the module.
 
     Each script gets a unique sys.modules key so repeated parametrize
-    cases don't collide and re-run the script body fresh.
+    cases don't collide and re-run the script body fresh. ``scripts/``
+    itself is added to ``sys.path`` for the duration of the load so the
+    shared ``_common`` helper module resolves the same way it does when
+    the script is run directly (``python scripts/foo.py``).
     """
     module_id = f"_scripts_smoke_{script_name.removesuffix('.py')}"
     spec = importlib.util.spec_from_file_location(module_id, SCRIPTS_DIR / script_name)
@@ -74,7 +76,15 @@ def _load_script(script_name: str) -> types.ModuleType:
         raise ImportError(f"could not build import spec for {script_name}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_id] = module
-    spec.loader.exec_module(module)
+    scripts_dir_str = str(SCRIPTS_DIR)
+    path_was_missing = scripts_dir_str not in sys.path
+    if path_was_missing:
+        sys.path.insert(0, scripts_dir_str)
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        if path_was_missing:
+            sys.path.remove(scripts_dir_str)
     return module
 
 

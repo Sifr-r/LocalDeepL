@@ -1,17 +1,21 @@
+from __future__ import annotations
+
 import argparse
 import os
 import sys
+from pathlib import Path
+from typing import Any
 
 # NB: do NOT import xml.etree.ElementTree here; it is not XXE-safe.
 # Use scripts.ingest_lexicon._parse_xml for any external XML.
 import requests
 
 # Fix for Windows console unicode printing
-if sys.stdout.encoding.lower() != "utf-8":
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
 
-def _parse_xml(content: str):
+def _parse_xml(content: str | bytes) -> Any:
     """Parse an XML string with XXE/DTD protection.
 
     The previous implementation used xml.etree.ElementTree.fromstring,
@@ -25,22 +29,7 @@ def _parse_xml(content: str):
     return DET.fromstring(content)
 
 
-def get_chroma_collection(db_path="./chroma_db"):
-    import chromadb
-    from chromadb.utils import embedding_functions
-
-    os.makedirs(db_path, exist_ok=True)
-    client = chromadb.PersistentClient(path=db_path)
-    emb_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name="paraphrase-multilingual-MiniLM-L12-v2"
-    )
-    collection = client.get_or_create_collection(
-        name="lanes_lexicon", embedding_function=emb_fn
-    )
-    return collection
-
-
-def fetch_xml_files(api_url):
+def fetch_xml_files(api_url: str) -> list[dict[str, Any]]:
     response = requests.get(api_url)
     response.raise_for_status()
     items = response.json()
@@ -51,8 +40,8 @@ def fetch_xml_files(api_url):
     ]
 
 
-def parse_tei_xml(xml_content):
-    entries = []
+def parse_tei_xml(xml_content: str | bytes) -> list[dict[str, str]]:
+    entries: list[dict[str, str]] = []
     try:
         root = _parse_xml(xml_content)
     except Exception as e:
@@ -73,7 +62,11 @@ def parse_tei_xml(xml_content):
     return entries
 
 
-def ingest_lexicon(api_url, db_path, dry_run=False):
+def ingest_lexicon(
+    api_url: str,
+    db_path: str | Path,
+    dry_run: bool = False,
+) -> None:
     print(f"Fetching XML file list from {api_url}")
     xml_files = fetch_xml_files(api_url)
 
@@ -81,8 +74,8 @@ def ingest_lexicon(api_url, db_path, dry_run=False):
         print(f"Dry run: Found {len(xml_files)} files. Only parsing the first one.")
         xml_files = xml_files[:1]
 
-    all_entries = []
-    seen_ids = set()
+    all_entries: list[dict[str, str]] = []
+    seen_ids: set[str] = set()
     for file_info in xml_files:
         print(f"Downloading {file_info['name']}...")
         resp = requests.get(file_info["download_url"])
@@ -112,35 +105,41 @@ def ingest_lexicon(api_url, db_path, dry_run=False):
         return
 
     print(
-        f"Starting ingestion of {len(all_entries)} entries into ChromaDB at {db_path}..."
+        f"Starting ingestion of {len(all_entries)} entries into LanceDB at {db_path}..."
     )
-    collection = get_chroma_collection(db_path)
+    from omniscribe.core.lexicon import LanceDBLexiconStore
 
-    batch_size = 500
-    for i in range(0, len(all_entries), batch_size):
-        batch = all_entries[i : i + batch_size]
-        documents = []
-        metadatas = []
-        ids = []
+    store = LanceDBLexiconStore(path=Path(db_path))
 
-        for entry in batch:
-            doc = (
-                f"Arabic Word/Root: {entry['root']}\nDefinition: {entry['definition']}"
-            )
-            documents.append(doc)
-            metadatas.append({"root": entry["root"], "source": "Lane's Lexicon"})
-            ids.append(entry["id"])
-
-        print(
-            f"Upserting batch {i // batch_size + 1}/{(len(all_entries) + batch_size - 1) // batch_size} ({len(batch)} entries)..."
+    glossary_entries: list[dict[str, object]] = []
+    for entry in all_entries:
+        glossary_entries.append(
+            {
+                "id": entry["id"],
+                "source": entry["root"],
+                "target": entry["definition"],
+                "source_lang": "ara",
+                "target_lang": "eng",
+                "domain": "lexicon",
+                "notes": "Lane's Lexicon",
+            }
         )
-        collection.upsert(documents=documents, metadatas=metadatas, ids=ids)
-    print("Ingestion complete.")
+
+    meta = store.save_glossary(
+        name="Lane's Lexicon",
+        format="tei_xml",
+        entries=glossary_entries,
+        source_uri=api_url,
+    )
+    print(
+        f"Ingestion complete: glossary '{meta.name}' (id={meta.id}) "
+        f"saved with {meta.entry_count} entries."
+    )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Ingest Lane's Lexicon into a local ChromaDB for RAG"
+        description="Ingest Lane's Lexicon into a local LanceDB for RAG"
     )
     parser.add_argument(
         "--api-url",
@@ -151,13 +150,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--db-path",
         type=str,
-        default=os.path.join(os.path.dirname(__file__), "..", "chroma_db"),
-        help="Path to local ChromaDB directory",
+        default=os.path.join(
+            os.path.dirname(__file__), "..", "omniscribe_artifacts", "lexicon.lance"
+        ),
+        help="Path to local LanceDB directory",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Only download and parse the first file, do not ingest into ChromaDB",
+        help="Only download and parse the first file, do not ingest into LanceDB",
     )
 
     args = parser.parse_args()

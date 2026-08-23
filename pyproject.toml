@@ -291,6 +291,9 @@ ignore = [
     "RUF015", # single-element slice patterns in fixture lookups
     "SIM117", # nested `with` statements in test setup
 ]
+"scripts/**/*.py" = [
+    "E402", # module level import not at top of file (after setup_sys_path())
+]
 
 [tool.mypy]
 python_version = "3.11"

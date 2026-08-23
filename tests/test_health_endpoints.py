@@ -21,21 +21,77 @@ import pytest
 
 from omniscribe.api.services.security_middleware import BearerAuthMiddleware
 
-# Use the shared _CollectSend / _MarkerApp pattern from
-# test_separate_auth.py so the assertions match the rest of the suite.
-from tests.test_separate_auth import _CollectSend, _MarkerApp
-
 # F4.15 audit fix: ``pytestmark = pytest.mark.asyncio`` is redundant
 # under ``asyncio_mode = "auto"`` (set in pyproject.toml). The
 # mode already treats every ``async def test_*`` as an asyncio
 # test, so the module-level marker is a no-op. Drop it; the
-# regression test in ``test_audit_medium_d4.py`` catches a
+# regression test in ``test_tier_discipline.py`` catches a
 # re-introduction.
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+class _CollectSend:
+    """Capture ASGI send events so a test can inspect status / body."""
+
+    def __init__(self) -> None:
+        self.events: list[dict[str, Any]] = []
+
+    async def __call__(self, event: dict[str, Any]) -> None:
+        self.events.append(event)
+
+    @property
+    def status(self) -> int:
+        for event in self.events:
+            if event.get("type") == "http.response.start":
+                return int(event.get("status", 0))
+        return 0
+
+    @property
+    def body(self) -> bytes:
+        chunks: list[bytes] = []
+        for event in self.events:
+            if event.get("type") == "http.response.body":
+                body = event.get("body", b"")
+                if isinstance(body, (bytes, bytearray)):
+                    chunks.append(bytes(body))
+        return b"".join(chunks)
+
+    @property
+    def body_json(self) -> dict[str, Any]:
+        return cast(dict[str, Any], json.loads(self.body or b"{}"))
+
+
+class _MarkerApp:
+    """Terminal ASGI app that records whether the middleware passed through."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.last_scope: dict[str, Any] | None = None
+
+    async def __call__(
+        self,
+        scope: dict[str, Any],
+        receive: Any,
+        send: Any,
+    ) -> None:
+        self.calls += 1
+        self.last_scope = scope
+        # Mimic a minimal FastAPI 200 OK response so callers can read body.
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", b"2"),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": b"{}", "more_body": False})
 
 
 def _build_scope(

@@ -85,6 +85,11 @@ def create_app() -> ASGIApplication:
     # opt into via the ``OMNISCRIBE_PLUGIN_CONTEXT`` env var. During
     # the migration window the existing ``state.ocr_job_queue`` singleton
     # is also the registered provider, so the two paths share state.
+    from omniscribe.api.middleware import (
+        BearerAuthMiddleware,
+        MaxUploadSizeMiddleware,
+        RateLimitMiddleware,
+    )
     from omniscribe.api.plugin import (
         PluginContext,
         config_store_provider,
@@ -117,11 +122,6 @@ def create_app() -> ASGIApplication:
     from omniscribe.api.services.envelope import register_envelope_handlers
     from omniscribe.api.services.lifespan import LifespanRunner, LifespanStep
     from omniscribe.api.services.security_config import SecuritySettings
-    from omniscribe.api.services.security_middleware import (
-        BearerAuthMiddleware,
-        MaxUploadSizeMiddleware,
-        RateLimitMiddleware,
-    )
 
     plugin_ctx = PluginContext("omniscribe")
     # Always mount the local job queue provider so the seam is available

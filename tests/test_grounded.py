@@ -30,7 +30,9 @@ from omniscribe.core.grounded import (
     _rasterize_to_jpeg_pages,
     log_grounded_parse_failure,
     parse_glm_layout_details,
+    parsers,
 )
+from omniscribe.core.grounded.models import RepairableGroundedBackend
 from omniscribe.core.ocr import LLMCallError, ModelNotLoadedError
 from omniscribe.core.pdf import PDFHandler
 from omniscribe.pipeline import OCRPipeline
@@ -616,3 +618,129 @@ class TestPromptedGroundedEnsureModelLoaded:
     def test_subclass_of_llm_call_error(self):
         # Catchable via the same except-clause as other LLM failures.
         assert issubclass(ModelNotLoadedError, LLMCallError)
+
+
+# ---------------------------------------------------------------------------
+# F1.14 — RepairableGroundedBackend Protocol
+# (re-homed from test_audit_medium_d1.py)
+# ---------------------------------------------------------------------------
+
+
+class TestRepairableGroundedBackendProtocol:
+    """F1.14 audit fix: a typed ``RepairableGroundedBackend`` Protocol
+    with a runtime ``isinstance`` check replaces the prior
+    ``hasattr(..., "ocr_crop")`` duck-type + ``# type: ignore``.
+    """
+
+    def test_protocol_is_runtime_checkable(self) -> None:
+        """The Protocol carries ``@runtime_checkable`` so
+        ``isinstance(obj, RepairableGroundedBackend)`` works at runtime.
+        """
+
+        # Construct two minimal duck-typed objects and assert the
+        # isinstance check reflects the presence/absence of the
+        # ``ocr_crop`` method.
+        class WithOcrCrop:
+            async def ocr_crop(self, image_base64, bbox):
+                return "text"
+
+        class WithoutOcrCrop:
+            async def ocr_document(self, pdf_path):
+                return GroundedResponse(blocks=[])
+
+        with_ = WithOcrCrop()
+        without_ = WithoutOcrCrop()
+        assert isinstance(with_, RepairableGroundedBackend)
+        assert not isinstance(without_, RepairableGroundedBackend)
+
+    def test_workflow_uses_isinstance_not_hasattr(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Pin the contract that the grounded engine uses
+        ``isinstance(..., RepairableGroundedBackend)`` as the gate, so
+        a future refactor that reverts to ``hasattr`` lands a test
+        failure here.
+        """
+        from omniscribe.core.workflows import grounded as grounded_mod
+
+        # Read the source, normalise whitespace so we can match
+        # multi-line calls cleanly.
+        with open(grounded_mod.__file__, encoding="utf-8") as f:
+            source = f.read()
+        normalised = " ".join(source.split())
+        assert (
+            "isinstance(self.grounded_backend, RepairableGroundedBackend)" in normalised
+        )
+        assert 'hasattr(self.grounded_backend, "ocr_crop")' not in normalised
+        # The legacy ``# type: ignore[attr-defined]`` for ``ocr_crop``
+        # is gone too.
+        assert (
+            "self.grounded_backend.ocr_crop  # type: ignore[attr-defined]" not in source
+        )
+
+
+# ---------------------------------------------------------------------------
+# F1.16 — GLM parser deny-list (re-homed from test_audit_medium_d1.py)
+# ---------------------------------------------------------------------------
+
+
+class TestGLMParserDenyList:
+    """F1.16 audit fix: ``parse_glm_layout_details`` uses a deny-list
+    of structural labels (image, figure, table, equation, ...) instead
+    of the prior strict-allow-list ``!= "text"``. Future GLM label
+    additions flow through; only the structural ones are dropped.
+    """
+
+    def test_strict_allow_list_dropped(self) -> None:
+        """Pre-fix behaviour: ``label == "image"`` blocks were dropped.
+        Post-fix behaviour: the same blocks are still dropped because
+        ``"image"`` is in the structural deny-list.
+        """
+        payload = {
+            "data_info": {"pages": [{"width": 1000, "height": 2000}]},
+            "layout_details": [
+                {"label": "text", "content": "Hello", "bbox_2d": [100, 200, 500, 260]},
+                {"label": "image", "content": "...", "bbox_2d": [0, 0, 100, 100]},
+            ],
+        }
+        resp = parsers.parse_glm_layout_details(payload)
+        assert len(resp.blocks) == 1
+        assert resp.blocks[0].text == "Hello"
+
+    def test_new_content_label_passes_through(self) -> None:
+        """A previously-unknown content label (e.g. ``"list_item"``)
+        must NOT be dropped by the post-fix parser, because it is not
+        in the structural deny-list.
+        """
+        payload = {
+            "data_info": {"pages": [{"width": 1000, "height": 2000}]},
+            "layout_details": [
+                {"label": "text", "content": "Hello", "bbox_2d": [100, 200, 500, 260]},
+                {
+                    "label": "list_item",
+                    "content": "First bullet",
+                    "bbox_2d": [100, 300, 500, 360],
+                },
+            ],
+        }
+        resp = parsers.parse_glm_layout_details(payload)
+        # Both blocks should be kept (one for "text", one for the
+        # newly-allowed "list_item" content label).
+        texts = sorted(b.text for b in resp.blocks)
+        assert texts == ["First bullet", "Hello"]
+
+    def test_label_omission_keeps_block(self) -> None:
+        """Older fixtures omit the ``label`` field entirely; the
+        pre-fix parser allowed those blocks (strict equality with
+        ``"text"`` was False, so ``continue`` was not taken). The
+        post-fix parser keeps the same behaviour.
+        """
+        payload = {
+            "data_info": {"pages": [{"width": 1000, "height": 2000}]},
+            "layout_details": [
+                {"content": "No label", "bbox_2d": [100, 200, 500, 260]},
+            ],
+        }
+        resp = parsers.parse_glm_layout_details(payload)
+        assert len(resp.blocks) == 1
+        assert resp.blocks[0].text == "No label"

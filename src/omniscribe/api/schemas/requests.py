@@ -768,6 +768,7 @@ class ProviderTemplate(BaseModel):
     env_key: str | None = None
     env_host: str | None = None
     models: list[str] = Field(default_factory=list, max_length=100)
+    get_api_key_url: str | None = None
     requires_auth: bool = True
 
 
@@ -789,6 +790,7 @@ class ProviderCreateRequest(BaseModel):
     api_key: str | None = None
     models: list[str] = Field(default_factory=list, max_length=100)
     headers: dict[str, str] = Field(default_factory=dict)
+    get_api_key_url: str | None = None
     supports_streaming: bool = True
     requires_auth: bool = True
 

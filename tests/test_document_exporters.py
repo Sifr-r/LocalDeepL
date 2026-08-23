@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import io
-import warnings
-from pathlib import Path
 
 import pytest
 
@@ -282,18 +280,3 @@ def test_validate_bbox_coordinates() -> None:
 
     with pytest.raises(ValueError, match="finite numbers"):
         validate_bbox_coordinates([0.1, float("nan"), 0.5, 0.8])
-
-
-def test_deprecation_warnings_emitted(tmp_path: Path) -> None:
-    """Verify that deprecated entry points emit DeprecationWarning."""
-    with warnings.catch_warnings(record=True) as recorded:
-        warnings.simplefilter("always")
-        from omniscribe.core.glossary_library import GlossaryLibrary
-
-        # Instantiating GlossaryLibrary should emit DeprecationWarning
-        _ = GlossaryLibrary(artifact_dir=tmp_path)
-        assert any(
-            issubclass(w.category, DeprecationWarning)
-            and "GlossaryLibrary is deprecated" in str(w.message)
-            for w in recorded
-        )

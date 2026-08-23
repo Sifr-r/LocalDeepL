@@ -105,13 +105,12 @@ def test_build_state_backend_rejects_unknown_value(tmp_path: Any):
 
 def test_local_state_backend_accepts_custom_artifact_dir(tmp_path: Any):
     """LocalStateBackend now accepts an ``artifact_dir`` and threads it
-    through every TextArtifactStore + the GlossaryLibrary."""
+    through every TextArtifactStore + the LexiconStore."""
     backend = LocalStateBackend(artifact_dir=tmp_path)
     assert backend.text_artifacts.artifact_dir == tmp_path
     assert backend.metadata_artifacts.artifact_dir == tmp_path
     assert backend.export_artifacts.artifact_dir == tmp_path
-    # GlossaryLibrary stores the directory privately; verify via ``path``.
-    assert backend.glossary_library.path.parent.parent.resolve() == tmp_path.resolve()
+    assert backend.lexicon_store._path == tmp_path / "lexicon.lance"
 
 
 def test_local_state_backend_from_env_uses_settings_dir(

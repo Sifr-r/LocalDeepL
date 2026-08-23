@@ -361,8 +361,8 @@ def process_glossary_import_task(
 
     self.emit_progress(80, "Saving glossary to library")
 
-    library = state.glossary_library
-    stored = library.save(
+    store = state.lexicon_store
+    meta = store.save_glossary(
         name=glossary_name or f"{format_name.upper()} import",
         format=format_name,
         entries=summary.entries,
@@ -371,8 +371,8 @@ def process_glossary_import_task(
     )
 
     terminal_frame = state.progress_service.build_glossary_import_frame(
-        glossary_id=stored.id,
-        name=stored.name,
+        glossary_id=meta.id,
+        name=meta.name,
         format_label=format_name,
         entry_count=len(summary.entries),
         warnings=list(summary.warnings),
@@ -388,8 +388,8 @@ def process_glossary_import_task(
     self.emit_progress(100, "Glossary import complete")
 
     return {
-        "glossary_id": stored.id,
-        "name": stored.name,
+        "glossary_id": meta.id,
+        "name": meta.name,
         "format": format_name,
         "entry_count": len(summary.entries),
         "warnings": list(summary.warnings),

@@ -70,3 +70,55 @@ class TestCache:
         target.write_text(json.dumps({"a": 99.0, "b": 99.0}))
         second = calibration.calibrate(0.5, "model")
         assert first == second
+
+
+# ---------------------------------------------------------------------------
+# F1.10 — bounded LRU calibration cache
+# (re-homed from test_audit_medium_d1.py)
+# ---------------------------------------------------------------------------
+
+
+class TestBoundedLRUCalibrationCache:
+    """F1.10 audit fix: the per-process ``_CACHE`` is bounded at
+    ``_CACHE_MAX_SIZE`` entries and uses LRU eviction. Inserting
+    ``_CACHE_MAX_SIZE + N`` distinct model ids evicts the oldest N.
+    """
+
+    def test_cache_cap_enforced(self) -> None:
+        """A synthetic calibration file path is used so we can insert
+        many model ids without the real ``_CALIBRATION_DIR``.
+        """
+        calibration.reset_cache()
+        # Use the real _CACHE_MAX_SIZE so the test stays honest.
+        cap = calibration._CACHE_MAX_SIZE
+        # Insert ``cap + 5`` distinct ids via a no-op loader monkeypatch.
+        # We bypass ``_load_params`` (which would try to read a file
+        # from disk) by directly poking the cache.
+        for i in range(cap + 5):
+            calibration._cache_put(f"model-{i}", (1.0, 0.0))
+        assert len(calibration._CACHE) == cap, (
+            f"cache grew past cap: {len(calibration._CACHE)} > {cap}"
+        )
+        # The earliest-inserted ids should have been evicted.
+        assert "model-0" not in calibration._CACHE
+        assert "model-1" not in calibration._CACHE
+        # The most recent should be present.
+        assert f"model-{cap + 4}" in calibration._CACHE
+
+    def test_lru_re_reads_move_to_end(self) -> None:
+        """Reading a cached model id moves it to the end of the LRU
+        order; an id that is "touched" between inserts should NOT be
+        evicted by subsequent inserts.
+        """
+        calibration.reset_cache()
+        cap = calibration._CACHE_MAX_SIZE
+        # Fill the cache to capacity.
+        for i in range(cap):
+            calibration._cache_put(f"model-{i}", (1.0, 0.0))
+        # Touch the oldest id to move it to the end.
+        calibration._cache_put("model-0", (1.0, 0.0))
+        # Insert one more — ``model-1`` (oldest untouched) should
+        # now be evicted, not ``model-0``.
+        calibration._cache_put("model-cap", (1.0, 0.0))
+        assert "model-0" in calibration._CACHE
+        assert "model-1" not in calibration._CACHE

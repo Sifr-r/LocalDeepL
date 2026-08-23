@@ -45,7 +45,9 @@ def test_process_glossary_import_task_runs_sync(monkeypatch):
     if payload is not None:
         assert payload.get("entry_count") == 1
         assert payload.get("name") == name
-        assert state.glossary_library.get(payload.get("glossary_id", "")) is not None
+        assert (
+            state.lexicon_store.get_glossary(payload.get("glossary_id", "")) is not None
+        )
     else:
         # Stub returned an AsyncResult-like; verify the task is registered.
         assert getattr(result, "id", None) is not None

@@ -8,7 +8,7 @@ Two contracts pinned here:
   * ``BearerAuthMiddleware`` is transparent to ``ws://`` traffic -
     enabling ``OMNISCRIBE_AUTH_TOKEN`` does not break UI clients.
 
-Negative handshake tests live in ``test_api_safety.py``
+Negative handshake tests live in ``tests/api/test_websocket_auth.py``
 (``test_progress_session_uses_token_bound_websocket_channels`` and
 ``test_ws_handshake_rejects_wrong_unminted_and_silent_tokens``): the
 session token is presented in the first inbound frame and compared

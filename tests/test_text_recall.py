@@ -14,6 +14,10 @@ from omniscribe.core.text_recall import (
     _overlaps_surya,
     _straddles_surya,
 )
+from omniscribe.core.workflows.hybrid import HybridEngine
+from tests.conftest import _StubOCR
+from tests.test_pipeline import _make_tiny_b64_image, _StubAligner, _StubPDF
+from tests.test_workflows_hybrid import _engine, _noop_writer
 
 
 def _line_page() -> Image.Image:
@@ -396,3 +400,325 @@ def test_photo_edge_passes_filters_as_known_limitation(
     assert len(extras) == 1
     _x0, y0, _x1, y1 = extras[0]
     assert 0.45 < y0 < 0.55 and 0.45 < y1 < 0.55
+
+
+# ---------------------------------------------------------------------------
+# HybridEngine wiring (moved from test_workflows_hybrid.py — Phase 4.2)
+# ---------------------------------------------------------------------------
+
+
+class TestHybridWhitespaceRecall:
+    async def test_detect_layout_merges_recall_boxes_and_resorts(self) -> None:
+        class _FixedBooster:
+            def supplement(self, image, surya_boxes):
+                # Sits ABOVE the Surya box → must sort first (row-major).
+                return [(0.1, 0.02, 0.9, 0.05)]
+
+        aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
+        engine = HybridEngine(
+            aligner=aligner,
+            ocr_processor=_StubOCR(),
+            pdf_handler=_StubPDF(),
+            output_writer=_noop_writer,
+            recall_booster=_FixedBooster(),  # type: ignore[arg-type]
+        )
+        pages = await engine._detect_layout(
+            images_dict={0: _make_tiny_b64_image()}, page_nums=[0], progress=None
+        )
+        boxes = [box for box, _ in pages[0]]
+        assert boxes == [(0.1, 0.02, 0.9, 0.05), [0.1, 0.1, 0.9, 0.2]]
+
+    async def test_detect_layout_unchanged_without_booster(self) -> None:
+        aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
+        engine = _engine(aligner=aligner)
+        assert engine.recall_booster is None
+        pages = await engine._detect_layout(
+            images_dict={0: _make_tiny_b64_image()}, page_nums=[0], progress=None
+        )
+        assert pages == {0: [([0.1, 0.1, 0.9, 0.2], "")]}
+
+    async def test_booster_exception_keeps_surya_boxes(self) -> None:
+        class _ExplodingBooster:
+            def supplement(self, image, surya_boxes):
+                raise RuntimeError("simulated cv2 failure")
+
+        aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
+        engine = HybridEngine(
+            aligner=aligner,
+            ocr_processor=_StubOCR(),
+            pdf_handler=_StubPDF(),
+            output_writer=_noop_writer,
+            recall_booster=_ExplodingBooster(),  # type: ignore[arg-type]
+        )
+        pages = await engine._detect_layout(
+            images_dict={0: _make_tiny_b64_image()}, page_nums=[0], progress=None
+        )
+        assert pages == {0: [([0.1, 0.1, 0.9, 0.2], "")]}
+
+
+class TestHybridWhitespaceRecallRunSummary:
+    """One INFO line per detect pass so ops can see recall activity."""
+
+    async def test_summary_reports_added_boxes_and_dropped_candidates(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        class _CountingBooster:
+            def __init__(self) -> None:
+                self.candidates_dropped = 7
+
+            def supplement(self, image, surya_boxes):
+                self.candidates_dropped += 3
+                return [(0.1, 0.02, 0.9, 0.05)]
+
+        aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
+        engine = HybridEngine(
+            aligner=aligner,
+            ocr_processor=_StubOCR(),
+            pdf_handler=_StubPDF(),
+            output_writer=_noop_writer,
+            recall_booster=_CountingBooster(),  # type: ignore[arg-type]
+        )
+        with caplog.at_level("INFO", logger="omniscribe.core.workflows.hybrid"):
+            await engine._detect_layout(
+                images_dict={0: _make_tiny_b64_image()}, page_nums=[0], progress=None
+            )
+        summaries = [
+            r.getMessage()
+            for r in caplog.records
+            if "Whitespace recall summary" in r.getMessage()
+        ]
+        assert summaries == [
+            "Whitespace recall summary: 1 box(es) added on 1 of 1 page(s); "
+            "3 candidate(s) dropped by filters"
+        ]
+
+    async def test_env_disabled_booster_logs_zero_count_summary(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The kill-switch path still emits the summary — a zero-count line
+        # tells ops the pass is wired but disabled.
+        monkeypatch.setenv("OMNISCRIBE_WHITESPACE_RECALL", "false")
+        booster = WhitespaceRecallBooster(WhitespaceRecallOptions.from_env())
+        aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
+        engine = HybridEngine(
+            aligner=aligner,
+            ocr_processor=_StubOCR(),
+            pdf_handler=_StubPDF(),
+            output_writer=_noop_writer,
+            recall_booster=booster,
+        )
+        with caplog.at_level("INFO", logger="omniscribe.core.workflows.hybrid"):
+            await engine._detect_layout(
+                images_dict={0: _make_tiny_b64_image()}, page_nums=[0], progress=None
+            )
+        summaries = [
+            r.getMessage()
+            for r in caplog.records
+            if "Whitespace recall summary" in r.getMessage()
+        ]
+        assert summaries == [
+            "Whitespace recall summary: 0 box(es) added on 0 of 1 page(s); "
+            "0 candidate(s) dropped by filters"
+        ]
+
+
+class TestHybridWhitespaceRecallEndToEnd:
+    async def test_recall_box_receives_ocr_text_in_document_result(self) -> None:
+        class _FixedBooster:
+            def supplement(self, image, surya_boxes):
+                # Sits above the Surya box, so row-major sort puts it first.
+                return [(0.1, 0.02, 0.9, 0.05)]
+
+        aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
+        pdf = _StubPDF(n_pages=1)
+        engine = HybridEngine(
+            aligner=aligner,
+            ocr_processor=_StubOCR(),
+            pdf_handler=pdf,
+            # Wire the stub's embed method as the output writer so the
+            # finalized pages land in ``pdf.last_pages`` for inspection.
+            output_writer=pdf.embed_structured_text,
+            recall_booster=_FixedBooster(),  # type: ignore[arg-type]
+        )
+
+        result = await engine.execute("in.pdf", "out.pdf", refine=False, concurrency=1)
+
+        # Sparse alignment hands line i to box i; the recall box sorts first
+        # and receives real OCR text, not an empty placeholder.
+        assert result[0] == [
+            "Section heading",
+            "First paragraph of body text with several words.",
+        ]
+        doc = engine.last_document_result
+        assert doc is not None
+        recall_blocks = [
+            b for b in doc.pages[0].blocks if tuple(b.bbox) == (0.1, 0.02, 0.9, 0.05)
+        ]
+        assert len(recall_blocks) == 1
+        assert recall_blocks[0].text == "Section heading"
+        # The embed payload carries the recall box with its text too.
+        assert tuple(pdf.last_pages[0][0][0]) == (0.1, 0.02, 0.9, 0.05)
+        assert pdf.last_pages[0][0][1] == "Section heading"
+
+    async def test_env_off_run_is_byte_identical_to_no_booster(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OMNISCRIBE_WHITESPACE_RECALL", "false")
+
+        async def _run(booster):
+            aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
+            pdf = _StubPDF(n_pages=1)
+            engine = HybridEngine(
+                aligner=aligner,
+                ocr_processor=_StubOCR(),
+                pdf_handler=pdf,
+                output_writer=pdf.embed_structured_text,
+                recall_booster=booster,
+            )
+            res = await engine.execute("in.pdf", "out.pdf", refine=False, concurrency=1)
+            return res, engine.last_document_result, pdf.last_pages
+
+        off = await _run(WhitespaceRecallBooster(WhitespaceRecallOptions.from_env()))
+        baseline = await _run(None)
+        # Legacy view, embed payload, and every result field match...
+        assert off[0] == baseline[0]
+        assert off[2] == baseline[2]
+        assert off[1] is not None and baseline[1] is not None
+        assert off[1].pages == baseline[1].pages
+        assert off[1].source_path == baseline[1].source_path
+        # ...except ``tree``, whose BlockNode ids are random per build by
+        # design — compare its shape instead.
+        assert off[1].tree is not None and baseline[1].tree is not None
+        assert len(off[1].tree.pages) == len(baseline[1].tree.pages)
+        off_nodes = [
+            (n.block_type, n.bbox, n.text)
+            for p in off[1].tree.pages
+            for n in p.children
+        ]
+        base_nodes = [
+            (n.block_type, n.bbox, n.text)
+            for p in baseline[1].tree.pages
+            for n in p.children
+        ]
+        assert off_nodes == base_nodes
+
+
+class TestHybridWhitespaceRecallGuardRails:
+    async def test_multi_page_partial_failure_keeps_both_pages(self) -> None:
+        # G3: a booster that explodes on one page degrades that page to its
+        # Surya boxes and must not poison the rest of the run.
+        class _PartialFailBooster:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def supplement(self, image, surya_boxes):
+                self.calls += 1
+                if self.calls == 2:
+                    raise RuntimeError("page two explodes")
+                return [(0.1, 0.02, 0.9, 0.05)]
+
+        aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
+        engine = HybridEngine(
+            aligner=aligner,
+            ocr_processor=_StubOCR(),
+            pdf_handler=_StubPDF(),
+            output_writer=_noop_writer,
+            recall_booster=_PartialFailBooster(),  # type: ignore[arg-type]
+        )
+        pages = await engine._detect_layout(
+            images_dict={0: _make_tiny_b64_image(), 1: _make_tiny_b64_image()},
+            page_nums=[0, 1],
+            progress=None,
+        )
+        # Page 0 merged (recall box sorts first); page 1 keeps Surya only.
+        assert [box for box, _ in pages[0]] == [
+            (0.1, 0.02, 0.9, 0.05),
+            [0.1, 0.1, 0.9, 0.2],
+        ]
+        assert pages[1] == [([0.1, 0.1, 0.9, 0.2], "")]
+
+    async def test_apply_recall_fallback_decodes_on_cache_miss(self) -> None:
+        # G4: the LRU can evict a page between chunk decode and recall; the
+        # fallback re-decodes from images_dict and re-caches the page.
+        class _FixedBooster:
+            def supplement(self, image, surya_boxes):
+                return [(0.1, 0.02, 0.9, 0.05)]
+
+        engine = HybridEngine(
+            aligner=_StubAligner(),
+            ocr_processor=_StubOCR(),
+            pdf_handler=_StubPDF(),
+            output_writer=_noop_writer,
+            recall_booster=_FixedBooster(),  # type: ignore[arg-type]
+        )
+        assert engine._decoded_cache == {}
+        merged, touched, added = await engine._apply_recall(
+            chunk_pages=[0],
+            images_dict={0: _make_tiny_b64_image()},
+            chunk_boxes=[[(0.1, 0.1, 0.9, 0.2)]],
+        )
+        assert (touched, added) == (1, 1)
+        assert len(merged[0]) == 2
+        # The fallback decode repopulated the cache for later stages.
+        assert 0 in engine._decoded_cache
+
+    async def test_recall_boxes_normalized_to_bbox_tuples(self) -> None:
+        # CQ-3: whatever container a duck-typed booster returns, the merge
+        # boundary emits BBox tuples (HybridAligner's contract).
+        class _ListBooster:
+            def supplement(self, image, surya_boxes):
+                return [[0.1, 0.02, 0.9, 0.05]]
+
+        aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
+        engine = HybridEngine(
+            aligner=aligner,
+            ocr_processor=_StubOCR(),
+            pdf_handler=_StubPDF(),
+            output_writer=_noop_writer,
+            recall_booster=_ListBooster(),  # type: ignore[arg-type]
+        )
+        pages = await engine._detect_layout(
+            images_dict={0: _make_tiny_b64_image()}, page_nums=[0], progress=None
+        )
+        box = pages[0][0][0]
+        assert isinstance(box, tuple)
+        assert box == (0.1, 0.02, 0.9, 0.05)
+
+    async def test_disabled_booster_never_reaches_supplement(self) -> None:
+        # T6: a disabled booster is skipped before any decode/thread work.
+        class _CountingBooster:
+            enabled = False
+
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def supplement(self, image, surya_boxes):
+                self.calls += 1
+                return [(0.1, 0.02, 0.9, 0.05)]
+
+        booster = _CountingBooster()
+        aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
+        engine = HybridEngine(
+            aligner=aligner,
+            ocr_processor=_StubOCR(),
+            pdf_handler=_StubPDF(),
+            output_writer=_noop_writer,
+            recall_booster=booster,  # type: ignore[arg-type]
+        )
+        pages = await engine._detect_layout(
+            images_dict={0: _make_tiny_b64_image()}, page_nums=[0], progress=None
+        )
+        assert booster.calls == 0
+        assert pages == {0: [([0.1, 0.1, 0.9, 0.2], "")]}
+
+    async def test_apply_recall_without_booster_returns_surya_boxes(self) -> None:
+        # T6: the if-guard degrades to the Surya boxes instead of asserting.
+        engine = _engine()
+        chunk_boxes = [[(0.1, 0.1, 0.9, 0.2)]]
+        merged, touched, added = await engine._apply_recall(
+            chunk_pages=[0],
+            images_dict={0: _make_tiny_b64_image()},
+            chunk_boxes=chunk_boxes,
+        )
+        assert merged is chunk_boxes
+        assert (touched, added) == (0, 0)

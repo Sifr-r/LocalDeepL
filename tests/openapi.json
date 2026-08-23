@@ -3336,6 +3336,17 @@
             "contentMediaType": "application/octet-stream",
             "title": "File"
           },
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
           "progress_channel": {
             "anyOf": [
               {
@@ -3701,6 +3712,17 @@
             "type": "string",
             "contentMediaType": "application/octet-stream",
             "title": "File"
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
           },
           "progress_channel": {
             "anyOf": [
@@ -5764,6 +5786,17 @@
             },
             "type": "object",
             "title": "Headers"
+          },
+          "get_api_key_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Get Api Key Url"
           },
           "supports_streaming": {
             "type": "boolean",

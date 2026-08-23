@@ -500,7 +500,7 @@ class LanceDBLexiconStore:
         existing = {m.id for m in self.list_glossaries()}
         unknown = [gid for gid in ordered if gid not in existing]
         if unknown:
-            raise KeyError(f"Unknown glossary id(s): {unknown}")
+            raise GlossaryNotFoundError(unknown[0])
         total = len(ordered)
         for index, gid in enumerate(ordered):
             new_priority = total - index

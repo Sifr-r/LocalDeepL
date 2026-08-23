@@ -20,8 +20,8 @@ is idempotent and safe to call multiple times.
 
 How to run any script that uses this helper::
 
-    uv run python scripts/visualize_bboxes.py
-    uv run python scripts/debug_alignment.py examples/hybrid.pdf
+    uv run python scripts/visualize.py boxes hybrid.pdf
+    uv run python scripts/inspect_doc.py pdf hybrid.pdf
 """
 
 from __future__ import annotations

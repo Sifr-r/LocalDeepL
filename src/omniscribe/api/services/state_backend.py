@@ -1,7 +1,7 @@
 """Pluggable per-server state holder.
 
 The :class:`StateBackend` Protocol defines the surface that every router
-and service consumes (artifacts, jobs, progress math, glossary library).
+and service consumes (artifacts, jobs, progress math, lexicon store).
 :class:`LocalStateBackend` is the in-memory implementation that has been
 the de-facto state since v0; future work can plug in a Redis-backed or
 file-backed implementation without rewriting every call site.
@@ -39,7 +39,7 @@ its seven attributes:
 - ``export_artifacts`` (:class:`TextArtifactStore`)
 - ``job_history`` (:class:`JobHistory`)
 - ``progress_service`` (:class:`ProgressService`)
-- ``glossary_library`` (:class:`GlossaryLibrary`)
+- ``lexicon_store`` (:class:`LexiconStore`)
 - ``ocr_job_queue`` (:class:`OCRJobQueue`)
 
 All seven live in the Python process that runs :func:`LocalStateBackend.from_env`
@@ -47,11 +47,10 @@ All seven live in the Python process that runs :func:`LocalStateBackend.from_env
 attribute fresh on import: no disk snapshot is read, no external service
 is contacted. Terminating the uvicorn worker (or the parent
 ``start_app.vbs`` wrapper) discards the instance and therefore every
-in-memory job history record, in-flight progress channel, queued OCR
-job, and glossary index not yet flushed to its artifact directory. The
-"recovery boundary" lives one level up from this module: the only state
+in-memory job history record, in-flight progress channel, and queued OCR
+job. The "recovery boundary" lives one level up from this module: the only state
 that survives a restart is whatever its child components explicitly
-wrote to disk (artifact files, glossary on-disk index).
+wrote to disk (artifact files, lexicon database).
 
 See the *Known Tech Debt* section of ``AGENTS.md`` for the project-level
 acknowledgement: "Job/artifact state is in-memory only (``api/routers/state.py``
@@ -70,12 +69,16 @@ from omniscribe.api.services.config_store import InMemoryConfigStore
 from omniscribe.api.services.jobs import JobHistory
 from omniscribe.api.services.ocr_jobs import OCRJobQueue
 from omniscribe.api.services.progress import ProgressService
-from omniscribe.core.glossary_library import GlossaryLibrary
+from omniscribe.core.lexicon import (
+    LanceDBLexiconStore,
+    LexiconStore,
+    get_default_embedding_model,
+)
 
 
 @runtime_checkable
 class StateBackend(Protocol):
-    """Pluggable per-server state holder (artifacts, jobs, progress, glossary).
+    """Pluggable per-server state holder (artifacts, jobs, progress, lexicon store).
 
     ``runtime_checkable`` so tests can assert duck-typing of alternative
     implementations (Redis, file-backed, etc.) without subclassing.
@@ -86,7 +89,7 @@ class StateBackend(Protocol):
     export_artifacts: TextArtifactStore
     job_history: JobHistory
     progress_service: ProgressService
-    glossary_library: GlossaryLibrary
+    lexicon_store: LexiconStore
     ocr_job_queue: OCRJobQueue
 
 
@@ -109,7 +112,7 @@ class LocalStateBackend:
     export_artifacts: TextArtifactStore
     job_history: JobHistory
     progress_service: ProgressService
-    glossary_library: GlossaryLibrary
+    lexicon_store: LexiconStore
     ocr_job_queue: OCRJobQueue
     # Duck-typed config-store attribute (see module docstring).
     # Not part of the :class:`StateBackend` Protocol.
@@ -124,7 +127,7 @@ class LocalStateBackend:
         export_artifacts: TextArtifactStore | None = None,
         job_history: JobHistory | None = None,
         progress_service: ProgressService | None = None,
-        glossary_library: GlossaryLibrary | None = None,
+        lexicon_store: LexiconStore | None = None,
         ocr_job_queue: OCRJobQueue | None = None,
         config_store: InMemoryConfigStore | None = None,
     ) -> None:
@@ -145,8 +148,9 @@ class LocalStateBackend:
         )
         self.job_history = job_history or JobHistory()
         self.progress_service = progress_service or ProgressService()
-        self.glossary_library = glossary_library or GlossaryLibrary(
-            artifact_dir=resolved
+        self.lexicon_store = lexicon_store or LanceDBLexiconStore(
+            path=resolved / "lexicon.lance",
+            embedding_model=get_default_embedding_model(),
         )
         self.ocr_job_queue = ocr_job_queue or OCRJobQueue()
         self.config_store = config_store or InMemoryConfigStore()

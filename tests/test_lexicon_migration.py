@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pytest
 
-from omniscribe.core.glossary_library import GlossaryLibrary
 from omniscribe.core.lexicon import LanceDBLexiconStore
 from omniscribe.core.lexicon.embedding import EmbeddingModel
 from omniscribe.core.lexicon.migration import (
@@ -58,33 +57,72 @@ def _seed_legacy_library(artifact_dir: Path) -> Path:
     """Create a populated legacy ``library.json`` and return its path."""
     lib_dir = artifact_dir / "glossary_library"
     lib_dir.mkdir(parents=True, exist_ok=True)
-    lib = GlossaryLibrary(artifact_dir=artifact_dir)
-    lib.save(
-        name="Legal EN→FR",
-        format="json_pairs",
-        entries=[
-            {"source": "agreement", "target": "accord"},
-            {"source": "contract", "target": "contrat"},
-            {"source": "liability", "target": "responsabilité"},
+    payload = {
+        "version": 1,
+        "glossaries": [
+            {
+                "id": "legal-1",
+                "name": "Legal EN→FR",
+                "format": "json_pairs",
+                "source_uri": "inline",
+                "encoding": "utf-8",
+                "entries": [
+                    {
+                        "source": "agreement",
+                        "target": "accord",
+                        "case_sensitive": False,
+                        "notes": "",
+                    },
+                    {
+                        "source": "contract",
+                        "target": "contrat",
+                        "case_sensitive": False,
+                        "notes": "",
+                    },
+                    {
+                        "source": "liability",
+                        "target": "responsabilité",
+                        "case_sensitive": False,
+                        "notes": "",
+                    },
+                ],
+                "enabled": True,
+                "priority": 10,
+                "group": "legal",
+                "created_at": 1000.0,
+                "updated_at": 1000.0,
+            },
+            {
+                "id": "tech-1",
+                "name": "Tech",
+                "format": "csv",
+                "source_uri": "inline",
+                "encoding": "utf-8",
+                "entries": [
+                    {
+                        "source": "API",
+                        "target": "API",
+                        "case_sensitive": False,
+                        "notes": "",
+                    },
+                    {
+                        "source": "endpoint",
+                        "target": "point d'accès",
+                        "case_sensitive": False,
+                        "notes": "",
+                    },
+                ],
+                "enabled": True,
+                "priority": 5,
+                "group": "tech",
+                "created_at": 1000.0,
+                "updated_at": 1000.0,
+            },
         ],
-        source_uri="inline",
-        encoding="utf-8",
-        group="legal",
-        priority=10,
-    )
-    lib.save(
-        name="Tech",
-        format="csv",
-        entries=[
-            {"source": "API", "target": "API"},
-            {"source": "endpoint", "target": "point d'accès"},
-        ],
-        source_uri="inline",
-        encoding="utf-8",
-        group="tech",
-        priority=5,
-    )
-    return lib_dir / "library.json"
+    }
+    lib_path = lib_dir / "library.json"
+    lib_path.write_text(json.dumps(payload), encoding="utf-8")
+    return lib_path
 
 
 # ---------------------------------------------------------------------------

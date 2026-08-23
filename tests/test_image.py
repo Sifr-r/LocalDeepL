@@ -7,7 +7,11 @@ import io
 
 from PIL import Image
 
-from omniscribe.utils.image import crop_for_ocr_from_image
+from omniscribe.utils.image import (
+    DEFAULT_CROP_PADDING,
+    DEFAULT_CROP_QUALITY,
+    crop_for_ocr_from_image,
+)
 
 
 def _make_pil_image(size=(800, 1000)) -> Image.Image:
@@ -91,3 +95,66 @@ def test_crop_for_ocr_from_image_reuses_same_image():
     assert results[0] is not None  # has content (large red patch)
     assert results[1] is None  # blank (white region)
     assert results[2] is not None  # upscaled (small but has red content)
+
+
+# ---------------------------------------------------------------------------
+# F1.17 — unified crop padding + JPEG quality
+# (re-homed from test_audit_medium_d1.py)
+# ---------------------------------------------------------------------------
+
+
+class TestUnifiedCropParameters:
+    """F1.17 audit fix: the hybrid and grounded paths now share
+    ``DEFAULT_CROP_PADDING`` (0.5%) and ``DEFAULT_CROP_QUALITY`` (85)
+    from :mod:`omniscribe.utils.image`. A change to either constant
+    flows through both paths.
+    """
+
+    def test_hybrid_path_uses_canonical_constants(self) -> None:
+        # Build an image with enough variance that the stddev guard
+        # does not short-circuit. ``crop_for_ocr_from_image`` returns
+        # ``None`` for regions with stddev below
+        # ``DEFAULT_CROP_STD_THRESHOLD`` (12.0), so a uniform image
+        # would mask the assertion.
+        img = Image.new("RGB", (100, 100), (255, 255, 255))
+        # Draw a checker pattern in the bottom-right (the region we'll
+        # crop) to push the stddev above the threshold.
+        pixels = img.load()
+        assert pixels is not None
+        for y in range(50, 100):
+            for x in range(50, 100):
+                pixels[x, y] = (0, 0, 0) if (x + y) % 2 == 0 else (255, 255, 255)
+        out = crop_for_ocr_from_image(img, (0.5, 0.5, 1.0, 1.0))
+        assert out is not None
+        # Re-run with explicit non-default padding/quality and
+        # confirm the defaults still match the constants.
+        assert DEFAULT_CROP_PADDING == 0.005
+        assert DEFAULT_CROP_QUALITY == 85
+
+    def test_grounded_path_uses_canonical_constants(self) -> None:
+        """``_crop_normalized`` in ``prompted.py`` reads
+        ``DEFAULT_CROP_PADDING`` and ``DEFAULT_CROP_QUALITY`` from
+        ``utils.image`` at call time, so a change to those constants
+        flows through to the grounded path.
+        """
+        # Verify the import is the canonical source (not a
+        # re-declared local constant). This is a static check on the
+        # source: if a future refactor inlines a magic number, the
+        # test catches it.
+        from omniscribe.core.grounded import prompted as prompted_mod
+
+        with open(prompted_mod.__file__, encoding="utf-8") as f:
+            source = f.read()
+        assert "DEFAULT_CROP_PADDING" in source
+        assert "DEFAULT_CROP_QUALITY" in source
+        # And no leftover magic numbers from the pre-fix code path.
+        assert "0.05 * max(bbox[2] - bbox[0]" not in source
+        assert "quality=90" not in source
+
+    def test_canonical_values_pinned(self) -> None:
+        """Pin the canonical values so a silent change to the
+        constants surfaces in the audit (and breaks calibration
+        parity with the trust-scorer models).
+        """
+        assert DEFAULT_CROP_PADDING == 0.005
+        assert DEFAULT_CROP_QUALITY == 85

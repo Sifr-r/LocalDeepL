@@ -8,6 +8,7 @@ from typing import Protocol, runtime_checkable
 import pytest
 
 from omniscribe.api.plugin import (
+    ContextDisposedError,
     EventName,
     PluginContext,
     ServiceAlreadyRegisteredError,
@@ -261,3 +262,102 @@ def test_concurrent_dispatch_and_mutation_does_not_corrupt_registry() -> None:
     stop.set()
     t_emit.join()
     assert errors == [], f"Unexpected errors during concurrent emit/register: {errors}"
+
+
+# -- Effects, mounting, and lifecycle ----------------------------------------
+
+
+def test_context_effect_is_invoked_on_dispose() -> None:
+    ctx = PluginContext("test")
+    fired: list[str] = []
+    ctx.effect(lambda: fired.append("ctx_effect"))
+    ctx.dispose()
+    assert fired == ["ctx_effect"]
+
+
+def test_context_effect_returned_disposer_can_be_called_early() -> None:
+    ctx = PluginContext("test")
+    fired: list[str] = []
+    disposer = ctx.effect(lambda: fired.append("only"))
+    disposer()
+    assert fired == ["only"]
+    ctx.dispose()
+    assert fired == ["only"]
+
+
+def test_context_effect_disposes_in_lifo_order() -> None:
+    ctx = PluginContext("test")
+    order: list[str] = []
+    ctx.effect(lambda: order.append("a"))
+    ctx.effect(lambda: order.append("b"))
+    ctx.effect(lambda: order.append("c"))
+    ctx.dispose()
+    assert order == ["c", "b", "a"]
+
+
+def test_mount_invokes_plugin_and_disposes() -> None:
+    ctx = PluginContext("test")
+    seen_ctx: list[PluginContext] = []
+    fired: list[str] = []
+
+    def my_plugin(c: PluginContext):
+        seen_ctx.append(c)
+        c.register(Greeter, FriendlyGreeter())
+        return lambda: fired.append("plugin_cleanup")
+
+    unmount = ctx.mount(my_plugin)
+    assert seen_ctx == [ctx]
+    assert ctx.has(Greeter) is True
+    unmount()
+    assert fired == ["plugin_cleanup"]
+
+
+def test_mount_rejects_non_callable_and_invalid_disposer() -> None:
+    ctx = PluginContext("test")
+    with pytest.raises(TypeError):
+        ctx.mount("not a plugin")  # type: ignore[arg-type]
+
+    def bad_plugin(c: PluginContext):
+        return "not a disposer"  # type: ignore[return-value]
+
+    with pytest.raises(TypeError):
+        ctx.mount(bad_plugin)
+
+
+def test_dispose_makes_operations_raise_and_is_idempotent() -> None:
+    ctx = PluginContext("test")
+    ctx.register(Greeter, FriendlyGreeter())
+    assert ctx.disposed is False
+    ctx.dispose()
+    assert ctx.disposed is True
+
+    # Idempotent
+    ctx.dispose()
+    assert ctx.disposed is True
+
+    with pytest.raises(ContextDisposedError):
+        ctx.register(Greeter, FormalGreeter())
+    with pytest.raises(ContextDisposedError):
+        ctx.get(Greeter)
+    with pytest.raises(ContextDisposedError):
+        ctx.emit("event")
+    with pytest.raises(ContextDisposedError):
+        ctx.on("event", lambda: None)
+    with pytest.raises(ContextDisposedError):
+        ctx.effect(lambda: None)
+    with pytest.raises(ContextDisposedError):
+        ctx.mount(lambda c: lambda: None)
+
+
+def test_swap_replaces_and_restores_previous() -> None:
+    ctx = PluginContext("test")
+    orig = FriendlyGreeter()
+    swapped = FormalGreeter()
+    ctx.register(Greeter, orig)
+    assert ctx.get(Greeter) is orig
+
+    restore = ctx.swap(Greeter, swapped)
+    assert ctx.get(Greeter) is swapped
+
+    restore()
+    assert ctx.get(Greeter) is orig

@@ -1,8 +1,6 @@
 """Lexicon store — single embedded columnar vector database for the canonical glossary.
 
-This package is the new home for the OmniScribe lexicon store, replacing the
-JSON-on-disk :mod:`omniscribe.core.glossary_library` (deprecated) + the
-ChromaDB ``lanes_lexicon`` collection (deprecated). See
+This package is the home for the OmniScribe lexicon store. See
 ``docs/lexicon-migration-spec.md`` for the full design.
 
 Public surface
@@ -13,10 +11,8 @@ Public surface
   :class:`GlossaryMeta` — the data shapes
 - :class:`LanceDBLexiconStore` — the default embedded implementation
 - :func:`get_default_embedding_model` — process-lazy embedding model singleton
-- :class:`GlossaryLibraryAdapter` — legacy-compat shim wrapping
-  :class:`LexiconStore` to expose the old :class:`GlossaryLibrary` API
-- :func:`merged_enabled_glossary`, :func:`preview` — composition helpers for
-  the merged-glossary path (formerly on :class:`GlossaryLibrary`)
+- :func:`merged_enabled_glossary`, :func:`preview` — composition helpers
+- :class:`GlossaryNotFoundError` — raised when a glossary is missing
 """
 
 from __future__ import annotations
@@ -32,12 +28,12 @@ from .embedding import (
     EmbeddingModel,
     get_default_embedding_model,
 )
-from .lancedb_store import LanceDBLexiconStore
-from .legacy_compat import (
-    GlossaryLibraryAdapter,
+from .helpers import (
+    GlossaryNotFoundError,
     merged_enabled_glossary,
     preview,
 )
+from .lancedb_store import LanceDBLexiconStore
 from .store import (
     GlossaryMeta,
     LexiconEntry,
@@ -92,8 +88,8 @@ __all__ = [
     "EMBEDDING_DIM",
     "EMBEDDING_MODEL_NAME",
     "EmbeddingModel",
-    "GlossaryLibraryAdapter",
     "GlossaryMeta",
+    "GlossaryNotFoundError",
     "LanceDBLexiconStore",
     "LexiconEntry",
     "LexiconHit",

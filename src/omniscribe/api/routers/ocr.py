@@ -31,7 +31,7 @@ from concurrent.futures import Future as ConcurrentFuture
 from http import HTTPStatus
 from typing import Any, cast
 
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -54,6 +54,7 @@ from omniscribe.api.services.ocr_response import (
     build_ocr_file_response,
 )
 from omniscribe.api.services.ocr_settings import (
+    OCRProcessForm,
     collect_form_kwargs,
     resolve_process_settings,
 )
@@ -503,45 +504,7 @@ async def _execute_ocr_pipeline(
 @router.post("/process")
 async def process_pdf(
     file: UploadFile = File(...),
-    client_id: str | None = Form(None),  # accepted for backward compat
-    progress_channel: str | None = Form(None),
-    progress_token: str | None = Form(None),
-    api_base: str | None = Form(None),
-    api_key: str | None = Form(None),
-    model: str | None = Form(None),
-    pipeline_mode: str | None = Form(None),
-    dpi: str | None = Form(None),
-    concurrency: str | None = Form(None),
-    dense_mode: str | None = Form(None),
-    dense_threshold: str | None = Form(None),
-    pages: str | None = Form(None),
-    refine: str | None = Form(None),
-    max_image_dim: str | None = Form(None),
-    self_correction: str | None = Form(None),
-    binarize: str | None = Form(None),
-    dual_engine: str | None = Form(None),
-    spellcheck: str | None = Form(None),
-    cross_page: str | None = Form(None),
-    preprocess_pages: str | None = Form(None),
-    orientation_detection: str | None = Form(None),
-    deskew: str | None = Form(None),
-    denoise: str | None = Form(None),
-    normalize_contrast: str | None = Form(None),
-    crop_cleanup: str | None = Form(None),
-    quality_routing: str | None = Form(None),
-    document_processors: str | None = Form(None),
-    handwriting_hint: str | None = Form(None),
-    chunk_pages: str | None = Form(None),
-    # Phase 2 — optional trust-layer configuration (JSON-encoded). When the
-    # frontend's TrustPanel is open, the front-end posts a JSON object string
-    # here; when closed, the field is omitted and the trust layer stays off.
-    quality_options: str | None = Form(None),
-    # P1 — quality repair loop knobs (spec §3.2). Omitted fields fall
-    # back to the env-seeded runtime config; the API-level defaults
-    # enable the loop (target 0.98, two repair passes).
-    quality_loop_enabled: str | None = Form(None),
-    quality_target: str | None = Form(None),
-    quality_max_retries: str | None = Form(None),
+    form: OCRProcessForm = Depends(OCRProcessForm),
 ):
     """Process a PDF or image file through the OCR pipeline.
 
@@ -558,40 +521,8 @@ async def process_pdf(
     try:
         settings = resolve_process_settings(
             settings_store=_config,
-            pages=pages,
-            **collect_form_kwargs(
-                api_base=api_base,
-                api_key=api_key,
-                model=model,
-                pipeline_mode=pipeline_mode,
-                dpi=dpi,
-                concurrency=concurrency,
-                dense_mode=dense_mode,
-                dense_threshold=dense_threshold,
-                refine=refine,
-                max_image_dim=max_image_dim,
-                self_correction=self_correction,
-                binarize=binarize,
-                dual_engine=dual_engine,
-                spellcheck=spellcheck,
-                cross_page=cross_page,
-                preprocess_pages=preprocess_pages,
-                orientation_detection=orientation_detection,
-                deskew=deskew,
-                denoise=denoise,
-                normalize_contrast=normalize_contrast,
-                crop_cleanup=crop_cleanup,
-                quality_routing=quality_routing,
-                document_processors=document_processors,
-                handwriting_hint=handwriting_hint,
-                # Phase 2 — trust-layer knob; the resolver passes this
-                # through to ``ProcessSettings.quality_options``, where the
-                # field validator parses it into ``OCrQualitySettings``.
-                quality_options=quality_options,
-                quality_loop_enabled=quality_loop_enabled,
-                quality_target=quality_target,
-                quality_max_retries=quality_max_retries,
-            ),
+            pages=form.pages,
+            **collect_form_kwargs(form),
         )
     except ValidationError as exc:
         return _validation_error_response(exc)
@@ -606,8 +537,8 @@ async def process_pdf(
 
     input_path = upload.path
     progress_target = (
-        progress_channel
-        if manager.is_authorized(progress_channel, progress_token)
+        form.progress_channel
+        if manager.is_authorized(form.progress_channel, form.progress_token)
         else None
     )
     output_path = os.path.join(tempfile.gettempdir(), f"output_{uuid.uuid4()}.pdf")
@@ -792,83 +723,14 @@ async def process_pdf(
 @router.post("/process/async", status_code=202)
 async def process_pdf_async(
     file: UploadFile = File(...),
-    progress_channel: str | None = Form(None),
-    progress_token: str | None = Form(None),
-    api_base: str | None = Form(None),
-    api_key: str | None = Form(None),
-    model: str | None = Form(None),
-    pipeline_mode: str | None = Form(None),
-    dpi: str | None = Form(None),
-    concurrency: str | None = Form(None),
-    dense_mode: str | None = Form(None),
-    dense_threshold: str | None = Form(None),
-    pages: str | None = Form(None),
-    refine: str | None = Form(None),
-    max_image_dim: str | None = Form(None),
-    self_correction: str | None = Form(None),
-    binarize: str | None = Form(None),
-    dual_engine: str | None = Form(None),
-    spellcheck: str | None = Form(None),
-    cross_page: str | None = Form(None),
-    preprocess_pages: str | None = Form(None),
-    orientation_detection: str | None = Form(None),
-    deskew: str | None = Form(None),
-    denoise: str | None = Form(None),
-    normalize_contrast: str | None = Form(None),
-    crop_cleanup: str | None = Form(None),
-    quality_routing: str | None = Form(None),
-    document_processors: str | None = Form(None),
-    handwriting_hint: str | None = Form(None),
-    chunk_pages: str | None = Form(None),
-    # Phase 2 — optional trust-layer configuration (JSON-encoded). When the
-    # frontend's TrustPanel is open, the front-end posts a JSON object string
-    # here; when closed, the field is omitted and the trust layer stays off.
-    quality_options: str | None = Form(None),
-    # P1 — quality repair loop knobs (spec §3.2). Omitted fields fall
-    # back to the env-seeded runtime config; the API-level defaults
-    # enable the loop (target 0.98, two repair passes).
-    quality_loop_enabled: str | None = Form(None),
-    quality_target: str | None = Form(None),
-    quality_max_retries: str | None = Form(None),
+    form: OCRProcessForm = Depends(OCRProcessForm),
 ):
     """Validate an upload and enqueue it on the single-worker OCR queue."""
     try:
         settings = resolve_process_settings(
             settings_store=_config,
-            pages=pages,
-            **collect_form_kwargs(
-                api_base=api_base,
-                api_key=api_key,
-                model=model,
-                pipeline_mode=pipeline_mode,
-                dpi=dpi,
-                concurrency=concurrency,
-                dense_mode=dense_mode,
-                dense_threshold=dense_threshold,
-                refine=refine,
-                max_image_dim=max_image_dim,
-                self_correction=self_correction,
-                binarize=binarize,
-                dual_engine=dual_engine,
-                spellcheck=spellcheck,
-                cross_page=cross_page,
-                preprocess_pages=preprocess_pages,
-                orientation_detection=orientation_detection,
-                deskew=deskew,
-                denoise=denoise,
-                normalize_contrast=normalize_contrast,
-                crop_cleanup=crop_cleanup,
-                quality_routing=quality_routing,
-                document_processors=document_processors,
-                handwriting_hint=handwriting_hint,
-                # Phase 2 — trust-layer knob; the resolver passes this
-                # through to ``ProcessSettings.quality_options``, where the
-                # field validator parses it into ``OCrQualitySettings``.
-                quality_options=quality_options,
-                quality_loop_enabled=quality_loop_enabled,
-                quality_target=quality_target,
-                quality_max_retries=quality_max_retries,
-            ),
+            pages=form.pages,
+            **collect_form_kwargs(form),
         )
     except ValidationError as exc:
         return _validation_error_response(exc)
@@ -884,8 +746,8 @@ async def process_pdf_async(
     input_path = upload.path
     filename = file.filename or "unknown"
     progress_target = (
-        progress_channel
-        if manager.is_authorized(progress_channel, progress_token)
+        form.progress_channel
+        if manager.is_authorized(form.progress_channel, form.progress_token)
         else None
     )
     output_path = os.path.join(tempfile.gettempdir(), f"output_{uuid.uuid4()}.pdf")
@@ -902,7 +764,7 @@ async def process_pdf_async(
             input_path,
             settings.model_dump(),
             progress_target,
-            progress_token,
+            form.progress_token,
         )
         _emit_job_submitted(job_id, filename)
         return {"job_id": job_id, "status": "pending"}

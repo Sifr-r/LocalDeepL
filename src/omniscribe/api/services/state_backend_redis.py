@@ -34,7 +34,11 @@ from omniscribe.api.services.jobs import (
 )
 from omniscribe.api.services.ocr_jobs import OCRJobQueue
 from omniscribe.api.services.progress import ProgressService
-from omniscribe.core.glossary_library import GlossaryLibrary
+from omniscribe.core.lexicon import (
+    LanceDBLexiconStore,
+    LexiconStore,
+    get_default_embedding_model,
+)
 
 
 class RedisTextArtifactStore(TextArtifactStore):
@@ -249,12 +253,14 @@ class RedisJobHistory(JobHistory):
 class RedisStateBackend:
     """Redis-backed StateBackend implementation."""
 
+    lexicon_store: LexiconStore
     config_store: RedisConfigStore
 
     def __init__(
         self,
         redis_url: str,
         artifact_dir: str | os.PathLike[str] | None = None,
+        lexicon_store: LexiconStore | None = None,
     ) -> None:
         import tempfile
         from pathlib import Path
@@ -276,7 +282,10 @@ class RedisStateBackend:
         )
         self.job_history = RedisJobHistory(redis_url)
         self.progress_service = ProgressService(redis_url=redis_url)
-        self.glossary_library = GlossaryLibrary(artifact_dir=self.artifact_dir)
+        self.lexicon_store = lexicon_store or LanceDBLexiconStore(
+            path=self.artifact_dir / "lexicon.lance",
+            embedding_model=get_default_embedding_model(),
+        )
         self.ocr_job_queue = OCRJobQueue()
         # Duck-typed config-store attribute (see
         # ``services/state_backend.py`` module docstring). Not part of

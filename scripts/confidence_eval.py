@@ -26,17 +26,17 @@ os.environ.setdefault("TQDM_DISABLE", "1")
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from rich.console import Console  # noqa: E402
-from rich.table import Table  # noqa: E402
+from rich.console import Console
+from rich.table import Table
 
-from omniscribe import (  # noqa: E402
+from omniscribe import (
     HybridAligner,
     OCRPipeline,
     OCRProcessor,
     PDFHandler,
     PromptedGroundedOCR,
 )
-from omniscribe.confidence_eval import (  # noqa: E402
+from omniscribe.confidence_eval import (
     compute_report,
     load_ground_truth,
 )
@@ -49,9 +49,9 @@ JOBS = [
     ("hybrid.pdf", "ground_truth_hybrid.json"),
     ("handwritten.pdf", "ground_truth_handwritten.json"),
     # Dense and notes fixtures were bootstrapped from the hybrid pipeline's
-    # own output_*.pdf via scripts/fixture_from_output.py — too dense to
+    # own output_*.pdf via scripts/build_fixture.py --from-pdf — too dense to
     # hand-build, and the grounded VLM hits "context size exceeded" on
-    # them so build_fixture.py couldn't be used either. Useful for
+    # them so the default --from-vlm mode couldn't be used either. Useful for
     # *regression* testing: if a future change degrades the hybrid output
     # against this baseline, recall drops will flag it. Less useful for
     # absolute hybrid-vs-grounded comparison since the bar is set by the

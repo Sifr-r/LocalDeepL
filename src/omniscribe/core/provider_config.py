@@ -84,6 +84,7 @@ class ProviderConfig(BaseModel):
     api_key: str | None = None
     models: list[str] = Field(default_factory=list)
     headers: dict[str, str] = Field(default_factory=dict)
+    get_api_key_url: str | None = None
     supports_streaming: bool = True
     requires_auth: bool = True
     configured: bool = False

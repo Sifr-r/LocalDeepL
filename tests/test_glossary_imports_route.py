@@ -22,9 +22,12 @@ def library_dir(tmp_path, monkeypatch):
     artifact = tmp_path / "artifacts"
     artifact.mkdir(exist_ok=True)
     monkeypatch.setenv("OMNISCRIBE_ARTIFACT_DIR", str(artifact))
-    from omniscribe.core.glossary_library import GlossaryLibrary
+    from omniscribe.core.lexicon import LanceDBLexiconStore, get_default_embedding_model
 
-    state.glossary_library = GlossaryLibrary(artifact_dir=artifact)
+    state.lexicon_store = LanceDBLexiconStore(
+        path=artifact / "lexicon.lance",
+        embedding_model=get_default_embedding_model(),
+    )
     yield artifact
     monkeypatch.undo()
 

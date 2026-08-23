@@ -1,0 +1,167 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+from collections import defaultdict
+from collections.abc import Callable, Sequence
+
+from PIL import Image
+
+from omniscribe.core.document import BBox
+from omniscribe.core.ocr import OCRProcessor
+from omniscribe.core.ocr.resilience import CircuitOpenError
+from omniscribe.core.workflows.base import (
+    CancelCheck,
+    OCRCancelled,
+    PageBoxes,
+    ProgressCallback,
+    notify,
+)
+from omniscribe.core.workflows.utils import (
+    _decode_page_image,
+    _drop_refined_duplicates,
+    _is_refinable,
+    validate_bbox_coordinates,
+)
+from omniscribe.utils.image import crop_for_ocr_from_image
+
+logger = logging.getLogger("omniscribe.core.workflows.hybrid")
+
+
+class HybridRefiner:
+    """Handles refinement of empty or uncertain boxes on sparse pages."""
+
+    def __init__(self, ocr_processor: OCRProcessor) -> None:
+        self.ocr_processor = ocr_processor
+
+    async def refine_pages(
+        self,
+        pages_structured: dict[int, PageBoxes],
+        images_dict: dict[int, str],
+        page_nums: Sequence[int],
+        per_box_pages: set[int],
+        concurrency: int,
+        self_correction: bool,
+        binarize: bool,
+        dual_engine: bool,
+        progress: ProgressCallback | None,
+        cancel_check: CancelCheck | None = None,
+        decoded_get: Callable[[int], Image.Image | None] | None = None,
+    ) -> None:
+        """Crop-and-re-OCR empty boxes on sparse pages, then dedup nearby matches."""
+        sparse_structured = {
+            p: pages_structured[p] for p in page_nums if p not in per_box_pages
+        }
+        if not sparse_structured:
+            return
+
+        await self.refine_uncertain(
+            sparse_structured,
+            images_dict,
+            asyncio.Semaphore(max(1, concurrency)),
+            progress,
+            self_correction,
+            binarize,
+            dual_engine,
+            cancel_check=cancel_check,
+            decoded_get=decoded_get,
+        )
+
+    async def refine_uncertain(
+        self,
+        sparse_structured: dict[int, PageBoxes],
+        images_dict: dict[int, str],
+        semaphore: asyncio.Semaphore,
+        progress: ProgressCallback | None,
+        self_correction: bool = False,
+        binarize: bool = False,
+        dual_engine: bool = False,
+        cancel_check: CancelCheck | None = None,
+        decoded_get: Callable[[int], Image.Image | None] | None = None,
+    ) -> None:
+        """Re-OCR empty refinable boxes across sparse pages."""
+        targets: list[tuple[int, int, BBox]] = []
+        for p_num, aligned in sparse_structured.items():
+            for idx, (bbox, text) in enumerate(aligned):
+                if not text.strip() and _is_refinable(bbox):
+                    targets.append((p_num, idx, bbox))
+
+        if not targets:
+            return
+
+        total = len(targets)
+        await notify(
+            progress, "refine", 0, total, f"Refining {total} uncertain boxes..."
+        )
+
+        page_images: dict[int, Image.Image] = {}
+        pages_needed = {p_num for p_num, _, _ in targets}
+        for p_num in pages_needed:
+            cached = decoded_get(p_num) if decoded_get is not None else None
+            page_images[p_num] = (
+                cached
+                if cached is not None
+                else await asyncio.to_thread(_decode_page_image, images_dict[p_num])
+            )
+
+        async def refine_one(p_num: int, idx: int, bbox: BBox) -> tuple[int, int, str]:
+            try:
+                async with semaphore:
+                    safe_bbox = validate_bbox_coordinates(bbox, clamp=True)
+                    crop_b64 = await asyncio.to_thread(
+                        crop_for_ocr_from_image, page_images[p_num], safe_bbox
+                    )
+                    if crop_b64 is None:
+                        return p_num, idx, ""
+                    text = await self.ocr_processor.perform_ocr_on_crop(
+                        crop_b64,
+                        self_correction=self_correction,
+                        binarize=binarize,
+                        dual_engine=dual_engine,
+                    )
+                    return p_num, idx, text
+            except CircuitOpenError:
+                raise
+            except OCRCancelled:
+                raise
+            except Exception as e:
+                logger.warning(
+                    "Refine failed for page %s box %s: %s: %s",
+                    p_num,
+                    idx,
+                    type(e).__name__,
+                    e,
+                )
+                return p_num, idx, ""
+
+        completed = 0
+        refined_indices: dict[int, set[int]] = defaultdict(set)
+        try:
+            async with asyncio.TaskGroup() as tg:
+                tasks = [tg.create_task(refine_one(p, i, b)) for p, i, b in targets]
+                for coro in asyncio.as_completed(tasks):
+                    p_num, idx, text = await coro
+                    bbox_cur, _ = sparse_structured[p_num][idx]
+                    sparse_structured[p_num][idx] = (bbox_cur, text.strip())
+                    refined_indices[p_num].add(idx)
+                    completed += 1
+
+                    if cancel_check is not None and cancel_check():
+                        raise OCRCancelled(
+                            f"OCR cancelled after refine box {completed}/{total}."
+                        )
+
+                    await notify(
+                        progress,
+                        "refine",
+                        completed,
+                        total,
+                        f"Refining boxes ({completed}/{total})",
+                    )
+        except* OCRCancelled as eg:
+            raise eg.exceptions[0] from None
+        except* CircuitOpenError as eg:
+            raise eg.exceptions[0] from None
+
+        for p_num, idxs in refined_indices.items():
+            _drop_refined_duplicates(sparse_structured[p_num], idxs)

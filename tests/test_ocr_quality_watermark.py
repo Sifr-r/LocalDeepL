@@ -86,3 +86,74 @@ class TestErrorHandling:
 @pytest.fixture(autouse=True)
 def _suppress_logs(caplog):
     caplog.set_level("DEBUG")
+
+
+# ---------------------------------------------------------------------------
+# F1.11 — numpy-vectorised watermark detector
+# (re-homed from test_audit_medium_d1.py)
+# ---------------------------------------------------------------------------
+
+
+class TestNumpyWatermarkVectorization:
+    """F1.11 audit fix: ``_midgray_fraction`` is now vectorised with
+    numpy when numpy is available, with a pure-Python fallback when
+    it is not. Both paths must produce the same per-row fractions.
+    """
+
+    def test_numpy_path_matches_pure_python(self) -> None:
+        """Run the same synthetic image through the numpy path (the
+        default) and the explicit pure-Python fallback, and assert the
+        per-row fractions are identical.
+        """
+        # 200x300 image: 200 rows, sample_step = max(1, 200//64) = 3,
+        # sample_count = (200 + 3 - 1) // 3 = 67.
+        img = Image.new("RGB", (200, 300), (255, 255, 255))
+        # Draw a band in the watermark mid-gray range.
+        pixels = img.load()
+        assert pixels is not None
+        for y in range(40, 60):
+            for x in range(200):
+                pixels[x, y] = (220, 220, 220)
+
+        np_result = watermark._midgray_fraction(img)
+        gray = img.convert("L")
+        py_result = watermark._midgray_fraction_pure_python(
+            gray, sample_step=3, sample_count=67, h=300
+        )
+        assert np_result == py_result
+
+    def test_band_rows_have_high_fraction(self) -> None:
+        """Sanity: rows in the band have a fraction close to 1.0;
+        clean rows have a fraction close to 0.0."""
+        img = Image.new("RGB", (200, 200), (255, 255, 255))
+        pixels = img.load()
+        assert pixels is not None
+        for y in range(40, 60):
+            for x in range(200):
+                pixels[x, y] = (220, 220, 220)
+        fracs = watermark._midgray_fraction(img)
+        # A clean row (e.g. y=0) has 0% mid-gray pixels.
+        assert fracs[0] < 0.05
+        # A band row (e.g. y=50) has near 100% mid-gray pixels.
+        assert fracs[50] > 0.95
+
+    def test_falls_back_when_numpy_unavailable(self, monkeypatch) -> None:
+        """When numpy cannot be imported, ``_midgray_fraction`` falls
+        back to the pure-Python implementation rather than raising.
+        """
+        # Simulate "numpy not installed" by making the import fail.
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "numpy" or name.startswith("numpy."):
+                raise ImportError("numpy is not available (test simulation)")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        img = Image.new("RGB", (200, 100), (255, 255, 255))
+        fracs = watermark._midgray_fraction(img)
+        # Should not raise; should return valid fractions.
+        assert len(fracs) == 100
+        assert all(0.0 <= f <= 1.0 for f in fracs)

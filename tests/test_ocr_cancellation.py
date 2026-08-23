@@ -330,8 +330,8 @@ class TestHybridExecuteCancel:
 
 def _process_form() -> dict[str, str]:
     """Minimal form fields for /api/process — same shape as
-    test_api_safety.py's helper. Kept local so this file doesn't
-    import from another test module."""
+    tests/api/_safety_helpers.py's ``_process_form``. Kept local so
+    this file doesn't import from another test module."""
     return {
         "api_base": "http://api.openai.com/v1",
         "api_key": "test-key",
@@ -449,10 +449,10 @@ class TestProcessRouteCancel:
 
         # Manually seed the manager's cancel flag for this channel so
         # ``is_cancelled`` returns True. (The real WebSocket connect
-        # path is exercised in test_api_safety.py; here we only verify
-        # the cancel callback is wired to the manager.) The flag is a
-        # synchronous ``.is_set()`` call, so use a regular MagicMock
-        # — not an AsyncMock.
+        # path is exercised in tests/api/test_websocket_auth.py; here we
+        # only verify the cancel callback is wired to the manager.) The
+        # flag is a synchronous ``.is_set()`` call, so use a regular
+        # MagicMock — not an AsyncMock.
         flag = MagicMock()
         flag.is_set.return_value = True
         manager._cancel_flags[channel] = flag

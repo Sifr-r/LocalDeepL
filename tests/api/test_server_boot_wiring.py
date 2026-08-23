@@ -25,6 +25,8 @@ interfere with other tests that mount a private context.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 
@@ -201,3 +203,39 @@ def test_create_app_repeated_calls_do_not_leak_contexts(_reset_plugin_context) -
     # ctx1 was replaced (not disposed by the second call). It
     # is still a live PluginContext, not disposed.
     assert not ctx1.disposed
+
+
+# ---------------------------------------------------------------------------
+# F2.8 — CORS allowlist wiring (re-homed from test_audit_medium_d2.py)
+# ---------------------------------------------------------------------------
+
+
+def test_server_passes_cors_allowlist_to_middleware(
+    _reset_plugin_context,
+) -> None:
+    """``create_app()`` threads the configured methods/headers to ``CORSMiddleware``."""
+    from omniscribe.api.services import security_config as sc_module
+    from omniscribe.server import create_app
+
+    fake_settings = sc_module.SecuritySettings(
+        cors_origins=["https://app.example.com"],
+        cors_allowed_methods=["GET", "POST"],
+        cors_allowed_headers=["Authorization", "Content-Type"],
+    )
+    with patch.object(sc_module, "SecuritySettings") as mock_cls:
+        mock_cls.from_env.return_value = fake_settings
+        # Skip the lifespan / router / mount dance — we only want to
+        # verify CORSMiddleware was registered with the right kwargs.
+        app = create_app()
+    cors_layers = [m for m in app.user_middleware if m.cls.__name__ == "CORSMiddleware"]
+    assert len(cors_layers) == 1
+    layer = cors_layers[0]
+    # The middleware was constructed with the configured allowlist.
+    assert layer.kwargs.get("allow_methods") == ["GET", "POST"]
+    assert layer.kwargs.get("allow_headers") == ["Authorization", "Content-Type"]
+    assert layer.kwargs.get("allow_origins") == ["https://app.example.com"]
+    # Wildcards are gone.
+    assert "*" not in layer.kwargs.get("allow_methods", [])
+    assert "*" not in layer.kwargs.get("allow_headers", [])
+    # ``allow_credentials`` stays False (the CORS misconfig guard).
+    assert layer.kwargs.get("allow_credentials") is False

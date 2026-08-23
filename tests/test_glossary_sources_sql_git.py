@@ -367,3 +367,27 @@ class TestGitCredentials:
             parse_git_glossary(
                 url="https://example.com/repo.git", credentials=bad_creds
             )
+
+
+# ---------------------------------------------------------------------------
+# Git ref flag-injection (merged from test_phase2_git_ref_injection.py,
+# audit-secondary F26 / Phase 2)
+# ---------------------------------------------------------------------------
+
+
+def test_git_glossary_ref_flag_injection_rejected():
+    """``parse_git_glossary`` validates the ``ref`` parameter against a
+    safe-character set before passing it to ``git archive``, blocking
+    flag injection (``--output=/tmp/pwn``) and shell metachar injection
+    (``HEAD; rm -rf /``).
+    """
+    with pytest.raises(ValueError, match="Git ref is invalid or malformed"):
+        parse_git_glossary(
+            url="https://github.com/org/repo.git", ref="--output=/tmp/pwn"
+        )
+
+    with pytest.raises(ValueError, match="Git ref is invalid or malformed"):
+        parse_git_glossary(url="https://github.com/org/repo.git", ref="-f")
+
+    with pytest.raises(ValueError, match="Git ref is invalid or malformed"):
+        parse_git_glossary(url="https://github.com/org/repo.git", ref="HEAD; rm -rf /")

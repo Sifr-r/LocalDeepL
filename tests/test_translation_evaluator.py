@@ -21,7 +21,9 @@ from unittest.mock import AsyncMock, patch
 from omniscribe.core import translation
 from omniscribe.core.translation import (
     TranslationState,
+    _Chunker,
     build_evaluation_prompt,
+    chunk_text,
     evaluate_node,
     parse_evaluation_response,
 )
@@ -449,3 +451,35 @@ class TestExtractJsonObject:
     def test_handles_whitespace_before_fenced_block(self) -> None:
         text = '  \n```json\n{"score": 0.4, "feedback": "ok"}\n```  '
         assert parse_evaluation_response(text) == (0.4, "ok")
+
+
+# ---------------------------------------------------------------------------
+# Chunk formatting (merged from test_phase2_chunker_multi_granularity.py
+# and test_phase2_chunk_text_formatting.py — audit-secondary F26 / Phase 2)
+# ---------------------------------------------------------------------------
+
+
+def test_chunker_preserves_multi_granularity_delimiters():
+    """Audit-secondary F26 / Phase 2 fix: ``_Chunker.add`` stores the
+    delimiter alongside the chunk text so finalize can reassemble the
+    original spacing across multi-granularity (paragraph / line / word)
+    chunk splits.
+    """
+    chunker = _Chunker(max_chunk_size=100)
+    chunker.add("Paragraph 1", "\n\n")
+    chunker.add("Paragraph 2", "\n\n")
+    chunker.add("Line 1", "\n")
+    chunks = chunker.finalize()
+
+    assert len(chunks) == 1
+    assert chunks[0] == "Paragraph 1\n\nParagraph 2\nLine 1"
+
+
+def test_chunk_text_formatting_preserved():
+    """Audit-secondary F26 / Phase 2 fix: ``chunk_text`` preserves the
+    original paragraph boundaries when the text fits in a single chunk.
+    """
+    text = "Heading\n\nFirst paragraph with some text.\n\nSecond paragraph."
+    chunks = chunk_text(text, max_chunk_size=500)
+    assert len(chunks) == 1
+    assert chunks[0] == text

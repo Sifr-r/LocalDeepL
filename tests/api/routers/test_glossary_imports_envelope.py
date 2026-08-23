@@ -22,7 +22,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from omniscribe.api.routers import glossary_imports, state
-from omniscribe.core.glossary_library import GlossaryLibrary
+from omniscribe.core.lexicon import LanceDBLexiconStore, get_default_embedding_model
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "glossary"
 
@@ -32,7 +32,11 @@ def library_dir(tmp_path, monkeypatch):
     artifact = tmp_path / "artifacts"
     artifact.mkdir(exist_ok=True)
     monkeypatch.setenv("OMNISCRIBE_ARTIFACT_DIR", str(artifact))
-    state.glossary_library = GlossaryLibrary(artifact_dir=artifact)
+    store = LanceDBLexiconStore(
+        path=artifact / "lexicon.lance",
+        embedding_model=get_default_embedding_model(),
+    )
+    state.lexicon_store = store
     yield artifact
     monkeypatch.undo()
 

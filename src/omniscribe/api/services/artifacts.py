@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import secrets
 import tempfile
@@ -12,12 +11,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-# NOTE: ``ContextDisposedError`` and ``ServiceNotFoundError`` are
-# imported lazily inside ``_emit_artifact_created`` to avoid a
-# circular import (``omniscribe.api.plugin.__init__`` imports
-# ``providers`` which imports ``TextArtifactStore`` from this
-# module). The lazy import is safe because the call site is only
-# reached on the secondary write path after a successful put.
 from omniscribe.utils import write_atomic
 
 DEFAULT_ARTIFACT_TTL_SECONDS = 60 * 60
@@ -155,63 +148,12 @@ class TextArtifactStore:
             expires_at=expires_at,
         )
         self._evict_overflow()
-        handle = TextArtifactHandle(
+        return TextArtifactHandle(
             artifact_id=artifact_id,
             token=token,
             path=str(artifact_path),
             expires_at=expires_at,
         )
-        # Phase 3d — dual-write shim. Every successful put also
-        # emits an :class:`ArtifactCreatedEvent` to the plugin
-        # context so the session log records the handle. The
-        # :class:`ArtifactStoreProjection` (Phase 3d) reads the log
-        # to expose a "list recent artifacts" view. Errors during
-        # the emit are swallowed; a broken recorder must never
-        # block the actual artifact storage.
-        self._emit_artifact_created(handle)
-        return handle
-
-    def _emit_artifact_created(self, handle: TextArtifactHandle) -> None:
-        """Emit an :class:`ArtifactCreatedEvent` for the just-stored handle.
-
-        Best-effort with a narrow exception scope (audit-secondary
-        pass F10): a missing plugin context or a disposed context
-        fall through silently so the primary write (the in-memory
-        ``_entries`` dict + the backing file) is never affected.
-        Programming bugs (``KeyError`` / ``AttributeError`` /
-        ``TypeError``) propagate to the caller so a regression in
-        the projection code is caught at the call site instead of
-        silently dropping every artifact creation event.
-        """
-        try:
-            from omniscribe.api.plugin import (
-                ContextDisposedError,
-                ServiceNotFoundError,
-            )
-            from omniscribe.api.plugin.events_catalog import (
-                ArtifactCreatedEvent,
-            )
-            from omniscribe.api.plugin.runtime import get_plugin_context
-
-            ctx = get_plugin_context()
-            if ctx is not None:
-                ctx.emit(
-                    "artifact.created",
-                    **ArtifactCreatedEvent(
-                        artifact_id=handle.artifact_id,
-                        kind=self._kind,
-                        token=handle.token,
-                        path=handle.path,
-                        expires_at=handle.expires_at,
-                    ).__dict__,
-                )
-        except (ServiceNotFoundError, ContextDisposedError) as exc:
-            logging.getLogger(__name__).warning(
-                "audit: skipped emit for artifact_id=%s (%s: %s)",
-                handle.artifact_id,
-                type(exc).__name__,
-                exc,
-            )
 
     async def get(self, artifact_id: str, token: str) -> str:
         entry = self._require_entry(artifact_id, token)

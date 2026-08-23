@@ -36,11 +36,14 @@ def _format_provider_config(p: ProviderConfig) -> dict[str, Any]:
         data["api_key"] = _mask_api_key(data["api_key"])
     data["api_base"] = p.api_url
     data["name"] = p.display_name
-    from omniscribe.core.providers import get_provider as get_cat_provider
-
-    cat = get_cat_provider(p.id)
-    if cat and cat.get_api_key_url:
-        data["get_api_key_url"] = cat.get_api_key_url
+    get_api_key_url = p.get_api_key_url
+    if not get_api_key_url:
+        mgr = get_provider_manager()
+        tmpl = next((t for t in mgr.get_templates() if t.id == p.id), None)
+        if tmpl and tmpl.get_api_key_url:
+            get_api_key_url = tmpl.get_api_key_url
+    if get_api_key_url:
+        data["get_api_key_url"] = get_api_key_url
     return data
 
 

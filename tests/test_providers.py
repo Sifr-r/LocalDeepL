@@ -9,7 +9,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from omniscribe.api.services.envelope import register_envelope_handlers
-from omniscribe.core.providers import PROVIDERS_CATALOG, get_provider
+from omniscribe.api.services.provider_manager import (
+    get_provider_manager,
+    reset_provider_manager,
+)
 from omniscribe.server import create_app
 
 
@@ -23,11 +26,6 @@ def fresh_provider_manager(tmp_path: Path) -> Iterator[None]:
     entry that has been removed). Tests that exercise the live API must
     load the in-process templates, not the user's disk state.
     """
-    from omniscribe.api.services.provider_manager import (
-        get_provider_manager,
-        reset_provider_manager,
-    )
-
     reset_provider_manager()
     get_provider_manager(config_path=tmp_path / "providers.yaml")
     try:
@@ -36,10 +34,12 @@ def fresh_provider_manager(tmp_path: Path) -> Iterator[None]:
         reset_provider_manager()
 
 
-def test_providers_catalog_structure():
-    """Verify that all catalog providers have valid fields, API base, and categories."""
-    assert len(PROVIDERS_CATALOG) >= 15
-    provider_ids = [p.id for p in PROVIDERS_CATALOG]
+def test_providers_catalog_structure(fresh_provider_manager: None) -> None:
+    """Verify that all catalog templates have valid fields, API base, and key URLs."""
+    mgr = get_provider_manager()
+    templates = mgr.get_templates()
+    assert len(templates) >= 15
+    provider_ids = [t.id for t in templates]
     assert "alibaba-china" in provider_ids
     assert "alibaba-singapore" in provider_ids
     assert "alibaba-us" in provider_ids
@@ -54,28 +54,34 @@ def test_providers_catalog_structure():
     assert "ollama" in provider_ids
 
 
-def test_get_provider_lookup():
+def test_get_provider_lookup(fresh_provider_manager: None) -> None:
     """Verify helper lookup by provider_id."""
-    alibaba = get_provider("alibaba-china")
+    mgr = get_provider_manager()
+    alibaba = mgr.get_provider("alibaba-china")
     assert alibaba is not None
     # 2026-08-19: workspace-dedicated Alibaba domain replaced the legacy
     # `dashscope.aliyuncs.com` shared host; display name and URL shape
     # both updated.
-    assert alibaba.name == "Alibaba Cloud Model Studio - China (Beijing)"
-    assert "maas.aliyuncs.com" in alibaba.api_base
-    assert "{WorkspaceId}" in alibaba.api_base
-    assert alibaba.get_api_key_url is not None
+    assert alibaba.display_name == "Alibaba Cloud Model Studio - China (Beijing)"
+    assert "maas.aliyuncs.com" in alibaba.api_url
+    assert "{WorkspaceId}" in alibaba.api_url
+    assert alibaba.get_api_key_url == "https://dashscope.console.aliyun.com/apiKey"
 
     # Kimi split into China (`kimi`) and Global (`kimi-global`) variants
     # on 2026-08-19; the China entry keeps the moonshot.cn host.
-    kimi = get_provider("kimi")
+    kimi = mgr.get_provider("kimi")
     assert kimi is not None
-    assert kimi.api_base == "https://api.moonshot.cn/v1"
-    kimi_global = get_provider("kimi-global")
-    assert kimi_global is not None
-    assert kimi_global.api_base == "https://api.moonshot.ai/v1"
+    assert kimi.api_url == "https://api.moonshot.cn/v1"
+    assert kimi.get_api_key_url == "https://platform.moonshot.cn/console/api-keys"
 
-    nonexistent = get_provider("unknown-provider-id")
+    kimi_global = mgr.get_provider("kimi-global")
+    assert kimi_global is not None
+    assert kimi_global.api_url == "https://api.moonshot.ai/v1"
+    assert (
+        kimi_global.get_api_key_url == "https://platform.moonshot.ai/console/api-keys"
+    )
+
+    nonexistent = mgr.get_provider("unknown-provider-id")
     assert nonexistent is None
 
 
@@ -91,7 +97,7 @@ def test_list_providers_api_route(fresh_provider_manager: None) -> None:
     providers = data["providers"]
     # 2026-08-19: 27 providers ported from OmniRoute (7 Local + 20
     # API-key + 1 kimi-global split), plus the 25 pre-existing
-    # templates (-1 `minimax-international` removed) → 51 catalog
+    # templates (-1 `minimax-international` removed) -> 51 catalog
     # entries on the metadata layer. The API route merges the catalog
     # with the runtime config; we only assert a generous lower bound
     # here to keep this test resilient to further catalog growth.

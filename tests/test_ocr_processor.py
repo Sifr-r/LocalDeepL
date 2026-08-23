@@ -19,6 +19,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from omniscribe.core.ocr.processor import OCRProcessor
+
 
 def _png_1x1_base64() -> str:
     """Build a small but valid 32x32 PNG in-memory and return its base64 encoding.
@@ -121,3 +123,95 @@ def test_embedder_font_probe_logs_warning(
         "expected a warning mentioning the font probe, "
         f"got {[r.message for r in caplog.records]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# F1.9 — instance-level env settings (re-homed from test_audit_medium_d1.py)
+# ---------------------------------------------------------------------------
+
+
+class TestInstanceLevelSettings:
+    """F1.9 audit fix: ``OCRProcessor.__init__`` resolves the audit-H3
+    knobs from ``RuntimeSettings`` at instance construction, not at
+    module import. A fresh ``OCRProcessor()`` after an env change
+    must see the new value.
+    """
+
+    def test_instance_attrs_resolved_from_settings(self) -> None:
+        # ``__new__`` skips ``__init__`` so the F1.9 fallback ``__getattr__``
+        # returns the class-level defaults. We exercise both paths here:
+        # the class-level constants are the safe fallback, and the
+        # instance-level values override them.
+        proc = OCRProcessor(api_base="http://test.local/v1", api_key="x", model="mock")
+        # Per-instance fields exist and are the same type as the
+        # class-level defaults.
+        assert isinstance(proc.page_timeout_s, float)
+        assert isinstance(proc.crop_timeout_s, float)
+        assert isinstance(proc.max_retries, int)
+        assert isinstance(proc.retry_base_delay_s, float)
+        assert isinstance(proc.page_max_tokens, int)
+        assert isinstance(proc.crop_max_tokens, int)
+
+    def test_instance_attrs_default_to_class_constants(self) -> None:
+        """``__getattr__`` falls back to the class-level constants when
+        the instance was built without ``__init__`` (e.g. via
+        ``OCRProcessor.__new__``). This is the legacy test path and
+        must keep working.
+        """
+        proc = OCRProcessor.__new__(OCRProcessor)  # skip real init
+        assert proc.crop_timeout_s == OCRProcessor.CROP_TIMEOUT_S
+        assert proc.page_timeout_s == OCRProcessor.PAGE_TIMEOUT_S
+        assert proc.max_retries == OCRProcessor.MAX_RETRIES
+        assert proc.crop_max_tokens == OCRProcessor.CROP_MAX_TOKENS
+
+
+# ---------------------------------------------------------------------------
+# F1.13 — Tesseract error counter (re-homed from test_audit_medium_d1.py)
+# ---------------------------------------------------------------------------
+
+
+class TestTesseractErrorCounter:
+    """F1.13 audit fix: ``OCRProcessor.tesseract_error_count`` is
+    incremented on every Tesseract fallback failure so the API layer
+    can surface a stuck dual-engine path in the job-completion
+    summary without log scraping.
+    """
+
+    def test_initial_counter_is_zero(self) -> None:
+        proc = OCRProcessor(api_base="http://test.local/v1", api_key="x", model="mock")
+        assert proc.tesseract_error_count == 0
+
+    def test_counter_increments_on_tesseract_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A tesseract failure (TesseractError / RuntimeError) must
+        increment the counter; a successful call must not.
+        """
+        # Skip the test entirely when pytesseract is not installed
+        # (it's a soft dep — the dual-engine path is best-effort).
+        pytest.importorskip("pytesseract")
+        proc = OCRProcessor(api_base="http://test.local/v1", api_key="x", model="mock")
+
+        # First call: simulate a tesseract failure.
+        import pytesseract
+
+        def raise_tesseract(*args, **kwargs):
+            raise pytesseract.TesseractError(1, "tesseract boom")
+
+        monkeypatch.setattr(pytesseract, "image_to_string", raise_tesseract)
+        result = proc._get_tesseract_draft("aW1hZ2U=")
+        assert result == ""
+        assert proc.tesseract_error_count == 1
+
+        # Second call: same failure, counter increments again.
+        result = proc._get_tesseract_draft("aW1hZ2U=")
+        assert result == ""
+        assert proc.tesseract_error_count == 2
+
+        # Third call: a successful tesseract. Counter must NOT increment.
+        monkeypatch.setattr(
+            pytesseract, "image_to_string", lambda *a, **kw: "  recovered text  "
+        )
+        result = proc._get_tesseract_draft("aW1hZ2U=")
+        assert result == "recovered text"
+        assert proc.tesseract_error_count == 2

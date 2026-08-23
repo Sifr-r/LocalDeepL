@@ -29,17 +29,17 @@ sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]  # Windows 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from rich.console import Console  # noqa: E402
-from rich.table import Table  # noqa: E402
+from rich.console import Console
+from rich.table import Table
 
-from omniscribe import (  # noqa: E402
+from omniscribe import (
     HybridAligner,
     OCRPipeline,
     OCRProcessor,
     PDFHandler,
     PromptedGroundedOCR,
 )
-from omniscribe.confidence_eval import (  # noqa: E402
+from omniscribe.confidence_eval import (
     ConfidenceReport,
     compute_report,
     load_ground_truth,

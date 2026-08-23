@@ -77,6 +77,7 @@ def test_sqlite_backend_wired_through_factory(
     # router call sites actually use).
     assert router_state.text_artifacts is router_state.backend.text_artifacts
     assert router_state.job_history is router_state.backend.job_history
+    assert router_state.lexicon_store is router_state.backend.lexicon_store
 
 
 def test_redis_backend_wired_through_factory(
@@ -104,6 +105,7 @@ def test_redis_backend_wired_through_factory(
     from omniscribe.api.services.state_backend import StateBackend
 
     assert isinstance(router_state.backend, StateBackend)
+    assert router_state.lexicon_store is router_state.backend.lexicon_store
 
 
 def test_factory_uses_settings_artifact_directory(

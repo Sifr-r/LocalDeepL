@@ -12,6 +12,7 @@ from __future__ import annotations
 import ast
 import io
 import pathlib
+import threading
 import types
 
 import pytest
@@ -661,4 +662,70 @@ class TestTqdmPatchImportOrder:
             f"AGENTS.md constraint violated: tqdm_patch.apply() "
             f"(line {apply_line}) must precede surya import "
             f"(line {surya_line}) in core/aligner.py"
+        )
+
+
+# ---------------------------------------------------------------------------
+# F1.12 — detection predictor lock documented
+# (re-homed from test_audit_medium_d1.py)
+# ---------------------------------------------------------------------------
+
+
+class TestDetectionPredictorLock:
+    """F1.12 audit fix: the detection predictor lock is **intentional**
+    (Surya is not documented as thread-safe for concurrent forward
+    passes; a single GPU gains nothing from concurrent passes). We
+    pin the behaviour with a regression test so a future refactor
+    that silently removes the lock lands a failure here.
+    """
+
+    def test_shared_predictor_lock_exists(self) -> None:
+        """The shared lock is a ``threading.Lock`` instance."""
+        from omniscribe.core import aligner
+
+        assert isinstance(aligner._shared_predictor_lock, type(threading.Lock()))
+
+    def test_two_concurrent_detection_calls_serialize(self) -> None:
+        """Two threads calling ``_shared_predictor_lock`` acquire it
+        serially (the second one blocks until the first releases).
+
+        This is the contract the F1.12 comment block depends on;
+        a future refactor that switches to a no-op or per-batch lock
+        would change this behaviour and should update the test.
+        """
+        from omniscribe.core import aligner
+
+        order: list[str] = []
+        order_lock = threading.Lock()
+
+        def worker(name: str) -> None:
+            with aligner._shared_predictor_lock:
+                with order_lock:
+                    order.append(f"{name}-acquired")
+                # Hold the lock long enough for the other thread to
+                # try to acquire it. If the lock were a no-op the
+                # other thread would interleave here.
+                import time
+
+                time.sleep(0.05)
+                with order_lock:
+                    order.append(f"{name}-released")
+
+        t1 = threading.Thread(target=worker, args=("a",))
+        t2 = threading.Thread(target=worker, args=("b",))
+        t1.start()
+        t2.start()
+        t1.join(timeout=2.0)
+        t2.join(timeout=2.0)
+
+        # Exactly one thread should be holding the lock at a time:
+        # either a-acquired, a-released, b-acquired, b-released
+        # OR b-acquired, b-released, a-acquired, a-released.
+        # If the lock were a no-op we'd see interleaving (e.g.
+        # a-acquired, b-acquired, a-released, b-released).
+        assert len(order) == 4
+        # The two acquire events must not be adjacent.
+        acquire_indices = [i for i, e in enumerate(order) if "acquired" in e]
+        assert acquire_indices[1] - acquire_indices[0] == 2, (
+            f"detection lock did not serialise — order was {order}"
         )

@@ -119,8 +119,7 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/core/ocr/` | OpenAI/Anthropic/Ollama multi-format client, prompts, limits, filters, and resilience (retry + circuit breaker) |
 | `src/omniscribe/core/ocr_quality/` | OCR Quality Trust Layer (watermark, script detector, hallucination guard, Platt scaling calibration, trust scorer, orchestrator) |
 | `src/omniscribe/core/transcription/` | Speech-to-text audio transcription engines (local & OpenAI-compatible API backends) |
-| `src/omniscribe/core/lexicon/` | LanceDB-backed canonical glossary / translation lexicon store (Protocol + LanceDB impl + embedding wrapper + legacy `GlossaryLibrary` adapter + one-shot migration core). See `docs/lexicon-migration-spec.md`. |
-| `src/omniscribe/core/glossary_library/` | **DEPRECATED** — JSON-on-disk glossary writer kept as a fallback; new code should use `omniscribe.core.lexicon.LexiconStore` (or the `GlossaryLibraryAdapter` shim for the legacy API). Removed in a future cleanup. |
+| `src/omniscribe/core/lexicon/` | LanceDB-backed canonical glossary / translation lexicon store (Protocol + LanceDB impl + embedding wrapper + helper queries + one-shot migration core). See `docs/lexicon-migration-spec.md`. |
 | `src/omniscribe/core/glossary_sources/` | Glossary import parsers (TBX, CSV, JSON, URL, SQL, Git, TMX, XLIFF) |
 | `src/omniscribe/core/ocr/resilience.py` | `is_transient_error` classification, `CircuitBreaker` (closed/open/half-open), `CircuitOpenError` |
 | `src/omniscribe/core/pdf/` | PDF/image rasterization (`rasterizer.py`), sandwich PDF embedding (`embedder.py`), and `PDFHandler` facade (`handler.py`) |
@@ -130,7 +129,8 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/core/translation.py` | Optional LangGraph translation workflow |
 | `src/omniscribe/core/workflows/base.py` | `EngineBase` + `OutputWriter` / `DocumentResultWriter` / `ProgressCallback` / `WarningCallback` shared by both engines |
 | `src/omniscribe/core/workflows/utils.py` | Stand-alone workflow helper functions (`parse_page_range`, `_estimate_confidence`, `_decode_page_image`, `_drop_refined_duplicates`) and constants |
-| `src/omniscribe/core/workflows/hybrid.py` | `HybridEngine` — Surya detect → VLM OCR → DP align → refine → post-process → processors → output |
+| `src/omniscribe/core/workflows/stages/` | Decomposed hybrid stages: `conversion.py` (`HybridConverter`), `layout.py` (`HybridLayoutDetector`), `ocr.py` (`HybridOcrRunner`), `refine.py` (`HybridRefiner`) |
+| `src/omniscribe/core/workflows/hybrid.py` | `HybridEngine` — stage-based hybrid orchestrator |
 | `src/omniscribe/core/workflows/grounded.py` | `GroundedEngine` — single bbox-native VLM call → post-process → processors → output |
 | `src/omniscribe/core/workflows/repair.py` | `QualityRepairLoop` / `RepairOptions` — engine-agnostic block-level low-confidence re-OCR with stall guard and fail-open |
 | `src/omniscribe/resources/dictionaries/` | Packaged spellcheck dictionaries |
@@ -152,8 +152,8 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/api/schemas/requests.py` | `ConfigUpdate`, `ProcessSettings`, `TranslationRequest`, `ExtractionRequest`, `ExtractionTemplate`, `DocumentExportRequest`, `DocumentExportFormat`, `ExportDocxRequest`; enums: `PipelineMode`, `DenseMode`, `SpellcheckMode`, `DocumentProcessorName` |
 | `src/omniscribe/api/services/provider_manager.py` | `ProviderManager` service — provider templates, env-var discovery, disk persistence, and active provider switching |
 | `src/omniscribe/api/services/security.py` | API upload validation, stable error constants, temporary-file cleanup, opaque text artifact IDs |
-| `src/omniscribe/api/services/security_config.py` | `SecuritySettings.from_env()` — env-driven knobs for `OMNISCRIBE_AUTH_TOKEN`, `_CORS_ORIGINS`, `_MAX_UPLOAD_MB`, `_RATE_LIMIT_PER_MIN` |
-| `src/omniscribe/api/services/security_middleware.py` | ASGI middlewares wired by `server.create_app()`: `BearerAuthMiddleware` (constant-time `secrets.compare_digest`), `MaxUploadSizeMiddleware` (rejects on `Content-Length`), `RateLimitMiddleware` (per-IP 60s sliding window, in-memory). WebSocket handshake auth is still enforced per-channel in `routers/websocket.py` |
+| `src/omniscribe/api/middleware/` | Dedicated ASGI security middlewares: `BearerAuthMiddleware` (constant-time `secrets.compare_digest`), `MaxUploadSizeMiddleware` (rejects on `Content-Length`), `RateLimitMiddleware` (per-IP 60s sliding window, in-memory) |
+| `src/omniscribe/api/services/security_middleware.py` | Backward-compatibility facade re-exporting all components from `omniscribe.api.middleware` |
 | `src/omniscribe/api/services/artifacts.py` | `TextArtifactStore`, `PageText`, `TextArtifactHandle`, opaque id / token primitives |
 | `src/omniscribe/api/services/jobs.py` | `JobHistory`, `JobRecord`, `JobStatus` |
 | `src/omniscribe/api/services/state_backend_redis.py` | `RedisStateBackend` (opt-in; requires `OMNISCRIBE_STATE_BACKEND=redis` + a Redis server) — Redis-backed artifact metadata + job history for horizontal scaling across multiple uvicorn workers |

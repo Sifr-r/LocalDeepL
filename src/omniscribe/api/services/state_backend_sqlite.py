@@ -27,14 +27,10 @@ A single SQLite database file (default
 Process-local stores
 --------------------
 
-The :class:`ProgressService`, :class:`GlossaryLibrary`, and
-:class:`OCRJobQueue` remain in-memory: they reference live
-WebSocket channels, in-flight background jobs, and an in-RAM RAG
-index that the SQLite file cannot recreate. A restarted worker
-has no in-flight channels anyway, so persisting them would
-be theatre. The "recovery boundary" stays one level up from this
-module: only artifact metadata, artifact files, the on-disk
-glossary index, and job history survive a restart.
+The :class:`ProgressService` and :class:`OCRJobQueue` remain in-memory;
+:class:`LexiconStore` is embedded LanceDB. The "recovery boundary" stays
+one level up from this module: only artifact metadata, artifact files,
+the on-disk lexicon database, and job history survive a restart.
 
 Threading
 ---------
@@ -96,7 +92,11 @@ from omniscribe.api.services.jobs import (
 )
 from omniscribe.api.services.ocr_jobs import OCRJobQueue
 from omniscribe.api.services.progress import ProgressService
-from omniscribe.core.glossary_library import GlossaryLibrary
+from omniscribe.core.lexicon import (
+    LanceDBLexiconStore,
+    LexiconStore,
+    get_default_embedding_model,
+)
 
 _ARTIFACT_TABLE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS {table} (
@@ -429,9 +429,8 @@ class SQLiteStateBackend:
     the ``omniscribe`` subdirectory suffix) or the OS temp dir.
     The :class:`TextArtifactStore` and :class:`JobHistory`
     implementations are SQLite-backed; the live-channel services
-    (:class:`ProgressService`, :class:`GlossaryLibrary`,
-    :class:`OCRJobQueue`) stay in-memory by design — see the
-    module docstring.
+    (:class:`ProgressService`, :class:`OCRJobQueue`) stay in-memory by design,
+    and :class:`LexiconStore` is LanceDB-backed — see the module docstring.
     """
 
     text_artifacts: SQLiteTextArtifactStore
@@ -439,7 +438,7 @@ class SQLiteStateBackend:
     export_artifacts: SQLiteTextArtifactStore
     job_history: SQLiteJobHistory
     progress_service: ProgressService
-    glossary_library: GlossaryLibrary
+    lexicon_store: LexiconStore
     ocr_job_queue: OCRJobQueue
     # Duck-typed config-store attribute (see
     # ``services/state_backend.py`` module docstring). Not part of the
@@ -450,6 +449,7 @@ class SQLiteStateBackend:
         self,
         db_path: str | Path | None = None,
         artifact_dir: str | Path | None = None,
+        lexicon_store: LexiconStore | None = None,
     ) -> None:
         import os
 
@@ -484,7 +484,10 @@ class SQLiteStateBackend:
         )
         self.job_history = SQLiteJobHistory(self.db_path)
         self.progress_service = ProgressService()
-        self.glossary_library = GlossaryLibrary(artifact_dir=resolved)
+        self.lexicon_store = lexicon_store or LanceDBLexiconStore(
+            path=resolved / "lexicon.lance",
+            embedding_model=get_default_embedding_model(),
+        )
         self.ocr_job_queue = OCRJobQueue()
         self.config_store = SQLiteConfigStore(self.db_path)
 
