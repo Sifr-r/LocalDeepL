@@ -7,7 +7,7 @@ envelope exceptions (``ValidationFailed`` for 422 sites, ``NotFound`` for
 raw ``{"detail": "..."}`` body fails loudly.
 
 The tests mirror the ``library_dir`` fixture pattern from
-``tests/test_glossary_imports_route.py`` — a tmp-dir ``GlossaryLibrary``
+``tests/api/test_glossary_imports_route.py`` — a tmp-dir ``GlossaryLibrary``
 swapped onto ``state.glossary_library`` and torn down at fixture exit.
 """
 

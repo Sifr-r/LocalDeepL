@@ -7,7 +7,7 @@ Shared fixtures.
 - `stub_ocr` — an OCRProcessor replacement that returns canned text without
   hitting LM Studio, so tests can run offline.
 - `EXAMPLE_PDF_NAMES` — the canonical list of on-disk example PDF filenames
-  (and the few images). Re-exported by ``tests/test_integration.py`` and
+  (and the few images). Re-exported by ``tests/api/test_integration.py`` and
   imported by ``e2e/test_ui.py`` so the parametrize/IO surface stays in lock
   step with the fixtures in this module.
 """

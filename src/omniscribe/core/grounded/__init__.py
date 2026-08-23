@@ -26,7 +26,7 @@ hybrid Surya+LLM+DP flow.
 
 This ``__init__`` re-exports the *public* surface exactly as it
 appeared on the old ``omniscribe/core/grounded.py`` module so the
-test suite (``tests/test_grounded.py``), the public root
+test suite (``tests/core/test_grounded.py``), the public root
 ``omniscribe/__init__.py``, and downstream callers (pipeline,
 routers) keep working without modification.
 """

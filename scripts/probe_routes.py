@@ -43,7 +43,7 @@ def _expected_probes():
 
     Kept as a function (rather than module-level) so that the script
     body doesn't execute during ``import`` — the smoke test
-    (``tests/test_scripts_smoke.py``) imports every script to catch
+    (``tests/scripts/test_scripts_smoke.py``) imports every script to catch
     renamed ``omniscribe`` symbols and would otherwise hit a live
     network request on import.
     """

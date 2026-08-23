@@ -75,7 +75,7 @@ def test_security_settings_invalid_ints_fall_back_to_default(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Per-service token loading (consolidated from tests/test_separate_auth.py)
+# Per-service token loading (consolidated from former tests/test_separate_auth.py)
 # ---------------------------------------------------------------------------
 
 

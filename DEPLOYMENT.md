@@ -201,7 +201,7 @@ on-disk job database in the current release.
 
 If you need durable history, the only path is to swap
 `LocalStateBackend` for a Redis-backed `StateBackend`. That is a
-deliberate single-file change — see `api/services/state_backend.py`
+deliberate single-file change — see `api/services/state/base.py`
 for the protocol.
 
 ## Upgrading

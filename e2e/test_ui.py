@@ -9,7 +9,7 @@ from playwright.sync_api import expect, sync_playwright
 
 # Import the canonical example-PDF list from tests/conftest.py so the file
 # we exercise here stays in lock-step with the parametrize sites in
-# tests/test_integration.py. ``test_ui.py`` lives under ``e2e/`` rather
+# tests/api/test_integration.py. ``test_ui.py`` lives under ``e2e/`` rather
 # than under tests/, so we add the tests/ directory to sys.path before
 # importing the conftest module.
 _TESTS_DIR = Path(__file__).resolve().parent.parent / "tests"

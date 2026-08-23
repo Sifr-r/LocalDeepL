@@ -27,7 +27,7 @@ uv run pytest -m "not slow"
 uv run pytest
 uv run pytest -m slow
 uv run pytest -m live_llm
-uv run pytest tests/test_aligner.py -v
+uv run pytest tests/core/test_aligner.py -v
 cd frontend && npm run check && npm test && npm run build
 ```
 
@@ -61,14 +61,14 @@ uv run mypy src
 uv run pytest -m "not slow"
 ```
 
-If the change touches `core/aligner.py`, `core/workflows/`, or `core/ocr/`, also run `uv run pytest tests/test_aligner.py -v`.
+If the change touches `core/aligner.py`, `core/workflows/`, or `core/ocr/`, also run `uv run pytest tests/core/test_aligner.py -v`.
 
 ### Peripheral — focused validation
 
 | Path | Scope | Validation |
 | --- | --- | --- |
 | `src/omniscribe/utils/` | Shared helpers, SSRF guard | `ruff check src` + `mypy src` |
-| `scripts/` | Developer CLI utilities | `ruff check scripts` + relevant `pytest tests/test_scripts_smoke.py` |
+| `scripts/` | Developer CLI utilities | `ruff check scripts` + relevant `pytest tests/scripts/test_scripts_smoke.py` |
 | `frontend/src/` | Svelte UI | `cd frontend && npm run check && npm test && npm run build` |
 | `tests/` (new tests only) | Test additions | `ruff check tests` + `pytest <new_test_file> -v` |
 | `AGENTS.md`, `README.md`, `CHANGELOG.md` | Documentation | No code validation required |
@@ -106,16 +106,21 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | --- | --- |
 | `src/omniscribe/server.py` | FastAPI application, server entry point, `omniscribe-server` script |
 | `src/omniscribe/pipeline.py` | `OCRPipeline` facade — picks `HybridEngine` or `GroundedEngine` based on injected components |
-| `src/omniscribe/evaluation.py` | Package-root confidence eval (fixture loader, IoU matching, `ConfidenceReport`) for `scripts/confidence_*.py` |
+| `src/omniscribe/confidence_eval.py` | Package-root confidence eval (fixture loader, IoU matching, `ConfidenceReport`) for `scripts/confidence_*.py` |
 | `src/omniscribe/core/document.py` | Normalized DocumentResult IR and legacy pages-data adapter |
 | `src/omniscribe/core/processors/` | Local deterministic document processors (`reading_order`, `quality`, `structure`, `section`, `layout`, `table`) and builder |
-| `src/omniscribe/core/preprocessing.py` | Local hybrid-path page preprocessing |
-| `src/omniscribe/core/routing.py` | Quality routing recommendation metadata |
+| `src/omniscribe/core/imaging/page_preprocess.py` | Local hybrid-path page preprocessing |
+| `src/omniscribe/core/imaging/` | Imaging subpackage: `page_preprocess.py` (orientation/deskew/denoise/contrast/crop), `handwriting.py` (handwriting preprocessor), `utils.py` (image helpers) |
+| `src/omniscribe/core/ocr_quality/routing.py` | Quality routing recommendation metadata |
 | `src/omniscribe/core/evaluation.py` | Local evaluation metric helpers (lightweight, for processor result scoring) |
-| `src/omniscribe/core/docx_writer.py` | Markdown → `.docx` converter for the docx export route |
+| `src/omniscribe/core/writers/docx.py` | Markdown → `.docx` converter for the docx export route |
+| `src/omniscribe/core/writers/` | Output writers subpackage: `docx.py`, `docx_tree.py`, `html.py`, `tree_json.py`, and `exporter_base.py` (`DocumentExportProtocol` + `BaseDocumentExporter` ABC) |
+| `src/omniscribe/core/recall/` | Recall boosters subpackage: `whitespace.py` (pixel-statistics candidates) and `text_layer.py` (embedded-text-layer recovery) |
+| `src/omniscribe/core/llm/` | LLM client subpackage: `client.py` (OpenAI-compatible VLM client), `providers.py`, `temperatures.py` |
+| `src/omniscribe/core/translate/` | Translation subpackage: `workflow.py` (LangGraph workflow), `config.py`, `dual.py`, `nllb.py`, `entity_memory.py`, `glossary.py`, `tree.py` |
 | `src/omniscribe/core/aligner.py` | Surya detection and DP alignment |
-| `src/omniscribe/core/text_recall.py` | Whitespace recall booster — pixel-statistics text-line candidates merged into Surya detection on the hybrid path; `OMNISCRIBE_WHITESPACE_RECALL` kill switch, INFO run summary, fail-open per page |
-| `src/omniscribe/core/text_layer_recall.py` | Text-layer recall source — recovers lines Surya missed from a digital PDF's embedded text layer (second box source, merged after the whitespace booster); `OMNISCRIBE_TEXT_LAYER_RECALL` kill switch, INFO run summary, fail-open per page; strict no-op for scans and image inputs |
+| `src/omniscribe/core/recall/whitespace.py` | Whitespace recall booster — pixel-statistics text-line candidates merged into Surya detection on the hybrid path; `OMNISCRIBE_WHITESPACE_RECALL` kill switch, INFO run summary, fail-open per page |
+| `src/omniscribe/core/recall/text_layer.py` | Text-layer recall source — recovers lines Surya missed from a digital PDF's embedded text layer (second box source, merged after the whitespace booster); `OMNISCRIBE_TEXT_LAYER_RECALL` kill switch, INFO run summary, fail-open per page; strict no-op for scans and image inputs |
 | `src/omniscribe/core/ocr/` | OpenAI/Anthropic/Ollama multi-format client, prompts, limits, filters, and resilience (retry + circuit breaker) |
 | `src/omniscribe/core/ocr_quality/` | OCR Quality Trust Layer (watermark, script detector, hallucination guard, Platt scaling calibration, trust scorer, orchestrator) |
 | `src/omniscribe/core/transcription/` | Speech-to-text audio transcription engines (local & OpenAI-compatible API backends) |
@@ -125,8 +130,8 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/core/pdf/` | PDF/image rasterization (`rasterizer.py`), sandwich PDF embedding (`embedder.py`), and `PDFHandler` facade (`handler.py`) |
 | `src/omniscribe/core/grounded/` | Grounded backends and bbox JSON parsers (retry + circuit breaker on the VLM call) |
 | `src/omniscribe/core/postprocess.py` | Dictionary spellcheck |
-| `src/omniscribe/core/translation_config.py` | Core-owned async translation settings |
-| `src/omniscribe/core/translation.py` | Optional LangGraph translation workflow |
+| `src/omniscribe/core/translate/config.py` | Core-owned async translation settings |
+| `src/omniscribe/core/translate/workflow.py` | Optional LangGraph translation workflow |
 | `src/omniscribe/core/workflows/base.py` | `EngineBase` + `OutputWriter` / `DocumentResultWriter` / `ProgressCallback` / `WarningCallback` shared by both engines |
 | `src/omniscribe/core/workflows/utils.py` | Stand-alone workflow helper functions (`parse_page_range`, `_estimate_confidence`, `_decode_page_image`, `_drop_refined_duplicates`) and constants |
 | `src/omniscribe/core/workflows/stages/` | Decomposed hybrid stages: `conversion.py` (`HybridConverter`), `layout.py` (`HybridLayoutDetector`), `ocr.py` (`HybridOcrRunner`), `refine.py` (`HybridRefiner`) |
@@ -136,7 +141,7 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/resources/dictionaries/` | Packaged spellcheck dictionaries |
 | `src/omniscribe/resources/calibration/` | Pre-trained model confidence calibration files (e.g. `qwen2_5_vl_72b.json`) |
 | `src/omniscribe/api/routers/config.py` | Runtime configuration and model discovery |
-| `src/omniscribe/api/routers/ocr.py` | OCR upload, process, and synchronous AI routes |
+| `src/omniscribe/api/routers/ocr.py` | OCR upload, process, and synchronous AI routes; execution internals live in `api/services/ocr/execution.py` |
 | `src/omniscribe/api/routers/providers.py` | Multi-format provider catalog, details, and active provider switching |
 | `src/omniscribe/api/routers/transcription.py` | Voice transcription and transcription provider configuration |
 | `src/omniscribe/api/routers/glossary_imports.py` | Terminology library and file/URL glossary import routes |
@@ -146,25 +151,28 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/api/routers/artifacts.py` | Token-bound artifact download routes (text, metadata, exports) |
 | `src/omniscribe/api/routers/translation.py` | Synchronous and async translation routes |
 | `src/omniscribe/api/routers/extraction.py` | `POST /api/extract` and `POST /api/export/*` routes |
-| `src/omniscribe/api/routers/state.py` | Module-level singletons (`text_artifacts`, `metadata_artifacts`, `export_artifacts`, `job_history`, `progress_service`) — `backend` is the canonical access path; the seven module-level aliases mirror `state.backend.*` |
-| `src/omniscribe/api/services/state_backend.py` | `StateBackend` runtime-checkable Protocol + `LocalStateBackend` (in-memory, default) + `build_state_backend(settings)` factory. The factory is the single boundary that fails loud on an unknown `OMNISCRIBE_STATE_BACKEND` value |
+| `src/omniscribe/api/routers/state.py` | Module-level singletons (`text_artifacts`, `metadata_artifacts`, `export_artifacts`, `job_history`, `progress_service`) — `backend` is the canonical access path; the eight module-level aliases mirror `state.backend.*` (six backend-backed stores plus `config_store` and `lexicon_store`) |
+| `src/omniscribe/api/services/state/base.py` | `StateBackend` runtime-checkable Protocol + `LocalStateBackend` (in-memory, default) + `build_state_backend(settings)` factory. The factory is the single boundary that fails loud on an unknown `OMNISCRIBE_STATE_BACKEND` value |
+| `src/omniscribe/api/services/state/` | State backend subpackage: `base.py` (Protocol + local backend + factory), `redis.py`, `sqlite.py` |
+| `src/omniscribe/api/services/ocr/` | OCR service subpackage behind `routers/ocr.py`: `settings.py`, `pipeline_factory.py`, `response.py`, `chunked_runner.py`, `jobs.py`, and `execution.py` (process execution internals) |
 | `src/omniscribe/api/routers/common.py` | Shared router helpers (`_stable_server_error`, `_extract_bearer_token`, `_path_exists`) |
 | `src/omniscribe/api/schemas/requests.py` | `ConfigUpdate`, `ProcessSettings`, `TranslationRequest`, `ExtractionRequest`, `ExtractionTemplate`, `DocumentExportRequest`, `DocumentExportFormat`, `ExportDocxRequest`; enums: `PipelineMode`, `DenseMode`, `SpellcheckMode`, `DocumentProcessorName` |
 | `src/omniscribe/api/services/provider_manager.py` | `ProviderManager` service — provider templates, env-var discovery, disk persistence, and active provider switching |
-| `src/omniscribe/api/services/security.py` | API upload validation, stable error constants, temporary-file cleanup, opaque text artifact IDs |
+| `src/omniscribe/api/services/uploads.py` | API upload validation, stable error constants, temporary-file cleanup, opaque text artifact IDs |
+| `src/omniscribe/api/services/helpers.py` | Merged API helper module (former `api_helpers.py` + `config_helpers.py`) |
 | `src/omniscribe/api/middleware/` | Dedicated ASGI security middlewares: `BearerAuthMiddleware` (constant-time `secrets.compare_digest`), `MaxUploadSizeMiddleware` (rejects on `Content-Length`), `RateLimitMiddleware` (per-IP 60s sliding window, in-memory) |
-| `src/omniscribe/api/services/security_middleware.py` | Backward-compatibility facade re-exporting all components from `omniscribe.api.middleware` |
+| `src/omniscribe/api/middleware/settings.py` | `SecuritySettings` env parsing, upload-cap clamps, and per-service auth token resolution used by the ASGI middlewares |
 | `src/omniscribe/api/services/artifacts.py` | `TextArtifactStore`, `PageText`, `TextArtifactHandle`, opaque id / token primitives |
 | `src/omniscribe/api/services/jobs.py` | `JobHistory`, `JobRecord`, `JobStatus` |
-| `src/omniscribe/api/services/state_backend_redis.py` | `RedisStateBackend` (opt-in; requires `OMNISCRIBE_STATE_BACKEND=redis` + a Redis server) — Redis-backed artifact metadata + job history for horizontal scaling across multiple uvicorn workers |
-| `src/omniscribe/api/services/state_backend_sqlite.py` | `SQLiteStateBackend` (opt-in; requires `OMNISCRIBE_STATE_BACKEND=sqlite`) — single-file persistent state for the local-first deployment shape. WAL-mode SQLite file (default `<artifact_dir>/omniscribe-state.db`; override with `OMNISCRIBE_STATE_DB_PATH`) holds the three artifact tables + jobs table; `ProgressService` / `GlossaryLibrary` / `OCRJobQueue` remain in-memory because they reference live channels |
+| `src/omniscribe/api/services/state/redis.py` | `RedisStateBackend` (opt-in; requires `OMNISCRIBE_STATE_BACKEND=redis` + a Redis server) — Redis-backed artifact metadata + job history for horizontal scaling across multiple uvicorn workers |
+| `src/omniscribe/api/services/state/sqlite.py` | `SQLiteStateBackend` (opt-in; requires `OMNISCRIBE_STATE_BACKEND=sqlite`) — single-file persistent state for the local-first deployment shape. WAL-mode SQLite file (default `<artifact_dir>/omniscribe-state.db`; override with `OMNISCRIBE_STATE_DB_PATH`) holds the three artifact tables + jobs table; `ProgressService` / `GlossaryLibrary` / `OCRJobQueue` remain in-memory because they reference live channels |
 | `src/omniscribe/api/services/progress.py` | `ProgressService`, `ProgressChannel`, stage weights |
 | `src/omniscribe/api/services/document_metadata.py` | Token-bound metadata report artifacts for optional document processor outputs |
 | `src/omniscribe/api/services/document_exports.py` | Token-bound document export artifacts |
 | `src/omniscribe/api/services/workflow.py` | Web/API workflow summaries |
 | `src/omniscribe/api/services/ai.py` | Backing AI service for extraction and translation routes |
 | `src/omniscribe/utils/security.py` | SSRF target validation |
-| `src/omniscribe/core/handwriting_preprocessor.py` | Local handwriting image preprocessor |
+| `src/omniscribe/core/imaging/handwriting.py` | Local handwriting image preprocessor |
 | `scripts/` | Developer utilities: confidence eval, fixture builder, debug/inspection scripts, bbox visualizers |
 | `examples/` | Sample PDFs and images for `tests/`, `e2e/test_ui.py`, and the confidence scripts |
 | `install.bat` / `install.ps1` / `start_app.vbs` / `e2e/test_ui.py` | Windows one-click install, terminal launcher, and Playwright smoke test |
@@ -241,8 +249,8 @@ intentionally narrow in the new code (only `ServiceNotFoundError` and
 
 ## Known Tech Debt
 
-- `/api/process` runs the full OCR pipeline synchronously on the uvicorn worker (no background task queue on the default path); long jobs block other requests on the same worker. The async path ships already — `POST /api/process/async` returns `202 + job_id` immediately and the single-worker `OCRJobQueue` (in `api/services/ocr_jobs.py`) drains jobs sequentially. The workstation UI gained an "Async processing" toggle in Phase D2 that lets users opt into the async path; the result PDF is fetched from `GET /api/jobs/{job_id}/result` once the job reaches `status: "complete"`. The async queue is still in-memory (dies on restart) and single-worker — true multi-worker / crash-safe dispatch needs a Celery task that mirrors the translation pattern in `api/tasks.py`.
-- Job/artifact state is in-memory by default (`api/routers/state.py` singletons). Two opt-in persistent backends ship now: `OMNISCRIBE_STATE_BACKEND=sqlite` (single-file, local-first; see `state_backend_sqlite.py`) and `OMNISCRIBE_STATE_BACKEND=redis` (multi-worker; see `state_backend_redis.py`). All three implementations satisfy the `StateBackend` Protocol so call sites are unchanged. `ProgressService` / `GlossaryLibrary` / `OCRJobQueue` stay in-memory by design — they reference live WebSocket channels / RAG index state and cannot meaningfully be persisted.
+- `/api/process` runs the full OCR pipeline synchronously on the uvicorn worker (no background task queue on the default path); long jobs block other requests on the same worker. The async path ships already — `POST /api/process/async` returns `202 + job_id` immediately and the single-worker `OCRJobQueue` (in `api/services/ocr/jobs.py`) drains jobs sequentially. The workstation UI gained an "Async processing" toggle in Phase D2 that lets users opt into the async path; the result PDF is fetched from `GET /api/jobs/{job_id}/result` once the job reaches `status: "complete"`. The async queue is still in-memory (dies on restart) and single-worker — true multi-worker / crash-safe dispatch needs a Celery task that mirrors the translation pattern in `api/tasks.py`.
+- Job/artifact state is in-memory by default (`api/routers/state.py` singletons). Two opt-in persistent backends ship now: `OMNISCRIBE_STATE_BACKEND=sqlite` (single-file, local-first; see `api/services/state/sqlite.py`) and `OMNISCRIBE_STATE_BACKEND=redis` (multi-worker; see `api/services/state/redis.py`). All three implementations satisfy the `StateBackend` Protocol so call sites are unchanged. `ProgressService` / `GlossaryLibrary` / `OCRJobQueue` stay in-memory by design — they reference live WebSocket channels / RAG index state and cannot meaningfully be persisted.
 - `pages_structured` legacy dict is still the working format inside `HybridEngine`; `DocumentResult` is built at finalize. The output boundary now supports the lossless rich path (`DocumentResultWriter`), but intermediate stages still convert.
 - `dense.pdf` and `notes.pdf` ground-truth fixtures are bootstrapped from hybrid output (regression baseline, not absolute quality).
 - `surya-ocr 0.17.x` used to import `requests` in `surya/common/s3.py` without declaring it; `pyproject.toml` shipped a `requests>=2.31` workaround dep. **Closed in audit-secondary Phase 5 (2026-08-19):** `surya-ocr ≥ 0.22` now declares `requests<3,>=2.28.0` in its own metadata, so the workaround is no longer required. `requests` has been removed from the base deps and moved to `[dependency-groups] dev` (it is only directly imported by `scripts/ingest_lexicon.py`, a dev-only ingestion helper).
@@ -280,4 +288,4 @@ survive into the post-scout roadmap) live in
 - [DEPLOYMENT.md](DEPLOYMENT.md) — local / LAN / public-internet deployment profiles
 - [SECURITY.md](SECURITY.md) — threat model, hardening checklist, vulnerability disclosure
 
-_Last updated: 2026-08-22_
+_Last updated: 2026-08-23_

@@ -39,10 +39,12 @@ typecheck: ## Run mypy against production code
 # function. Affects chromadb 1.0.0-1.5.9; no patched release exists on PyPI
 # yet (upstream chroma-core/chroma#6717 is open with no fix PR), so there is
 # no version to bump to. Risk-accepted because neither vector is reachable:
-#   1. OmniScribe never runs a Chroma HTTP server - core/translation.py uses
-#      an embedded `chromadb.PersistentClient` on a local path only.
-#   2. `get_chroma_collection()` always passes an explicit
-#      `embedding_function=`, so no collection-stored embedding config is
+#   1. OmniScribe never runs a Chroma HTTP server and no longer reads Chroma
+#      at all - the `chromadb` dependency was removed in the lexicon
+#      migration Phase 5 (see pyproject.toml `[memory]` note); the legacy
+#      translation path used an embedded client on a local path only.
+#   2. The former `get_chroma_collection()` always passed an explicit
+#      `embedding_function=`, so no collection-stored embedding config was
 #      ever instantiated, and no `trust_remote_code` flag is used anywhere.
 # Drop the --ignore-vuln flag once chromadb ships a fixed release (>1.5.9)
 # and the [project.dependencies] / [memory] constraints are bumped to it.
@@ -70,7 +72,7 @@ doctor: ## Report Python, uv, Redis, and model server health
 	uv run python scripts/dev.py doctor
 
 # Regenerate the checked-in OpenAPI snapshot the frontend contract tests
-# diff against. ``tests/test_frontend_openapi_contract.py`` will fail if
+# diff against. ``tests/api/test_frontend_openapi_contract.py`` will fail if
 # the snapshot drifts; running this target re-syncs the file to whatever
 # ``app.openapi()`` currently returns. The redirect uses ``>`` (not ``>>``)
 # so stale content is fully replaced on each run.

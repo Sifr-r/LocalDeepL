@@ -41,7 +41,7 @@ class TrustOrchestrator(Protocol):
 
     The runtime_checkable flag means any object exposing a ``__call__``
     matching this signature satisfies the contract — tests in
-    ``tests/test_pipeline_trust_integration.py`` use a local stub
+    ``tests/core/test_pipeline_trust_integration.py`` use a local stub
     record-only orchestrator (no ``settings`` attribute) and the API
     can plug in an alternate implementation (e.g. an in-memory mock for
     property tests) without subclassing anything. The default

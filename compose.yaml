@@ -73,14 +73,14 @@ services:
       OMNISCRIBE_ARTIFACT_DIR: /app/data
       # Recommended security defaults. See README "Security" section.
       # 10240 MB (10 GB) matches ``SecuritySettings.DEFAULT_MAX_UPLOAD_MB``
-      # in ``src/omniscribe/api/services/security_config.py`` and the
+      # in ``src/omniscribe/api/middleware/settings.py`` and the
       # ``.env.example`` shipped with the repo. The size cap is enforced
       # by ``MaxUploadSizeMiddleware``; raise this for LAN/public hosts
       # only after sizing disk + memory to honour it.
       OMNISCRIBE_MAX_UPLOAD_MB: "10240"
       OMNISCRIBE_RATE_LIMIT_PER_MIN: "60"
       # F5-16 audit fix: the previous example token ``change-me-in-prod``
-      # is in the boot-time denylist (``security_config.PLACEHOLDER_AUTH_TOKENS``)
+      # is in the boot-time denylist (``api/middleware/settings.py: PLACEHOLDER_AUTH_TOKENS``)
       # and would *refuse* to start. The example now points operators
       # at an openssl-rand one-liner so copy-paste always lands on a
       # real, high-entropy secret. See .env.example for the same hint

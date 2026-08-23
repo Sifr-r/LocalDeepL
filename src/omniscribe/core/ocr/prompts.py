@@ -9,7 +9,7 @@ The OCR path has two distinct message-shape contracts:
     OlmOCR-2 model was RL-trained on verbatim. It's sent as a
     pure user message; adding a system role shifts the model's
     input distribution and the LM Studio endpoint returns
-    LLMCallError. ``tests/test_ocr.py::TestPromptConstants::
+    LLMCallError. ``tests/core/test_ocr.py::TestPromptConstants::
     test_olmocr_prompt_is_canonical`` pins the exact body —
     do not edit it without re-validating downstream OCR quality.
 
@@ -39,7 +39,7 @@ not invent a new system role at the call site.
 
 ``PROMPT_VERSION`` is bumped on any user-visible body
 change. The date + version format (``YYYY-MM-DD.vN``) is
-asserted by ``tests/test_ocr.py::test_prompt_version_is_present``.
+asserted by ``tests/core/test_ocr.py::test_prompt_version_is_present``.
 """
 
 from __future__ import annotations
@@ -91,7 +91,7 @@ def model_supports_system_role(model_name: str | None) -> bool:
 #
 # NOTE: This is the model's training distribution. Do NOT wrap it in a
 # system message, do NOT add suffixes, and do NOT touch the body. The
-# test_olmocr_prompt_is_canonical test in tests/test_ocr.py locks the
+# test_olmocr_prompt_is_canonical test in tests/core/test_ocr.py locks the
 # exact string. Call sites send it as a plain user message.
 OLMOCR_PAGE_PROMPT = (
     "Attached is one page of a document that you must process. Just return "

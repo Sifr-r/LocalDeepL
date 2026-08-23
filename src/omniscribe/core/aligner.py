@@ -71,7 +71,7 @@ _shared_predictor: DetectionPredictor | None = None
 #     correctness regression.
 #
 # The current behaviour is the safe default. We document it here and
-# pin it with a regression test in ``tests/test_aligner.py`` so a
+# pin it with a regression test in ``tests/core/test_aligner.py`` so a
 # future refactor that "removes the unnecessary lock" lands a test
 # failure rather than a torch device-side race.
 _shared_predictor_lock = threading.Lock()
