@@ -519,3 +519,31 @@ class TestWhitespaceRecallWiring:
         booster = pipe._engine.recall_booster
         assert booster is not None
         assert booster.options.enabled is False
+
+
+class TestPackagePublicExports:
+    def test_omniscribe_root_exports(self):
+        import omniscribe
+
+        for sym in omniscribe.__all__:
+            assert hasattr(omniscribe, sym), f"Missing omniscribe.{sym}"
+
+    def test_omniscribe_core_exports(self):
+        import omniscribe.core
+
+        for sym in omniscribe.core.__all__:
+            assert hasattr(omniscribe.core, sym), f"Missing omniscribe.core.{sym}"
+
+    def test_omniscribe_pipeline_exports(self):
+        from omniscribe.pipeline import OCRPipeline, parse_page_range
+
+        assert OCRPipeline is not None
+        assert callable(parse_page_range)
+
+    def test_omniscribe_ocr_quality_exports(self):
+        import omniscribe.core.ocr_quality
+
+        for sym in omniscribe.core.ocr_quality.__all__:
+            assert hasattr(omniscribe.core.ocr_quality, sym), (
+                f"Missing omniscribe.core.ocr_quality.{sym}"
+            )

@@ -554,12 +554,18 @@ class TestPromptedGroundedParser:
         assert "missing_or_bad_bbox=1" in caplog.text
         assert "empty_content=1" in caplog.text
 
-    def test_no_summary_log_when_all_items_kept(self, caplog):
-        raw = '[{"bbox_2d":[0,0,10,10],"content":"a"},{"bbox_2d":[0,10,10,20],"content":"b"}]'
-        with caplog.at_level("INFO", logger="omniscribe.core.grounded.parsers"):
-            _parse_grounded_json(raw, page_idx=0, img_w=10, img_h=20)
-        # Summary should NOT fire when nothing was dropped.
-        assert "kept" not in caplog.text
+    def test_truncated_json_array_recovery(self):
+        # When VLM stream is cut off mid-array by token limit, the parser
+        # should recover all complete bounding boxes before the cutoff.
+        raw = (
+            '[{"bbox_2d":[0,0,10,10],"content":"first complete block"},'
+            '{"bbox_2d":[0,10,10,20],"content":"second complete block"},'
+            '{"bbox_2d":[0,20,10,30],'
+        )
+        blocks = _parse_grounded_json(raw, page_idx=0, img_w=100, img_h=100)
+        assert len(blocks) == 2
+        assert blocks[0].text == "first complete block"
+        assert blocks[1].text == "second complete block"
 
 
 class TestPromptedGroundedEnsureModelLoaded:

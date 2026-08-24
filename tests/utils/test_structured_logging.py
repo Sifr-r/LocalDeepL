@@ -261,6 +261,29 @@ def test_json_formatter_uses_utc_timezone() -> None:
     assert delta < 5.0  # within 5 seconds
 
 
+def test_json_formatter_scrubs_sensitive_keys() -> None:
+    formatter = JsonFormatter()
+    record = logging.LogRecord(
+        name="omniscribe.test",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="login attempt",
+        args=None,
+        exc_info=None,
+    )
+    record.auth_token = "secret-token-12345"
+    record.api_key = "sk-1234567890abcdef"
+    record.password = "hunter2"
+    record.request_id = "safe-request-id"
+
+    payload = json.loads(formatter.format(record))
+    assert payload["auth_token"] == "<redacted>"
+    assert payload["api_key"] == "<redacted>"
+    assert payload["password"] == "<redacted>"
+    assert payload["request_id"] == "safe-request-id"
+
+
 # Helper that returns the current ``sys.exc_info()`` triple so we can
 # build a LogRecord with ``exc_info`` populated. Indirected because the
 # actual ``raise`` must happen outside the helper to attach the traceback

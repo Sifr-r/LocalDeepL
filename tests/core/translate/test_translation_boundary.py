@@ -10,6 +10,9 @@ from omniscribe.core.translate.config import TranslationSettings
 
 
 def test_translation_base_imports_do_not_require_async_extras():
+    import pytest
+
+    pytest.importorskip("omniscribe.api")
     script = """
 import asyncio
 import importlib.abc

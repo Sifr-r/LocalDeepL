@@ -131,6 +131,17 @@ class JsonFormatter(logging.Formatter):
         }
     )
 
+    _SENSITIVE_KEY_SUBSTRINGS: tuple[str, ...] = (
+        "token",
+        "secret",
+        "password",
+        "api_key",
+        "apikey",
+        "auth",
+        "credential",
+        "private_key",
+    )
+
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
             "timestamp": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
@@ -144,14 +155,18 @@ class JsonFormatter(logging.Formatter):
             payload["stack_info"] = self.formatStack(record.stack_info)
         # Surface caller-supplied ``extra={...}`` at the top level so
         # request IDs and job IDs land in the same JSON object as the
-        # message they annotate.
+        # message they annotate. Scrub sensitive credential fields.
         for key, value in record.__dict__.items():
             if key in self._RESERVED_KEYS or key.startswith("_"):
                 continue
             if key in payload:
                 # Don't clobber the canonical fields above.
                 continue
-            payload[key] = _jsonable(value)
+            lower_key = key.lower()
+            if any(sub in lower_key for sub in self._SENSITIVE_KEY_SUBSTRINGS):
+                payload[key] = "<redacted>"
+            else:
+                payload[key] = _jsonable(value)
         return json.dumps(payload, default=str, ensure_ascii=False)
 
 

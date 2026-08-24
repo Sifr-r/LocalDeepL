@@ -38,9 +38,12 @@ from omniscribe.core.workflows import (
     HybridEngine,
     ProgressCallback,
     WarningCallback,
+    parse_page_range,
 )
 from omniscribe.core.workflows.base import CancelCheck
 from omniscribe.core.workflows.repair import RepairOptions
+
+__all__ = ["OCRPipeline", "parse_page_range"]
 
 if TYPE_CHECKING:
     from omniscribe.core.callbacks import BlockCallbackSet

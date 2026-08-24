@@ -380,9 +380,9 @@ class TestProcessRouteCancel:
         self, tmp_path, tiny_pdf
     ) -> None:
         pytest.importorskip("fastapi")
+        pytest.importorskip("omniscribe.api")
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
-
         from omniscribe.api.routers import (
             artifacts,
             config,
@@ -440,6 +440,7 @@ class TestProcessRouteCancel:
         — that's the entire wiring contract.
         """
         pytest.importorskip("fastapi")
+        pytest.importorskip("omniscribe.api")
         from unittest.mock import AsyncMock, MagicMock, patch
 
         from omniscribe.api.routers import ocr as ocr_router

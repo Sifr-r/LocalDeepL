@@ -453,9 +453,21 @@ class EngineBase:
 
         def _write_and_collect_text() -> dict[int, list[str]]:
             if isinstance(writer, DocumentResultWriter):
-                writer.write_document_result(
-                    input_path, output_path, document_result, dpi, page_nums=page_nums
-                )
+                import inspect
+
+                sig = inspect.signature(writer.write_document_result)
+                if "page_nums" in sig.parameters:
+                    writer.write_document_result(
+                        input_path,
+                        output_path,
+                        document_result,
+                        dpi,
+                        page_nums=page_nums,
+                    )
+                else:
+                    writer.write_document_result(
+                        input_path, output_path, document_result, dpi
+                    )
                 # Lossless path: build the text-only view straight from
                 # the IR — no to_pages_data round-trip needed.
                 return {

@@ -25,9 +25,7 @@ from .orchestrator import (
     TrustOrchestrator,
     _DefaultTrustOrchestrator,
     build_trust_orchestrator,
-)
-from .orchestrator import (
-    run as _run,
+    run,
 )
 from .types import (
     BlockTrust,
@@ -43,7 +41,7 @@ def run_trust_scored_blocks(
     *args: object, **kwargs: object
 ) -> object:  # pragma: no cover - alias
     """Spec-named alias for :func:`omniscribe.core.ocr_quality.orchestrator.run`."""
-    return _run(*args, **kwargs)  # type: ignore[arg-type]
+    return run(*args, **kwargs)  # type: ignore[arg-type]
 
 
 __all__ = [

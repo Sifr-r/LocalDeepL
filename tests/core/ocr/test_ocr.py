@@ -236,6 +236,21 @@ class TestEnsureModelLoaded:
         )
         asyncio.run(ocr.ensure_model_loaded())
 
+    def test_passes_repo_prefix_and_tag_tolerant(self):
+        # User passes "olmocr-2-7b" but LM Studio loaded "allenai/olmocr-2-7b"
+        ocr = _make_ocr_with_fake_client(
+            "olmocr-2-7b",
+            _fake_models_client(["allenai/olmocr-2-7b"]),
+        )
+        asyncio.run(ocr.ensure_model_loaded())
+
+        # User passes "allenai/olmocr-2-7b:latest"
+        ocr_tagged = _make_ocr_with_fake_client(
+            "allenai/olmocr-2-7b:latest",
+            _fake_models_client(["allenai/olmocr-2-7b"]),
+        )
+        asyncio.run(ocr_tagged.ensure_model_loaded())
+
     def test_raises_with_helpful_message_on_mismatch(self):
         # The exact scenario from the issue: user passed qwen3-vl-8b but
         # LM Studio has olmocr loaded. Must surface this loudly.

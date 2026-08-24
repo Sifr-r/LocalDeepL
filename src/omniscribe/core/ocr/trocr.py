@@ -85,7 +85,6 @@ class TrOCREngine:
         from PIL import Image
 
         self._ensure_loaded()
-        loop = asyncio.get_event_loop()
 
         def _run() -> TrOCRResult:
             assert self._pipeline is not None
@@ -102,7 +101,7 @@ class TrOCREngine:
                     confidence = _heuristic_confidence(text)
             return TrOCRResult(text=text.strip(), confidence=confidence)
 
-        return await loop.run_in_executor(None, _run)
+        return await asyncio.to_thread(_run)
 
 
 def _heuristic_confidence(text: str) -> float:

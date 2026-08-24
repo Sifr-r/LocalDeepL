@@ -228,6 +228,26 @@ def parse_glm_layout_details(
     return GroundedResponse(blocks=blocks, page_sizes=page_sizes)
 
 
+def _recover_truncated_json_array(text: str) -> Any | None:
+    """Attempt to recover complete objects from an abruptly truncated JSON array."""
+    idx = text.rfind("}")
+    if idx == -1:
+        return None
+    candidate = text[: idx + 1].strip()
+    if candidate.startswith("["):
+        candidate = candidate + "]"
+    else:
+        open_bracket = candidate.find("[")
+        if open_bracket != -1:
+            candidate = candidate[open_bracket:] + "]"
+        else:
+            return None
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+
+
 def _parse_grounded_json(
     text: str,
     page_idx: int,
@@ -265,21 +285,24 @@ def _parse_grounded_json(
         # Defensive: open fence but closing dropped by truncation.
         raw = raw.lstrip("`").lstrip("json").lstrip().rstrip("`").rstrip()
 
-    # Try a direct parse; fall back to greediest array substring.
+    # Try a direct parse; fall back to greediest array substring and truncated recovery.
     data: Any
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
         m2 = _BARE_ARRAY.search(raw)
-        if not m2:
+        if m2:
+            try:
+                data = json.loads(m2.group(1))
+            except json.JSONDecodeError:
+                data = _recover_truncated_json_array(raw)
+        else:
+            data = _recover_truncated_json_array(raw)
+
+        if data is None:
             log_grounded_parse_failure(
-                raw, page_idx, ValueError("no array found in response")
+                raw, page_idx, ValueError("no valid array found in response")
             )
-            return []
-        try:
-            data = json.loads(m2.group(1))
-        except json.JSONDecodeError as e:
-            log_grounded_parse_failure(raw, page_idx, e)
             return []
 
     if isinstance(data, dict):

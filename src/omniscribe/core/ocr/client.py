@@ -48,9 +48,24 @@ async def _list_loaded_model_ids(client: AsyncOpenAI, api_base: str) -> list[str
 
 
 def _model_in_loaded(model: str, loaded: list[str]) -> bool:
-    """Case-insensitive membership check against a server's loaded model list."""
-    target = model.lower()
-    return any(m.lower() == target for m in loaded)
+    """Case-insensitive membership check against a server's loaded model list.
+
+    Matches exact IDs, base names (without org prefix like 'allenai/'),
+    and handles tag suffixes (such as ':latest').
+    """
+    target = model.strip().lower()
+    if not target:
+        return False
+    target_base = target.split("/")[-1].split(":")[0]
+
+    for loaded_id in loaded:
+        m = loaded_id.strip().lower()
+        if m == target:
+            return True
+        m_base = m.split("/")[-1].split(":")[0]
+        if target_base and target_base == m_base:
+            return True
+    return False
 
 
 def _format_model_not_loaded(api_base: str, model: str, loaded: list[str]) -> str:
