@@ -8,6 +8,41 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Rebuilt API on Cordis-style plugin harness** — the deleted
+  `src/omniscribe/api/` package is replaced by a plugin-harness
+  architecture: `src/omniscribe/harness/` (Context, Loader, Plugin
+  base, LIFO effect disposal) plus nine boot plugins under
+  `src/omniscribe/plugins/` (runtime, logging, state_backend,
+  artifacts, jobs, progress, providers, health, ocr) declared in the
+  shipped `resources/cordis.yml` tree. `server.py` loads the tree
+  inside the FastAPI lifespan; patch files (`OMNISCRIBE_CORDIS_PATCH`
+  or `<artifact_dir>/cordis.patch.yml`) and
+  `OMNISCRIBE_PLUGIN_<ID>__<FIELD>` env overrides layer on top, and a
+  malformed tree fails boot loud (`PluginLoadError`).
+
+  Routes restored: `POST /api/process` (sync, PDF blob +
+  `X-Text-Artifact-Id/Token` headers), `POST /api/process/async` +
+  `GET /api/process/status/{job_id}` + SSE
+  `GET /api/process/{job_id}/events`, `GET/DELETE /api/jobs` +
+  `GET /api/jobs/{job_id}/result` + `POST /api/jobs/{job_id}/cancel`,
+  `POST /api/progress/session` + `POST /api/progress/cancel/{channel_id}`
+  + `WS /ws/{channel_id}` (first-frame auth, NDJSON),
+  `GET /api/providers*`, `GET/POST /api/config` (+ `/api/config/ocr`
+  aliases), and the health/readiness probes. The route surface is
+  pinned by the regenerated `tests/openapi.json` snapshot.
+
+  State-backend env contract: `OMNISCRIBE_STATE_BACKEND` accepts
+  `memory` (default) or `sqlite` only; any other value fails boot.
+  The SQLite backend persists jobs + artifacts across restarts
+  (single WAL-mode file, default `<artifact_dir>/omniscribe-state.db`,
+  override `OMNISCRIBE_STATE_DB_PATH`).
+
+  Deferred to follow-up specs: translation / transcription /
+  glossary-import / extraction+export routes, the auth / rate-limit /
+  upload-size ASGI middlewares, Celery async dispatch, the Redis
+  state backend, and model pre-flight (`GET /v1/models`). The route
+  surface is currently unauthenticated — local trusted use only.
+
 - **LanceDB-backed lexicon store (replaces JSON + ChromaDB)** — the
   canonical glossary / translation lexicon is now a single embedded
   columnar vector database (`omniscribe.core.lexicon.LanceDBLexiconStore`)

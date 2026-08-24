@@ -31,6 +31,41 @@ image inputs have no text layer, making the pass a strict no-op there. Same
 fail-open contract: any per-page error degrades to the boxes merged so far,
 and each pass logs one INFO run summary per job.
 
+The HTTP layer mounts this pipeline through the plugin harness: `server.py`
+loads `resources/cordis.yml` inside the FastAPI lifespan, and the `ocr`
+plugin's `pipeline_bridge.py` assembles one `OCRPipeline` per upload
+(shared Surya aligner singleton, request-scoped LLM coordinates).
+
+## Plugin Tree
+
+Boot order (from `resources/cordis.yml`; plugins apply top-to-bottom and
+dispose LIFO on shutdown):
+
+```text
+cordis.yml
+├─ runtime        RuntimeService: RuntimeSettings holder, readiness flag,
+│                 artifact/channel prune cadence (HarnessReady event)
+├─ logging        structured logging (text|json format, level) — side effect only
+├─ state_backend  StateBackend service: memory (default) or sqlite
+│                 (OMNISCRIBE_STATE_BACKEND); single registration site
+├─ artifacts      ArtifactStore: opaque id/token blob store over the backend
+├─ jobs           JobQueue: single-worker async queue + JobQueued/Started/
+│                 Completed/Failed/Cancelled events; resolves the JobRunner
+│                 the ocr plugin registers at claim time
+├─ progress       ProgressService: one-shot session tokens, WS attach with
+│                 cross-loop send marshaling; /api/progress/* + /ws/{channel_id}
+├─ providers      provider catalog + model discovery (/api/providers*)
+├─ health         liveness (/api/health, /api/healthz) and readiness (/ready, /readyz)
+└─ ocr            OCRService + JobRunner; /api/process*, /api/jobs*, /api/config*,
+                  SSE /api/process/{job_id}/events; seeds the quality-loop defaults
+```
+
+Every plugin declares a pydantic `Schema` for its config row; the Loader
+validates the merged config (YAML row ← patch files ←
+`OMNISCRIBE_PLUGIN_<ID>__<FIELD>` env overrides) before `apply`, so a bad
+tree fails boot loud with `PluginLoadError`. Services are injected by
+Protocol (`ctx.inject(JobQueue)`), never by module singleton.
+
 ## Directory Responsibilities
 
 | Path | Single Responsibility |
@@ -83,43 +118,10 @@ and each pass logs one INFO run summary per job.
 | `src/omniscribe/core/workflows/__init__.py` | Re-exports `EngineBase`, `HybridEngine`, `GroundedEngine`, public helper `parse_page_range`, constants, and callback type aliases |
 | `src/omniscribe/resources/dictionaries/` | Packaged compiled spellcheck dictionaries loaded before legacy repository-root dictionaries |
 | `src/omniscribe/resources/calibration/` | Pre-trained model confidence calibration files (e.g. `qwen2_5_vl_72b.json`) |
-| `src/omniscribe/api/routers/config.py` | Runtime configuration and model discovery routes (`GET/POST /api/config`) |
-| `src/omniscribe/api/routers/ocr.py` | Thin `POST /api/process` orchestrator — validate the request, build the pipeline, run it, build the response, record the job; delegates all heavy lifting to `api/services/ocr/` |
-| `src/omniscribe/api/routers/websocket.py` | Token-bound WebSocket progress transport and progress session issuance |
-| `src/omniscribe/api/routers/jobs.py` | `GET/DELETE /api/jobs` — recent job history and clear-all |
-| `src/omniscribe/api/routers/artifacts.py` | Token-bound artifact download routes for text, metadata, and document exports |
-| `src/omniscribe/api/routers/translation.py` | Synchronous `POST /api/translate`, async `POST /api/translate/async`, tree translation `POST /api/translate/tree`, glossary and NLLB endpoints |
-| `src/omniscribe/api/routers/transcription.py` | Voice transcription and transcription provider configuration routes (`POST /api/transcribe`, `GET/POST /api/config/transcription`) |
-| `src/omniscribe/api/routers/glossary_imports.py` | Local glossary library and external URL glossary import routes |
-| `src/omniscribe/api/routers/health.py` | Liveness (`/health`, `/healthz`) and readiness (`/ready`, `/readyz`) probe endpoints |
-| `src/omniscribe/api/routers/extraction.py` | `POST /api/extract` — structured data extraction, plus document export routes |
-| `src/omniscribe/api/routers/state.py` | Compatibility aliases over the `LocalStateBackend` singleton (including `lexicon_store: LexiconStore`) |
-| `src/omniscribe/api/routers/providers.py` | Multi-format provider catalog and provider detail routes (backed by `ProviderManager`) |
-| `src/omniscribe/api/routers/common.py` | Shared router helpers: `_stable_server_error`, `_extract_bearer_token`, `_path_exists`, `_cleanup` |
-| `src/omniscribe/api/schemas/__init__.py` | Re-exports the typed request models and StrEnums |
-| `src/omniscribe/api/schemas/requests.py` | `ConfigUpdate`, `ProcessSettings`, `TranslationRequest`, `ExtractionRequest`, `ExtractionTemplate`, `DocumentExportRequest`, `DocumentExportFormat`, `ExportDocxRequest`; enums: `PipelineMode`, `DenseMode`, `SpellcheckMode`, `DocumentProcessorName` |
 | `src/omniscribe/core/ocr/multi_format_client.py` | Multi-format LLM completion dispatcher (`openai_compatible`, `anthropic_compatible`, `ollama_compatible`), vision base64 payloads, exponential backoff resilience retries, and timeout boundaries |
-| `src/omniscribe/api/services/provider_manager.py` | `ProviderManager` service — 11-provider catalog templates with documentation URLs, system environment variable auto-discovery (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OLLAMA_HOST`, etc.), disk persistence (`~/.config/omniscribe/providers.yaml`), active provider switching, and model discovery delegation |
-| `src/omniscribe/api/services/ocr/settings.py` | Form-parameter resolution for `POST /api/process` — "form field wins, config falls back" merge that produces a validated `ProcessSettings` |
-| `src/omniscribe/api/services/ocr/pipeline_factory.py` | Pipeline construction for `POST /api/process` — branches on `pipeline_mode` (hybrid vs grounded), wires WebSocket-bound per-block callbacks, decides whether to plug in the TrOCR handwriting specialist, and exposes backend-model verification |
-| `src/omniscribe/api/services/ocr/response.py` | Response assembly for `POST /api/process` — validation-error JSON, FileResponse construction with token-bound headers (`X-Document-Quality`, `X-Document-Structure`, `X-Document-Sections`, artifact-id/token pairs), and stable error envelopes |
-| `src/omniscribe/api/services/ocr/chunked_runner.py` | Bounded-page PDF execution, per-chunk progress frames, text/page remapping, and merged searchable-PDF output |
-| `src/omniscribe/api/services/ocr/jobs.py` | Single-worker asyncio OCR queue, background job lifecycle records, status serialization, and cancellation semantics |
-| `src/omniscribe/api/services/transcription.py` | Audio transcription service boundary, input validation, and provider execution |
-| `src/omniscribe/api/services/tree_artifact.py` | Document tree artifact persistence and retrieval |
-| `src/omniscribe/api/services/http_fetch.py` | SSRF-safe remote document fetcher with redirect and private IP guards |
-| `src/omniscribe/api/services/state/base.py` | `StateBackend` protocol and process-local `LocalStateBackend`, including artifacts, history, progress, OCR queue, and `lexicon_store` |
-| `src/omniscribe/api/services/state/redis.py` | Redis-backed distributed state backend implementation |
-| `src/omniscribe/api/services/uploads.py` | API upload validation, stable error constants, temporary-file cleanup, and opaque text artifact IDs |
-| `src/omniscribe/api/middleware/` | Dedicated ASGI security middlewares: `auth.py` (`BearerAuthMiddleware`), `upload_guard.py` (`MaxUploadSizeMiddleware`), `rate_limit.py` (`RateLimitMiddleware`), `settings.py` (`SecuritySettings` env parsing + upload-cap clamps) |
-| `src/omniscribe/api/services/artifacts.py` | `TextArtifactStore`, `PageText`, `TextArtifactHandle`, and the opaque artifact-id / token primitives shared by text, metadata, and export stores |
-| `src/omniscribe/api/services/jobs.py` | `JobHistory`, `JobRecord`, `JobStatus` — durable job history with per-page failure tracking |
-| `src/omniscribe/api/services/progress.py` | `ProgressService`, `ProgressChannel`, stage weights, channel/session token validation |
-| `src/omniscribe/api/services/document_metadata.py` | Compact JSON report builder and atomic writer for token-bound `DocumentResult` metadata artifacts |
-| `src/omniscribe/api/services/document_exports.py` | Token-bound JSON, Markdown, text, Docling-compatible, and MinerU-compatible export artifact builder |
-| `src/omniscribe/api/services/workflow.py` | Aggregated orchestration tracking, unifying Celery and synchronous pipeline state |
-| `src/omniscribe/api/services/ai.py` | AI service module backing `POST /api/translate` and `POST /api/extract` — OpenAI-compatible calls with fenced-JSON parsing, retry, and stable error mapping |
-| `src/omniscribe/api/tasks.py` | Celery background tasks for translation, glossary imports, and distributed OCR processing |
+| `src/omniscribe/harness/` | Cordis-style plugin harness: `context.py` (Protocol-keyed services, LIFO effects, event bus, router queue), `loader.py` (YAML tree + patches + env overrides, fails loud), `plugin.py` (Plugin base), plus `errors.py`, `events.py`, `effects.py`, `service.py`, `config.py` |
+| `src/omniscribe/plugins/` | The nine boot plugins (runtime, logging, state_backend, artifacts, jobs, progress, providers, health, ocr) that register services and mount every `/api` router; see the Plugin Tree section |
+| `src/omniscribe/resources/cordis.yml` | Shipped plugin boot tree; patched via `OMNISCRIBE_CORDIS_PATCH` or `<artifact_dir>/cordis.patch.yml` |
 | `src/omniscribe/utils/structured_logging.py` | Structured JSON logging formatter and handlers |
 | `src/omniscribe/utils/prompt_safety.py` | Prompt injection detection and input sanitization |
 | `src/omniscribe/utils/image.py` | Image crop, blank-region detection, and crop encoding helpers |
@@ -159,79 +161,68 @@ list can be passed via `ConfigUpdate.document_processors` or the multipart OCR
 
 ## Shared State and Artifacts
 
-Process-local singletons live in `src/omniscribe/api/routers/state.py` and are
-imported by every router that needs them. Three independent `TextArtifactStore`
-instances back the three artifact surfaces:
+All persistent and process-local state flows through the `StateBackend`
+service registered by the `state_backend` plugin — no router touches a
+module singleton. Two backends ship: `MemoryStateBackend` (default) and
+`SQLiteStateBackend` (`OMNISCRIBE_STATE_BACKEND=sqlite`). The backend
+covers three domains: artifacts, jobs, and progress channels.
 
-| Singleton | Surface | Token-bound header | Read endpoint |
-| --- | --- | --- | --- |
-| `text_artifacts` | Per-job searchable text | `X-Text-Artifact-Id` / `X-Text-Artifact-Token` | `GET /api/text/{artifact_id}` |
-| `metadata_artifacts` | Compact `DocumentResult` page/block metadata | `X-Document-Metadata-Artifact-Id` / `X-Document-Metadata-Artifact-Token` | `GET /api/metadata/{artifact_id}` |
-| `export_artifacts` | JSON / Markdown / text / Docling / MinerU exports | `X-Document-Export-Artifact-Id` / `X-Document-Export-Artifact-Token` | `GET /api/export/{artifact_id}` |
-
-`job_history` (`JobHistory`), `progress_service` (`ProgressService`),
-`lexicon_store` (`LanceDBLexiconStore` / `LexiconStore`), and
-`ocr_job_queue` (`OCRJobQueue`) round out the process-local state. The store implementation lives in
-`api/services/artifacts.py` and the token format is the same opaque
-hex-id / bearer-token pair across all three artifact surfaces.
+The `artifacts` plugin layers an `ArtifactStore` on top: every artifact is
+an opaque id + bearer token pair; sync `/api/process` returns them as
+`X-Text-Artifact-Id` / `X-Text-Artifact-Token` headers, and async jobs
+expose the same pair through `JobStatusResponse`. The metadata/export
+artifact surfaces are deferred with the extraction routes.
 
 ### Background OCR lifecycle
 
-`POST /api/process/async` validates and persists the upload before submitting a
-runner to the single-worker `OCRJobQueue`. The application lifespan starts the
-worker before serving requests and stops it during shutdown. Observable states
-are `pending`, `processing`, `complete`, and `error`; status is available at
-`GET /api/process/status/{job_id}`. `POST /api/jobs/{job_id}/cancel` removes a
-pending job or marks an in-flight job as a stable terminal error without letting
-the runner's eventual return overwrite the cancellation. Queue and artifact
-indexes are in-memory and are therefore lost on restart; horizontal scaling
-requires a shared backend.
+`POST /api/process/async` validates and persists the upload before submitting
+a payload to the single-worker `JobQueue` (`plugins/jobs.py`). The plugin
+starts the worker at apply time and stops it during dispose. Observable HTTP
+states are `pending`, `processing`, `complete`, and `error`; status is
+available at `GET /api/process/status/{job_id}` and as an SSE replay at
+`GET /api/process/{job_id}/events`. `POST /api/jobs/{job_id}/cancel` removes a
+pending job or marks an in-flight job as a stable terminal error without
+letting the runner's eventual return overwrite the cancellation. With the
+memory backend queue and artifact indexes are lost on restart;
+`OMNISCRIBE_STATE_BACKEND=sqlite` persists them.
 
 ### Authentication and runtime security
 
-`SecuritySettings.from_env()` configures the ASGI boundary. A per-service
-`OMNISCRIBE_OCR_AUTH_TOKEN` or `OMNISCRIBE_TRANSLATION_AUTH_TOKEN` takes
-precedence over the global `OMNISCRIBE_AUTH_TOKEN` for its route group.
-`OMNISCRIBE_MAX_UPLOAD_MB`, `OMNISCRIBE_RATE_LIMIT_PER_MIN`, and
-`OMNISCRIBE_CORS_ORIGINS` control upload limits, per-IP request throttling, and
-CORS respectively. Artifact IDs use a separate artifact token supplied through
-`Authorization: Bearer ...`; artifact tokens must not be placed in query strings.
+The historical ASGI security boundary (bearer auth via
+`OMNISCRIBE_AUTH_TOKEN`, per-IP rate limiting, `Content-Length` upload
+guard) was part of the removed `api/middleware/` package and is deferred in
+the harness rebuild — the current route surface is unauthenticated and
+intended for local trusted use only. Upload size is still enforced per
+request by the `ocr` plugin (`max_upload_mb` plugin config, falling back to
+`OMNISCRIBE_MAX_UPLOAD_MB`). Artifact reads remain token-bound.
 
 ## Web API Surface (non-exhaustive)
 
-| Method | Path | Router | Notes |
+Rebuilt surface (pinned by `tests/openapi.json`):
+
+| Method | Path | Plugin | Notes |
 | --- | --- | --- | --- |
-| `GET` / `POST` | `/api/config` | `config` | Read or update shared runtime configuration |
-| `GET` / `POST` | `/api/config/ocr` | `config` | OCR-specific runtime configuration |
-| `POST` | `/api/config/ocr/auth` | `config` | Rotate the OCR bearer token at runtime |
-| `GET` / `POST` | `/api/config/translation` | `config` | Translation-specific runtime configuration |
-| `POST` | `/api/config/translation/auth` | `config` | Rotate the translation bearer token at runtime |
-| `GET` / `POST` | `/api/config/transcription` | `transcription` | Transcription provider configuration |
-| `GET` | `/api/models`, `/api/models/ocr`, `/api/models/translation`, `/api/models/transcription` | `config` / `transcription` | Backend model discovery (combined, per-service) |
-| `GET` | `/api/providers`, `/api/providers/{provider_id}`, `/api/providers/{provider_id}/models`, `/api/providers/active`, `/api/providers/templates` | `providers` | Provider catalog, details, and active-provider switching |
-| `POST` | `/api/providers`, `/api/providers/active` | `providers` | Add a provider; set the active provider |
-| `DELETE` | `/api/providers/{provider_id}` | `providers` | Remove a provider |
-| `GET` | `/health`, `/healthz` (alias), `/ready`, `/readyz` (alias) | `health` | Liveness and readiness probes; bypass bearer auth |
-| `POST` | `/api/process` | `ocr` | Canonical synchronous multipart OCR; `/process` is the legacy alias |
-| `POST` | `/api/process/async` | `ocr` | Queue background OCR and return `202` with a job ID; `/process/async` is the legacy alias |
-| `GET` | `/api/process/status/{job_id}` | `ocr` | Background OCR lifecycle status; `/process/status/{job_id}` is the legacy alias |
-| `POST` | `/api/jobs/{job_id}/cancel` | `jobs` | Cancel pending/running background OCR; terminal jobs are idempotent |
-| `GET` / `DELETE` | `/api/jobs` | `jobs` | Recent completed-job history; `DELETE` clears history and text artifacts |
-| `POST` | `/api/progress/session` | `websocket` | Issue an opaque progress channel and session token |
-| `POST` | `/api/progress/cancel/{channel_id}` | `websocket` | Request cancellation for an active progress channel |
-| `WS` | `/ws/{channel_id}` | `websocket` | Token-bound progress stream; first inbound frame must be `{"type":"auth","session_token":...}`, then accepts `{"type":"cancel"}` |
-| `GET` | `/api/text/{artifact_id}` | `artifacts` | Text artifact; aliases: `/text/...` and `/api/artifacts/text/...` |
-| `GET` | `/api/metadata/{artifact_id}` | `artifacts` | Metadata artifact; aliases: `/metadata/...` and `/api/artifacts/metadata/...` |
-| `GET` | `/api/export/{artifact_id}` | `artifacts` | Export artifact; aliases: `/export/...` and `/api/artifacts/export/...` |
-| `POST` | `/api/export/document` | `artifacts` | Build a token-bound JSON, Markdown, text, Docling, or MinerU artifact |
-| `POST` | `/api/export/docx`, `/api/export/docx-tree`, `/api/export/html`, `/api/export/blocktree` | `artifacts` / `extraction` | Document-format exports |
-| `POST` | `/api/translate`, `/api/translate/tree`, `/api/translate/nllb` | `translation` | Synchronous translation surfaces |
-| `POST` | `/api/translate/async` | `translation` | Celery + Redis translation job (optional extra) |
-| `GET` | `/api/translate/status/{job_id}` | `translation` | Poll a Celery translation job |
-| `POST` | `/api/extract` | `extraction` | Structured extraction with invoice, resume, academic, or custom templates |
-| `POST` | `/api/transcribe` | `transcription` | Speech-to-text via the configured transcription provider |
-| `POST` | `/api/glossary`, `/api/glossary/import`, `/api/glossary/import/url` | `translation` / `glossary_imports` | Glossary management and imports |
-| `GET` / `POST` / `DELETE` | `/api/glossary/library...` | `glossary_imports` | Local glossary library management |
+| `GET` / `POST` | `/api/config` | `ocr` | Read or update the shared runtime config store |
+| `GET` / `PUT` | `/api/config/ocr` | `ocr` | OCR alias of the same store |
+| `GET` | `/api/providers`, `/api/providers/{provider_id}`, `/api/providers/{provider_id}/models` | `providers` | Provider catalog and model discovery |
+| `GET` | `/api/health`, `/api/healthz` | `health` | Liveness probes |
+| `GET` | `/ready`, `/readyz` | `health` | Readiness probes (503 until the harness is ready) |
+| `POST` | `/api/process` | `ocr` | Synchronous multipart OCR; PDF blob + artifact headers |
+| `POST` | `/api/process/async` | `ocr` | Queue background OCR, returns `202` + job id |
+| `GET` | `/api/process/status/{job_id}` | `ocr` | Background OCR lifecycle status |
+| `GET` | `/api/process/{job_id}/events` | `ocr` | SSE replay of the job's lifecycle events |
+| `GET` / `DELETE` | `/api/jobs` | `ocr` | Job list; `DELETE` clears all jobs |
+| `GET` | `/api/jobs/{job_id}/result` | `ocr` | Token-bound result PDF download |
+| `POST` | `/api/jobs/{job_id}/cancel` | `ocr` | Cancel pending/running job; terminal jobs are idempotent |
+| `POST` | `/api/progress/session` | `progress` | Issue an opaque progress channel + one-shot session token |
+| `POST` | `/api/progress/cancel/{channel_id}` | `progress` | Request cancellation for a progress channel |
+| `WS` | `/ws/{channel_id}`, `/api/progress/ws/{channel_id}` | `progress` | Token-bound progress stream; auth via first `{"type":"auth",...}` frame (or `?token=`), then accepts `{"type":"cancel"}` |
+
+Deferred in the harness rebuild (routes not mounted): `/api/models*`,
+provider mutation routes (`POST/DELETE /api/providers*`),
+`/api/text|metadata|export/*` artifact reads, `/api/export/*` builders,
+`/api/translate*`, `/api/extract`, `/api/transcribe`, and
+`/api/glossary*` — see the design spec's out-of-scope list.
 
 ## Change Blueprint
 

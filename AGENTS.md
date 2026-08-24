@@ -48,7 +48,8 @@ Source directories are split into **core** (OCR pipeline and API surface) and **
 | Path | Scope |
 | --- | --- |
 | `src/omniscribe/core/` | OCR engines, alignment, PDF/image handling, document model, workflows, processors, translation, grounded backends, OCR quality trust layer |
-| `src/omniscribe/api/` | FastAPI routers, schemas, services, security middleware, Celery tasks |
+| `src/omniscribe/harness/` | Cordis-style plugin harness: Context (services/events/effects/router queue), Loader (YAML + patches + env overrides), Plugin base |
+| `src/omniscribe/plugins/` | The nine boot plugins (runtime, logging, state_backend, artifacts, jobs, progress, providers, health, ocr) and their Protocol seams |
 | `src/omniscribe/pipeline.py` | `OCRPipeline` facade |
 | `src/omniscribe/server.py` | FastAPI app entry point |
 | `src/omniscribe/config.py` | Runtime settings |
@@ -140,37 +141,19 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/core/workflows/repair.py` | `QualityRepairLoop` / `RepairOptions` — engine-agnostic block-level low-confidence re-OCR with stall guard and fail-open |
 | `src/omniscribe/resources/dictionaries/` | Packaged spellcheck dictionaries |
 | `src/omniscribe/resources/calibration/` | Pre-trained model confidence calibration files (e.g. `qwen2_5_vl_72b.json`) |
-| `src/omniscribe/api/routers/config.py` | Runtime configuration and model discovery |
-| `src/omniscribe/api/routers/ocr.py` | OCR upload, process, and synchronous AI routes; execution internals live in `api/services/ocr/execution.py` |
-| `src/omniscribe/api/routers/providers.py` | Multi-format provider catalog, details, and active provider switching |
-| `src/omniscribe/api/routers/transcription.py` | Voice transcription and transcription provider configuration |
-| `src/omniscribe/api/routers/glossary_imports.py` | Terminology library and file/URL glossary import routes |
-| `src/omniscribe/api/routers/health.py` | Liveness (`/health`, `/healthz`) and readiness (`/ready`, `/readyz`) probe endpoints |
-| `src/omniscribe/api/routers/websocket.py` | Token-bound WebSocket progress transport |
-| `src/omniscribe/api/routers/jobs.py` | `GET/DELETE /api/jobs` — job history and clear-all |
-| `src/omniscribe/api/routers/artifacts.py` | Token-bound artifact download routes (text, metadata, exports) |
-| `src/omniscribe/api/routers/translation.py` | Synchronous and async translation routes |
-| `src/omniscribe/api/routers/extraction.py` | `POST /api/extract` and `POST /api/export/*` routes |
-| `src/omniscribe/api/routers/state.py` | Module-level singletons (`text_artifacts`, `metadata_artifacts`, `export_artifacts`, `job_history`, `progress_service`) — `backend` is the canonical access path; the eight module-level aliases mirror `state.backend.*` (six backend-backed stores plus `config_store` and `lexicon_store`) |
-| `src/omniscribe/api/services/state/base.py` | `StateBackend` runtime-checkable Protocol + `LocalStateBackend` (in-memory, default) + `build_state_backend(settings)` factory. The factory is the single boundary that fails loud on an unknown `OMNISCRIBE_STATE_BACKEND` value |
-| `src/omniscribe/api/services/state/` | State backend subpackage: `base.py` (Protocol + local backend + factory), `redis.py`, `sqlite.py` |
-| `src/omniscribe/api/services/ocr/` | OCR service subpackage behind `routers/ocr.py`: `settings.py`, `pipeline_factory.py`, `response.py`, `chunked_runner.py`, `jobs.py`, and `execution.py` (process execution internals) |
-| `src/omniscribe/api/routers/common.py` | Shared router helpers (`_stable_server_error`, `_extract_bearer_token`, `_path_exists`) |
-| `src/omniscribe/api/schemas/requests.py` | `ConfigUpdate`, `ProcessSettings`, `TranslationRequest`, `ExtractionRequest`, `ExtractionTemplate`, `DocumentExportRequest`, `DocumentExportFormat`, `ExportDocxRequest`; enums: `PipelineMode`, `DenseMode`, `SpellcheckMode`, `DocumentProcessorName` |
-| `src/omniscribe/api/services/provider_manager.py` | `ProviderManager` service — provider templates, env-var discovery, disk persistence, and active provider switching |
-| `src/omniscribe/api/services/uploads.py` | API upload validation, stable error constants, temporary-file cleanup, opaque text artifact IDs |
-| `src/omniscribe/api/services/helpers.py` | Merged API helper module (former `api_helpers.py` + `config_helpers.py`) |
-| `src/omniscribe/api/middleware/` | Dedicated ASGI security middlewares: `BearerAuthMiddleware` (constant-time `secrets.compare_digest`), `MaxUploadSizeMiddleware` (rejects on `Content-Length`), `RateLimitMiddleware` (per-IP 60s sliding window, in-memory) |
-| `src/omniscribe/api/middleware/settings.py` | `SecuritySettings` env parsing, upload-cap clamps, and per-service auth token resolution used by the ASGI middlewares |
-| `src/omniscribe/api/services/artifacts.py` | `TextArtifactStore`, `PageText`, `TextArtifactHandle`, opaque id / token primitives |
-| `src/omniscribe/api/services/jobs.py` | `JobHistory`, `JobRecord`, `JobStatus` |
-| `src/omniscribe/api/services/state/redis.py` | `RedisStateBackend` (opt-in; requires `OMNISCRIBE_STATE_BACKEND=redis` + a Redis server) — Redis-backed artifact metadata + job history for horizontal scaling across multiple uvicorn workers |
-| `src/omniscribe/api/services/state/sqlite.py` | `SQLiteStateBackend` (opt-in; requires `OMNISCRIBE_STATE_BACKEND=sqlite`) — single-file persistent state for the local-first deployment shape. WAL-mode SQLite file (default `<artifact_dir>/omniscribe-state.db`; override with `OMNISCRIBE_STATE_DB_PATH`) holds the three artifact tables + jobs table; `ProgressService` / `GlossaryLibrary` / `OCRJobQueue` remain in-memory because they reference live channels |
-| `src/omniscribe/api/services/progress.py` | `ProgressService`, `ProgressChannel`, stage weights |
-| `src/omniscribe/api/services/document_metadata.py` | Token-bound metadata report artifacts for optional document processor outputs |
-| `src/omniscribe/api/services/document_exports.py` | Token-bound document export artifacts |
-| `src/omniscribe/api/services/workflow.py` | Web/API workflow summaries |
-| `src/omniscribe/api/services/ai.py` | Backing AI service for extraction and translation routes |
+| `src/omniscribe/harness/context.py` | Harness `Context`: Protocol-keyed services, LIFO effect disposal, event subscriptions, `mount_router`/`routes()` |
+| `src/omniscribe/harness/loader.py` | `Loader(ctx).load(base, patch_paths=())` — parses `cordis.yml` plugin rows, deep-merges patches, applies `OMNISCRIBE_PLUGIN_<ID>__<FIELD>` env overrides, fails loud via `PluginLoadError` |
+| `src/omniscribe/harness/plugin.py` | `Plugin` base class (id, `Schema` ClassVar, config dict, `apply`/`dispose`) |
+| `src/omniscribe/resources/cordis.yml` | Shipped nine-plugin boot tree; operator patches layer via `OMNISCRIBE_CORDIS_PATCH` or `<artifact_dir>/cordis.patch.yml` |
+| `src/omniscribe/plugins/runtime.py` | `RuntimeService` — settings holder, readiness flag, artifact/channel prune cadence |
+| `src/omniscribe/plugins/logging.py` | Structured logging setup (`format: text\|json`, `level`) applied at boot |
+| `src/omniscribe/plugins/state_backend.py` | `StateBackend` Protocol (artifacts + jobs + channels) + `MemoryStateBackend` (default) + `SQLiteStateBackend` (opt-in via `OMNISCRIBE_STATE_BACKEND=sqlite`); the single registration site for the backend service |
+| `src/omniscribe/plugins/artifacts.py` | `ArtifactStore` — opaque id/token blob store over the state backend |
+| `src/omniscribe/plugins/jobs.py` | `JobQueue` — single-worker async queue, job lifecycle events (`JobQueued`/`JobStarted`/`JobCompleted`/`JobFailed`/`JobCancelled`), `JobRunner` resolved at claim time |
+| `src/omniscribe/plugins/progress.py` | `ProgressService` — one-shot session tokens, WebSocket attach with cross-loop send marshaling, cancel mirror |
+| `src/omniscribe/plugins/providers.py` | Provider catalog + model discovery (`GET /api/providers`, `/{id}`, `/{id}/models`) over the active LLM coordinates |
+| `src/omniscribe/plugins/health.py` | Liveness (`/api/health`, `/api/healthz`) and readiness (`/ready`, `/readyz`) probes |
+| `src/omniscribe/plugins/ocr/` | OCR plugin package: `plugin.py` (sync/async process routes, job surface, `/api/config` store), `schemas.py` (`OCRRequest` form parsing, frontend response contracts), `pipeline_bridge.py` (HTTP→`OCRPipeline` assembly), `events.py` |
 | `src/omniscribe/utils/security.py` | SSRF target validation |
 | `src/omniscribe/core/imaging/handwriting.py` | Local handwriting image preprocessor |
 | `scripts/` | Developer utilities: confidence eval, fixture builder, debug/inspection scripts, bbox visualizers |
@@ -189,68 +172,64 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 - `document_processors=`: sequence of `DocumentProcessor` instances run after OCR cleanup and before PDF embedding
 - `page_preprocessor=`: opt-in `PagePreprocessor` for orientation/deskew/denoise/contrast/crop preprocessing on the hybrid image path
 
-## Plugin Context Migration Status
+## Plugin Harness
 
-The new `src/omniscribe/api/plugin/` package introduces a Cordis-style
-plugin container with Protocol-based seams and a "look up by Protocol,
-fall back to singleton" migration window. This section is the single
-source of truth for which seams are wired at boot and which fall through
-to the legacy `api/routers/state.py` singletons. **Last updated: 2026-08-22.**
+The API layer is a Cordis-style plugin harness (`src/omniscribe/harness/`)
+mounted inside the FastAPI lifespan in `server.py`. The boot tree ships as
+`src/omniscribe/resources/cordis.yml`; operators layer patch files
+(`OMNISCRIBE_CORDIS_PATCH`, or `<artifact_dir>/cordis.patch.yml` by default)
+and per-field env overrides (`OMNISCRIBE_PLUGIN_<ID>__<FIELD>`). Plugins are
+applied in file order, register services keyed by Protocol, mount routers
+via `ctx.mount_router`, and dispose their effects in LIFO order on shutdown.
+Unknown state backends or malformed rows fail boot loud (`PluginLoadError`).
+**Last updated: 2026-08-23.**
 
-| Seam | Protocol | Boot provider | Status |
+| Boot order | Plugin id | Module | Registers / mounts |
 |---|---|---|---|
-| `JobQueue` | `seams.JobQueue` | `local_job_queue_provider("local")` | REGISTERED — wraps `state.ocr_job_queue` |
-| `SessionLog` | `seams.SessionLog` | `memory_session_log_provider("memory")` | REGISTERED — new audit log |
-| `ConfigStore` | `seams.ConfigStore` | `config_store_provider("memory")` | REGISTERED — wraps `state.config_store` (Phase 6 F2-deeper) |
-| `ProgressService` | `seams.ProgressService` | `progress_service_provider("memory")` | REGISTERED — wraps `state.progress_service` (Phase 6 F2-deeper) |
-| `TextArtifactStore` | `seams.TextArtifactStore` | `text_artifact_store_provider("text"\|"metadata"\|"export")` | REGISTERED — three providers, one per domain (Phase 6 F2-deeper) |
+| 1 | `runtime` | `plugins/runtime.py` | `RuntimeService` (settings, readiness, prune cadence) |
+| 2 | `logging` | `plugins/logging.py` | Structured logging side effect (no service) |
+| 3 | `state_backend` | `plugins/state_backend.py` | `StateBackend` (`memory` default, `sqlite` opt-in) — the only registration site |
+| 4 | `artifacts` | `plugins/artifacts.py` | `ArtifactStore` over the state backend |
+| 5 | `jobs` | `plugins/jobs.py` | `JobQueue` + job lifecycle events; queue worker task |
+| 6 | `progress` | `plugins/progress.py` | `ProgressService` + `/api/progress/*` routes + `/ws/{channel_id}` |
+| 7 | `providers` | `plugins/providers.py` | `/api/providers` catalog and model discovery |
+| 8 | `health` | `plugins/health.py` | `/api/health`, `/api/healthz`, `/ready`, `/readyz` |
+| 9 | `ocr` | `plugins/ocr/` | `OCRService` + `JobRunner`, `/api/process*`, `/api/jobs*`, `/api/config*` |
 
-**Migration semantics.** During the migration window every consumer uses
-`runtime.get_<name>()` which returns the registered provider or `None`.
-Callers fall through to the legacy `api/routers/state.py` singletons
-when the lookup is `None`. This is intentional — it lets new and old code
-paths coexist on the same request.
+**Deferred capabilities** (not yet rebuilt on the harness — see
+`docs/superpowers/specs/2026-08-23-omniscribe-api-rebuild-design.md`):
+translation / transcription / glossary-import / extraction+export routes,
+the auth / rate-limit / upload-size ASGI middlewares, Celery async
+translation dispatch, the Redis state backend, and model pre-flight.
 
-**Toggle.** `PLUGIN_CONTEXT_ENABLED` is the cached value of
-`is_plugin_context_enabled()`, which is the canonical read. The active
-`ConfigStore` (when one is mounted on the live plugin context) is
-checked first; the `OMNISCRIBE_PLUGIN_CONTEXT` env var is the fallback.
-Runtime toggling IS supported: `set_plugin_context_enabled(value)`
-writes through to the active `ConfigStore` and updates the cache;
-`refresh_plugin_context_enabled()` re-reads after `create_app()` so an
-override that landed between process start and boot takes effect
-without a restart. Tests may call the setter freely.
-
-**Dual-write shim.** `api/services/artifacts.py` `TextArtifactStore.put`
-emits an `artifact.created` event to the plugin context as a
-best-effort secondary write. The primary write (the singleton store)
-never blocks on the plugin path. The dual-write `except Exception` is
-intentionally narrow in the new code (only `ServiceNotFoundError` and
-`ContextDisposedError` are swallowed) — programming bugs in
-`ArtifactStoreProjection._apply` propagate to the caller.
+**Testing.** `tests/conftest.py` ships three boot fixtures: `cordis_env`
+(temp nine-row tree, memory backend, small TTLs), `harness_ctx` (a loaded
+Context), and `api_client` (TestClient over `create_app()` — plugins boot
+inside lifespan on the portal loop that also serves the requests). Router
+contract tests live in `tests/routers/`, plugin unit tests in
+`tests/plugins/`, harness tests in `tests/harness/`.
 
 ## Web Notes
 
-- Browser translation and structured extraction use synchronous endpoints and do not require Redis.
-- `/api/translate/async` uses Celery, Redis, and LangGraph from the `async-translation` extra. The translation module reads glossary context from the LanceDB-backed `LexiconStore`; install the `lexicon` extra (lancedb + pyarrow + pandas + sentence-transformers). The store degrades gracefully when unavailable (empty `rag_context`). The `memory` extra name is kept as a one-release deprecation alias for `lexicon`.
+- The translation **core** (`core/translate/`, LangGraph workflow, LanceDB-backed `LexiconStore` via the `lexicon` extra) is intact, but its HTTP routes are deferred in the harness rebuild — `/api/translate` and `/api/translate/async` are not mounted yet. The `memory` extra name is kept as a one-release deprecation alias for `lexicon`.
 - `ALLOW_SSRF_LOCAL=true` is the local-development default. Set it to `false` when exposing the server to untrusted users.
-- **Auth**: set `OMNISCRIBE_AUTH_TOKEN` to require `Authorization: Bearer <token>` on every HTTP route (constant-time compare, ASGI middleware). Unset = open (local-desktop default).
+- **Auth**: the `OMNISCRIBE_AUTH_TOKEN` ASGI middleware is deferred in the harness rebuild; the rebuilt route surface is currently unauthenticated. Do not expose the server to untrusted users until the auth middleware plugin lands.
 - **VLM resilience**: every LLM call retries transient errors (429/5xx/connection resets) with exponential backoff, and a per-request circuit breaker fails fast after `OMNISCRIBE_CB_FAILURE_THRESHOLD` (default 5) consecutive failures. Tunables: `OMNISCRIBE_LLM_MAX_RETRIES` (default 2), `OMNISCRIBE_LLM_RETRY_BASE_DELAY` (default 1.0s), `OMNISCRIBE_CB_COOLDOWN` (default 30s).
-- **Model pre-flight**: each `/api/process` request verifies the configured model is actually loaded on the VLM server (`GET /v1/models`) before paying for conversion/detection — one extra HTTP round-trip per request, guarding against LM Studio's silent model fallback (issue #7).
-- **Quality repair loop**: `/api/process` re-OCRs blocks whose estimated confidence is below the target (crop-scoped, sequential, accept-only-while-improving) after block emission and before embedding. Defaults ON at the API layer (up to 2 extra VLM passes per low-confidence block); in-process `OCRPipeline.run` callers stay off unless they pass `repair_options=`. Per-request form fields `quality_loop_enabled` / `quality_target` (0.5–1.0) / `quality_max_retries` (0–5); env seeds `OMNISCRIBE_QUALITY_LOOP`, `OMNISCRIBE_QUALITY_TARGET`, `OMNISCRIBE_QUALITY_MAX_RETRIES`. WebSocket frames: `block_retry`, `block_revised`, `quality_summary`.
-- Web runtime settings are initialized in `api/routers/config.py`.
+- **Model pre-flight**: deferred in the harness rebuild. The historical `GET /v1/models` check that guarded against LM Studio's silent model fallback (issue #7) is not yet re-implemented; the OCR plugin only seeds the `verify_model` config key.
+- **Quality repair loop**: `/api/process` re-OCRs blocks whose estimated confidence is below the target (crop-scoped, sequential, accept-only-while-improving) after block emission and before embedding. Defaults ON at the API layer (up to 2 extra VLM passes per low-confidence block); in-process `OCRPipeline.run` callers stay off unless they pass `repair_options=`. Per-request form fields `quality_loop_enabled` / `quality_target` (0.5–1.0) / `quality_max_retries` (0–5); the boot defaults are seeded by the `ocr` plugin's `cordis.yml` config, which expands the env seeds `OMNISCRIBE_QUALITY_LOOP`, `OMNISCRIBE_QUALITY_TARGET`, `OMNISCRIBE_QUALITY_MAX_RETRIES`. WebSocket frames: `block_retry`, `block_revised`, `quality_summary`.
+- Web runtime settings live in the OCR plugin's in-memory `/api/config` store, seeded from `RuntimeSettings` at plugin apply time; LLM coordinate updates write through to the shared settings.
 - **Windows quick-start**: run `install.bat` to install `uv`, sync the web extra, and create Desktop / Start-Menu shortcuts. `start_app.vbs` boots Redis (via Docker) + Celery + uvicorn in visible terminal windows and opens the browser; it writes a timestamped append log to `start_app.log` next to itself. Closing the terminal windows terminates the processes. `e2e/test_ui.py` is the headless Playwright smoke test against `examples/dense.pdf`.
 - **Developer scripts** live in `scripts/`. The most useful for OCR quality work are `scripts/confidence_eval.py` (hybrid + grounded vs the `examples/*.pdf` fixtures) and `scripts/confidence_image.py` (single-image confidence). The rest are debug/inspection/visualization tools.
 - **Docker**: `Dockerfile` builds a `python:3.14-slim` runtime with the `web`, `async-translation`, and `preprocessing` extras. `compose.yaml` runs `api` + `redis` by default; add `--profile async` to also start a Celery worker. Image exposes port 8000; bind `LLM_API_BASE` to `http://host.docker.internal:1234/v1` to talk to a host-side LM Studio.
 - **Pre-commit**: `.pre-commit-config.yaml` runs ruff (check + format), mypy, and `uv-lock` on every commit. Enable with `uv tool run pre-commit install` after cloning.
 - **Nightly slow tests**: `.github/workflows/nightly.yml` runs `pytest -m slow` at 03:00 UTC with cached HF Hub snapshots, catching Surya-path regressions the fast tier skips.
 - **OCR system-role gating**: some models (notably OlmOCR-2 / OlmOCR) were RL-trained on a single user-role turn with the canonical OlmOCR page prompt and reject a layered system role. `omniscribe.core.ocr.prompts.model_supports_system_role` is the single source of truth — the canonical OLMOCR page prompt is also always sent as a pure user message even on models that *do* support system role. When adding a new call site that emits OCR prompts, route through `_resolve_page_system` / `_resolve_crop_system` (or `select_system_message` for crop / dual-engine / correction) rather than hand-rolling a system role.
-- **Progress WebSocket cross-loop marshalling**: `ConnectionManager.send` records each channel's accept loop on `connect` and marshals any foreign-loop send back onto it. **All writes to the underlying uvicorn WebSocket must go through `manager.send(...)` from any non-accept loop** — uvicorn's wsproto state machine is not safe to drive from two threads / loops at once, and concurrent writes interleave bytes on the wire (browser sees mangled JSON, truncated frames, `Invalid frame header`). The regression test is `test_ws_send_from_foreign_event_loop_is_marshaled_to_accept_loop`; if you find yourself bypassing the manager to call `ws.send_text` / `ws.send_json` directly, that test is the contract you're breaking.
+- **Progress WebSocket cross-loop marshalling**: `ProgressServiceImpl.broadcast` in `plugins/progress.py` records each connection's accept loop on attach and marshals any foreign-loop send back onto it via `asyncio.run_coroutine_threadsafe`. **All writes to the underlying uvicorn WebSocket must go through the service's broadcast path from any non-accept loop** — uvicorn's wsproto state machine is not safe to drive from two threads / loops at once, and concurrent writes interleave bytes on the wire (browser sees mangled JSON, truncated frames, `Invalid frame header`). The regression test is `tests/plugins/test_progress_plugin.py::test_foreign_loop_send_is_marshaled_to_accept_loop`; if you find yourself bypassing the service to call `ws.send_text` / `ws.send_json` directly, that test is the contract you're breaking.
 
 ## Known Tech Debt
 
-- `/api/process` runs the full OCR pipeline synchronously on the uvicorn worker (no background task queue on the default path); long jobs block other requests on the same worker. The async path ships already — `POST /api/process/async` returns `202 + job_id` immediately and the single-worker `OCRJobQueue` (in `api/services/ocr/jobs.py`) drains jobs sequentially. The workstation UI gained an "Async processing" toggle in Phase D2 that lets users opt into the async path; the result PDF is fetched from `GET /api/jobs/{job_id}/result` once the job reaches `status: "complete"`. The async queue is still in-memory (dies on restart) and single-worker — true multi-worker / crash-safe dispatch needs a Celery task that mirrors the translation pattern in `api/tasks.py`.
-- Job/artifact state is in-memory by default (`api/routers/state.py` singletons). Two opt-in persistent backends ship now: `OMNISCRIBE_STATE_BACKEND=sqlite` (single-file, local-first; see `api/services/state/sqlite.py`) and `OMNISCRIBE_STATE_BACKEND=redis` (multi-worker; see `api/services/state/redis.py`). All three implementations satisfy the `StateBackend` Protocol so call sites are unchanged. `ProgressService` / `GlossaryLibrary` / `OCRJobQueue` stay in-memory by design — they reference live WebSocket channels / RAG index state and cannot meaningfully be persisted.
+- `/api/process` runs the full OCR pipeline synchronously on the uvicorn worker (no background task queue on the default path); long jobs block other requests on the same worker. The async path ships already — `POST /api/process/async` returns `202 + job_id` immediately and the single-worker `JobQueue` (in `plugins/jobs.py`) drains jobs sequentially. The workstation UI's "Async processing" toggle lets users opt into the async path; the result PDF is fetched from `GET /api/jobs/{job_id}/result` once the job reaches `status: "complete"`. The queue stays single-worker — true multi-worker / crash-safe dispatch needs a Celery task once the translation routes are rebuilt.
+- Job/artifact state is in-memory by default (`MemoryStateBackend`). One opt-in persistent backend ships on the harness: `OMNISCRIBE_STATE_BACKEND=sqlite` (single-file, local-first; see `plugins/state_backend.py`; the WAL-mode file defaults to `<artifact_dir>/omniscribe-state.db`, override with `OMNISCRIBE_STATE_DB_PATH`). The Redis backend was deferred in the rebuild. Progress channels never persist — they reference live WebSocket connections.
 - `pages_structured` legacy dict is still the working format inside `HybridEngine`; `DocumentResult` is built at finalize. The output boundary now supports the lossless rich path (`DocumentResultWriter`), but intermediate stages still convert.
 - `dense.pdf` and `notes.pdf` ground-truth fixtures are bootstrapped from hybrid output (regression baseline, not absolute quality).
 - `surya-ocr 0.17.x` used to import `requests` in `surya/common/s3.py` without declaring it; `pyproject.toml` shipped a `requests>=2.31` workaround dep. **Closed in audit-secondary Phase 5 (2026-08-19):** `surya-ocr ≥ 0.22` now declares `requests<3,>=2.28.0` in its own metadata, so the workaround is no longer required. `requests` has been removed from the base deps and moved to `[dependency-groups] dev` (it is only directly imported by `scripts/ingest_lexicon.py`, a dev-only ingestion helper).
