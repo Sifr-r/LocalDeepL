@@ -1,0 +1,77 @@
+"""Shared fixtures for the router contract tests.
+
+Every test in this package exercises the real nine-plugin tree booted by
+the ``api_client`` fixture in ``tests/conftest.py``; the OCR routes
+additionally need the pipeline bridge faked so no VLM or Surya predictor
+is ever touched.
+"""
+
+from __future__ import annotations
+
+import importlib
+import time
+from pathlib import Path
+from typing import Any
+
+import pytest
+from fastapi.testclient import TestClient
+
+PDF_BYTES = b"%PDF-1.4 fake"
+
+# The package __init__ re-exports the ``plugin`` instance, which shadows the
+# submodule attribute — import the module itself for monkeypatching.
+ocr_plugin_mod = importlib.import_module("omniscribe.plugins.ocr.plugin")
+
+
+@pytest.fixture()
+def fake_pipeline(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Replaces the bridge so no VLM / Surya is touched."""
+    state: dict[str, Any] = {"fail": False}
+
+    def fake_build(settings: Any, request: Any, *, block_callbacks: Any = None) -> Any:
+        return object()
+
+    async def fake_run(
+        pipeline: Any,
+        *,
+        settings: Any,
+        request: Any,
+        input_path: str,
+        output_path: str,
+        on_progress: Any = None,
+        on_warning: Any = None,
+        cancel_check: Any = None,
+    ) -> dict[int, list[str]]:
+        if on_progress is not None:
+            await on_progress(50, "ocr", "Processing page 1")
+        if state["fail"]:
+            raise RuntimeError("vlm exploded")
+        Path(output_path).write_bytes(PDF_BYTES)
+        return {0: ["hello world"]}
+
+    monkeypatch.setattr(ocr_plugin_mod, "build_pipeline", fake_build)
+    monkeypatch.setattr(ocr_plugin_mod, "run_pipeline", fake_run)
+    return state
+
+
+def upload() -> dict[str, Any]:
+    """The multipart payload every OCR route test shares."""
+    return {"files": {"file": ("a.pdf", b"%PDF-1.4 input", "application/pdf")}}
+
+
+def wait_status(
+    client: TestClient, job_id: str, status: str, *, timeout: float = 5.0
+) -> dict[str, Any]:
+    """Poll the status route until the job reaches ``status``.
+
+    The queue worker runs on the TestClient portal loop, so sleeping the
+    test thread is what lets it make progress between polls.
+    """
+    deadline = time.time() + timeout
+    body: dict[str, Any] = {}
+    while time.time() < deadline:
+        body = client.get(f"/api/process/status/{job_id}").json()
+        if body.get("status") == status:
+            return body
+        time.sleep(0.01)
+    raise AssertionError(f"job {job_id} never reached {status!r}; last={body}")
