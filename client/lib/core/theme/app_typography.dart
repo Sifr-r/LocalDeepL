@@ -1,0 +1,228 @@
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'app_colors.dart';
+
+/// DocuVerse Typography Scale for OmniScribe.
+///
+/// Implements the 3-family typography system:
+/// 1. Display: Fraunces (Headings h1-h3, modal titles, stats)
+/// 2. Body: Sora (All body copy, buttons, inputs, labels)
+/// 3. Mono: JetBrains Mono (Artifact IDs, hashes, tokens, file sizes)
+class AppTypography {
+  AppTypography._();
+
+  // ---------------------------------------------------------------------------
+  // Font Family Names
+  // ---------------------------------------------------------------------------
+  static const String fontFamilyDisplay = 'Fraunces';
+  static const String fontFamilyBody = 'Sora';
+  static const String fontFamilyMono = 'JetBrains Mono';
+
+  // ---------------------------------------------------------------------------
+  // Raw Typography Definitions (Independent of Theme Color)
+  // ---------------------------------------------------------------------------
+
+  /// Display Large (h1) - 30sp, weight 600, line-height 36
+  static TextStyle displayLarge({Color? color}) => GoogleFonts.fraunces(
+        fontSize: 30,
+        fontWeight: FontWeight.w600,
+        height: 36 / 30,
+        letterSpacing: -0.5,
+        color: color,
+      );
+
+  /// Display Medium (h2) - 24sp, weight 600, line-height 32
+  static TextStyle displayMedium({Color? color}) => GoogleFonts.fraunces(
+        fontSize: 24,
+        fontWeight: FontWeight.w600,
+        height: 32 / 24,
+        letterSpacing: -0.3,
+        color: color,
+      );
+
+  /// Display Small (h3) - 18sp, weight 600, line-height 28
+  static TextStyle displaySmall({Color? color}) => GoogleFonts.fraunces(
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
+        height: 28 / 18,
+        letterSpacing: -0.2,
+        color: color,
+      );
+
+  /// Title Large - 16sp, weight 600, line-height 24
+  static TextStyle titleLarge({Color? color}) => GoogleFonts.sora(
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+        height: 24 / 16,
+        letterSpacing: -0.1,
+        color: color,
+      );
+
+  /// Title Medium - 14sp, weight 600, line-height 20
+  static TextStyle titleMedium({Color? color}) => GoogleFonts.sora(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        height: 20 / 14,
+        color: color,
+      );
+
+  /// Title Small - 13sp, weight 600, line-height 18
+  static TextStyle titleSmall({Color? color}) => GoogleFonts.sora(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        height: 18 / 13,
+        color: color,
+      );
+
+  /// Body Large - 15sp, weight 400, line-height 22
+  static TextStyle bodyLarge({Color? color}) => GoogleFonts.sora(
+        fontSize: 15,
+        fontWeight: FontWeight.w400,
+        height: 22 / 15,
+        color: color,
+      );
+
+  /// Body Medium (Default Body) - 14sp, weight 400, line-height 20
+  static TextStyle bodyMedium({Color? color}) => GoogleFonts.sora(
+        fontSize: 14,
+        fontWeight: FontWeight.w400,
+        height: 20 / 14,
+        color: color,
+      );
+
+  /// Body Medium Strong - 14sp, weight 500, line-height 20
+  static TextStyle bodyMediumStrong({Color? color}) => GoogleFonts.sora(
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        height: 20 / 14,
+        color: color,
+      );
+
+  /// Body Small / Caption - 12sp, weight 400, line-height 16
+  static TextStyle bodySmall({Color? color}) => GoogleFonts.sora(
+        fontSize: 12,
+        fontWeight: FontWeight.w400,
+        height: 16 / 12,
+        color: color,
+      );
+
+  /// Caption Strong - 12sp, weight 500, line-height 16
+  static TextStyle captionStrong({Color? color}) => GoogleFonts.sora(
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        height: 16 / 12,
+        color: color,
+      );
+
+  /// Label Large (Buttons, CTA) - 14sp, weight 500, line-height 20
+  static TextStyle labelLarge({Color? color}) => GoogleFonts.sora(
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        height: 20 / 14,
+        letterSpacing: 0.1,
+        color: color,
+      );
+
+  /// Label Medium (Badges, Small Buttons) - 12sp, weight 500, line-height 16
+  static TextStyle labelMedium({Color? color}) => GoogleFonts.sora(
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        height: 16 / 12,
+        color: color,
+      );
+
+  /// Micro / Uppercase Section Header - 10sp, weight 600, tracking 1.2
+  static TextStyle micro({Color? color}) => GoogleFonts.sora(
+        fontSize: 10,
+        fontWeight: FontWeight.w600,
+        height: 14 / 10,
+        letterSpacing: 1.2,
+        color: color,
+      );
+
+  /// Code / Monospace - 13sp, weight 400
+  static TextStyle code({Color? color}) => GoogleFonts.jetBrainsMono(
+        fontSize: 13,
+        fontWeight: FontWeight.w400,
+        height: 18 / 13,
+        color: color,
+      );
+
+  /// Code Small - 11sp, weight 400
+  static TextStyle codeSmall({Color? color}) => GoogleFonts.jetBrainsMono(
+        fontSize: 11,
+        fontWeight: FontWeight.w400,
+        height: 15 / 11,
+        color: color,
+      );
+
+  /// Code Bold / Identifier - 12sp, weight 600
+  static TextStyle codeBold({Color? color}) => GoogleFonts.jetBrainsMono(
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        height: 16 / 12,
+        color: color,
+      );
+
+  // ---------------------------------------------------------------------------
+  // Material TextTheme Generators
+  // ---------------------------------------------------------------------------
+
+  /// Creates a standard Material [TextTheme] bound to DocuVerse dark colors.
+  static TextTheme createDarkTextTheme() {
+    const primary = AppColors.darkTextPrimary;
+    const secondary = AppColors.darkTextSecondary;
+    const muted = AppColors.darkTextMuted;
+
+    return TextTheme(
+      displayLarge: displayLarge(color: primary),
+      displayMedium: displayMedium(color: primary),
+      displaySmall: displaySmall(color: primary),
+      headlineMedium: displayMedium(color: primary),
+      headlineSmall: displaySmall(color: primary),
+      titleLarge: titleLarge(color: primary),
+      titleMedium: titleMedium(color: primary),
+      titleSmall: titleSmall(color: secondary),
+      bodyLarge: bodyLarge(color: primary),
+      bodyMedium: bodyMedium(color: primary),
+      bodySmall: bodySmall(color: secondary),
+      labelLarge: labelLarge(color: primary),
+      labelMedium: labelMedium(color: secondary),
+      labelSmall: micro(color: muted),
+    );
+  }
+
+  /// Creates a standard Material [TextTheme] bound to DocuVerse light colors.
+  static TextTheme createLightTextTheme() {
+    const primary = AppColors.lightTextPrimary;
+    const secondary = AppColors.lightTextSecondary;
+    const muted = AppColors.lightTextMuted;
+
+    return TextTheme(
+      displayLarge: displayLarge(color: primary),
+      displayMedium: displayMedium(color: primary),
+      displaySmall: displaySmall(color: primary),
+      headlineMedium: displayMedium(color: primary),
+      headlineSmall: displaySmall(color: primary),
+      titleLarge: titleLarge(color: primary),
+      titleMedium: titleMedium(color: primary),
+      titleSmall: titleSmall(color: secondary),
+      bodyLarge: bodyLarge(color: primary),
+      bodyMedium: bodyMedium(color: primary),
+      bodySmall: bodySmall(color: secondary),
+      labelLarge: labelLarge(color: primary),
+      labelMedium: labelMedium(color: secondary),
+      labelSmall: micro(color: muted),
+    );
+  }
+
+  /// Convenience method to retrieve typography from BuildContext.
+  static TextTheme of(BuildContext context) {
+    return Theme.of(context).textTheme;
+  }
+}
+
+/// Extension on [BuildContext] for easy typography access.
+extension AppTypographyExtension on BuildContext {
+  TextTheme get typography => Theme.of(this).textTheme;
+}

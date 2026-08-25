@@ -1,0 +1,17 @@
+# Generated desktop platform shells (one operator runs `flutter create --platforms=...` per machine)
+/windows/
+/linux/
+/macos/
+
+# Standard Flutter / Dart tooling artifacts
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+
+# IntelliJ / Android Studio project metadata (Flutter generated)
+.idea/
+*.iml
