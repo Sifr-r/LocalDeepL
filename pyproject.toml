@@ -124,7 +124,7 @@ transcription = [
 # router maps to HTTP 503 with an install hint. (defusedxml moved to the
 # base deps in audit P1-8: XXE/DTD rejection must not be optional.)
 glossary = [
-    "openpyxl>=3.1.0",        # XLSX support (CSV/TSV use stdlib)
+    "openpyxl>=3.1.5",        # XLSX support (CSV/TSV use stdlib)
     "sqlalchemy>=2.0.0",       # SQL pair-table reader
     "gitpython>=3.1.0",        # Git glossary file fetcher
     "chardet>=5.2.0",          # Encoding detection fallback
