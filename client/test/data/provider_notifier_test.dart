@@ -97,4 +97,58 @@ void main() {
       expect(state.error, contains('boom'));
     });
   });
+
+  group('ProviderBrowserNotifier.fetchModelsForProvider', () {
+    test('populates modelsMap and removes the id from loadingModelIds on success', () async {
+      when(() => repo.getProviderModels(any())).thenAnswer(
+        (_) async => const ProviderModelsResponse(models: ['m1', 'm2']),
+      );
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(providerBrowserProvider.notifier);
+
+      await notifier.fetchModelsForProvider('openai');
+
+      final state = container.read(providerBrowserProvider);
+      expect(state.modelsMap['openai'], ['m1', 'm2']);
+      expect(state.loadingModelIds.contains('openai'), isFalse);
+    });
+
+    test('is a no-op when the id is already in loadingModelIds (deduplicates concurrent calls)', () async {
+      var callCount = 0;
+      when(() => repo.getProviderModels(any())).thenAnswer((_) async {
+        callCount += 1;
+        // Hold the future open so we can observe the in-flight flag.
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        return const ProviderModelsResponse(models: ['m']);
+      });
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(providerBrowserProvider.notifier);
+
+      // Kick off two concurrent calls; the second should be deduped.
+      final f1 = notifier.fetchModelsForProvider('openai');
+      final f2 = notifier.fetchModelsForProvider('openai');
+      await Future.wait([f1, f2]);
+
+      expect(callCount, 1);
+      expect(container.read(providerBrowserProvider).loadingModelIds.contains('openai'), isFalse);
+    });
+
+    test('removes the id from loadingModelIds even when the repo throws', () async {
+      when(() => repo.getProviderModels(any())).thenThrow(Exception('boom'));
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(providerBrowserProvider.notifier);
+
+      await notifier.fetchModelsForProvider('openai');
+
+      final state = container.read(providerBrowserProvider);
+      expect(state.loadingModelIds.contains('openai'), isFalse);
+      expect(state.modelsMap['openai'], isNull);
+    });
+  });
 }

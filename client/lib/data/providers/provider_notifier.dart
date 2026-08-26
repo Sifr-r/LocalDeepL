@@ -47,7 +47,27 @@ class ProviderBrowserNotifier extends Notifier<ProviderBrowserState> {
     }
   }
 
-  // Stub for Task 3 — replaced by the real implementation in the next task.
-  // ignore: body_might_complete_normally
-  Future<void> fetchModelsForProvider(String id) async {}
+  Future<void> fetchModelsForProvider(String id) async {
+    if (state.loadingModelIds.contains(id)) return;
+
+    state = state.copyWith(
+      loadingModelIds: {...state.loadingModelIds, id},
+    );
+
+    try {
+      final response = await _repo.getProviderModels(id);
+      final next = Map<String, List<String>>.from(state.modelsMap);
+      if (response.models.isNotEmpty) {
+        next[id] = response.models;
+      }
+      state = state.copyWith(
+        modelsMap: next,
+        loadingModelIds: state.loadingModelIds.difference({id}),
+      );
+    } catch (_) {
+      state = state.copyWith(
+        loadingModelIds: state.loadingModelIds.difference({id}),
+      );
+    }
+  }
 }
