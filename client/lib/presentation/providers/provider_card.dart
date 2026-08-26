@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:omniscribe_client/models/provider.dart';
+import 'package:omniscribe_client/data/models/provider_preset.dart';
 import 'package:omniscribe_client/theme/docuverse_theme.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
@@ -108,7 +108,7 @@ class _ProviderCardState extends State<ProviderCard> {
                             hasDot: true,
                           ),
                         ],
-                        if (widget.provider.isRecommended) ...[
+                        if (widget.provider.isRecommended ?? false) ...[
                           const SizedBox(width: 6),
                           const DocuVerseBadge(text: 'Recommended',
                             variant: DocuVerseBadgeVariant.info,
@@ -120,7 +120,7 @@ class _ProviderCardState extends State<ProviderCard> {
                             variant: DocuVerseBadgeVariant.success,
                           ),
                         ],
-                        if (widget.provider.isCustom) ...[
+                        if (widget.provider.isCustom ?? false) ...[
                           const SizedBox(width: 6),
                           const DocuVerseBadge(text: 'Custom',
                             variant: DocuVerseBadgeVariant.warning,
