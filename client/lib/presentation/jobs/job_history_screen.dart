@@ -60,9 +60,8 @@ class _JobHistoryScreenState extends ConsumerState<JobHistoryScreen> {
 
     try {
       final token = job.textArtifactToken ?? '';
-      final Uint8List bytes = await ref
-          .read(jobsProvider.notifier)
-          .downloadResult(job.id, token);
+      final Uint8List bytes =
+          await ref.read(jobsProvider.notifier).downloadResult(job.id, token);
       if (mounted) {
         setState(() {
           _statusBanner =
@@ -362,7 +361,8 @@ class _JobHistoryScreenState extends ConsumerState<JobHistoryScreen> {
                                 ),
                               ],
                               rows: jobsState.jobs.map((job) {
-                                final isDownloading = _downloadingJobId == job.id;
+                                final isDownloading =
+                                    _downloadingJobId == job.id;
                                 final isRunning =
                                     job.status.toLowerCase() == 'processing' ||
                                         job.status.toLowerCase() == 'pending';

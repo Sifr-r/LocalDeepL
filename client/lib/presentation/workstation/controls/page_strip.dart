@@ -79,7 +79,9 @@ class PageStrip extends StatelessWidget {
               itemBuilder: (context, index) {
                 final isSelected = index == selectedIdx;
                 final isCompleted = completedPages.contains(index);
-                final pageResult = index < docState.pages.length ? docState.pages[index] : null;
+                final pageResult = index < docState.pages.length
+                    ? docState.pages[index]
+                    : null;
                 final boxCount = pageResult?.bboxes.length ?? 0;
 
                 return InkWell(
@@ -90,7 +92,9 @@ class PageStrip extends StatelessWidget {
                     width: isHorizontal ? 68 : null,
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: isSelected ? colors.brand.withValues(alpha: 0.15) : colors.card,
+                      color: isSelected
+                          ? colors.brand.withValues(alpha: 0.15)
+                          : colors.card,
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(
                         color: isSelected ? colors.brand : colors.border,
@@ -106,7 +110,8 @@ class PageStrip extends StatelessWidget {
                             decoration: BoxDecoration(
                               color: colors.cardRaised,
                               borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: colors.border.withValues(alpha: 0.5)),
+                              border: Border.all(
+                                  color: colors.border.withValues(alpha: 0.5)),
                             ),
                             child: Stack(
                               children: [
@@ -114,7 +119,9 @@ class PageStrip extends StatelessWidget {
                                   child: Icon(
                                     Icons.description_outlined,
                                     size: 20,
-                                    color: isSelected ? colors.brand : colors.foregroundSubtle,
+                                    color: isSelected
+                                        ? colors.brand
+                                        : colors.foregroundSubtle,
                                   ),
                                 ),
                                 if (isCompleted)
@@ -147,8 +154,12 @@ class PageStrip extends StatelessWidget {
                               style: TextStyle(
                                 fontFamily: DocuVerseTypography.fontMono,
                                 fontSize: 10,
-                                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                                color: isSelected ? colors.brand : colors.foregroundMuted,
+                                fontWeight: isSelected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                color: isSelected
+                                    ? colors.brand
+                                    : colors.foregroundMuted,
                               ),
                             ),
                             if (boxCount > 0) ...[

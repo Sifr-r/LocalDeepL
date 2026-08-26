@@ -56,8 +56,9 @@ class ProviderPreset {
       name: json['name']?.toString() ?? '',
       category: json['category']?.toString() ?? 'other',
       description: json['description']?.toString() ?? '',
-      recommendedBaseUrl:
-          json['recommended_base_url']?.toString() ?? json['api_base']?.toString() ?? '',
+      recommendedBaseUrl: json['recommended_base_url']?.toString() ??
+          json['api_base']?.toString() ??
+          '',
       apiBase: json['api_base']?.toString(),
       defaultModel: json['default_model']?.toString() ?? '',
       models: modelList,

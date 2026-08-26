@@ -123,7 +123,10 @@ class GlossaryImportJobResponse {
       format: json['format'] as String? ?? 'json_pairs',
       name: json['name'] as String? ?? 'Imported Glossary',
       entryCount: (json['entry_count'] as num?)?.toInt() ?? 0,
-      warnings: (json['warnings'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+      warnings: (json['warnings'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
       queued: json['queued'] as bool? ?? false,
     );
   }

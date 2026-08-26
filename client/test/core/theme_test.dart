@@ -23,21 +23,29 @@ void main() {
 
     test('getConfidenceColor accurately maps scores', () {
       // > 0.85 -> Success
-      expect(AppColors.getConfidenceColor(0.95, isDark: true), AppColors.success);
-      expect(AppColors.getConfidenceColor(0.86, isDark: false), AppColors.successLight);
+      expect(
+          AppColors.getConfidenceColor(0.95, isDark: true), AppColors.success);
+      expect(AppColors.getConfidenceColor(0.86, isDark: false),
+          AppColors.successLight);
 
       // 0.70 - 0.85 -> Warning
-      expect(AppColors.getConfidenceColor(0.85, isDark: true), AppColors.warning);
-      expect(AppColors.getConfidenceColor(0.70, isDark: true), AppColors.warning);
-      expect(AppColors.getConfidenceColor(0.75, isDark: false), AppColors.warningLight);
+      expect(
+          AppColors.getConfidenceColor(0.85, isDark: true), AppColors.warning);
+      expect(
+          AppColors.getConfidenceColor(0.70, isDark: true), AppColors.warning);
+      expect(AppColors.getConfidenceColor(0.75, isDark: false),
+          AppColors.warningLight);
 
       // < 0.70 -> Error
       expect(AppColors.getConfidenceColor(0.69, isDark: true), AppColors.error);
-      expect(AppColors.getConfidenceColor(0.20, isDark: false), AppColors.errorLight);
+      expect(AppColors.getConfidenceColor(0.20, isDark: false),
+          AppColors.errorLight);
 
       // null -> Muted
-      expect(AppColors.getConfidenceColor(null, isDark: true), AppColors.darkTextMuted);
-      expect(AppColors.getConfidenceColor(null, isDark: false), AppColors.lightTextMuted);
+      expect(AppColors.getConfidenceColor(null, isDark: true),
+          AppColors.darkTextMuted);
+      expect(AppColors.getConfidenceColor(null, isDark: false),
+          AppColors.lightTextMuted);
     });
 
     test('AppColorScheme provides valid dark and light schemes', () {

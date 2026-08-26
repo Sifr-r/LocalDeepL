@@ -304,7 +304,8 @@ class ApiClient {
     } catch (e) {
       if (e is ApiException) rethrow;
       throw NetworkException(
-        message: 'Unexpected error downloading bytes with headers from $path: $e',
+        message:
+            'Unexpected error downloading bytes with headers from $path: $e',
       );
     }
   }
@@ -414,7 +415,8 @@ class ApiClient {
 
     if (error.type == DioExceptionType.connectionError) {
       return NetworkException(
-        message: 'Unable to connect to OmniScribe server at $baseUrl: ${error.message}',
+        message:
+            'Unable to connect to OmniScribe server at $baseUrl: ${error.message}',
         detail: error.error,
       );
     }

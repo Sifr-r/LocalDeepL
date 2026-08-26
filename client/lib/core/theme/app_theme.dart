@@ -78,7 +78,8 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: colors.card,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         hintStyle: AppTypography.bodyMedium(color: colors.textMuted),
         labelStyle: AppTypography.bodySmall(color: colors.textSecondary),
         floatingLabelStyle: AppTypography.bodySmall(color: colors.brandAccent),
@@ -101,7 +102,8 @@ class AppTheme {
         ),
         disabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(6),
-          borderSide: BorderSide(color: colors.inputBorder.withValues(alpha: 0.5), width: 1),
+          borderSide: BorderSide(
+              color: colors.inputBorder.withValues(alpha: 0.5), width: 1),
         ),
       ),
 
@@ -215,7 +217,8 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: colors.card,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         hintStyle: AppTypography.bodyMedium(color: colors.textMuted),
         labelStyle: AppTypography.bodySmall(color: colors.textSecondary),
         floatingLabelStyle: AppTypography.bodySmall(color: colors.brand),
@@ -238,7 +241,8 @@ class AppTheme {
         ),
         disabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(6),
-          borderSide: BorderSide(color: colors.inputBorder.withValues(alpha: 0.5), width: 1),
+          borderSide: BorderSide(
+              color: colors.inputBorder.withValues(alpha: 0.5), width: 1),
         ),
       ),
 

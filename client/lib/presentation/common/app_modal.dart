@@ -72,7 +72,8 @@ class AppModal extends StatelessWidget {
       barrierLabel: 'Dismiss Modal',
       barrierColor: context.colors.overlay,
       transitionDuration: const Duration(milliseconds: 200),
-      pageBuilder: (BuildContext ctx, Animation<double> anim1, Animation<double> anim2) {
+      pageBuilder:
+          (BuildContext ctx, Animation<double> anim1, Animation<double> anim2) {
         return AppModal(
           title: title,
           subtitle: subtitle,
@@ -85,8 +86,10 @@ class AppModal extends StatelessWidget {
           testId: testId,
         );
       },
-      transitionBuilder: (BuildContext ctx, Animation<double> anim, Animation<double> secondaryAnim, Widget child) {
-        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+      transitionBuilder: (BuildContext ctx, Animation<double> anim,
+          Animation<double> secondaryAnim, Widget child) {
+        final curved =
+            CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
         return BackdropFilter(
           filter: ImageFilter.blur(
             sigmaX: 8 * curved.value,
@@ -110,13 +113,15 @@ class AppModal extends StatelessWidget {
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
 
-    final targetWidth = screenWidth < maxWidth.value ? screenWidth - 32 : maxWidth.value;
+    final targetWidth =
+        screenWidth < maxWidth.value ? screenWidth - 32 : maxWidth.value;
     final targetMaxHeight = maxHeight ?? screenHeight * 0.85;
 
     return Focus(
       autofocus: true,
       onKeyEvent: (FocusNode node, KeyEvent event) {
-        if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.escape) {
           if (onClose != null) {
             onClose!();
           } else {
@@ -192,7 +197,8 @@ class AppModal extends StatelessWidget {
                           AppButton(
                             variant: AppButtonVariant.ghost,
                             size: AppButtonSize.sm,
-                            icon: Icon(Icons.close_rounded, size: 16, color: colors.textMuted),
+                            icon: Icon(Icons.close_rounded,
+                                size: 16, color: colors.textMuted),
                             tooltip: 'Close (ESC)',
                             onPressed: () {
                               if (onClose != null) {
@@ -219,7 +225,8 @@ class AppModal extends StatelessWidget {
                   if (actions != null && actions!.isNotEmpty) ...[
                     Divider(height: 1, color: colors.border),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 14),
                       color: colors.cardRaised.withValues(alpha: 0.5),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.end,

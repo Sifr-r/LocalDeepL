@@ -29,7 +29,8 @@ class AppToggle extends StatelessWidget {
     final isInteractive = !disabled && onChanged != null;
 
     final toggleSwitch = MouseRegion(
-      cursor: isInteractive ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      cursor:
+          isInteractive ? SystemMouseCursors.click : SystemMouseCursors.basic,
       child: GestureDetector(
         onTap: isInteractive ? () => onChanged?.call(!value) : null,
         child: AnimatedContainer(
@@ -42,7 +43,9 @@ class AppToggle extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             color: value ? colors.brand : colors.muted,
             border: Border.all(
-              color: value ? colors.brandAccent.withValues(alpha: 0.6) : colors.borderStrong,
+              color: value
+                  ? colors.brandAccent.withValues(alpha: 0.6)
+                  : colors.borderStrong,
               width: 1,
             ),
           ),

@@ -83,10 +83,12 @@ void main() {
         name: 'Template',
         category: 'popular',
         description: 'Uses placeholder',
-        recommendedBaseUrl: 'http://{host}/v1', // contains '{' -> skip auto-fetch
+        recommendedBaseUrl:
+            'http://{host}/v1', // contains '{' -> skip auto-fetch
         defaultModel: 'm',
       );
-      when(() => repo.getProviders()).thenAnswer((_) async => [presetA, presetB]);
+      when(() => repo.getProviders())
+          .thenAnswer((_) async => [presetA, presetB]);
 
       final container = makeContainer();
       addTearDown(container.dispose);
@@ -117,7 +119,9 @@ void main() {
   });
 
   group('ProviderBrowserNotifier.fetchModelsForProvider', () {
-    test('populates modelsMap and removes the id from loadingModelIds on success', () async {
+    test(
+        'populates modelsMap and removes the id from loadingModelIds on success',
+        () async {
       when(() => repo.getProviderModels(any())).thenAnswer(
         (_) async => const ProviderModelsResponse(models: ['m1', 'm2']),
       );
@@ -133,7 +137,9 @@ void main() {
       expect(state.loadingModelIds.contains('openai'), isFalse);
     });
 
-    test('is a no-op when the id is already in loadingModelIds (deduplicates concurrent calls)', () async {
+    test(
+        'is a no-op when the id is already in loadingModelIds (deduplicates concurrent calls)',
+        () async {
       var callCount = 0;
       when(() => repo.getProviderModels(any())).thenAnswer((_) async {
         callCount += 1;
@@ -152,10 +158,16 @@ void main() {
       await Future.wait([f1, f2]);
 
       expect(callCount, 1);
-      expect(container.read(providerBrowserProvider).loadingModelIds.contains('openai'), isFalse);
+      expect(
+          container
+              .read(providerBrowserProvider)
+              .loadingModelIds
+              .contains('openai'),
+          isFalse);
     });
 
-    test('removes the id from loadingModelIds even when the repo throws', () async {
+    test('removes the id from loadingModelIds even when the repo throws',
+        () async {
       when(() => repo.getProviderModels(any())).thenThrow(Exception('boom'));
 
       final container = makeContainer();
@@ -171,7 +183,8 @@ void main() {
   });
 
   group('ProviderBrowserNotifier.validateProvider', () {
-    test('on success populates validationStatus and triggers model refetch', () async {
+    test('on success populates validationStatus and triggers model refetch',
+        () async {
       when(() => repo.validateProvider(any())).thenAnswer(
         (_) async => const ValidateProviderResponse(valid: true, modelCount: 3),
       );
@@ -184,7 +197,9 @@ void main() {
       final notifier = container.read(providerBrowserProvider.notifier);
 
       final res = await notifier.validateProvider(
-        'openai', 'https://api.openai.com/v1', null,
+        'openai',
+        'https://api.openai.com/v1',
+        null,
       );
 
       expect(res.valid, isTrue);
@@ -193,9 +208,12 @@ void main() {
       expect(state.isValidating, isFalse);
     });
 
-    test('on failure populates validationStatus with error and clears isValidating', () async {
+    test(
+        'on failure populates validationStatus with error and clears isValidating',
+        () async {
       when(() => repo.validateProvider(any())).thenAnswer(
-        (_) async => const ValidateProviderResponse(valid: false, error: 'bad creds'),
+        (_) async =>
+            const ValidateProviderResponse(valid: false, error: 'bad creds'),
       );
 
       final container = makeContainer();
@@ -203,7 +221,9 @@ void main() {
       final notifier = container.read(providerBrowserProvider.notifier);
 
       final res = await notifier.validateProvider(
-        'openai', 'https://api.openai.com/v1', 'k',
+        'openai',
+        'https://api.openai.com/v1',
+        'k',
       );
 
       expect(res.valid, isFalse);
@@ -214,7 +234,9 @@ void main() {
   });
 
   group('ProviderBrowserNotifier.setActiveProvider', () {
-    test('on success calls repo.setActiveProvider, mirrors activeProviderId into settingsStateProvider, and re-fetches settings', () async {
+    test(
+        'on success calls repo.setActiveProvider, mirrors activeProviderId into settingsStateProvider, and re-fetches settings',
+        () async {
       when(() => repo.setActiveProvider(any())).thenAnswer(
         (_) async => const SetActiveProviderResponse(
           apiBase: 'https://api.openai.com/v1',
@@ -227,7 +249,10 @@ void main() {
       final notifier = container.read(providerBrowserProvider.notifier);
 
       await notifier.setActiveProvider(
-        'openai', 'https://api.openai.com/v1', 'k', 'gpt-4o',
+        'openai',
+        'https://api.openai.com/v1',
+        'k',
+        'gpt-4o',
       );
 
       final state = container.read(providerBrowserProvider);
@@ -242,7 +267,8 @@ void main() {
       verify(() => configRepo.getConfig()).called(1);
     });
 
-    test('on failure populates error and rethrows without touching settings', () async {
+    test('on failure populates error and rethrows without touching settings',
+        () async {
       when(() => repo.setActiveProvider(any())).thenThrow(Exception('reject'));
 
       final container = makeContainer();

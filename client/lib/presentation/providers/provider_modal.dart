@@ -32,7 +32,8 @@ class ProviderModal extends ConsumerStatefulWidget {
     return DocuVerseModal.show(
       context: context,
       title: 'LLM Provider Browser',
-      description: 'Select and configure AI model endpoints for $targetNamespace processing',
+      description:
+          'Select and configure AI model endpoints for $targetNamespace processing',
       maxWidth: 720,
       child: ProviderModal(
         initialProvider: initialProvider,
@@ -101,8 +102,12 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
     final res = await notifier.validateProvider(
       _selectedProvider!.id,
       _apiBaseController.text.trim(),
-      _apiKeyController.text.trim().isNotEmpty ? _apiKeyController.text.trim() : null,
-      model: _modelController.text.trim().isNotEmpty ? _modelController.text.trim() : null,
+      _apiKeyController.text.trim().isNotEmpty
+          ? _apiKeyController.text.trim()
+          : null,
+      model: _modelController.text.trim().isNotEmpty
+          ? _modelController.text.trim()
+          : null,
     );
 
     if (mounted) {
@@ -127,8 +132,12 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
       await notifier.setActiveProvider(
         _selectedProvider!.id,
         _apiBaseController.text.trim(),
-        _apiKeyController.text.trim().isNotEmpty ? _apiKeyController.text.trim() : null,
-        _modelController.text.trim().isNotEmpty ? _modelController.text.trim() : null,
+        _apiKeyController.text.trim().isNotEmpty
+            ? _apiKeyController.text.trim()
+            : null,
+        _modelController.text.trim().isNotEmpty
+            ? _modelController.text.trim()
+            : null,
       );
 
       if (mounted) {
@@ -168,9 +177,12 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
         // Search bar
         DocuVerseInput(
           controller: _searchController,
-          placeholder: 'Search providers (e.g. OpenAI, Anthropic, Ollama, LM Studio...)',
-          prefixIcon: Icon(Icons.search, size: 16, color: tokens.foregroundMuted),
-          onChanged: (q) => ref.read(providerBrowserProvider.notifier).setSearchQuery(q),
+          placeholder:
+              'Search providers (e.g. OpenAI, Anthropic, Ollama, LM Studio...)',
+          prefixIcon:
+              Icon(Icons.search, size: 16, color: tokens.foregroundMuted),
+          onChanged: (q) =>
+              ref.read(providerBrowserProvider.notifier).setSearchQuery(q),
         ),
         const SizedBox(height: 16),
 
@@ -234,8 +246,9 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
                     _modelController.text = model;
                     await _applyProvider();
                   },
-                  onRefreshModels: () =>
-                      ref.read(providerBrowserProvider.notifier).fetchModelsForProvider(p.id),
+                  onRefreshModels: () => ref
+                      .read(providerBrowserProvider.notifier)
+                      .fetchModelsForProvider(p.id),
                 );
               },
             ),
@@ -282,8 +295,9 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
                     _modelController.text = model;
                     await _applyProvider();
                   },
-                  onRefreshModels: () =>
-                      ref.read(providerBrowserProvider.notifier).fetchModelsForProvider(p.id),
+                  onRefreshModels: () => ref
+                      .read(providerBrowserProvider.notifier)
+                      .fetchModelsForProvider(p.id),
                 );
               },
             ),
@@ -293,7 +307,8 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
     );
   }
 
-  Widget _buildConnectForm(DocuVerseThemeTokens tokens, ProviderBrowserState state) {
+  Widget _buildConnectForm(
+      DocuVerseThemeTokens tokens, ProviderBrowserState state) {
     final p = _selectedProvider!;
     final availableModels = state.modelsMap[p.id] ?? p.models;
 
@@ -329,7 +344,8 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
             ),
             const Spacer(),
             if (p.isRecommended ?? false)
-              const DocuVerseBadge(text: 'Recommended', variant: DocuVerseBadgeVariant.info),
+              const DocuVerseBadge(
+                  text: 'Recommended', variant: DocuVerseBadgeVariant.info),
           ],
         ),
         const SizedBox(height: 12),
@@ -363,7 +379,8 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
                 const SizedBox(height: 4),
                 Text(
                   p.notes,
-                  style: TextStyle(fontSize: 11, color: tokens.foregroundSubtle),
+                  style:
+                      TextStyle(fontSize: 11, color: tokens.foregroundSubtle),
                 ),
               ],
             ],
@@ -375,7 +392,9 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
         DocuVerseInput(
           controller: _apiBaseController,
           label: 'API Base URL',
-          placeholder: p.recommendedBaseUrl.isNotEmpty ? p.recommendedBaseUrl : 'http://localhost:1234/v1',
+          placeholder: p.recommendedBaseUrl.isNotEmpty
+              ? p.recommendedBaseUrl
+              : 'http://localhost:1234/v1',
           hint: 'The OpenAI-compatible endpoint URL',
           isMono: true,
         ),
@@ -384,9 +403,12 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
         DocuVerseInput(
           controller: _apiKeyController,
           label: 'API Key',
-          placeholder: p.requiresKey ? 'Enter API Key...' : 'Optional / Not required',
+          placeholder:
+              p.requiresKey ? 'Enter API Key...' : 'Optional / Not required',
           isPassword: true,
-          hint: p.envKeys.isNotEmpty ? 'Environment variable: ${p.envKeys.join(", ")}' : null,
+          hint: p.envKeys.isNotEmpty
+              ? 'Environment variable: ${p.envKeys.join(", ")}'
+              : null,
           isMono: true,
         ),
         const SizedBox(height: 12),
@@ -409,17 +431,23 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
                   PopupMenuButton<String>(
                     tooltip: 'Pick from discovered models',
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 2, horizontal: 4),
                       child: Text(
                         'Select model (${availableModels.length})',
-                        style: TextStyle(fontSize: 11, color: tokens.brand, fontWeight: FontWeight.w500),
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: tokens.brand,
+                            fontWeight: FontWeight.w500),
                       ),
                     ),
                     itemBuilder: (context) => availableModels
                         .map(
                           (m) => PopupMenuItem<String>(
                             value: m,
-                            child: Text(m, style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
+                            child: Text(m,
+                                style: const TextStyle(
+                                    fontSize: 12, fontFamily: 'monospace')),
                           ),
                         )
                         .toList(),
@@ -432,7 +460,8 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
             const SizedBox(height: 6),
             DocuVerseInput(
               controller: _modelController,
-              placeholder: 'e.g. allenai/olmocr-2-7b, gpt-4o, claude-3-5-sonnet',
+              placeholder:
+                  'e.g. allenai/olmocr-2-7b, gpt-4o, claude-3-5-sonnet',
               isMono: true,
             ),
           ],
@@ -457,7 +486,9 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
             child: Row(
               children: [
                 Icon(
-                  _testSuccess ? Icons.check_circle_outline : Icons.error_outline,
+                  _testSuccess
+                      ? Icons.check_circle_outline
+                      : Icons.error_outline,
                   size: 16,
                   color: _testSuccess ? tokens.success : tokens.danger,
                 ),

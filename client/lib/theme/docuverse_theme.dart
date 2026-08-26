@@ -176,7 +176,8 @@ class DocuVerseThemeTokens extends ThemeExtension<DocuVerseThemeTokens> {
   }
 
   @override
-  DocuVerseThemeTokens lerp(ThemeExtension<DocuVerseThemeTokens>? other, double t) {
+  DocuVerseThemeTokens lerp(
+      ThemeExtension<DocuVerseThemeTokens>? other, double t) {
     if (other is! DocuVerseThemeTokens) return this;
     return DocuVerseThemeTokens(
       app: Color.lerp(app, other.app, t) ?? app,
@@ -186,13 +187,18 @@ class DocuVerseThemeTokens extends ThemeExtension<DocuVerseThemeTokens> {
       muted: Color.lerp(muted, other.muted, t) ?? muted,
       overlay: Color.lerp(overlay, other.overlay, t) ?? overlay,
       foreground: Color.lerp(foreground, other.foreground, t) ?? foreground,
-      foregroundMuted: Color.lerp(foregroundMuted, other.foregroundMuted, t) ?? foregroundMuted,
-      foregroundSubtle: Color.lerp(foregroundSubtle, other.foregroundSubtle, t) ?? foregroundSubtle,
+      foregroundMuted: Color.lerp(foregroundMuted, other.foregroundMuted, t) ??
+          foregroundMuted,
+      foregroundSubtle:
+          Color.lerp(foregroundSubtle, other.foregroundSubtle, t) ??
+              foregroundSubtle,
       border: Color.lerp(border, other.border, t) ?? border,
-      borderStrong: Color.lerp(borderStrong, other.borderStrong, t) ?? borderStrong,
+      borderStrong:
+          Color.lerp(borderStrong, other.borderStrong, t) ?? borderStrong,
       input: Color.lerp(input, other.input, t) ?? input,
       brand: Color.lerp(brand, other.brand, t) ?? brand,
-      brandForeground: Color.lerp(brandForeground, other.brandForeground, t) ?? brandForeground,
+      brandForeground: Color.lerp(brandForeground, other.brandForeground, t) ??
+          brandForeground,
       success: Color.lerp(success, other.success, t) ?? success,
       warning: Color.lerp(warning, other.warning, t) ?? warning,
       danger: Color.lerp(danger, other.danger, t) ?? danger,
@@ -211,7 +217,8 @@ class DocuVerseThemeTokens extends ThemeExtension<DocuVerseThemeTokens> {
 /// Helper extension on [BuildContext] to quickly retrieve [DocuVerseThemeTokens].
 extension DocuVerseThemeContext on BuildContext {
   DocuVerseThemeTokens get docuVerse =>
-      Theme.of(this).extension<DocuVerseThemeTokens>() ?? DocuVerseThemeTokens.dark;
+      Theme.of(this).extension<DocuVerseThemeTokens>() ??
+      DocuVerseThemeTokens.dark;
 }
 
 /// Main DocuVerse ThemeData builder.

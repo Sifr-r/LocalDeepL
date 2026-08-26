@@ -21,7 +21,9 @@ void main() {
       expect(after.error, before.error);
     });
 
-    test('copyWith clearError: true resets error to null even when error param is null', () {
+    test(
+        'copyWith clearError: true resets error to null even when error param is null',
+        () {
       const before = JobsState(error: 'boom');
       final after = before.copyWith(clearError: true);
 

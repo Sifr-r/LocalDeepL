@@ -46,7 +46,8 @@ class _WorkstationViewState extends ConsumerState<WorkstationView> {
                 children: [
                   Text(
                     'Document Workstation',
-                    style: AppTypography.displayMedium(color: colors.textPrimary),
+                    style:
+                        AppTypography.displayMedium(color: colors.textPrimary),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -136,7 +137,6 @@ class _WorkstationViewState extends ConsumerState<WorkstationView> {
             },
           ),
           const SizedBox(height: 14),
-
           AppSelect<String>(
             label: 'Dense Mode',
             value: _denseMode,
@@ -150,7 +150,6 @@ class _WorkstationViewState extends ConsumerState<WorkstationView> {
             },
           ),
           const SizedBox(height: 16),
-
           const SectionHeader(title: 'Image Preprocessing', showDivider: true),
           AppToggle(
             label: 'Deskew Image',
@@ -166,7 +165,6 @@ class _WorkstationViewState extends ConsumerState<WorkstationView> {
             onChanged: (v) => setState(() => _denoise = v),
           ),
           const SizedBox(height: 16),
-
           const SectionHeader(title: 'Quality Routing', showDivider: true),
           AppToggle(
             label: 'Self-Correction',
@@ -182,7 +180,6 @@ class _WorkstationViewState extends ConsumerState<WorkstationView> {
             onChanged: (v) => setState(() => _dualEngine = v),
           ),
           const SizedBox(height: 20),
-
           AppButton(
             text: _isProcessing ? 'Processing Document...' : 'Run OCR Pipeline',
             icon: const Icon(Icons.play_arrow_rounded),
@@ -192,11 +189,15 @@ class _WorkstationViewState extends ConsumerState<WorkstationView> {
             loading: _isProcessing,
             onPressed: () {
               setState(() => _isProcessing = true);
-              ref.read(toastProvider.notifier).info('OCR job queued for processing');
+              ref
+                  .read(toastProvider.notifier)
+                  .info('OCR job queued for processing');
               Future.delayed(const Duration(seconds: 2), () {
                 if (mounted) {
                   setState(() => _isProcessing = false);
-                  ref.read(toastProvider.notifier).success('Document OCR completed with 94.8% confidence');
+                  ref
+                      .read(toastProvider.notifier)
+                      .success('Document OCR completed with 94.8% confidence');
                 }
               });
             },
@@ -254,7 +255,9 @@ class _WorkstationViewState extends ConsumerState<WorkstationView> {
                         variant: AppButtonVariant.secondary,
                         size: AppButtonSize.md,
                         onPressed: () {
-                          ref.read(toastProvider.notifier).info('File picker opened');
+                          ref
+                              .read(toastProvider.notifier)
+                              .info('File picker opened');
                         },
                       ),
                       const SizedBox(width: 10),
@@ -264,7 +267,9 @@ class _WorkstationViewState extends ConsumerState<WorkstationView> {
                         variant: AppButtonVariant.outline,
                         size: AppButtonSize.md,
                         onPressed: () {
-                          ref.read(toastProvider.notifier).success('Sample invoice loaded');
+                          ref
+                              .read(toastProvider.notifier)
+                              .success('Sample invoice loaded');
                         },
                       ),
                     ],
@@ -322,7 +327,8 @@ class _WorkstationViewState extends ConsumerState<WorkstationView> {
     return AppCard(
       title: 'Trust & Confidence',
       subtitle: 'Grounding validation metrics',
-      headerLeading: Icon(Icons.verified_outlined, size: 18, color: colors.success),
+      headerLeading:
+          Icon(Icons.verified_outlined, size: 18, color: colors.success),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -346,7 +352,8 @@ class _WorkstationViewState extends ConsumerState<WorkstationView> {
                     const SizedBox(height: 4),
                     Text(
                       '94.8%',
-                      style: AppTypography.displaySmall(color: colors.success).copyWith(
+                      style: AppTypography.displaySmall(color: colors.success)
+                          .copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -380,7 +387,9 @@ class _WorkstationViewState extends ConsumerState<WorkstationView> {
                   variant: AppButtonVariant.secondary,
                   size: AppButtonSize.sm,
                   onPressed: () {
-                    ref.read(toastProvider.notifier).info('Exporting JSON artifact');
+                    ref
+                        .read(toastProvider.notifier)
+                        .info('Exporting JSON artifact');
                   },
                 ),
               ),
@@ -392,7 +401,9 @@ class _WorkstationViewState extends ConsumerState<WorkstationView> {
                   variant: AppButtonVariant.secondary,
                   size: AppButtonSize.sm,
                   onPressed: () {
-                    ref.read(toastProvider.notifier).info('Exporting Markdown artifact');
+                    ref
+                        .read(toastProvider.notifier)
+                        .info('Exporting Markdown artifact');
                   },
                 ),
               ),

@@ -103,9 +103,10 @@ class ProviderBrowserState {
   int get hashCode => Object.hash(
         Object.hashAll(providers),
         activeProvider,
-        Object.hashAll(validationStatus.entries.map((e) => '${e.key}=${e.value}')),
-        Object.hashAll(modelsMap.entries
-            .map((e) => '${e.key}=${e.value.join(",")}')),
+        Object.hashAll(
+            validationStatus.entries.map((e) => '${e.key}=${e.value}')),
+        Object.hashAll(
+            modelsMap.entries.map((e) => '${e.key}=${e.value.join(",")}')),
         Object.hashAll(loadingModelIds),
         isFetching,
         isValidating,

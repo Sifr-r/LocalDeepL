@@ -262,8 +262,7 @@ class DocumentViewModel {
       textArtifactId: json['textArtifactId']?.toString(),
       textArtifactToken: json['textArtifactToken']?.toString(),
       filename: json['filename']?.toString(),
-      selectedPageIndex:
-          (json['selectedPageIndex'] as num?)?.toInt() ?? 0,
+      selectedPageIndex: (json['selectedPageIndex'] as num?)?.toInt() ?? 0,
       bboxes: boxList,
       confidence: (json['confidence'] as num?)?.toDouble(),
       confidenceSummary: json['confidenceSummary'] is Map<String, dynamic>
@@ -272,8 +271,7 @@ class DocumentViewModel {
           : null,
       pageCount: (json['pageCount'] as num?)?.toInt() ?? pagesList.length,
       trustSummary: json['trustSummary'] is Map<String, dynamic>
-          ? TrustSummary.fromJson(
-              json['trustSummary'] as Map<String, dynamic>)
+          ? TrustSummary.fromJson(json['trustSummary'] as Map<String, dynamic>)
           : null,
     );
   }
@@ -283,8 +281,7 @@ class DocumentViewModel {
         'textArtifacts': textArtifacts.map((a) => a.toJson()).toList(),
         if (textArtifact != null) 'textArtifact': textArtifact!.toJson(),
         if (textArtifactId != null) 'textArtifactId': textArtifactId,
-        if (textArtifactToken != null)
-          'textArtifactToken': textArtifactToken,
+        if (textArtifactToken != null) 'textArtifactToken': textArtifactToken,
         if (filename != null) 'filename': filename,
         'selectedPageIndex': selectedPageIndex,
         'bboxes': bboxes.map((b) => b.toJson()).toList(),

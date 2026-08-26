@@ -5,7 +5,8 @@ class TranslationRequest {
     this.textArtifactId,
     this.textArtifactToken,
     this.targetLanguage = 'French',
-    this.promptTemplate = 'Translate the following text accurately while maintaining context and terminology.',
+    this.promptTemplate =
+        'Translate the following text accurately while maintaining context and terminology.',
     this.model,
     this.apiBase,
     this.apiKey,

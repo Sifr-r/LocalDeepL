@@ -110,7 +110,8 @@ class _AppButtonState extends State<AppButton> {
   bool _isHovered = false;
   bool _isPressed = false;
 
-  bool get _isInteractive => !widget.disabled && !widget.loading && widget.onPressed != null;
+  bool get _isInteractive =>
+      !widget.disabled && !widget.loading && widget.onPressed != null;
 
   @override
   Widget build(BuildContext context) {
@@ -148,7 +149,8 @@ class _AppButtonState extends State<AppButton> {
     }
 
     final buttonWidget = MouseRegion(
-      cursor: _isInteractive ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      cursor:
+          _isInteractive ? SystemMouseCursors.click : SystemMouseCursors.basic,
       onEnter: (_) {
         if (_isInteractive) setState(() => _isHovered = true);
       },
@@ -192,7 +194,9 @@ class _AppButtonState extends State<AppButton> {
     Widget result = AnimatedOpacity(
       duration: const Duration(milliseconds: 150),
       opacity: widget.disabled ? 0.45 : 1.0,
-      child: widget.fullWidth ? SizedBox(width: double.infinity, child: buttonWidget) : buttonWidget,
+      child: widget.fullWidth
+          ? SizedBox(width: double.infinity, child: buttonWidget)
+          : buttonWidget,
     );
 
     if (widget.tooltip != null) {
@@ -213,7 +217,8 @@ class _AppButtonState extends State<AppButton> {
   Widget _buildContent(Color textColor) {
     if (widget.child != null) {
       return DefaultTextStyle(
-        style: AppTypography.labelLarge(color: textColor).copyWith(fontSize: widget.size.fontSize),
+        style: AppTypography.labelLarge(color: textColor)
+            .copyWith(fontSize: widget.size.fontSize),
         child: IconTheme(
           data: IconThemeData(color: textColor, size: widget.size.iconSize),
           child: widget.child!,

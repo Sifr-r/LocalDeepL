@@ -65,7 +65,8 @@ class _JobsViewState extends ConsumerState<JobsView> {
                 children: [
                   Text(
                     'Job Execution History',
-                    style: AppTypography.displayMedium(color: colors.textPrimary),
+                    style:
+                        AppTypography.displayMedium(color: colors.textPrimary),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -88,37 +89,61 @@ class _JobsViewState extends ConsumerState<JobsView> {
             ],
           ),
           const SizedBox(height: 20),
-
           AppCard(
             title: 'Completed Jobs',
             subtitle: '${_jobs.length} jobs recorded in current session',
-            headerLeading: Icon(Icons.layers_outlined, size: 18, color: colors.brandAccent),
+            headerLeading: Icon(Icons.layers_outlined,
+                size: 18, color: colors.brandAccent),
             padding: AppCardPadding.none,
             child: Column(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   color: colors.cardRaised,
                   child: Row(
                     children: [
-                      Expanded(flex: 3, child: Text('FILENAME', style: AppTypography.micro(color: colors.textMuted))),
-                      Expanded(flex: 2, child: Text('JOB ID', style: AppTypography.micro(color: colors.textMuted))),
-                      Expanded(flex: 2, child: Text('MODEL', style: AppTypography.micro(color: colors.textMuted))),
-                      Expanded(flex: 2, child: Text('DURATION', style: AppTypography.micro(color: colors.textMuted))),
-                      Expanded(flex: 2, child: Text('STATUS', style: AppTypography.micro(color: colors.textMuted))),
-                      const SizedBox(width: 80, child: Text('ACTION', style: TextStyle(fontSize: 10))),
+                      Expanded(
+                          flex: 3,
+                          child: Text('FILENAME',
+                              style: AppTypography.micro(
+                                  color: colors.textMuted))),
+                      Expanded(
+                          flex: 2,
+                          child: Text('JOB ID',
+                              style: AppTypography.micro(
+                                  color: colors.textMuted))),
+                      Expanded(
+                          flex: 2,
+                          child: Text('MODEL',
+                              style: AppTypography.micro(
+                                  color: colors.textMuted))),
+                      Expanded(
+                          flex: 2,
+                          child: Text('DURATION',
+                              style: AppTypography.micro(
+                                  color: colors.textMuted))),
+                      Expanded(
+                          flex: 2,
+                          child: Text('STATUS',
+                              style: AppTypography.micro(
+                                  color: colors.textMuted))),
+                      const SizedBox(
+                          width: 80,
+                          child:
+                              Text('ACTION', style: TextStyle(fontSize: 10))),
                     ],
                   ),
                 ),
                 Divider(height: 1, color: colors.border),
-
                 if (_jobs.isEmpty)
                   Padding(
                     padding: const EdgeInsets.all(40),
                     child: Center(
                       child: Text(
                         'No job history recorded yet.',
-                        style: AppTypography.bodyMedium(color: colors.textMuted),
+                        style:
+                            AppTypography.bodyMedium(color: colors.textMuted),
                       ),
                     ),
                   )
@@ -126,10 +151,15 @@ class _JobsViewState extends ConsumerState<JobsView> {
                   ...List.generate(_jobs.length, (index) {
                     final job = _jobs[index];
                     return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
                       decoration: BoxDecoration(
-                        color: index.isEven ? colors.card : colors.cardRaised.withValues(alpha: 0.3),
-                        border: Border(bottom: BorderSide(color: colors.border, width: 0.5)),
+                        color: index.isEven
+                            ? colors.card
+                            : colors.cardRaised.withValues(alpha: 0.3),
+                        border: Border(
+                            bottom:
+                                BorderSide(color: colors.border, width: 0.5)),
                       ),
                       child: Row(
                         children: [
@@ -138,22 +168,32 @@ class _JobsViewState extends ConsumerState<JobsView> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(job['filename'] as String, style: AppTypography.captionStrong(color: colors.textPrimary)),
-                                Text(job['timestamp'] as String, style: AppTypography.codeSmall(color: colors.textMuted)),
+                                Text(job['filename'] as String,
+                                    style: AppTypography.captionStrong(
+                                        color: colors.textPrimary)),
+                                Text(job['timestamp'] as String,
+                                    style: AppTypography.codeSmall(
+                                        color: colors.textMuted)),
                               ],
                             ),
                           ),
                           Expanded(
                             flex: 2,
-                            child: Text(job['id'] as String, style: AppTypography.codeSmall(color: colors.textSecondary)),
+                            child: Text(job['id'] as String,
+                                style: AppTypography.codeSmall(
+                                    color: colors.textSecondary)),
                           ),
                           Expanded(
                             flex: 2,
-                            child: Text(job['model'] as String, style: AppTypography.bodySmall(color: colors.textSecondary)),
+                            child: Text(job['model'] as String,
+                                style: AppTypography.bodySmall(
+                                    color: colors.textSecondary)),
                           ),
                           Expanded(
                             flex: 2,
-                            child: Text(job['duration'] as String, style: AppTypography.codeSmall(color: colors.textSecondary)),
+                            child: Text(job['duration'] as String,
+                                style: AppTypography.codeSmall(
+                                    color: colors.textSecondary)),
                           ),
                           Expanded(
                             flex: 2,
@@ -172,7 +212,9 @@ class _JobsViewState extends ConsumerState<JobsView> {
                               size: AppButtonSize.sm,
                               icon: const Icon(Icons.open_in_new, size: 14),
                               onPressed: () {
-                                ref.read(toastProvider.notifier).info('Opening artifacts for ${job["id"]}');
+                                ref
+                                    .read(toastProvider.notifier)
+                                    .info('Opening artifacts for ${job["id"]}');
                               },
                             ),
                           ),

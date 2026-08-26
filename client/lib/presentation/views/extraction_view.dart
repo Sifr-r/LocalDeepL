@@ -77,7 +77,8 @@ class _ExtractionViewState extends ConsumerState<ExtractionView> {
                 children: [
                   Text(
                     'Schema & Entity Extraction',
-                    style: AppTypography.displayMedium(color: colors.textPrimary),
+                    style:
+                        AppTypography.displayMedium(color: colors.textPrimary),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -107,11 +108,18 @@ class _ExtractionViewState extends ConsumerState<ExtractionView> {
                     label: 'Target Template',
                     value: _template,
                     items: const [
-                      AppSelectItem(value: 'invoice', label: 'Commercial Invoice (Financial)'),
-                      AppSelectItem(value: 'resume', label: 'Curriculum Vitae / Resume'),
-                      AppSelectItem(value: 'academic', label: 'Academic Paper / Bibliography'),
-                      AppSelectItem(value: 'table', label: 'Table Matrix Extraction'),
-                      AppSelectItem(value: 'custom', label: 'Custom JSON Schema'),
+                      AppSelectItem(
+                          value: 'invoice',
+                          label: 'Commercial Invoice (Financial)'),
+                      AppSelectItem(
+                          value: 'resume', label: 'Curriculum Vitae / Resume'),
+                      AppSelectItem(
+                          value: 'academic',
+                          label: 'Academic Paper / Bibliography'),
+                      AppSelectItem(
+                          value: 'table', label: 'Table Matrix Extraction'),
+                      AppSelectItem(
+                          value: 'custom', label: 'Custom JSON Schema'),
                     ],
                     onChanged: (v) {
                       if (v != null) setState(() => _template = v);
@@ -132,7 +140,8 @@ class _ExtractionViewState extends ConsumerState<ExtractionView> {
                       Future.delayed(const Duration(milliseconds: 1200), () {
                         if (mounted) {
                           setState(() => _isExtracting = false);
-                          ref.read(toastProvider.notifier).success('Schema extracted: 8 entity groups identified');
+                          ref.read(toastProvider.notifier).success(
+                              'Schema extracted: 8 entity groups identified');
                         }
                       });
                     },
@@ -147,7 +156,8 @@ class _ExtractionViewState extends ConsumerState<ExtractionView> {
           AppCard(
             title: 'Extracted JSON Output',
             subtitle: 'Validated schema representation',
-            headerLeading: Icon(Icons.data_object, size: 18, color: colors.brandAccent),
+            headerLeading:
+                Icon(Icons.data_object, size: 18, color: colors.brandAccent),
             headerAction: Row(
               children: [
                 AppButton(
@@ -156,7 +166,9 @@ class _ExtractionViewState extends ConsumerState<ExtractionView> {
                   size: AppButtonSize.sm,
                   icon: const Icon(Icons.check_circle_outline, size: 14),
                   onPressed: () {
-                    ref.read(toastProvider.notifier).success('Schema validated successfully: 0 errors');
+                    ref
+                        .read(toastProvider.notifier)
+                        .success('Schema validated successfully: 0 errors');
                   },
                 ),
                 const SizedBox(width: 6),
@@ -166,7 +178,9 @@ class _ExtractionViewState extends ConsumerState<ExtractionView> {
                   size: AppButtonSize.sm,
                   icon: const Icon(Icons.copy, size: 14),
                   onPressed: () {
-                    ref.read(toastProvider.notifier).success('JSON copied to clipboard');
+                    ref
+                        .read(toastProvider.notifier)
+                        .success('JSON copied to clipboard');
                   },
                 ),
               ],

@@ -101,7 +101,8 @@ class DocuVerseModal extends StatelessWidget {
                       ),
                     ),
                     IconButton(
-                      icon: Icon(Icons.close, size: 18, color: tokens.foregroundMuted),
+                      icon: Icon(Icons.close,
+                          size: 18, color: tokens.foregroundMuted),
                       splashRadius: 18,
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -122,7 +123,8 @@ class DocuVerseModal extends StatelessWidget {
               if (actions != null && actions!.isNotEmpty) ...[
                 Divider(color: tokens.border, height: 1),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [

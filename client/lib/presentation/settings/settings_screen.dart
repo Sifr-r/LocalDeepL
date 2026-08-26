@@ -49,8 +49,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     super.initState();
     final settings = ref.read(settingsStateProvider);
     final config = settings.runtimeConfig;
-    _serverUrlController =
-        TextEditingController(text: settings.serverBaseUrl);
+    _serverUrlController = TextEditingController(text: settings.serverBaseUrl);
     _dpiController = TextEditingController(text: '${config?.dpi ?? 200}');
     _concurrencyController =
         TextEditingController(text: '${config?.concurrency ?? 4}');
@@ -96,13 +95,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
       // Build the request payload from the current RuntimeConfig (full picture)
       // plus any user-typed overrides from the text fields.
-      final ProcessSettings payload = ProcessSettings.defaultSettings().copyWith(
+      final ProcessSettings payload =
+          ProcessSettings.defaultSettings().copyWith(
         apiBase: _serverUrlController.text.trim().isEmpty
             ? runtimeConfig.apiBase
             : _serverUrlController.text.trim(),
         dpi: int.tryParse(_dpiController.text) ?? runtimeConfig.dpi,
-        concurrency:
-            int.tryParse(_concurrencyController.text) ?? runtimeConfig.concurrency,
+        concurrency: int.tryParse(_concurrencyController.text) ??
+            runtimeConfig.concurrency,
         denseThreshold: int.tryParse(_denseThresholdController.text) ??
             runtimeConfig.denseThreshold,
         maxImageDim: int.tryParse(_maxImageDimController.text) ??
@@ -208,8 +208,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         Expanded(
                           child: Text(
                             _saveStatusMessage!,
-                            style: TextStyle(
-                                fontSize: 12, color: tokens.success),
+                            style:
+                                TextStyle(fontSize: 12, color: tokens.success),
                           ),
                         ),
                       ],
@@ -221,15 +221,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 // Tabs
                 Container(
                   decoration: BoxDecoration(
-                    border: Border(
-                        bottom: BorderSide(color: tokens.border)),
+                    border: Border(bottom: BorderSide(color: tokens.border)),
                   ),
                   child: Row(
                     children: List.generate(_tabs.length, (index) {
                       final isSelected = _activeTabIndex == index;
                       return InkWell(
-                        onTap: () =>
-                            setState(() => _activeTabIndex = index),
+                        onTap: () => setState(() => _activeTabIndex = index),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 10),
@@ -317,8 +315,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onPressed: () {
                       ref
                           .read(settingsStateProvider.notifier)
-                          .setServerBaseUrl(
-                              _serverUrlController.text.trim());
+                          .setServerBaseUrl(_serverUrlController.text.trim());
                     },
                   ),
                 ],
@@ -327,7 +324,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ),
         const SizedBox(height: 16),
-
         DocuVerseCard(
           padding: DocuVerseCardPadding.lg,
           child: Column(
@@ -445,8 +441,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       controller: _dpiController,
                       label: 'Rendering DPI',
                       placeholder: '200',
-                      hint:
-                          'Default 200 DPI for balance of speed and clarity',
+                      hint: 'Default 200 DPI for balance of speed and clarity',
                       isMono: true,
                     ),
                   ),
@@ -470,8 +465,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       controller: _denseThresholdController,
                       label: 'Dense Mode Threshold',
                       placeholder: '10',
-                      hint:
-                          'Minimum block count to activate dense chunking',
+                      hint: 'Minimum block count to activate dense chunking',
                       isMono: true,
                     ),
                   ),
@@ -481,7 +475,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       controller: _maxImageDimController,
                       label: 'Max Image Dimension (px)',
                       placeholder: '2048',
-                      hint: 'Caps page canvas size before sending to vision model',
+                      hint:
+                          'Caps page canvas size before sending to vision model',
                       isMono: true,
                     ),
                   ),
@@ -493,9 +488,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 description:
                     'Queue background processing jobs (POST /api/process/async) instead of blocking requests.',
                 checked: settings.useAsync,
-                onChanged: (val) => ref
-                    .read(settingsStateProvider.notifier)
-                    .setUseAsync(val),
+                onChanged: (val) =>
+                    ref.read(settingsStateProvider.notifier).setUseAsync(val),
               ),
               const SizedBox(height: 12),
               DocuVerseToggle(
@@ -549,8 +543,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 controller: _slidingWindowController,
                 label: 'Sliding Window Words',
                 placeholder: '32',
-                hint:
-                    'Word count shared between adjacent translation segments',
+                hint: 'Word count shared between adjacent translation segments',
                 isMono: true,
               ),
             ],

@@ -71,8 +71,7 @@ void main() {
     });
 
     test('on failure populates error and clears isLoading', () async {
-      when(() => repo.getConfig())
-          .thenThrow(Exception('boom'));
+      when(() => repo.getConfig()).thenThrow(Exception('boom'));
 
       final container = makeContainer();
       addTearDown(container.dispose);

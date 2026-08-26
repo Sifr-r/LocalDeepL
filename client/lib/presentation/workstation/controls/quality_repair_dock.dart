@@ -46,7 +46,9 @@ class QualityRepairDock extends StatelessWidget {
             title: 'Quality Repair Loop',
             action: DocuVerseBadge(
               text: isRepairEnabled ? 'ACTIVE' : 'OFF',
-              variant: isRepairEnabled ? DocuVerseBadgeVariant.revised : DocuVerseBadgeVariant.neutral,
+              variant: isRepairEnabled
+                  ? DocuVerseBadgeVariant.revised
+                  : DocuVerseBadgeVariant.neutral,
               size: DocuVerseBadgeSize.sm,
             ),
           ),
@@ -54,10 +56,12 @@ class QualityRepairDock extends StatelessWidget {
           // Enable Quality Repair Loop Switch
           DocuVerseToggle(
             label: 'Auto-Repair Low Confidence Blocks',
-            description: 'Iteratively prompts VLM to refine blocks falling below the target threshold.',
+            description:
+                'Iteratively prompts VLM to refine blocks falling below the target threshold.',
             checked: isRepairEnabled,
             onChanged: (enabled) {
-              onSettingsChanged(settings.copyWith(qualityRepairEnabled: enabled));
+              onSettingsChanged(
+                  settings.copyWith(qualityRepairEnabled: enabled));
             },
           ),
           const SizedBox(height: 12),
@@ -71,7 +75,8 @@ class QualityRepairDock extends StatelessWidget {
               max: 1.00,
               divisions: 50,
               valueLabel: '${(target * 100).round()}%',
-              helperText: 'Blocks scoring below this confidence trigger self-correction retries.',
+              helperText:
+                  'Blocks scoring below this confidence trigger self-correction retries.',
               onChanged: (val) {
                 onSettingsChanged(settings.copyWith(qualityTarget: val));
               },
@@ -85,8 +90,10 @@ class QualityRepairDock extends StatelessWidget {
               min: 1.0,
               max: 5.0,
               divisions: 4,
-              valueLabel: '$maxRetries ${maxRetries == 1 ? "retry" : "retries"}',
-              helperText: 'Maximum re-prompts per degraded block before finalizing.',
+              valueLabel:
+                  '$maxRetries ${maxRetries == 1 ? "retry" : "retries"}',
+              helperText:
+                  'Maximum re-prompts per degraded block before finalizing.',
               onChanged: (val) {
                 onSettingsChanged(settings.copyWith(maxRetries: val.round()));
               },
@@ -123,7 +130,9 @@ class QualityRepairDock extends StatelessWidget {
                             fontFamily: DocuVerseTypography.fontMono,
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
-                            color: avgConf >= target ? colors.success : colors.warning,
+                            color: avgConf >= target
+                                ? colors.success
+                                : colors.warning,
                           ),
                         ),
                       ],

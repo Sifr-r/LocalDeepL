@@ -11,18 +11,22 @@ class DocumentProvider extends InheritedNotifier<DocumentStateNotifier> {
   }) : super(notifier: notifier);
 
   static DocumentViewModel of(BuildContext context) {
-    final provider = context.dependOnInheritedWidgetOfExactType<DocumentProvider>();
+    final provider =
+        context.dependOnInheritedWidgetOfExactType<DocumentProvider>();
     assert(provider != null, 'No DocumentProvider found in context');
     return provider!.notifier!.state;
   }
 
-  static DocumentStateNotifier notifierOf(BuildContext context, {bool listen = false}) {
+  static DocumentStateNotifier notifierOf(BuildContext context,
+      {bool listen = false}) {
     if (listen) {
-      final provider = context.dependOnInheritedWidgetOfExactType<DocumentProvider>();
+      final provider =
+          context.dependOnInheritedWidgetOfExactType<DocumentProvider>();
       assert(provider != null, 'No DocumentProvider found in context');
       return provider!.notifier!;
     } else {
-      final provider = context.getInheritedWidgetOfExactType<DocumentProvider>();
+      final provider =
+          context.getInheritedWidgetOfExactType<DocumentProvider>();
       assert(provider != null, 'No DocumentProvider found in context');
       return provider!.notifier!;
     }

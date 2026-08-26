@@ -12,7 +12,9 @@ sealed class WsEnvelope {
 
     if (type == null) {
       // Legacy ProgressFrame has no type discriminator
-      if (json.containsKey('percent') || json.containsKey('stage') || json.containsKey('status')) {
+      if (json.containsKey('percent') ||
+          json.containsKey('stage') ||
+          json.containsKey('status')) {
         return WsProgressFrame(
           status: json['status'] as String? ?? '',
           percent: (json['percent'] as num?)?.toDouble() ?? 0.0,
@@ -25,7 +27,10 @@ sealed class WsEnvelope {
 
     switch (type) {
       case 'block_complete':
-        final rawBbox = (json['bbox'] as List<dynamic>?)?.map((e) => (e as num).toDouble()).toList() ?? [0.0, 0.0, 1.0, 1.0];
+        final rawBbox = (json['bbox'] as List<dynamic>?)
+                ?.map((e) => (e as num).toDouble())
+                .toList() ??
+            [0.0, 0.0, 1.0, 1.0];
         final pageIdx = (json['page_idx'] as num?)?.toInt() ?? 0;
         final blockIdx = (json['block_idx'] as num?)?.toInt() ?? 0;
         return WsBlockCompleteFrame(
@@ -47,7 +52,10 @@ sealed class WsEnvelope {
         );
 
       case 'block_revised':
-        final rawBbox = (json['bbox'] as List<dynamic>?)?.map((e) => (e as num).toDouble()).toList() ?? [0.0, 0.0, 1.0, 1.0];
+        final rawBbox = (json['bbox'] as List<dynamic>?)
+                ?.map((e) => (e as num).toDouble())
+                .toList() ??
+            [0.0, 0.0, 1.0, 1.0];
         return WsBlockRevisedFrame(
           pageIdx: (json['page_idx'] as num?)?.toInt() ?? 0,
           blockIdx: (json['block_idx'] as num?)?.toInt() ?? 0,

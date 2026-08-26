@@ -26,10 +26,12 @@ class _TranslationViewState extends ConsumerState<TranslationView> {
   bool _isTranslating = false;
 
   final TextEditingController _sourceController = TextEditingController(
-    text: 'OmniScribe is a high-accuracy document intelligence and OCR suite engineered for enterprise workflows.',
+    text:
+        'OmniScribe is a high-accuracy document intelligence and OCR suite engineered for enterprise workflows.',
   );
   final TextEditingController _targetController = TextEditingController(
-    text: 'أومني سكرايب هو جناح ذكاء مستندات واستخراج نصوص عالي الدقة مصمم لسير العمل المؤسسي.',
+    text:
+        'أومني سكرايب هو جناح ذكاء مستندات واستخراج نصوص عالي الدقة مصمم لسير العمل المؤسسي.',
   );
 
   @override
@@ -55,7 +57,8 @@ class _TranslationViewState extends ConsumerState<TranslationView> {
                 children: [
                   Text(
                     'Translation Workbench',
-                    style: AppTypography.displayMedium(color: colors.textPrimary),
+                    style:
+                        AppTypography.displayMedium(color: colors.textPrimary),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -85,7 +88,8 @@ class _TranslationViewState extends ConsumerState<TranslationView> {
                     label: 'Source Language',
                     value: _sourceLang,
                     items: const [
-                      AppSelectItem(value: 'auto', label: 'Auto Detect Language'),
+                      AppSelectItem(
+                          value: 'auto', label: 'Auto Detect Language'),
                       AppSelectItem(value: 'en', label: 'English (US)'),
                       AppSelectItem(value: 'ar', label: 'Arabic (العربية)'),
                       AppSelectItem(value: 'fr', label: 'French (Français)'),
@@ -157,7 +161,8 @@ class _TranslationViewState extends ConsumerState<TranslationView> {
           LayoutBuilder(
             builder: (context, constraints) {
               final isWide = constraints.maxWidth >= 900;
-              final paneWidth = isWide ? (constraints.maxWidth - 20) / 2 : double.infinity;
+              final paneWidth =
+                  isWide ? (constraints.maxWidth - 20) / 2 : double.infinity;
 
               return Wrap(
                 spacing: 20,
@@ -169,10 +174,13 @@ class _TranslationViewState extends ConsumerState<TranslationView> {
                     child: AppCard(
                       title: 'Source Text',
                       subtitle: 'Extracted OCR or uploaded copy',
-                      headerLeading: Icon(Icons.source_outlined, size: 16, color: colors.brandAccent),
+                      headerLeading: Icon(Icons.source_outlined,
+                          size: 16, color: colors.brandAccent),
                       footer: Row(
                         children: [
-                          Text('14 words • 108 characters', style: AppTypography.codeSmall(color: colors.textMuted)),
+                          Text('14 words • 108 characters',
+                              style: AppTypography.codeSmall(
+                                  color: colors.textMuted)),
                           const Spacer(),
                           AppButton(
                             text: 'Clear',
@@ -197,7 +205,8 @@ class _TranslationViewState extends ConsumerState<TranslationView> {
                     child: AppCard(
                       title: 'Target Translation',
                       subtitle: 'Synthesized result with formatting',
-                      headerLeading: Icon(Icons.translate, size: 16, color: colors.success),
+                      headerLeading: Icon(Icons.translate,
+                          size: 16, color: colors.success),
                       footer: Row(
                         children: [
                           AppBadge(
@@ -212,7 +221,9 @@ class _TranslationViewState extends ConsumerState<TranslationView> {
                             variant: AppButtonVariant.secondary,
                             size: AppButtonSize.sm,
                             onPressed: () {
-                              ref.read(toastProvider.notifier).success('Translation copied to clipboard');
+                              ref
+                                  .read(toastProvider.notifier)
+                                  .success('Translation copied to clipboard');
                             },
                           ),
                         ],
@@ -233,7 +244,9 @@ class _TranslationViewState extends ConsumerState<TranslationView> {
 
           // Action CTA
           AppButton(
-            text: _isTranslating ? 'Translating Content...' : 'Translate Document',
+            text: _isTranslating
+                ? 'Translating Content...'
+                : 'Translate Document',
             icon: const Icon(Icons.bolt),
             variant: AppButtonVariant.primary,
             size: AppButtonSize.lg,
@@ -243,7 +256,9 @@ class _TranslationViewState extends ConsumerState<TranslationView> {
               Future.delayed(const Duration(milliseconds: 1400), () {
                 if (mounted) {
                   setState(() => _isTranslating = false);
-                  ref.read(toastProvider.notifier).success('Translation completed');
+                  ref
+                      .read(toastProvider.notifier)
+                      .success('Translation completed');
                 }
               });
             },

@@ -28,7 +28,8 @@ class DocumentViewport extends StatefulWidget {
 }
 
 class _DocumentViewportState extends State<DocumentViewport> {
-  final TransformationController _transformController = TransformationController();
+  final TransformationController _transformController =
+      TransformationController();
   final GlobalKey _canvasKey = GlobalKey();
 
   double _currentScale = 1.0;
@@ -71,7 +72,8 @@ class _DocumentViewportState extends State<DocumentViewport> {
     _transformController.value = Matrix4.identity();
   }
 
-  void _handleTapUp(TapUpDetails details, Size canvasSize, List<BBoxItem> bboxes, DocumentStateNotifier docNotifier) {
+  void _handleTapUp(TapUpDetails details, Size canvasSize,
+      List<BBoxItem> bboxes, DocumentStateNotifier docNotifier) {
     if (canvasSize.width <= 0 || canvasSize.height <= 0 || bboxes.isEmpty) {
       docNotifier.selectBBox(null);
       widget.onBBoxSelected?.call(null);
@@ -99,7 +101,8 @@ class _DocumentViewportState extends State<DocumentViewport> {
     }
   }
 
-  void _handlePointerHover(PointerHoverEvent event, Size canvasSize, List<BBoxItem> bboxes, DocumentStateNotifier docNotifier) {
+  void _handlePointerHover(PointerHoverEvent event, Size canvasSize,
+      List<BBoxItem> bboxes, DocumentStateNotifier docNotifier) {
     if (canvasSize.width <= 0 || canvasSize.height <= 0 || bboxes.isEmpty) {
       docNotifier.hoverBBox(null);
       return;
@@ -186,7 +189,8 @@ class _DocumentViewportState extends State<DocumentViewport> {
                   Positioned(
                     right: 16,
                     bottom: 16,
-                    child: _buildFloatingControls(colors, docState, docNotifier),
+                    child:
+                        _buildFloatingControls(colors, docState, docNotifier),
                   ),
                 ],
               ),
@@ -276,9 +280,14 @@ class _DocumentViewportState extends State<DocumentViewport> {
                   icon: const Icon(Icons.chevron_left_rounded, size: 20),
                   tooltip: 'Previous page',
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                  color: currentPageIndex > 0 ? colors.foreground : colors.foregroundSubtle,
-                  onPressed: currentPageIndex > 0 ? () => docNotifier.selectPage(currentPageIndex - 1) : null,
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  color: currentPageIndex > 0
+                      ? colors.foreground
+                      : colors.foregroundSubtle,
+                  onPressed: currentPageIndex > 0
+                      ? () => docNotifier.selectPage(currentPageIndex - 1)
+                      : null,
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -296,9 +305,14 @@ class _DocumentViewportState extends State<DocumentViewport> {
                   icon: const Icon(Icons.chevron_right_rounded, size: 20),
                   tooltip: 'Next page',
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                  color: currentPageIndex < totalPages - 1 ? colors.foreground : colors.foregroundSubtle,
-                  onPressed: currentPageIndex < totalPages - 1 ? () => docNotifier.selectPage(currentPageIndex + 1) : null,
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  color: currentPageIndex < totalPages - 1
+                      ? colors.foreground
+                      : colors.foregroundSubtle,
+                  onPressed: currentPageIndex < totalPages - 1
+                      ? () => docNotifier.selectPage(currentPageIndex + 1)
+                      : null,
                 ),
                 const SizedBox(width: 12),
                 Container(width: 1, height: 20, color: colors.border),
@@ -307,17 +321,24 @@ class _DocumentViewportState extends State<DocumentViewport> {
 
               // Layer Toggles
               Tooltip(
-                message: docState.showBBoxes ? 'Hide bounding boxes' : 'Show bounding boxes',
+                message: docState.showBBoxes
+                    ? 'Hide bounding boxes'
+                    : 'Show bounding boxes',
                 child: InkWell(
                   onTap: () => docNotifier.toggleBBoxes(),
                   borderRadius: BorderRadius.circular(4),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: docState.showBBoxes ? colors.brand.withValues(alpha: 0.15) : Colors.transparent,
+                      color: docState.showBBoxes
+                          ? colors.brand.withValues(alpha: 0.15)
+                          : Colors.transparent,
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(
-                        color: docState.showBBoxes ? colors.brand.withValues(alpha: 0.4) : colors.border,
+                        color: docState.showBBoxes
+                            ? colors.brand.withValues(alpha: 0.4)
+                            : colors.border,
                       ),
                     ),
                     child: Row(
@@ -326,7 +347,9 @@ class _DocumentViewportState extends State<DocumentViewport> {
                         Icon(
                           Icons.crop_free_rounded,
                           size: 14,
-                          color: docState.showBBoxes ? colors.brand : colors.foregroundMuted,
+                          color: docState.showBBoxes
+                              ? colors.brand
+                              : colors.foregroundMuted,
                         ),
                         const SizedBox(width: 4),
                         Text(
@@ -335,7 +358,9 @@ class _DocumentViewportState extends State<DocumentViewport> {
                             fontFamily: DocuVerseTypography.fontBody,
                             fontSize: 11,
                             fontWeight: FontWeight.w500,
-                            color: docState.showBBoxes ? colors.brand : colors.foregroundMuted,
+                            color: docState.showBBoxes
+                                ? colors.brand
+                                : colors.foregroundMuted,
                           ),
                         ),
                       ],
@@ -345,17 +370,24 @@ class _DocumentViewportState extends State<DocumentViewport> {
               ),
               const SizedBox(width: 8),
               Tooltip(
-                message: docState.showHeatmap ? 'Disable confidence heatmap' : 'Enable confidence heatmap',
+                message: docState.showHeatmap
+                    ? 'Disable confidence heatmap'
+                    : 'Enable confidence heatmap',
                 child: InkWell(
                   onTap: () => docNotifier.toggleHeatmap(),
                   borderRadius: BorderRadius.circular(4),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: docState.showHeatmap ? colors.success.withValues(alpha: 0.15) : Colors.transparent,
+                      color: docState.showHeatmap
+                          ? colors.success.withValues(alpha: 0.15)
+                          : Colors.transparent,
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(
-                        color: docState.showHeatmap ? colors.success.withValues(alpha: 0.4) : colors.border,
+                        color: docState.showHeatmap
+                            ? colors.success.withValues(alpha: 0.4)
+                            : colors.border,
                       ),
                     ),
                     child: Row(
@@ -364,7 +396,9 @@ class _DocumentViewportState extends State<DocumentViewport> {
                         Icon(
                           Icons.gradient_rounded,
                           size: 14,
-                          color: docState.showHeatmap ? colors.success : colors.foregroundMuted,
+                          color: docState.showHeatmap
+                              ? colors.success
+                              : colors.foregroundMuted,
                         ),
                         const SizedBox(width: 4),
                         Text(
@@ -373,7 +407,9 @@ class _DocumentViewportState extends State<DocumentViewport> {
                             fontFamily: DocuVerseTypography.fontBody,
                             fontSize: 11,
                             fontWeight: FontWeight.w500,
-                            color: docState.showHeatmap ? colors.success : colors.foregroundMuted,
+                            color: docState.showHeatmap
+                                ? colors.success
+                                : colors.foregroundMuted,
                           ),
                         ),
                       ],
@@ -421,10 +457,12 @@ class _DocumentViewportState extends State<DocumentViewport> {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(6),
         child: MouseRegion(
-          onHover: (e) => _handlePointerHover(e, canvasSize, bboxes, docNotifier),
+          onHover: (e) =>
+              _handlePointerHover(e, canvasSize, bboxes, docNotifier),
           onExit: (_) => docNotifier.hoverBBox(null),
           child: GestureDetector(
-            onTapUp: (details) => _handleTapUp(details, canvasSize, bboxes, docNotifier),
+            onTapUp: (details) =>
+                _handleTapUp(details, canvasSize, bboxes, docNotifier),
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -457,7 +495,8 @@ class _DocumentViewportState extends State<DocumentViewport> {
     );
   }
 
-  Widget _buildPagePlaceholder(DocuVerseThemeTokens colors, DocumentViewModel docState) {
+  Widget _buildPagePlaceholder(
+      DocuVerseThemeTokens colors, DocumentViewModel docState) {
     return Container(
       color: colors.card,
       padding: const EdgeInsets.all(32),
@@ -472,7 +511,9 @@ class _DocumentViewportState extends State<DocumentViewport> {
             ),
             const SizedBox(height: 12),
             Text(
-              docState.hasDocument ? 'Page ${docState.selectedPageIndex + 1}' : 'No Document Loaded',
+              docState.hasDocument
+                  ? 'Page ${docState.selectedPageIndex + 1}'
+                  : 'No Document Loaded',
               style: TextStyle(
                 fontFamily: DocuVerseTypography.fontDisplay,
                 fontSize: 16,
@@ -554,7 +595,11 @@ class _DocumentViewportState extends State<DocumentViewport> {
             color: colors.foreground,
             onPressed: _zoomIn,
           ),
-          Container(width: 1, height: 16, color: colors.border, margin: const EdgeInsets.symmetric(horizontal: 4)),
+          Container(
+              width: 1,
+              height: 16,
+              color: colors.border,
+              margin: const EdgeInsets.symmetric(horizontal: 4)),
           IconButton(
             icon: const Icon(Icons.fit_screen_outlined, size: 16),
             tooltip: 'Reset Zoom (100%)',

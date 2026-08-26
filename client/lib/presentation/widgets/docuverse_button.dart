@@ -31,7 +31,8 @@ class DocuVerseButton extends StatelessWidget {
     this.disabled = false,
     this.fullWidth = false,
     this.tooltip,
-  }) : assert(text != null || child != null || icon != null, 'Must provide text, child, or icon');
+  }) : assert(text != null || child != null || icon != null,
+            'Must provide text, child, or icon');
 
   final VoidCallback? onPressed;
   final String? text;
@@ -144,7 +145,8 @@ class DocuVerseButton extends StatelessWidget {
         ));
       }
       if (child != null) {
-        if (icon != null || text != null) rowChildren.add(const SizedBox(width: 6));
+        if (icon != null || text != null)
+          rowChildren.add(const SizedBox(width: 6));
         rowChildren.add(child!);
       }
 

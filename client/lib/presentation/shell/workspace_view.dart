@@ -39,7 +39,8 @@ class WorkspaceView extends ConsumerWidget {
                     end: Alignment.bottomRight,
                   ),
                   borderRadius: BorderRadius.circular(tokens.radiusCard + 4),
-                  border: Border.all(color: tokens.brand.withValues(alpha: 0.3)),
+                  border:
+                      Border.all(color: tokens.brand.withValues(alpha: 0.3)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -52,7 +53,8 @@ class WorkspaceView extends ConsumerWidget {
                             color: tokens.brand,
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Icon(Icons.document_scanner, color: Colors.white, size: 24),
+                          child: const Icon(Icons.document_scanner,
+                              color: Colors.white, size: 24),
                         ),
                         const SizedBox(width: 14),
                         Column(
@@ -69,7 +71,8 @@ class WorkspaceView extends ConsumerWidget {
                             ),
                             Text(
                               'Universal Document OCR, Neural Translation, Voice Transcription & Schema Extraction',
-                              style: TextStyle(fontSize: 13, color: tokens.foregroundMuted),
+                              style: TextStyle(
+                                  fontSize: 13, color: tokens.foregroundMuted),
                             ),
                           ],
                         ),
@@ -80,13 +83,18 @@ class WorkspaceView extends ConsumerWidget {
                       spacing: 12,
                       runSpacing: 8,
                       children: [
-                        DocuVerseBadge(text: 'Active Provider: ${settings.activeProviderId.toUpperCase()}',
+                        DocuVerseBadge(
+                          text:
+                              'Active Provider: ${settings.activeProviderId.toUpperCase()}',
                           variant: DocuVerseBadgeVariant.brand,
                         ),
-                        DocuVerseBadge(text: 'Model: ${settings.runtimeConfig?.model ?? 'auto'}',
+                        DocuVerseBadge(
+                          text:
+                              'Model: ${settings.runtimeConfig?.model ?? 'auto'}',
                           variant: DocuVerseBadgeVariant.neutral,
                         ),
-                        DocuVerseBadge(text: 'Server: Offline',
+                        DocuVerseBadge(
+                          text: 'Server: Offline',
                           variant: DocuVerseBadgeVariant.danger,
                           hasDot: true,
                         ),
@@ -121,7 +129,8 @@ class WorkspaceView extends ConsumerWidget {
                     context: context,
                     icon: Icons.translate,
                     title: 'Neural Translation',
-                    description: 'Dual-engine document translation with term preservation & sliding window context.',
+                    description:
+                        'Dual-engine document translation with term preservation & sliding window context.',
                     badge: 'LangGraph / NLLB',
                     onTap: () => onNavigateTab(1),
                   ),
@@ -129,7 +138,8 @@ class WorkspaceView extends ConsumerWidget {
                     context: context,
                     icon: Icons.mic,
                     title: 'Voice Transcription',
-                    description: 'Whisper-powered acoustic transcription with interactive timestamped segments.',
+                    description:
+                        'Whisper-powered acoustic transcription with interactive timestamped segments.',
                     badge: 'Whisper / Local',
                     onTap: () => onNavigateTab(2),
                   ),
@@ -137,7 +147,8 @@ class WorkspaceView extends ConsumerWidget {
                     context: context,
                     icon: Icons.menu_book,
                     title: 'Terminology Glossary',
-                    description: 'Domain lexicons, term overrides, and dictionary mappings for high-precision OCR.',
+                    description:
+                        'Domain lexicons, term overrides, and dictionary mappings for high-precision OCR.',
                     badge: 'Multi-Format',
                     onTap: () => onNavigateTab(3),
                   ),
@@ -145,7 +156,8 @@ class WorkspaceView extends ConsumerWidget {
                     context: context,
                     icon: Icons.schema,
                     title: 'Structured Extraction',
-                    description: 'Extract strongly-typed entities, tables, invoices, and JSON schemas from documents.',
+                    description:
+                        'Extract strongly-typed entities, tables, invoices, and JSON schemas from documents.',
                     badge: 'AST / JSON',
                     onTap: () => onNavigateTab(4),
                   ),
@@ -153,7 +165,8 @@ class WorkspaceView extends ConsumerWidget {
                     context: context,
                     icon: Icons.history,
                     title: 'Job Execution History',
-                    description: 'Audit log of past OCR pipeline jobs with searchable PDF downloads.',
+                    description:
+                        'Audit log of past OCR pipeline jobs with searchable PDF downloads.',
                     badge: 'Audit Log',
                     onTap: () => onNavigateTab(5),
                   ),
@@ -161,7 +174,8 @@ class WorkspaceView extends ConsumerWidget {
                     context: context,
                     icon: Icons.settings,
                     title: 'System Settings',
-                    description: 'Configure LLM inference providers, endpoints, concurrency, and security tokens.',
+                    description:
+                        'Configure LLM inference providers, endpoints, concurrency, and security tokens.',
                     badge: 'Config',
                     onTap: () => onNavigateTab(6),
                   ),
@@ -205,7 +219,8 @@ class WorkspaceView extends ConsumerWidget {
                   ),
                   child: Icon(icon, size: 18, color: tokens.brand),
                 ),
-                DocuVerseBadge(text: badge, variant: DocuVerseBadgeVariant.neutral),
+                DocuVerseBadge(
+                    text: badge, variant: DocuVerseBadgeVariant.neutral),
               ],
             ),
             Column(

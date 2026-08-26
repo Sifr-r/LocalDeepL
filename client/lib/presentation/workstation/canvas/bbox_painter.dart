@@ -133,7 +133,8 @@ class BBoxPainter extends CustomPainter {
 
     // 3. Corner Handles for Selected Box
     if (isSelected) {
-      _drawCornerHandles(canvas, rect, isRevised ? colors.revisedCyan : colors.brand);
+      _drawCornerHandles(
+          canvas, rect, isRevised ? colors.revisedCyan : colors.brand);
     }
 
     // 4. Label Pill (Kind + Confidence badge)
@@ -226,8 +227,10 @@ class BBoxPainter extends CustomPainter {
     required bool isHovered,
   }) {
     final String kindLabel = (box.kind ?? 'txt').toUpperCase();
-    final String confStr = box.confidence != null ? '${(box.confidence! * 100).round()}%' : '—';
-    final String badgeText = box.revised ? 'REV • $confStr' : '$kindLabel $confStr';
+    final String confStr =
+        box.confidence != null ? '${(box.confidence! * 100).round()}%' : '—';
+    final String badgeText =
+        box.revised ? 'REV • $confStr' : '$kindLabel $confStr';
 
     final textSpan = TextSpan(
       text: badgeText,

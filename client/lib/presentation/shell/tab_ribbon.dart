@@ -86,7 +86,9 @@ class TabRibbon extends ConsumerWidget {
                 isDark: themeMode == ThemeMode.dark,
                 onToggle: () {
                   ref.read(themeModeProvider.notifier).state =
-                      themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+                      themeMode == ThemeMode.dark
+                          ? ThemeMode.light
+                          : ThemeMode.dark;
                 },
               ),
             ],
@@ -231,7 +233,8 @@ class _TabButtonState extends State<_TabButton> {
                 Text(
                   widget.tab.label,
                   style: AppTypography.labelMedium(color: textColor).copyWith(
-                    fontWeight: widget.isSelected ? FontWeight.w600 : FontWeight.w500,
+                    fontWeight:
+                        widget.isSelected ? FontWeight.w600 : FontWeight.w500,
                   ),
                 ),
               ],
@@ -267,7 +270,8 @@ class _ProviderPresetPill extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             providerName,
-            style: AppTypography.bodySmall(color: colors.textSecondary).copyWith(
+            style:
+                AppTypography.bodySmall(color: colors.textSecondary).copyWith(
               fontSize: 11,
               fontWeight: FontWeight.w500,
             ),

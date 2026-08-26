@@ -109,7 +109,9 @@ class DocuVerseTypography {
       );
 
   /// Mono: 12 / 16, 400 weight, Monospace font
-  static TextStyle mono(Color color, {double fontSize = 12, FontWeight weight = FontWeight.w400}) => TextStyle(
+  static TextStyle mono(Color color,
+          {double fontSize = 12, FontWeight weight = FontWeight.w400}) =>
+      TextStyle(
         fontFamily: fontMono,
         fontFamilyFallback: monoFontFallbacks,
         fontSize: fontSize,

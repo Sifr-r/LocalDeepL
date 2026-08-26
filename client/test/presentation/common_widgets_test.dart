@@ -22,7 +22,8 @@ void main() {
   }
 
   group('AppButton Tests', () {
-    testWidgets('Renders label and triggers onPressed callback', (WidgetTester tester) async {
+    testWidgets('Renders label and triggers onPressed callback',
+        (WidgetTester tester) async {
       bool tapped = false;
       await tester.pumpWidget(
         buildTestableWidget(
@@ -39,7 +40,8 @@ void main() {
       expect(tapped, isTrue);
     });
 
-    testWidgets('Shows loading spinner and disables callback when loading=true', (WidgetTester tester) async {
+    testWidgets('Shows loading spinner and disables callback when loading=true',
+        (WidgetTester tester) async {
       bool tapped = false;
       await tester.pumpWidget(
         buildTestableWidget(
@@ -56,7 +58,8 @@ void main() {
       expect(tapped, isFalse);
     });
 
-    testWidgets('Respects disabled=true and prevents tap', (WidgetTester tester) async {
+    testWidgets('Respects disabled=true and prevents tap',
+        (WidgetTester tester) async {
       bool tapped = false;
       await tester.pumpWidget(
         buildTestableWidget(
@@ -74,7 +77,8 @@ void main() {
   });
 
   group('AppBadge Tests', () {
-    testWidgets('Renders badge with label and dot indicator', (WidgetTester tester) async {
+    testWidgets('Renders badge with label and dot indicator',
+        (WidgetTester tester) async {
       await tester.pumpWidget(
         buildTestableWidget(
           const AppBadge(
@@ -114,7 +118,8 @@ void main() {
   });
 
   group('AppInput Tests', () {
-    testWidgets('Accepts text input and updates controller', (WidgetTester tester) async {
+    testWidgets('Accepts text input and updates controller',
+        (WidgetTester tester) async {
       final controller = TextEditingController();
       await tester.pumpWidget(
         buildTestableWidget(
@@ -127,11 +132,13 @@ void main() {
       );
 
       expect(find.text('API Base'), findsOneWidget);
-      await tester.enterText(find.byType(TextFormField), 'https://api.openai.com/v1');
+      await tester.enterText(
+          find.byType(TextFormField), 'https://api.openai.com/v1');
       expect(controller.text, 'https://api.openai.com/v1');
     });
 
-    testWidgets('Displays error message when errorText is provided', (WidgetTester tester) async {
+    testWidgets('Displays error message when errorText is provided',
+        (WidgetTester tester) async {
       await tester.pumpWidget(
         buildTestableWidget(
           const AppInput(
@@ -146,7 +153,8 @@ void main() {
   });
 
   group('AppCard Tests', () {
-    testWidgets('Renders card title, subtitle, headerAction, and child content', (WidgetTester tester) async {
+    testWidgets('Renders card title, subtitle, headerAction, and child content',
+        (WidgetTester tester) async {
       await tester.pumpWidget(
         buildTestableWidget(
           const AppCard(

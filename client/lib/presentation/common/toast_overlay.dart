@@ -37,7 +37,8 @@ class ToastOverlay extends ConsumerWidget {
                   child: _ToastCard(
                     key: ValueKey(toast.id),
                     toast: toast,
-                    onDismiss: () => ref.read(toastProvider.notifier).dismissToast(toast.id),
+                    onDismiss: () =>
+                        ref.read(toastProvider.notifier).dismissToast(toast.id),
                   ),
                 );
               }).toList(),
@@ -63,7 +64,8 @@ class _ToastCard extends StatefulWidget {
   State<_ToastCard> createState() => _ToastCardState();
 }
 
-class _ToastCardState extends State<_ToastCard> with SingleTickerProviderStateMixin {
+class _ToastCardState extends State<_ToastCard>
+    with SingleTickerProviderStateMixin {
   late AnimationController _animController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
@@ -169,7 +171,8 @@ class _ToastCardState extends State<_ToastCard> with SingleTickerProviderStateMi
                                   color: colors.textSecondary,
                                 ),
                               ),
-                              if (widget.toast.actionLabel != null && widget.toast.onAction != null) ...[
+                              if (widget.toast.actionLabel != null &&
+                                  widget.toast.onAction != null) ...[
                                 const SizedBox(height: 6),
                                 MouseRegion(
                                   cursor: SystemMouseCursors.click,

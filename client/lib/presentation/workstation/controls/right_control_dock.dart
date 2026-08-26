@@ -41,7 +41,8 @@ class _RightControlDockState extends State<RightControlDock> {
     final updated = current.contains(processorId)
         ? current.where((p) => p != processorId).toList()
         : [...current, processorId];
-    widget.onSettingsChanged(widget.settings.copyWith(documentProcessors: updated));
+    widget.onSettingsChanged(
+        widget.settings.copyWith(documentProcessors: updated));
   }
 
   @override
@@ -82,7 +83,8 @@ class _RightControlDockState extends State<RightControlDock> {
                     DocuVerseSelectItem(
                       value: PipelineMode.hybrid,
                       label: 'Hybrid (OCR + VLM)',
-                      subtitle: 'Combines grounded coordinates with multimodal reasoning',
+                      subtitle:
+                          'Combines grounded coordinates with multimodal reasoning',
                     ),
                     DocuVerseSelectItem(
                       value: PipelineMode.grounded,
@@ -111,13 +113,16 @@ class _RightControlDockState extends State<RightControlDock> {
                         label: 'Dense Mode',
                         value: s.denseMode,
                         items: const [
-                          DocuVerseSelectItem(value: DenseMode.auto, label: 'Auto'),
+                          DocuVerseSelectItem(
+                              value: DenseMode.auto, label: 'Auto'),
                           DocuVerseSelectItem(value: DenseMode.on, label: 'On'),
-                          DocuVerseSelectItem(value: DenseMode.off, label: 'Off'),
+                          DocuVerseSelectItem(
+                              value: DenseMode.off, label: 'Off'),
                         ],
                         onChanged: (mode) {
                           if (mode != null) {
-                            widget.onSettingsChanged(s.copyWith(denseMode: mode));
+                            widget
+                                .onSettingsChanged(s.copyWith(denseMode: mode));
                           }
                         },
                       ),
@@ -128,16 +133,24 @@ class _RightControlDockState extends State<RightControlDock> {
                         label: 'Spellcheck',
                         value: s.spellcheck,
                         items: const [
-                          DocuVerseSelectItem(value: SpellcheckMode.none, label: 'None'),
-                          DocuVerseSelectItem(value: SpellcheckMode.enUS, label: 'English (US)'),
-                          DocuVerseSelectItem(value: SpellcheckMode.ar, label: 'Arabic'),
-                          DocuVerseSelectItem(value: SpellcheckMode.de, label: 'German'),
-                          DocuVerseSelectItem(value: SpellcheckMode.es, label: 'Spanish'),
-                          DocuVerseSelectItem(value: SpellcheckMode.fr, label: 'French'),
+                          DocuVerseSelectItem(
+                              value: SpellcheckMode.none, label: 'None'),
+                          DocuVerseSelectItem(
+                              value: SpellcheckMode.enUS,
+                              label: 'English (US)'),
+                          DocuVerseSelectItem(
+                              value: SpellcheckMode.ar, label: 'Arabic'),
+                          DocuVerseSelectItem(
+                              value: SpellcheckMode.de, label: 'German'),
+                          DocuVerseSelectItem(
+                              value: SpellcheckMode.es, label: 'Spanish'),
+                          DocuVerseSelectItem(
+                              value: SpellcheckMode.fr, label: 'French'),
                         ],
                         onChanged: (mode) {
                           if (mode != null) {
-                            widget.onSettingsChanged(s.copyWith(spellcheck: mode));
+                            widget.onSettingsChanged(
+                                s.copyWith(spellcheck: mode));
                           }
                         },
                       ),
@@ -168,7 +181,8 @@ class _RightControlDockState extends State<RightControlDock> {
                   divisions: 15,
                   valueLabel: '${s.concurrency} workers',
                   onChanged: (val) {
-                    widget.onSettingsChanged(s.copyWith(concurrency: val.round()));
+                    widget.onSettingsChanged(
+                        s.copyWith(concurrency: val.round()));
                   },
                 ),
               ],
@@ -202,15 +216,22 @@ class _RightControlDockState extends State<RightControlDock> {
                       message: info.description,
                       child: InkWell(
                         onTap: () => _toggleProcessor(info.id),
-                        borderRadius: BorderRadius.circular(colors.buttonRadius),
+                        borderRadius:
+                            BorderRadius.circular(colors.buttonRadius),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 150),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
-                            color: isSelected ? colors.brand.withValues(alpha: 0.15) : colors.cardRaised,
-                            borderRadius: BorderRadius.circular(colors.buttonRadius),
+                            color: isSelected
+                                ? colors.brand.withValues(alpha: 0.15)
+                                : colors.cardRaised,
+                            borderRadius:
+                                BorderRadius.circular(colors.buttonRadius),
                             border: Border.all(
-                              color: isSelected ? colors.brand.withValues(alpha: 0.5) : colors.border,
+                              color: isSelected
+                                  ? colors.brand.withValues(alpha: 0.5)
+                                  : colors.border,
                               width: 1.0,
                             ),
                           ),
@@ -218,7 +239,8 @@ class _RightControlDockState extends State<RightControlDock> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               if (isSelected) ...[
-                                Icon(Icons.check, size: 12, color: colors.brand),
+                                Icon(Icons.check,
+                                    size: 12, color: colors.brand),
                                 const SizedBox(width: 4),
                               ],
                               Text(
@@ -226,8 +248,12 @@ class _RightControlDockState extends State<RightControlDock> {
                                 style: TextStyle(
                                   fontFamily: DocuVerseTypography.fontBody,
                                   fontSize: 11,
-                                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                                  color: isSelected ? colors.brand : colors.foregroundMuted,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w600
+                                      : FontWeight.w500,
+                                  color: isSelected
+                                      ? colors.brand
+                                      : colors.foregroundMuted,
                                 ),
                               ),
                             ],
@@ -257,7 +283,8 @@ class _RightControlDockState extends State<RightControlDock> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 InkWell(
-                  onTap: () => setState(() => _isAdvancedExpanded = !_isAdvancedExpanded),
+                  onTap: () => setState(
+                      () => _isAdvancedExpanded = !_isAdvancedExpanded),
                   borderRadius: BorderRadius.circular(4),
                   child: Padding(
                     padding: const EdgeInsets.all(6),
@@ -266,7 +293,8 @@ class _RightControlDockState extends State<RightControlDock> {
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.tune_rounded, size: 14, color: colors.foregroundMuted),
+                            Icon(Icons.tune_rounded,
+                                size: 14, color: colors.foregroundMuted),
                             const SizedBox(width: 6),
                             Text(
                               'IMAGE PREPROCESSING',
@@ -281,7 +309,9 @@ class _RightControlDockState extends State<RightControlDock> {
                           ],
                         ),
                         Icon(
-                          _isAdvancedExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                          _isAdvancedExpanded
+                              ? Icons.expand_less_rounded
+                              : Icons.expand_more_rounded,
                           size: 18,
                           color: colors.foregroundMuted,
                         ),
@@ -302,27 +332,32 @@ class _RightControlDockState extends State<RightControlDock> {
                         DocuVerseToggle(
                           label: 'Orientation Detection',
                           checked: s.orientationDetection,
-                          onChanged: (v) => widget.onSettingsChanged(s.copyWith(orientationDetection: v)),
+                          onChanged: (v) => widget.onSettingsChanged(
+                              s.copyWith(orientationDetection: v)),
                         ),
                         DocuVerseToggle(
                           label: 'Deskew Image',
                           checked: s.deskew,
-                          onChanged: (v) => widget.onSettingsChanged(s.copyWith(deskew: v)),
+                          onChanged: (v) =>
+                              widget.onSettingsChanged(s.copyWith(deskew: v)),
                         ),
                         DocuVerseToggle(
                           label: 'Denoise Image',
                           checked: s.denoise,
-                          onChanged: (v) => widget.onSettingsChanged(s.copyWith(denoise: v)),
+                          onChanged: (v) =>
+                              widget.onSettingsChanged(s.copyWith(denoise: v)),
                         ),
                         DocuVerseToggle(
                           label: 'Normalize Contrast',
                           checked: s.normalizeContrast,
-                          onChanged: (v) => widget.onSettingsChanged(s.copyWith(normalizeContrast: v)),
+                          onChanged: (v) => widget.onSettingsChanged(
+                              s.copyWith(normalizeContrast: v)),
                         ),
                         DocuVerseToggle(
                           label: 'Crop Cleanup',
                           checked: s.cropCleanup,
-                          onChanged: (v) => widget.onSettingsChanged(s.copyWith(cropCleanup: v)),
+                          onChanged: (v) => widget
+                              .onSettingsChanged(s.copyWith(cropCleanup: v)),
                         ),
                       ],
                     ),

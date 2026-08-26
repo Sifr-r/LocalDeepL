@@ -46,7 +46,8 @@ class _ServerHealthBadgeState extends ConsumerState<ServerHealthBadge>
     final healthState = ref.watch(serverHealthProvider);
     final statusColor = healthState.status.getColor(context);
 
-    final tooltipText = '${healthState.status.label} • ${healthState.endpoint}\n'
+    final tooltipText =
+        '${healthState.status.label} • ${healthState.endpoint}\n'
         'Latency: ${healthState.latencyMs != null ? "${healthState.latencyMs}ms" : "N/A"}\n'
         'Click to recheck status';
 
@@ -63,7 +64,9 @@ class _ServerHealthBadgeState extends ConsumerState<ServerHealthBadge>
             ref.read(serverHealthProvider.notifier).setChecking();
             Future.delayed(const Duration(milliseconds: 600), () {
               if (mounted) {
-                ref.read(serverHealthProvider.notifier).setOnline(latencyMs: 34);
+                ref
+                    .read(serverHealthProvider.notifier)
+                    .setOnline(latencyMs: 34);
               }
             });
           },
@@ -121,7 +124,8 @@ class _ServerHealthBadgeState extends ConsumerState<ServerHealthBadge>
                 const SizedBox(width: 6),
                 Text(
                   healthState.status.label,
-                  style: AppTypography.micro(color: colors.textPrimary).copyWith(
+                  style:
+                      AppTypography.micro(color: colors.textPrimary).copyWith(
                     fontWeight: FontWeight.w600,
                   ),
                 ),

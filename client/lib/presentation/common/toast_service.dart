@@ -58,9 +58,7 @@ class ToastModel {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is ToastModel &&
-          runtimeType == other.runtimeType &&
-          id == other.id;
+      other is ToastModel && runtimeType == other.runtimeType && id == other.id;
 
   @override
   int get hashCode => id.hashCode;
@@ -117,23 +115,31 @@ class ToastNotifier extends StateNotifier<List<ToastModel>> {
   }
 
   /// Convenience helper for success toasts.
-  String success(String message, {String? title, Duration duration = const Duration(seconds: 4)}) {
-    return showToast(message, level: ToastLevel.success, title: title, duration: duration);
+  String success(String message,
+      {String? title, Duration duration = const Duration(seconds: 4)}) {
+    return showToast(message,
+        level: ToastLevel.success, title: title, duration: duration);
   }
 
   /// Convenience helper for info toasts.
-  String info(String message, {String? title, Duration duration = const Duration(seconds: 4)}) {
-    return showToast(message, level: ToastLevel.info, title: title, duration: duration);
+  String info(String message,
+      {String? title, Duration duration = const Duration(seconds: 4)}) {
+    return showToast(message,
+        level: ToastLevel.info, title: title, duration: duration);
   }
 
   /// Convenience helper for warning toasts.
-  String warning(String message, {String? title, Duration duration = const Duration(seconds: 5)}) {
-    return showToast(message, level: ToastLevel.warning, title: title, duration: duration);
+  String warning(String message,
+      {String? title, Duration duration = const Duration(seconds: 5)}) {
+    return showToast(message,
+        level: ToastLevel.warning, title: title, duration: duration);
   }
 
   /// Convenience helper for error toasts.
-  String error(String message, {String? title, Duration duration = const Duration(seconds: 6)}) {
-    return showToast(message, level: ToastLevel.error, title: title, duration: duration);
+  String error(String message,
+      {String? title, Duration duration = const Duration(seconds: 6)}) {
+    return showToast(message,
+        level: ToastLevel.error, title: title, duration: duration);
   }
 
   /// Dismiss an active toast by ID.
@@ -163,6 +169,7 @@ class ToastNotifier extends StateNotifier<List<ToastModel>> {
 }
 
 /// Global provider for toast notifications.
-final toastProvider = StateNotifierProvider<ToastNotifier, List<ToastModel>>((ref) {
+final toastProvider =
+    StateNotifierProvider<ToastNotifier, List<ToastModel>>((ref) {
   return ToastNotifier();
 });

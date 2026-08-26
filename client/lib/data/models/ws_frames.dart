@@ -8,7 +8,9 @@ abstract class WsEnvelope {
     final type = json['type']?.toString();
 
     // Legacy progress frames do not carry a 'type' field
-    if (type == null && json.containsKey('status') && json.containsKey('percent')) {
+    if (type == null &&
+        json.containsKey('status') &&
+        json.containsKey('percent')) {
       return ProgressFrame.fromJson(json);
     }
 

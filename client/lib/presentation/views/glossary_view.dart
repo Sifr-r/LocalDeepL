@@ -62,7 +62,8 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                 children: [
                   Text(
                     'Glossary & Translation Memories',
-                    style: AppTypography.displayMedium(color: colors.textPrimary),
+                    style:
+                        AppTypography.displayMedium(color: colors.textPrimary),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -87,22 +88,47 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
           AppCard(
             title: 'Active Glossaries',
             subtitle: '${_glossaries.length} glossaries loaded in workspace',
-            headerLeading: Icon(Icons.auto_stories_outlined, size: 18, color: colors.brandAccent),
+            headerLeading: Icon(Icons.auto_stories_outlined,
+                size: 18, color: colors.brandAccent),
             padding: AppCardPadding.none,
             child: Column(
               children: [
                 // Table Header
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   color: colors.cardRaised,
                   child: Row(
                     children: [
-                      Expanded(flex: 4, child: Text('NAME', style: AppTypography.micro(color: colors.textMuted))),
-                      Expanded(flex: 2, child: Text('FORMAT', style: AppTypography.micro(color: colors.textMuted))),
-                      Expanded(flex: 2, child: Text('ENTRIES', style: AppTypography.micro(color: colors.textMuted))),
-                      Expanded(flex: 2, child: Text('GROUP', style: AppTypography.micro(color: colors.textMuted))),
-                      Expanded(flex: 2, child: Text('STATUS', style: AppTypography.micro(color: colors.textMuted))),
-                      const SizedBox(width: 80, child: Text('ACTIONS', style: TextStyle(fontSize: 10))),
+                      Expanded(
+                          flex: 4,
+                          child: Text('NAME',
+                              style: AppTypography.micro(
+                                  color: colors.textMuted))),
+                      Expanded(
+                          flex: 2,
+                          child: Text('FORMAT',
+                              style: AppTypography.micro(
+                                  color: colors.textMuted))),
+                      Expanded(
+                          flex: 2,
+                          child: Text('ENTRIES',
+                              style: AppTypography.micro(
+                                  color: colors.textMuted))),
+                      Expanded(
+                          flex: 2,
+                          child: Text('GROUP',
+                              style: AppTypography.micro(
+                                  color: colors.textMuted))),
+                      Expanded(
+                          flex: 2,
+                          child: Text('STATUS',
+                              style: AppTypography.micro(
+                                  color: colors.textMuted))),
+                      const SizedBox(
+                          width: 80,
+                          child:
+                              Text('ACTIONS', style: TextStyle(fontSize: 10))),
                     ],
                   ),
                 ),
@@ -114,10 +140,14 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                   final isEnabled = item['enabled'] as bool;
 
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
                     decoration: BoxDecoration(
-                      color: index.isEven ? colors.card : colors.cardRaised.withValues(alpha: 0.3),
-                      border: Border(bottom: BorderSide(color: colors.border, width: 0.5)),
+                      color: index.isEven
+                          ? colors.card
+                          : colors.cardRaised.withValues(alpha: 0.3),
+                      border: Border(
+                          bottom: BorderSide(color: colors.border, width: 0.5)),
                     ),
                     child: Row(
                       children: [
@@ -126,8 +156,12 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(item['name'] as String, style: AppTypography.captionStrong(color: colors.textPrimary)),
-                              Text(item['id'] as String, style: AppTypography.codeSmall(color: colors.textMuted)),
+                              Text(item['name'] as String,
+                                  style: AppTypography.captionStrong(
+                                      color: colors.textPrimary)),
+                              Text(item['id'] as String,
+                                  style: AppTypography.codeSmall(
+                                      color: colors.textMuted)),
                             ],
                           ),
                         ),
@@ -141,17 +175,23 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                         ),
                         Expanded(
                           flex: 2,
-                          child: Text('${item['entries']} terms', style: AppTypography.bodySmall(color: colors.textSecondary)),
+                          child: Text('${item['entries']} terms',
+                              style: AppTypography.bodySmall(
+                                  color: colors.textSecondary)),
                         ),
                         Expanded(
                           flex: 2,
-                          child: Text(item['group'] as String, style: AppTypography.bodySmall(color: colors.textSecondary)),
+                          child: Text(item['group'] as String,
+                              style: AppTypography.bodySmall(
+                                  color: colors.textSecondary)),
                         ),
                         Expanded(
                           flex: 2,
                           child: AppBadge(
                             label: isEnabled ? 'Active' : 'Disabled',
-                            variant: isEnabled ? AppBadgeVariant.success : AppBadgeVariant.neutral,
+                            variant: isEnabled
+                                ? AppBadgeVariant.success
+                                : AppBadgeVariant.neutral,
                             size: AppBadgeSize.sm,
                             dot: true,
                           ),
@@ -163,27 +203,37 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                               AppButton(
                                 variant: AppButtonVariant.ghost,
                                 size: AppButtonSize.sm,
-                                icon: Icon(isEnabled ? Icons.toggle_on : Icons.toggle_off, size: 20, color: isEnabled ? colors.brand : colors.textMuted),
+                                icon: Icon(
+                                    isEnabled
+                                        ? Icons.toggle_on
+                                        : Icons.toggle_off,
+                                    size: 20,
+                                    color: isEnabled
+                                        ? colors.brand
+                                        : colors.textMuted),
                                 tooltip: isEnabled ? 'Disable' : 'Enable',
                                 onPressed: () {
                                   setState(() {
                                     item['enabled'] = !isEnabled;
                                   });
                                   ref.read(toastProvider.notifier).info(
-                                    '${item['name']} ${!isEnabled ? "enabled" : "disabled"}',
-                                  );
+                                        '${item['name']} ${!isEnabled ? "enabled" : "disabled"}',
+                                      );
                                 },
                               ),
                               AppButton(
                                 variant: AppButtonVariant.ghost,
                                 size: AppButtonSize.sm,
-                                icon: Icon(Icons.delete_outline, size: 16, color: colors.error),
+                                icon: Icon(Icons.delete_outline,
+                                    size: 16, color: colors.error),
                                 tooltip: 'Delete',
                                 onPressed: () {
                                   setState(() {
                                     _glossaries.removeAt(index);
                                   });
-                                  ref.read(toastProvider.notifier).warning('Glossary removed');
+                                  ref
+                                      .read(toastProvider.notifier)
+                                      .warning('Glossary removed');
                                 },
                               ),
                             ],
@@ -228,10 +278,13 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
                 items: const [
                   AppSelectItem(value: 'csv', label: 'CSV (Comma Separated)'),
                   AppSelectItem(value: 'tsv', label: 'TSV (Tab Separated)'),
-                  AppSelectItem(value: 'xliff', label: 'XLIFF (XML Localization)'),
+                  AppSelectItem(
+                      value: 'xliff', label: 'XLIFF (XML Localization)'),
                   AppSelectItem(value: 'tbx', label: 'TBX (TermBase eXchange)'),
-                  AppSelectItem(value: 'tmx', label: 'TMX (Translation Memory)'),
-                  AppSelectItem(value: 'json_pairs', label: 'JSON Key-Value Pairs'),
+                  AppSelectItem(
+                      value: 'tmx', label: 'TMX (Translation Memory)'),
+                  AppSelectItem(
+                      value: 'json_pairs', label: 'JSON Key-Value Pairs'),
                 ],
                 onChanged: (v) {
                   if (v != null) setModalState(() => format = v);
@@ -260,14 +313,18 @@ class _GlossaryViewState extends ConsumerState<GlossaryView> {
             setState(() {
               _glossaries.add({
                 'id': 'gloss-0${_glossaries.length + 1}',
-                'name': nameCtrl.text.isNotEmpty ? nameCtrl.text : 'Imported Glossary',
+                'name': nameCtrl.text.isNotEmpty
+                    ? nameCtrl.text
+                    : 'Imported Glossary',
                 'format': format.toUpperCase(),
                 'entries': 120,
                 'enabled': true,
                 'group': 'General',
               });
             });
-            ref.read(toastProvider.notifier).success('Glossary imported successfully');
+            ref
+                .read(toastProvider.notifier)
+                .success('Glossary imported successfully');
           },
         ),
       ],

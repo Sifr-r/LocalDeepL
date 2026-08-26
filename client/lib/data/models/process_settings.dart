@@ -241,8 +241,7 @@ class ProcessSettings {
       spellcheck: spellcheck ?? this.spellcheck,
       crossPage: crossPage ?? this.crossPage,
       preprocessPages: preprocessPages ?? this.preprocessPages,
-      orientationDetection:
-          orientationDetection ?? this.orientationDetection,
+      orientationDetection: orientationDetection ?? this.orientationDetection,
       deskew: deskew ?? this.deskew,
       denoise: denoise ?? this.denoise,
       normalizeContrast: normalizeContrast ?? this.normalizeContrast,
@@ -273,8 +272,7 @@ class ProcessSettings {
       apiBase: json['api_base']?.toString() ?? 'http://localhost:1234/v1',
       apiKey: json['api_key']?.toString() ?? '',
       model: json['model']?.toString() ?? 'allenai/olmocr-2-7b',
-      pipelineMode:
-          PipelineMode.fromString(json['pipeline_mode']?.toString()),
+      pipelineMode: PipelineMode.fromString(json['pipeline_mode']?.toString()),
       dpi: (json['dpi'] as num?)?.toInt() ?? 192,
       concurrency: (json['concurrency'] as num?)?.toInt() ?? 3,
       denseMode: DenseMode.fromString(json['dense_mode']?.toString()),
@@ -285,20 +283,17 @@ class ProcessSettings {
       selfCorrection: json['self_correction'] as bool? ?? false,
       binarize: json['binarize'] as bool? ?? false,
       dualEngine: json['dual_engine'] as bool? ?? false,
-      spellcheck:
-          SpellcheckMode.fromString(json['spellcheck']?.toString()),
+      spellcheck: SpellcheckMode.fromString(json['spellcheck']?.toString()),
       crossPage: json['cross_page'] as bool? ?? false,
       preprocessPages: json['preprocess_pages'] as bool? ?? false,
-      orientationDetection:
-          json['orientation_detection'] as bool? ?? false,
+      orientationDetection: json['orientation_detection'] as bool? ?? false,
       deskew: json['deskew'] as bool? ?? false,
       denoise: json['denoise'] as bool? ?? false,
       normalizeContrast: json['normalize_contrast'] as bool? ?? false,
       cropCleanup: json['crop_cleanup'] as bool? ?? false,
       qualityRouting: json['quality_routing'] as bool? ?? false,
       handwritingHint: json['handwriting_hint'] as bool?,
-      confidenceThreshold:
-          (json['confidence_threshold'] as num?)?.toDouble(),
+      confidenceThreshold: (json['confidence_threshold'] as num?)?.toDouble(),
       documentProcessors: procs,
       chunkPages: (json['chunk_pages'] as num?)?.toInt(),
       qualityLoopEnabled: json['quality_loop_enabled'] as bool?,
@@ -332,8 +327,7 @@ class ProcessSettings {
       'normalize_contrast': normalizeContrast,
       'crop_cleanup': cropCleanup,
       'quality_routing': qualityRouting,
-      'document_processors':
-          documentProcessors.map((p) => p.value).toList(),
+      'document_processors': documentProcessors.map((p) => p.value).toList(),
       'use_async': useAsync,
     };
     if (pages != null) map['pages'] = pages;
@@ -485,8 +479,7 @@ class ConfigUpdate {
       cropCleanup: json['crop_cleanup'] as bool?,
       qualityRouting: json['quality_routing'] as bool?,
       handwritingHint: json['handwriting_hint'] as bool?,
-      confidenceThreshold:
-          (json['confidence_threshold'] as num?)?.toDouble(),
+      confidenceThreshold: (json['confidence_threshold'] as num?)?.toDouble(),
       documentProcessors: procs,
       ocrApiBase: json['ocr_api_base']?.toString(),
       ocrApiKey: json['ocr_api_key']?.toString(),
@@ -496,8 +489,7 @@ class ConfigUpdate {
       translationApiKey: json['translation_api_key']?.toString(),
       translationModel: json['translation_model']?.toString(),
       translationProvider: json['translation_provider']?.toString(),
-      slidingWindowWords:
-          (json['sliding_window_words'] as num?)?.toInt(),
+      slidingWindowWords: (json['sliding_window_words'] as num?)?.toInt(),
       dualTranslate: json['dual_translate'] as bool?,
       transcriptionApiBase: json['transcription_api_base']?.toString(),
       transcriptionApiKey: json['transcription_api_key']?.toString(),
@@ -694,8 +686,7 @@ class RuntimeConfig {
       spellcheck: json['spellcheck']?.toString() ?? 'none',
       crossPage: json['cross_page'] as bool? ?? false,
       preprocessPages: json['preprocess_pages'] as bool? ?? false,
-      orientationDetection:
-          json['orientation_detection'] as bool? ?? false,
+      orientationDetection: json['orientation_detection'] as bool? ?? false,
       deskew: json['deskew'] as bool? ?? false,
       denoise: json['denoise'] as bool? ?? false,
       normalizeContrast: json['normalize_contrast'] as bool? ?? false,
@@ -711,8 +702,7 @@ class RuntimeConfig {
       translationApiBase: json['translation_api_base']?.toString(),
       translationApiKey: json['translation_api_key']?.toString(),
       translationProvider: json['translation_provider']?.toString(),
-      slidingWindowWords:
-          (json['sliding_window_words'] as num?)?.toInt(),
+      slidingWindowWords: (json['sliding_window_words'] as num?)?.toInt(),
       dualTranslate: json['dual_translate'] as bool?,
       transcriptionModel: json['transcription_model']?.toString(),
       transcriptionApiBase: json['transcription_api_base']?.toString(),
@@ -774,8 +764,7 @@ class RuntimeConfig {
       'max_upload_bytes': maxUploadBytes,
       'security': maxUploadBytes != null || maxUploadMb != null
           ? {
-              if (maxUploadBytes != null)
-                'max_upload_bytes': maxUploadBytes,
+              if (maxUploadBytes != null) 'max_upload_bytes': maxUploadBytes,
               if (maxUploadMb != null) 'max_upload_mb': maxUploadMb,
             }
           : null,

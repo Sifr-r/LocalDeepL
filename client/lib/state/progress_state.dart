@@ -58,14 +58,18 @@ class ProgressStateNotifier extends ChangeNotifier {
       case WsBlockCompleteFrame b:
         final item = b.toBBoxItem();
         final newProcessed = _state.processedBlocks + 1;
-        final newTotal = _state.totalBlocks < newProcessed ? newProcessed : _state.totalBlocks;
+        final newTotal = _state.totalBlocks < newProcessed
+            ? newProcessed
+            : _state.totalBlocks;
 
         double? updatedAvg = _state.avgConfidence;
         if (b.confidence != null) {
           if (updatedAvg == null) {
             updatedAvg = b.confidence;
           } else {
-            updatedAvg = (updatedAvg * (_state.processedBlocks) + b.confidence!) / newProcessed;
+            updatedAvg =
+                (updatedAvg * (_state.processedBlocks) + b.confidence!) /
+                    newProcessed;
           }
         }
 
@@ -73,7 +77,8 @@ class ProgressStateNotifier extends ChangeNotifier {
           processedBlocks: newProcessed,
           totalBlocks: newTotal,
           avgConfidence: updatedAvg,
-          statusMessage: 'Processed block ${b.blockIdx + 1} on page ${b.pageIdx + 1}',
+          statusMessage:
+              'Processed block ${b.blockIdx + 1} on page ${b.pageIdx + 1}',
         );
         notifyListeners();
 
@@ -88,7 +93,8 @@ class ProgressStateNotifier extends ChangeNotifier {
 
         _state = _state.copyWith(
           stage: 'Refine / Quality Repair',
-          statusMessage: 'Retrying low confidence block ${r.blockIdx + 1} (attempt ${r.attempt}, conf ${(r.confidence * 100).toStringAsFixed(1)}%)',
+          statusMessage:
+              'Retrying low confidence block ${r.blockIdx + 1} (attempt ${r.attempt}, conf ${(r.confidence * 100).toStringAsFixed(1)}%)',
           blockRetryCounts: newCounts,
         );
         notifyListeners();
@@ -99,7 +105,8 @@ class ProgressStateNotifier extends ChangeNotifier {
 
         _state = _state.copyWith(
           stage: 'Refine / Quality Repair',
-          statusMessage: 'Repaired block ${rev.blockIdx + 1} on page ${rev.pageIdx + 1}',
+          statusMessage:
+              'Repaired block ${rev.blockIdx + 1} on page ${rev.pageIdx + 1}',
           repairedBlocks: updatedRepaired,
         );
         notifyListeners();
@@ -108,7 +115,8 @@ class ProgressStateNotifier extends ChangeNotifier {
         onBBoxStreamed?.call(rev.pageIdx, item);
 
       case WsPageCompleteFrame pageComp:
-        final completed = Set<int>.from(_state.completedPages)..add(pageComp.pageIdx);
+        final completed = Set<int>.from(_state.completedPages)
+          ..add(pageComp.pageIdx);
         _state = _state.copyWith(
           completedPages: completed,
           statusMessage: 'Completed page ${pageComp.pageIdx + 1}',
@@ -119,7 +127,8 @@ class ProgressStateNotifier extends ChangeNotifier {
         _state = _state.copyWith(
           qualitySummary: q.summary,
           avgConfidence: q.summary.avgConfidence,
-          statusMessage: 'Quality target ${(q.summary.target * 100).round()}%: ${q.summary.repairedCount} repaired',
+          statusMessage:
+              'Quality target ${(q.summary.target * 100).round()}%: ${q.summary.repairedCount} repaired',
         );
         notifyListeners();
 

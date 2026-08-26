@@ -23,13 +23,41 @@ class _AppShellState extends ConsumerState<AppShell> {
   int _selectedTabIndex = 0;
 
   final List<Map<String, dynamic>> _tabs = [
-    {'title': 'Workstation', 'icon': Icons.space_dashboard_outlined, 'selectedIcon': Icons.space_dashboard},
-    {'title': 'Translation', 'icon': Icons.translate_outlined, 'selectedIcon': Icons.translate},
-    {'title': 'Transcription', 'icon': Icons.mic_outlined, 'selectedIcon': Icons.mic},
-    {'title': 'Glossary', 'icon': Icons.menu_book_outlined, 'selectedIcon': Icons.menu_book},
-    {'title': 'Extraction', 'icon': Icons.schema_outlined, 'selectedIcon': Icons.schema},
-    {'title': 'Job History', 'icon': Icons.history_outlined, 'selectedIcon': Icons.history},
-    {'title': 'Settings', 'icon': Icons.settings_outlined, 'selectedIcon': Icons.settings},
+    {
+      'title': 'Workstation',
+      'icon': Icons.space_dashboard_outlined,
+      'selectedIcon': Icons.space_dashboard
+    },
+    {
+      'title': 'Translation',
+      'icon': Icons.translate_outlined,
+      'selectedIcon': Icons.translate
+    },
+    {
+      'title': 'Transcription',
+      'icon': Icons.mic_outlined,
+      'selectedIcon': Icons.mic
+    },
+    {
+      'title': 'Glossary',
+      'icon': Icons.menu_book_outlined,
+      'selectedIcon': Icons.menu_book
+    },
+    {
+      'title': 'Extraction',
+      'icon': Icons.schema_outlined,
+      'selectedIcon': Icons.schema
+    },
+    {
+      'title': 'Job History',
+      'icon': Icons.history_outlined,
+      'selectedIcon': Icons.history
+    },
+    {
+      'title': 'Settings',
+      'icon': Icons.settings_outlined,
+      'selectedIcon': Icons.settings
+    },
   ];
 
   @override
@@ -71,7 +99,8 @@ class _AppShellState extends ConsumerState<AppShell> {
                           color: tokens.brand,
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        child: const Icon(Icons.document_scanner, size: 18, color: Colors.white),
+                        child: const Icon(Icons.document_scanner,
+                            size: 18, color: Colors.white),
                       ),
                       const SizedBox(width: 10),
                       Text(
@@ -97,34 +126,46 @@ class _AppShellState extends ConsumerState<AppShell> {
                         final tab = _tabs[index];
                         final isSelected = _selectedTabIndex == index;
                         return InkWell(
-                          onTap: () => setState(() => _selectedTabIndex = index),
+                          onTap: () =>
+                              setState(() => _selectedTabIndex = index),
                           borderRadius: BorderRadius.circular(6),
                           child: Container(
                             margin: const EdgeInsets.only(right: 4),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
                             decoration: BoxDecoration(
                               color: isSelected
                                   ? tokens.brand.withValues(alpha: 0.12)
                                   : Colors.transparent,
                               borderRadius: BorderRadius.circular(6),
                               border: Border.all(
-                                color: isSelected ? tokens.brand.withValues(alpha: 0.3) : Colors.transparent,
+                                color: isSelected
+                                    ? tokens.brand.withValues(alpha: 0.3)
+                                    : Colors.transparent,
                               ),
                             ),
                             child: Row(
                               children: [
                                 Icon(
-                                  isSelected ? tab['selectedIcon'] as IconData : tab['icon'] as IconData,
+                                  isSelected
+                                      ? tab['selectedIcon'] as IconData
+                                      : tab['icon'] as IconData,
                                   size: 16,
-                                  color: isSelected ? tokens.brand : tokens.foregroundMuted,
+                                  color: isSelected
+                                      ? tokens.brand
+                                      : tokens.foregroundMuted,
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
                                   tab['title'] as String,
                                   style: TextStyle(
                                     fontSize: 13,
-                                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                                    color: isSelected ? tokens.brand : tokens.foregroundMuted,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                    color: isSelected
+                                        ? tokens.brand
+                                        : tokens.foregroundMuted,
                                   ),
                                 ),
                               ],
@@ -144,8 +185,10 @@ class _AppShellState extends ConsumerState<AppShell> {
                       onTap: () => ProviderModal.show(context),
                       borderRadius: BorderRadius.circular(4),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                        child: DocuVerseBadge(text: settings.activeProviderId.toUpperCase(),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 2),
+                        child: DocuVerseBadge(
+                          text: settings.activeProviderId.toUpperCase(),
                           variant: DocuVerseBadgeVariant.brand,
                         ),
                       ),
@@ -153,7 +196,8 @@ class _AppShellState extends ConsumerState<AppShell> {
                     const SizedBox(width: 12),
 
                     // Server Health Status Indicator (runtime — not tracked in SettingsState yet)
-                    DocuVerseBadge(text: 'Offline',
+                    DocuVerseBadge(
+                      text: 'Offline',
                       variant: DocuVerseBadgeVariant.danger,
                       hasDot: true,
                     ),
@@ -162,13 +206,19 @@ class _AppShellState extends ConsumerState<AppShell> {
                     // Dark / Light Theme Toggle
                     IconButton(
                       icon: Icon(
-                        settings.isDarkMode ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                        settings.isDarkMode
+                            ? Icons.light_mode_outlined
+                            : Icons.dark_mode_outlined,
                         size: 18,
                         color: tokens.foregroundMuted,
                       ),
-                      tooltip: settings.isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode',
+                      tooltip: settings.isDarkMode
+                          ? 'Switch to Light Mode'
+                          : 'Switch to Dark Mode',
                       splashRadius: 18,
-                      onPressed: () => ref.read(settingsStateProvider.notifier).toggleDarkMode(),
+                      onPressed: () => ref
+                          .read(settingsStateProvider.notifier)
+                          .toggleDarkMode(),
                     ),
                   ],
                 ),

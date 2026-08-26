@@ -137,8 +137,7 @@ class OcrJobStatusResponse {
       if (durationS != null) 'duration_s': durationS,
       if (error != null) 'error': error,
       if (textArtifactId != null) 'text_artifact_id': textArtifactId,
-      if (textArtifactToken != null)
-        'text_artifact_token': textArtifactToken,
+      if (textArtifactToken != null) 'text_artifact_token': textArtifactToken,
       if (textArtifactUrl != null) 'text_artifact_url': textArtifactUrl,
       'failed_pages': failedPages,
     };

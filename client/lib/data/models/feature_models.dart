@@ -153,9 +153,8 @@ class TranslationRequest {
   factory TranslationRequest.fromJson(Map<String, dynamic> json) {
     List<Map<String, dynamic>>? glossList;
     if (json['glossary'] is List) {
-      glossList = (json['glossary'] as List)
-          .whereType<Map<String, dynamic>>()
-          .toList();
+      glossList =
+          (json['glossary'] as List).whereType<Map<String, dynamic>>().toList();
     }
 
     return TranslationRequest(
@@ -169,8 +168,7 @@ class TranslationRequest {
       model: json['model']?.toString(),
       glossary: glossList,
       glossaryText: json['glossary_text']?.toString(),
-      slidingWindowWords:
-          (json['sliding_window_words'] as num?)?.toInt(),
+      slidingWindowWords: (json['sliding_window_words'] as num?)?.toInt(),
       dualTranslate: json['dual_translate'] as bool?,
       secondApiBase: json['second_api_base']?.toString(),
       secondApiKey: json['second_api_key']?.toString(),
@@ -356,8 +354,7 @@ class TranscriptionResponse {
         if (filename != null) 'filename': filename,
         if (duration != null) 'duration': duration,
         if (textArtifactId != null) 'text_artifact_id': textArtifactId,
-        if (textArtifactToken != null)
-          'text_artifact_token': textArtifactToken,
+        if (textArtifactToken != null) 'text_artifact_token': textArtifactToken,
       };
 }
 
@@ -627,8 +624,8 @@ class DocumentExportRequest {
     return DocumentExportRequest(
       textArtifactId: json['text_artifact_id']?.toString() ?? '',
       textArtifactToken: json['text_artifact_token']?.toString() ?? '',
-      exportFormat: DocumentExportFormat.fromString(
-          json['export_format']?.toString()),
+      exportFormat:
+          DocumentExportFormat.fromString(json['export_format']?.toString()),
       metadataArtifactId: json['metadata_artifact_id']?.toString(),
       metadataArtifactToken: json['metadata_artifact_token']?.toString(),
     );

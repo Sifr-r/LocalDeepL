@@ -73,32 +73,38 @@ class DocumentProcessorInfo {
     DocumentProcessorInfo(
       id: 'reading_order',
       label: 'Reading Order',
-      description: 'Determines the natural human reading sequence across multiple columns and blocks.',
+      description:
+          'Determines the natural human reading sequence across multiple columns and blocks.',
     ),
     DocumentProcessorInfo(
       id: 'quality_analysis',
       label: 'Quality Analysis',
-      description: 'Scores block clarity, contrast, and OCR character-level confidence.',
+      description:
+          'Scores block clarity, contrast, and OCR character-level confidence.',
     ),
     DocumentProcessorInfo(
       id: 'structure_analysis',
       label: 'Structure Analysis',
-      description: 'Detects hierarchical document structure: headers, footers, body, lists.',
+      description:
+          'Detects hierarchical document structure: headers, footers, body, lists.',
     ),
     DocumentProcessorInfo(
       id: 'section_analysis',
       label: 'Section Analysis',
-      description: 'Segments text into coherent semantic sections and chapter boundaries.',
+      description:
+          'Segments text into coherent semantic sections and chapter boundaries.',
     ),
     DocumentProcessorInfo(
       id: 'layout_enrichment',
       label: 'Layout Enrichment',
-      description: 'Enriches bounding boxes with semantic typography and alignment metadata.',
+      description:
+          'Enriches bounding boxes with semantic typography and alignment metadata.',
     ),
     DocumentProcessorInfo(
       id: 'table_extraction',
       label: 'Table Extraction',
-      description: 'Extracts structured table grids and cell relations into clean Markdown/JSON.',
+      description:
+          'Extracts structured table grids and cell relations into clean Markdown/JSON.',
     ),
   ];
 }

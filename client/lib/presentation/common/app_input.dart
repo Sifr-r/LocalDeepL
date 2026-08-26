@@ -84,7 +84,8 @@ class _AppInputState extends State<AppInput> {
   @override
   void initState() {
     super.initState();
-    _effectiveController = widget.controller ?? TextEditingController(text: widget.initialValue);
+    _effectiveController =
+        widget.controller ?? TextEditingController(text: widget.initialValue);
     _effectiveFocusNode = widget.focusNode ?? FocusNode();
     _isObscured = widget.obscureText;
     _hasText = _effectiveController.text.isNotEmpty;
@@ -96,7 +97,8 @@ class _AppInputState extends State<AppInput> {
   @override
   void didUpdateWidget(covariant AppInput oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.controller != null && widget.controller != _effectiveController) {
+    if (widget.controller != null &&
+        widget.controller != _effectiveController) {
       _effectiveController.removeListener(_onTextChange);
       _effectiveController = widget.controller!;
       _effectiveController.addListener(_onTextChange);
@@ -195,7 +197,8 @@ class _AppInputState extends State<AppInput> {
           decoration: BoxDecoration(
             color: colors.card,
             borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: borderColor, width: _isFocused || hasError ? 1.5 : 1),
+            border: Border.all(
+                color: borderColor, width: _isFocused || hasError ? 1.5 : 1),
             boxShadow: ringGlow,
           ),
           child: Row(
@@ -205,7 +208,8 @@ class _AppInputState extends State<AppInput> {
             children: [
               if (widget.prefixIcon != null)
                 Padding(
-                  padding: const EdgeInsets.only(left: 12, right: 8, top: 10, bottom: 10),
+                  padding: const EdgeInsets.only(
+                      left: 12, right: 8, top: 10, bottom: 10),
                   child: IconTheme(
                     data: IconThemeData(
                       color: _isFocused ? colors.brand : colors.textMuted,
@@ -257,7 +261,10 @@ class _AppInputState extends State<AppInput> {
               ),
 
               // Clear button
-              if (widget.showClearButton && _hasText && widget.enabled && !widget.readOnly)
+              if (widget.showClearButton &&
+                  _hasText &&
+                  widget.enabled &&
+                  !widget.readOnly)
                 MouseRegion(
                   cursor: SystemMouseCursors.click,
                   child: GestureDetector(
@@ -285,7 +292,9 @@ class _AppInputState extends State<AppInput> {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: Icon(
-                        _isObscured ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                        _isObscured
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
                         size: 16,
                         color: colors.textMuted,
                       ),
@@ -323,7 +332,8 @@ class _AppInputState extends State<AppInput> {
               ),
             ],
           ),
-        ] else if (widget.helperText != null && widget.helperText!.isNotEmpty) ...[
+        ] else if (widget.helperText != null &&
+            widget.helperText!.isNotEmpty) ...[
           const SizedBox(height: 4),
           Text(
             widget.helperText!,

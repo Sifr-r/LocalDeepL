@@ -70,7 +70,8 @@ class AppBadge extends StatelessWidget {
     this.onTap,
     this.onDelete,
     this.testId,
-  }) : assert(label != null || child != null, 'Badge must have either label or child');
+  }) : assert(label != null || child != null,
+            'Badge must have either label or child');
 
   final String? label;
   final Widget? child;

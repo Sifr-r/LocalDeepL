@@ -39,7 +39,8 @@ class _BBoxInspectorState extends State<BBoxInspector> {
   @override
   void didUpdateWidget(covariant BBoxInspector oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.bbox.blockId != widget.bbox.blockId || oldWidget.bbox.text != widget.bbox.text) {
+    if (oldWidget.bbox.blockId != widget.bbox.blockId ||
+        oldWidget.bbox.text != widget.bbox.text) {
       _textController.text = widget.bbox.text;
       _isEditing = false;
     }
@@ -149,7 +150,9 @@ class _BBoxInspectorState extends State<BBoxInspector> {
                 size: DocuVerseBadgeSize.sm,
               ),
               DocuVerseBadge(
-                text: bbox.confidencePercent != null ? '${bbox.confidencePercent}% CONF' : 'NO CONF',
+                text: bbox.confidencePercent != null
+                    ? '${bbox.confidencePercent}% CONF'
+                    : 'NO CONF',
                 variant: confBadgeVariant,
                 size: DocuVerseBadgeSize.sm,
               ),
@@ -192,7 +195,8 @@ class _BBoxInspectorState extends State<BBoxInspector> {
                           value: bbox.kind ?? 'paragraph',
                           isExpanded: true,
                           dropdownColor: colors.cardRaised,
-                          icon: Icon(Icons.arrow_drop_down, size: 18, color: colors.foregroundMuted),
+                          icon: Icon(Icons.arrow_drop_down,
+                              size: 18, color: colors.foregroundMuted),
                           style: TextStyle(
                             fontFamily: DocuVerseTypography.fontBody,
                             fontSize: 12,
@@ -200,16 +204,26 @@ class _BBoxInspectorState extends State<BBoxInspector> {
                             color: colors.foreground,
                           ),
                           items: const [
-                            DropdownMenuItem(value: 'paragraph', child: Text('Paragraph')),
-                            DropdownMenuItem(value: 'heading', child: Text('Heading')),
-                            DropdownMenuItem(value: 'title', child: Text('Title')),
-                            DropdownMenuItem(value: 'table', child: Text('Table')),
-                            DropdownMenuItem(value: 'list_item', child: Text('List Item')),
-                            DropdownMenuItem(value: 'caption', child: Text('Caption')),
-                            DropdownMenuItem(value: 'code', child: Text('Code')),
-                            DropdownMenuItem(value: 'formula', child: Text('Formula')),
-                            DropdownMenuItem(value: 'header', child: Text('Header')),
-                            DropdownMenuItem(value: 'footer', child: Text('Footer')),
+                            DropdownMenuItem(
+                                value: 'paragraph', child: Text('Paragraph')),
+                            DropdownMenuItem(
+                                value: 'heading', child: Text('Heading')),
+                            DropdownMenuItem(
+                                value: 'title', child: Text('Title')),
+                            DropdownMenuItem(
+                                value: 'table', child: Text('Table')),
+                            DropdownMenuItem(
+                                value: 'list_item', child: Text('List Item')),
+                            DropdownMenuItem(
+                                value: 'caption', child: Text('Caption')),
+                            DropdownMenuItem(
+                                value: 'code', child: Text('Code')),
+                            DropdownMenuItem(
+                                value: 'formula', child: Text('Formula')),
+                            DropdownMenuItem(
+                                value: 'header', child: Text('Header')),
+                            DropdownMenuItem(
+                                value: 'footer', child: Text('Footer')),
                           ],
                           onChanged: _changeKind,
                         ),
@@ -267,7 +281,8 @@ class _BBoxInspectorState extends State<BBoxInspector> {
             ),
             child: Row(
               children: [
-                Icon(Icons.crop_free_rounded, size: 12, color: colors.foregroundSubtle),
+                Icon(Icons.crop_free_rounded,
+                    size: 12, color: colors.foregroundSubtle),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -293,7 +308,9 @@ class _BBoxInspectorState extends State<BBoxInspector> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    _hasCopied ? Icons.check_rounded : Icons.content_copy_rounded,
+                    _hasCopied
+                        ? Icons.check_rounded
+                        : Icons.content_copy_rounded,
                     size: 12,
                     color: _hasCopied ? colors.success : colors.brand,
                   ),

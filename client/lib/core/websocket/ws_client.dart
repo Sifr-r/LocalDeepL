@@ -182,9 +182,9 @@ class WsClient {
     }
 
     _reconnectAttempts++;
-    final delayMs = (_initialBackoff.inMilliseconds *
-            math.pow(1.5, _reconnectAttempts - 1))
-        .toInt();
+    final delayMs =
+        (_initialBackoff.inMilliseconds * math.pow(1.5, _reconnectAttempts - 1))
+            .toInt();
     final clampedDelay = Duration(
       milliseconds: math.min(delayMs, _maxBackoff.inMilliseconds),
     );

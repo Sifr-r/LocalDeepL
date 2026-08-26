@@ -60,11 +60,24 @@ class JobProgressState {
   int get currentStageIndex {
     final lower = stage.toLowerCase();
     if (lower.contains('convert') || lower.contains('raster')) return 0;
-    if (lower.contains('detect') || lower.contains('layout') || lower.contains('ground')) return 1;
-    if (lower.contains('ocr') || lower.contains('recogni') || lower.contains('transcrib')) return 2;
-    if (lower.contains('refine') || lower.contains('repair') || lower.contains('correct') || lower.contains('retry')) return 3;
-    if (lower.contains('postprocess') || lower.contains('enrich') || lower.contains('align') || lower.contains('table') || lower.contains('order')) return 4;
-    if (lower.contains('embed') || lower.contains('index') || lower.contains('vector')) return 5;
+    if (lower.contains('detect') ||
+        lower.contains('layout') ||
+        lower.contains('ground')) return 1;
+    if (lower.contains('ocr') ||
+        lower.contains('recogni') ||
+        lower.contains('transcrib')) return 2;
+    if (lower.contains('refine') ||
+        lower.contains('repair') ||
+        lower.contains('correct') ||
+        lower.contains('retry')) return 3;
+    if (lower.contains('postprocess') ||
+        lower.contains('enrich') ||
+        lower.contains('align') ||
+        lower.contains('table') ||
+        lower.contains('order')) return 4;
+    if (lower.contains('embed') ||
+        lower.contains('index') ||
+        lower.contains('vector')) return 5;
     if (lower.contains('complete') || lower.contains('finish')) return 6;
     return -1;
   }
@@ -99,7 +112,8 @@ class JobProgressState {
       warnings: warnings ?? this.warnings,
       blockRetryCounts: blockRetryCounts ?? this.blockRetryCounts,
       repairedBlocks: repairedBlocks ?? this.repairedBlocks,
-      qualitySummary: clearQualitySummary ? null : (qualitySummary ?? this.qualitySummary),
+      qualitySummary:
+          clearQualitySummary ? null : (qualitySummary ?? this.qualitySummary),
       completedPages: completedPages ?? this.completedPages,
       failedPages: failedPages ?? this.failedPages,
       totalBlocks: totalBlocks ?? this.totalBlocks,

@@ -46,7 +46,9 @@ void main() {
       expect(notifier.state.statusMessage, 'Detecting bounding boxes...');
     });
 
-    test('handleWsFrame processes block_complete and updates running average confidence', () {
+    test(
+        'handleWsFrame processes block_complete and updates running average confidence',
+        () {
       notifier.startJob('job_123', 'ws_channel');
 
       notifier.handleWsFrame(const WsBlockCompleteFrame(

@@ -229,7 +229,8 @@ class FeatureRepositoryImpl implements FeatureRepository {
           list.add(GlossaryEntry.fromJson(item));
         }
       }
-    } else if (response is Map<String, dynamic> && response['entries'] is List) {
+    } else if (response is Map<String, dynamic> &&
+        response['entries'] is List) {
       for (final item in response['entries'] as List) {
         if (item is Map<String, dynamic>) {
           list.add(GlossaryEntry.fromJson(item));

@@ -60,10 +60,13 @@ class DocumentViewModel {
   final double zoomScale;
   final Offset panOffset;
 
-  bool get hasDocument => loadedBytes != null || filePath != null || pages.isNotEmpty;
+  bool get hasDocument =>
+      loadedBytes != null || filePath != null || pages.isNotEmpty;
 
   PageResult? get currentPage {
-    if (pages.isEmpty || selectedPageIndex < 0 || selectedPageIndex >= pages.length) {
+    if (pages.isEmpty ||
+        selectedPageIndex < 0 ||
+        selectedPageIndex >= pages.length) {
       return null;
     }
     return pages[selectedPageIndex];
@@ -131,7 +134,8 @@ class DocumentViewModel {
       pageCount: pageCount ?? this.pageCount,
       selectedPageIndex: selectedPageIndex ?? this.selectedPageIndex,
       pages: pages ?? this.pages,
-      selectedBBox: clearSelectedBBox ? null : (selectedBBox ?? this.selectedBBox),
+      selectedBBox:
+          clearSelectedBBox ? null : (selectedBBox ?? this.selectedBBox),
       hoveredBBox: clearHoveredBBox ? null : (hoveredBBox ?? this.hoveredBBox),
       showBBoxes: showBBoxes ?? this.showBBoxes,
       showHeatmap: showHeatmap ?? this.showHeatmap,

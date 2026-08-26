@@ -21,10 +21,14 @@ class SettingsView extends ConsumerStatefulWidget {
 }
 
 class _SettingsViewState extends ConsumerState<SettingsView> {
-  final TextEditingController _apiBaseCtrl = TextEditingController(text: 'http://localhost:11434/v1');
-  final TextEditingController _apiKeyCtrl = TextEditingController(text: 'sk-ollama-local-token');
-  final TextEditingController _ocrModelCtrl = TextEditingController(text: 'qwen2-vl-72b');
-  final TextEditingController _transModelCtrl = TextEditingController(text: 'qwen2.5:72b');
+  final TextEditingController _apiBaseCtrl =
+      TextEditingController(text: 'http://localhost:11434/v1');
+  final TextEditingController _apiKeyCtrl =
+      TextEditingController(text: 'sk-ollama-local-token');
+  final TextEditingController _ocrModelCtrl =
+      TextEditingController(text: 'qwen2-vl-72b');
+  final TextEditingController _transModelCtrl =
+      TextEditingController(text: 'qwen2.5:72b');
 
   int _concurrency = 4;
   int _dpi = 300;
@@ -58,7 +62,8 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
                 children: [
                   Text(
                     'System Configuration',
-                    style: AppTypography.displayMedium(color: colors.textPrimary),
+                    style:
+                        AppTypography.displayMedium(color: colors.textPrimary),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -74,7 +79,9 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
                 variant: AppButtonVariant.primary,
                 size: AppButtonSize.md,
                 onPressed: () {
-                  ref.read(toastProvider.notifier).success('System settings saved successfully');
+                  ref
+                      .read(toastProvider.notifier)
+                      .success('System settings saved successfully');
                 },
               ),
             ],
@@ -85,7 +92,8 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
           LayoutBuilder(
             builder: (context, constraints) {
               final isWide = constraints.maxWidth >= 900;
-              final paneWidth = isWide ? (constraints.maxWidth - 20) / 2 : double.infinity;
+              final paneWidth =
+                  isWide ? (constraints.maxWidth - 20) / 2 : double.infinity;
 
               return Wrap(
                 spacing: 20,
@@ -97,7 +105,8 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
                     child: AppCard(
                       title: 'Inference Provider',
                       subtitle: 'LLM & VLM engine endpoints',
-                      headerLeading: Icon(Icons.hub_outlined, size: 18, color: colors.brandAccent),
+                      headerLeading: Icon(Icons.hub_outlined,
+                          size: 18, color: colors.brandAccent),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -105,16 +114,30 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
                             label: 'Provider Preset',
                             value: activeProvider,
                             items: const [
-                              AppSelectItem(value: 'Ollama (Local)', label: 'Ollama (Local GPU)'),
-                              AppSelectItem(value: 'OpenAI (v1)', label: 'OpenAI API (GPT-4o / GPT-4o-mini)'),
-                              AppSelectItem(value: 'Anthropic Claude', label: 'Anthropic Claude 3.5 Sonnet'),
-                              AppSelectItem(value: 'vLLM Server', label: 'vLLM OpenAI-Compatible Server'),
-                              AppSelectItem(value: 'Custom Endpoint', label: 'Custom Endpoint URL'),
+                              AppSelectItem(
+                                  value: 'Ollama (Local)',
+                                  label: 'Ollama (Local GPU)'),
+                              AppSelectItem(
+                                  value: 'OpenAI (v1)',
+                                  label: 'OpenAI API (GPT-4o / GPT-4o-mini)'),
+                              AppSelectItem(
+                                  value: 'Anthropic Claude',
+                                  label: 'Anthropic Claude 3.5 Sonnet'),
+                              AppSelectItem(
+                                  value: 'vLLM Server',
+                                  label: 'vLLM OpenAI-Compatible Server'),
+                              AppSelectItem(
+                                  value: 'Custom Endpoint',
+                                  label: 'Custom Endpoint URL'),
                             ],
                             onChanged: (v) {
                               if (v != null) {
-                                ref.read(activeProviderPresetProvider.notifier).state = v;
-                                ref.read(toastProvider.notifier).info('Provider changed to $v');
+                                ref
+                                    .read(activeProviderPresetProvider.notifier)
+                                    .state = v;
+                                ref
+                                    .read(toastProvider.notifier)
+                                    .info('Provider changed to $v');
                               }
                             },
                           ),
@@ -123,7 +146,8 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
                             controller: _apiBaseCtrl,
                             label: 'API Base URL',
                             placeholder: 'http://localhost:11434/v1',
-                            helperText: 'OpenAI-compatible /v1 chat completions endpoint',
+                            helperText:
+                                'OpenAI-compatible /v1 chat completions endpoint',
                           ),
                           const SizedBox(height: 14),
                           AppInput(
@@ -155,7 +179,8 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
                     child: AppCard(
                       title: 'Performance & Concurrency',
                       subtitle: 'Parallel worker thresholds',
-                      headerLeading: Icon(Icons.speed_outlined, size: 18, color: colors.cyan),
+                      headerLeading: Icon(Icons.speed_outlined,
+                          size: 18, color: colors.cyan),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -163,10 +188,16 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
                             label: 'Worker Concurrency (Threads)',
                             value: _concurrency,
                             items: const [
-                              AppSelectItem(value: 1, label: '1 Worker (Sequential / Low Memory)'),
-                              AppSelectItem(value: 2, label: '2 Workers (Balanced)'),
-                              AppSelectItem(value: 4, label: '4 Workers (Recommended)'),
-                              AppSelectItem(value: 8, label: '8 Workers (High Throughput GPU)'),
+                              AppSelectItem(
+                                  value: 1,
+                                  label: '1 Worker (Sequential / Low Memory)'),
+                              AppSelectItem(
+                                  value: 2, label: '2 Workers (Balanced)'),
+                              AppSelectItem(
+                                  value: 4, label: '4 Workers (Recommended)'),
+                              AppSelectItem(
+                                  value: 8,
+                                  label: '8 Workers (High Throughput GPU)'),
                             ],
                             onChanged: (v) {
                               if (v != null) setState(() => _concurrency = v);
@@ -177,27 +208,39 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
                             label: 'PDF Rasterization DPI',
                             value: _dpi,
                             items: const [
-                              AppSelectItem(value: 150, label: '150 DPI (Fast / Draft)'),
-                              AppSelectItem(value: 200, label: '200 DPI (Standard)'),
-                              AppSelectItem(value: 300, label: '300 DPI (High Precision - Recommended)'),
-                              AppSelectItem(value: 400, label: '400 DPI (Ultra Fine Print / CJK / Arabic)'),
+                              AppSelectItem(
+                                  value: 150, label: '150 DPI (Fast / Draft)'),
+                              AppSelectItem(
+                                  value: 200, label: '200 DPI (Standard)'),
+                              AppSelectItem(
+                                  value: 300,
+                                  label:
+                                      '300 DPI (High Precision - Recommended)'),
+                              AppSelectItem(
+                                  value: 400,
+                                  label:
+                                      '400 DPI (Ultra Fine Print / CJK / Arabic)'),
                             ],
                             onChanged: (v) {
                               if (v != null) setState(() => _dpi = v);
                             },
                           ),
                           const SizedBox(height: 16),
-                          const SectionHeader(title: 'Advanced Flags', showDivider: true),
+                          const SectionHeader(
+                              title: 'Advanced Flags', showDivider: true),
                           AppToggle(
                             label: 'Quality Routing & Arbitration',
-                            subtitle: 'Enable confidence-weighted multi-pass processing',
+                            subtitle:
+                                'Enable confidence-weighted multi-pass processing',
                             value: _qualityRouting,
-                            onChanged: (v) => setState(() => _qualityRouting = v),
+                            onChanged: (v) =>
+                                setState(() => _qualityRouting = v),
                           ),
                           const SizedBox(height: 8),
                           AppToggle(
                             label: 'Cross-Page Context Window',
-                            subtitle: 'Maintain translation continuity across page boundaries',
+                            subtitle:
+                                'Maintain translation continuity across page boundaries',
                             value: _crossPage,
                             onChanged: (v) => setState(() => _crossPage = v),
                           ),

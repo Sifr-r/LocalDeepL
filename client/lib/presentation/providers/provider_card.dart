@@ -34,7 +34,8 @@ class _ProviderCardState extends State<ProviderCard> {
   IconData _getProviderIcon(String id) {
     final lower = id.toLowerCase();
     if (lower.contains('openai')) return Icons.auto_awesome;
-    if (lower.contains('anthropic') || lower.contains('claude')) return Icons.psychology;
+    if (lower.contains('anthropic') || lower.contains('claude'))
+      return Icons.psychology;
     if (lower.contains('ollama')) return Icons.terminal;
     if (lower.contains('lmstudio')) return Icons.desktop_windows;
     if (lower.contains('openrouter')) return Icons.alt_route;
@@ -48,7 +49,8 @@ class _ProviderCardState extends State<ProviderCard> {
   @override
   Widget build(BuildContext context) {
     final tokens = context.docuVerse;
-    final effectiveModels = widget.models.isNotEmpty ? widget.models : widget.provider.models;
+    final effectiveModels =
+        widget.models.isNotEmpty ? widget.models : widget.provider.models;
 
     return Container(
       decoration: BoxDecoration(
@@ -103,26 +105,30 @@ class _ProviderCardState extends State<ProviderCard> {
                         ),
                         if (widget.isActive) ...[
                           const SizedBox(width: 6),
-                          const DocuVerseBadge(text: 'Active',
+                          const DocuVerseBadge(
+                            text: 'Active',
                             variant: DocuVerseBadgeVariant.brand,
                             hasDot: true,
                           ),
                         ],
                         if (widget.provider.isRecommended ?? false) ...[
                           const SizedBox(width: 6),
-                          const DocuVerseBadge(text: 'Recommended',
+                          const DocuVerseBadge(
+                            text: 'Recommended',
                             variant: DocuVerseBadgeVariant.info,
                           ),
                         ],
                         if (!widget.provider.requiresKey) ...[
                           const SizedBox(width: 6),
-                          const DocuVerseBadge(text: 'Local',
+                          const DocuVerseBadge(
+                            text: 'Local',
                             variant: DocuVerseBadgeVariant.success,
                           ),
                         ],
                         if (widget.provider.isCustom ?? false) ...[
                           const SizedBox(width: 6),
-                          const DocuVerseBadge(text: 'Custom',
+                          const DocuVerseBadge(
+                            text: 'Custom',
                             variant: DocuVerseBadgeVariant.warning,
                           ),
                         ],
@@ -148,7 +154,8 @@ class _ProviderCardState extends State<ProviderCard> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   DocuVerseButton(
-                    onPressed: widget.isLoadingModels ? null : widget.onRefreshModels,
+                    onPressed:
+                        widget.isLoadingModels ? null : widget.onRefreshModels,
                     variant: DocuVerseButtonVariant.ghost,
                     size: DocuVerseButtonSize.sm,
                     icon: Icon(
@@ -202,13 +209,15 @@ class _ProviderCardState extends State<ProviderCard> {
                               height: 12,
                               child: CircularProgressIndicator(
                                 strokeWidth: 1.5,
-                                valueColor: AlwaysStoppedAnimation<Color>(tokens.brand),
+                                valueColor:
+                                    AlwaysStoppedAnimation<Color>(tokens.brand),
                               ),
                             ),
                             const SizedBox(width: 6),
                             Text(
                               'Discovering models…',
-                              style: TextStyle(fontSize: 11, color: tokens.foregroundMuted),
+                              style: TextStyle(
+                                  fontSize: 11, color: tokens.foregroundMuted),
                             ),
                           ] else ...[
                             Text(
@@ -232,7 +241,9 @@ class _ProviderCardState extends State<ProviderCard> {
                         ],
                       ),
                       Icon(
-                        _isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                        _isExpanded
+                            ? Icons.keyboard_arrow_up
+                            : Icons.keyboard_arrow_down,
                         size: 16,
                         color: tokens.foregroundMuted,
                       ),
@@ -267,7 +278,8 @@ class _ProviderCardState extends State<ProviderCard> {
                             InkWell(
                               onTap: () => widget.onUseModel(modelName),
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
                                 child: Text(
                                   'Use',
                                   style: TextStyle(

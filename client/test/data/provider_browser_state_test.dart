@@ -52,7 +52,8 @@ void main() {
     });
 
     test('clearActiveProvider forces activeProvider to null', () {
-      final before = const ProviderBrowserState.initial().copyWith(activeProvider: presetA);
+      final before = const ProviderBrowserState.initial()
+          .copyWith(activeProvider: presetA);
       final after = before.copyWith(clearActiveProvider: true);
       expect(after.activeProvider, isNull);
     });
@@ -60,7 +61,8 @@ void main() {
 
   group('ProviderBrowserState.filteredProviders', () {
     test('returns all providers when search query is empty', () {
-      final state = const ProviderBrowserState.initial().copyWith(providers: [presetA, presetB]);
+      final state = const ProviderBrowserState.initial()
+          .copyWith(providers: [presetA, presetB]);
       expect(state.filteredProviders, hasLength(2));
     });
 
@@ -71,7 +73,8 @@ void main() {
     });
 
     test('popularProviders / otherProviders split on category', () {
-      final state = const ProviderBrowserState.initial().copyWith(providers: [presetA, presetB]);
+      final state = const ProviderBrowserState.initial()
+          .copyWith(providers: [presetA, presetB]);
       expect(state.popularProviders.map((p) => p.id), ['openai']);
       expect(state.otherProviders.map((p) => p.id), ['ollama']);
     });

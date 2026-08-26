@@ -35,15 +35,18 @@ class FeaturesRepository {
     throw ApiException('Invalid NLLB translation response');
   }
 
-  Future<AsyncTranslationResponse> translateAsync(TranslationRequest request) async {
-    final res = await _apiClient.post('/translate/async', body: request.toJson());
+  Future<AsyncTranslationResponse> translateAsync(
+      TranslationRequest request) async {
+    final res =
+        await _apiClient.post('/translate/async', body: request.toJson());
     if (res is Map<String, dynamic>) {
       return AsyncTranslationResponse.fromJson(res);
     }
     throw ApiException('Invalid async translation response');
   }
 
-  Future<TranslationJobStatusResponse> getTranslationStatus(String jobId) async {
+  Future<TranslationJobStatusResponse> getTranslationStatus(
+      String jobId) async {
     final res = await _apiClient.get('/translate/status/$jobId');
     if (res is Map<String, dynamic>) {
       return TranslationJobStatusResponse.fromJson(res);
@@ -61,7 +64,8 @@ class FeaturesRepository {
     String? prompt,
     double temperature = 0.0,
   }) async {
-    final file = http.MultipartFile.fromBytes('file', fileBytes, filename: filename);
+    final file =
+        http.MultipartFile.fromBytes('file', fileBytes, filename: filename);
     final fields = <String, String>{
       'engine': engine,
       'model': model,
@@ -70,7 +74,8 @@ class FeaturesRepository {
       'temperature': temperature.toString(),
     };
 
-    final res = await _apiClient.postMultipart('/transcribe', files: [file], fields: fields);
+    final res = await _apiClient.postMultipart('/transcribe',
+        files: [file], fields: fields);
     if (res is Map<String, dynamic>) {
       return TranscriptionJobResponse.fromJson(res);
     }
@@ -114,7 +119,9 @@ class FeaturesRepository {
       } else if (entries is List) {
         final map = <String, String>{};
         for (final item in entries) {
-          if (item is Map<String, dynamic> && item['source'] != null && item['target'] != null) {
+          if (item is Map<String, dynamic> &&
+              item['source'] != null &&
+              item['target'] != null) {
             map[item['source'].toString()] = item['target'].toString();
           }
         }
@@ -125,7 +132,8 @@ class FeaturesRepository {
   }
 
   Future<void> toggleGlossary(String id, bool enabled) async {
-    await _apiClient.post('/glossary/library/$id/enable', body: {'enabled': enabled});
+    await _apiClient
+        .post('/glossary/library/$id/enable', body: {'enabled': enabled});
   }
 
   Future<void> deleteGlossary(String id) async {

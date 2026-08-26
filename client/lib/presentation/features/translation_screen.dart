@@ -63,7 +63,8 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
     final text = _sourceTextController.text.trim();
     if (text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please provide source text to translate.')),
+        const SnackBar(
+            content: Text('Please provide source text to translate.')),
       );
       return;
     }
@@ -119,7 +120,8 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
     final text = _sourceTextController.text.trim();
     if (text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please provide source text for async translation.')),
+        const SnackBar(
+            content: Text('Please provide source text for async translation.')),
       );
       return;
     }
@@ -169,18 +171,22 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
           timer.cancel();
           setState(() {
             _isTranslating = false;
-            _translatedOutput = status.result?.toString() ?? 'Translation completed.';
+            _translatedOutput =
+                status.result?.toString() ?? 'Translation completed.';
             _asyncStatus = 'Completed.';
           });
-        } else if (status.state.toUpperCase() == 'FAILURE' || status.error != null) {
+        } else if (status.state.toUpperCase() == 'FAILURE' ||
+            status.error != null) {
           timer.cancel();
           setState(() {
             _isTranslating = false;
-            _asyncStatus = 'Failed: ${status.detail ?? status.error ?? "Unknown error"}';
+            _asyncStatus =
+                'Failed: ${status.detail ?? status.error ?? "Unknown error"}';
           });
         } else {
           setState(() {
-            _asyncStatus = 'Status: ${status.state} (${status.status ?? "in-flight"})';
+            _asyncStatus =
+                'Status: ${status.state} (${status.status ?? "in-flight"})';
           });
         }
       } catch (e) {
@@ -234,7 +240,8 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                           ),
                         ),
                         const SizedBox(width: 10),
-                        const DocuVerseBadge(text: 'LangGraph / NLLB-200',
+                        const DocuVerseBadge(
+                          text: 'LangGraph / NLLB-200',
                           variant: DocuVerseBadgeVariant.brand,
                         ),
                       ],
@@ -242,7 +249,8 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                     const SizedBox(height: 4),
                     Text(
                       'Context-aware dual-engine translation with term preservation & sliding window',
-                      style: TextStyle(fontSize: 12, color: tokens.foregroundMuted),
+                      style: TextStyle(
+                          fontSize: 12, color: tokens.foregroundMuted),
                     ),
                   ],
                 ),
@@ -260,8 +268,10 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                         child: DropdownButton<String>(
                           value: _targetLanguage,
                           dropdownColor: tokens.card,
-                          style: TextStyle(fontSize: 13, color: tokens.foreground),
-                          icon: Icon(Icons.arrow_drop_down, color: tokens.foregroundMuted),
+                          style:
+                              TextStyle(fontSize: 13, color: tokens.foreground),
+                          icon: Icon(Icons.arrow_drop_down,
+                              color: tokens.foregroundMuted),
                           items: _languages
                               .map(
                                 (lang) => DropdownMenuItem(
@@ -271,7 +281,8 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                               )
                               .toList(),
                           onChanged: (val) {
-                            if (val != null) setState(() => _targetLanguage = val);
+                            if (val != null)
+                              setState(() => _targetLanguage = val);
                           },
                         ),
                       ),
@@ -301,7 +312,8 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                   const SizedBox(width: 32),
                   DocuVerseToggle(
                     label: 'Tree-Aware Translation',
-                    description: 'Preserve hierarchical layout headers and tables',
+                    description:
+                        'Preserve hierarchical layout headers and tables',
                     checked: _useTree,
                     onChanged: (val) => setState(() => _useTree = val),
                   ),
@@ -324,13 +336,16 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                         children: [
                           DocuVerseSectionHeader(
                             title: 'Source Text',
-                            description: 'Paste text or loaded document text artifact',
+                            description:
+                                'Paste text or loaded document text artifact',
                             action: _sourceTextController.text.isNotEmpty
                                 ? InkWell(
-                                    onTap: () => setState(() => _sourceTextController.clear()),
+                                    onTap: () => setState(
+                                        () => _sourceTextController.clear()),
                                     child: Text(
                                       'Clear',
-                                      style: TextStyle(fontSize: 12, color: tokens.danger),
+                                      style: TextStyle(
+                                          fontSize: 12, color: tokens.danger),
                                     ),
                                   )
                                 : null,
@@ -346,8 +361,11 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                                 fontFamily: 'monospace',
                               ),
                               decoration: InputDecoration(
-                                hintText: 'Enter or paste source document text here…',
-                                hintStyle: TextStyle(fontSize: 13, color: tokens.foregroundSubtle),
+                                hintText:
+                                    'Enter or paste source document text here…',
+                                hintStyle: TextStyle(
+                                    fontSize: 13,
+                                    color: tokens.foregroundSubtle),
                                 border: InputBorder.none,
                               ),
                             ),
@@ -357,7 +375,9 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                             children: [
                               Expanded(
                                 child: DocuVerseButton(
-                                  text: _isTranslating ? 'Translating…' : 'Translate (Sync)',
+                                  text: _isTranslating
+                                      ? 'Translating…'
+                                      : 'Translate (Sync)',
                                   variant: DocuVerseButtonVariant.primary,
                                   loading: _isTranslating,
                                   icon: const Icon(Icons.translate, size: 14),
@@ -369,7 +389,8 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                                 text: 'Async',
                                 variant: DocuVerseButtonVariant.secondary,
                                 disabled: _isTranslating,
-                                tooltip: 'Queue background task for large texts',
+                                tooltip:
+                                    'Queue background task for large texts',
                                 onPressed: _handleAsyncTranslate,
                               ),
                             ],
@@ -389,7 +410,8 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                         children: [
                           DocuVerseSectionHeader(
                             title: 'Translated Output ($_targetLanguage)',
-                            description: 'Neural output with domain terminology preserved',
+                            description:
+                                'Neural output with domain terminology preserved',
                             action: _translatedOutput.isNotEmpty
                                 ? DocuVerseButton(
                                     text: 'Copy',
@@ -433,7 +455,9 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           CircularProgressIndicator(
-                                            valueColor: AlwaysStoppedAnimation<Color>(tokens.brand),
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                                    tokens.brand),
                                           ),
                                           const SizedBox(height: 12),
                                           Text(

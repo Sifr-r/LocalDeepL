@@ -38,7 +38,8 @@ class _TranscriptionViewState extends ConsumerState<TranscriptionView> {
                 children: [
                   Text(
                     'Audio & Video Transcription',
-                    style: AppTypography.displayMedium(color: colors.textPrimary),
+                    style:
+                        AppTypography.displayMedium(color: colors.textPrimary),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -67,7 +68,8 @@ class _TranscriptionViewState extends ConsumerState<TranscriptionView> {
                 child: AppCard(
                   title: 'Media File',
                   subtitle: 'Upload MP3, WAV, MP4, M4A, OGG',
-                  headerLeading: Icon(Icons.mic_none_outlined, size: 18, color: colors.brand),
+                  headerLeading: Icon(Icons.mic_none_outlined,
+                      size: 18, color: colors.brand),
                   child: Container(
                     height: 200,
                     decoration: BoxDecoration(
@@ -79,16 +81,19 @@ class _TranscriptionViewState extends ConsumerState<TranscriptionView> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.audio_file_outlined, size: 40, color: colors.brandAccent),
+                          Icon(Icons.audio_file_outlined,
+                              size: 40, color: colors.brandAccent),
                           const SizedBox(height: 10),
                           Text(
                             'Drag & Drop Audio / Video File',
-                            style: AppTypography.titleMedium(color: colors.textPrimary),
+                            style: AppTypography.titleMedium(
+                                color: colors.textPrimary),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             'Maximum file size: 500MB',
-                            style: AppTypography.bodySmall(color: colors.textMuted),
+                            style: AppTypography.bodySmall(
+                                color: colors.textMuted),
                           ),
                           const SizedBox(height: 14),
                           AppButton(
@@ -96,7 +101,9 @@ class _TranscriptionViewState extends ConsumerState<TranscriptionView> {
                             variant: AppButtonVariant.secondary,
                             size: AppButtonSize.sm,
                             onPressed: () {
-                              ref.read(toastProvider.notifier).info('Selecting audio file...');
+                              ref
+                                  .read(toastProvider.notifier)
+                                  .info('Selecting audio file...');
                             },
                           ),
                         ],
@@ -113,16 +120,22 @@ class _TranscriptionViewState extends ConsumerState<TranscriptionView> {
                 child: AppCard(
                   title: 'Transcription Engine',
                   subtitle: 'Model parameters & language',
-                  headerLeading: Icon(Icons.settings_voice_outlined, size: 18, color: colors.cyan),
+                  headerLeading: Icon(Icons.settings_voice_outlined,
+                      size: 18, color: colors.cyan),
                   child: Column(
                     children: [
                       AppSelect<String>(
                         label: 'Engine Type',
                         value: _engine,
                         items: const [
-                          AppSelectItem(value: 'whisper_api', label: 'Whisper API (Cloud)'),
-                          AppSelectItem(value: 'whisper_local', label: 'Whisper Local (GPU)'),
-                          AppSelectItem(value: 'api', label: 'Custom Audio Endpoint'),
+                          AppSelectItem(
+                              value: 'whisper_api',
+                              label: 'Whisper API (Cloud)'),
+                          AppSelectItem(
+                              value: 'whisper_local',
+                              label: 'Whisper Local (GPU)'),
+                          AppSelectItem(
+                              value: 'api', label: 'Custom Audio Endpoint'),
                         ],
                         onChanged: (v) {
                           if (v != null) setState(() => _engine = v);
@@ -150,7 +163,9 @@ class _TranscriptionViewState extends ConsumerState<TranscriptionView> {
                       ),
                       const SizedBox(height: 18),
                       AppButton(
-                        text: _isTranscribing ? 'Transcribing...' : 'Start Transcription',
+                        text: _isTranscribing
+                            ? 'Transcribing...'
+                            : 'Start Transcription',
                         icon: const Icon(Icons.play_arrow_rounded),
                         variant: AppButtonVariant.primary,
                         size: AppButtonSize.md,
@@ -161,7 +176,8 @@ class _TranscriptionViewState extends ConsumerState<TranscriptionView> {
                           Future.delayed(const Duration(seconds: 2), () {
                             if (mounted) {
                               setState(() => _isTranscribing = false);
-                              ref.read(toastProvider.notifier).success('Transcription completed: 12 segments generated');
+                              ref.read(toastProvider.notifier).success(
+                                  'Transcription completed: 12 segments generated');
                             }
                           });
                         },
@@ -178,12 +194,28 @@ class _TranscriptionViewState extends ConsumerState<TranscriptionView> {
           AppCard(
             title: 'Transcript Timeline',
             subtitle: 'Timestamped utterances with confidence scoring',
-            headerLeading: Icon(Icons.subtitles_outlined, size: 18, color: colors.success),
+            headerLeading:
+                Icon(Icons.subtitles_outlined, size: 18, color: colors.success),
             child: Column(
               children: [
-                _buildSegmentRow('00:00 - 00:04', 'Speaker 1', 'Welcome to the OmniScribe technical overview session.', 0.98, colors),
-                _buildSegmentRow('00:05 - 00:11', 'Speaker 2', 'Today we are presenting the new unified DocuVerse client architecture for desktop.', 0.95, colors),
-                _buildSegmentRow('00:12 - 00:19', 'Speaker 1', 'Notice how the grounding confidence scores dynamically map in real time.', 0.92, colors),
+                _buildSegmentRow(
+                    '00:00 - 00:04',
+                    'Speaker 1',
+                    'Welcome to the OmniScribe technical overview session.',
+                    0.98,
+                    colors),
+                _buildSegmentRow(
+                    '00:05 - 00:11',
+                    'Speaker 2',
+                    'Today we are presenting the new unified DocuVerse client architecture for desktop.',
+                    0.95,
+                    colors),
+                _buildSegmentRow(
+                    '00:12 - 00:19',
+                    'Speaker 1',
+                    'Notice how the grounding confidence scores dynamically map in real time.',
+                    0.92,
+                    colors),
               ],
             ),
           ),
@@ -192,7 +224,8 @@ class _TranscriptionViewState extends ConsumerState<TranscriptionView> {
     );
   }
 
-  Widget _buildSegmentRow(String time, String speaker, String text, double score, AppColorScheme colors) {
+  Widget _buildSegmentRow(String time, String speaker, String text,
+      double score, AppColorScheme colors) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -210,16 +243,20 @@ class _TranscriptionViewState extends ConsumerState<TranscriptionView> {
               color: colors.muted,
               borderRadius: BorderRadius.circular(4),
             ),
-            child: Text(time, style: AppTypography.codeSmall(color: colors.textPrimary)),
+            child: Text(time,
+                style: AppTypography.codeSmall(color: colors.textPrimary)),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(speaker, style: AppTypography.captionStrong(color: colors.brandAccent)),
+                Text(speaker,
+                    style:
+                        AppTypography.captionStrong(color: colors.brandAccent)),
                 const SizedBox(height: 3),
-                Text(text, style: AppTypography.bodyMedium(color: colors.textPrimary)),
+                Text(text,
+                    style: AppTypography.bodyMedium(color: colors.textPrimary)),
               ],
             ),
           ),

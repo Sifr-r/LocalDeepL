@@ -125,7 +125,8 @@ class _AppSelectState<T> extends State<AppSelect<T>> {
           child: Text(
             selectedItem != null ? selectedItem.label : widget.placeholder,
             style: AppTypography.bodyMedium(
-              color: selectedItem != null ? colors.textPrimary : colors.textMuted,
+              color:
+                  selectedItem != null ? colors.textPrimary : colors.textMuted,
             ),
             overflow: TextOverflow.ellipsis,
           ),
@@ -166,7 +167,9 @@ class _AppSelectState<T> extends State<AppSelect<T>> {
         Opacity(
           opacity: widget.disabled ? 0.45 : 1.0,
           child: MouseRegion(
-            cursor: isInteractive ? SystemMouseCursors.click : SystemMouseCursors.basic,
+            cursor: isInteractive
+                ? SystemMouseCursors.click
+                : SystemMouseCursors.basic,
             onEnter: (_) {
               if (isInteractive) setState(() => _isHovered = true);
             },
@@ -197,19 +200,25 @@ class _AppSelectState<T> extends State<AppSelect<T>> {
                     value: item.value,
                     enabled: !item.disabled,
                     height: item.subtitle != null ? 48 : 36,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     child: Container(
                       decoration: BoxDecoration(
-                        color: isSelected ? colors.brand.withValues(alpha: 0.12) : Colors.transparent,
+                        color: isSelected
+                            ? colors.brand.withValues(alpha: 0.12)
+                            : Colors.transparent,
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       child: Row(
                         children: [
                           if (item.icon != null) ...[
                             IconTheme(
                               data: IconThemeData(
-                                color: isSelected ? colors.brand : colors.textSecondary,
+                                color: isSelected
+                                    ? colors.brand
+                                    : colors.textSecondary,
                                 size: 16,
                               ),
                               child: item.icon!,
@@ -230,14 +239,17 @@ class _AppSelectState<T> extends State<AppSelect<T>> {
                                             ? colors.brand
                                             : colors.textPrimary,
                                   ).copyWith(
-                                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.w400,
                                   ),
                                 ),
                                 if (item.subtitle != null) ...[
                                   const SizedBox(height: 2),
                                   Text(
                                     item.subtitle!,
-                                    style: AppTypography.bodySmall(color: colors.textMuted),
+                                    style: AppTypography.bodySmall(
+                                        color: colors.textMuted),
                                   ),
                                 ],
                               ],
@@ -245,7 +257,8 @@ class _AppSelectState<T> extends State<AppSelect<T>> {
                           ),
                           if (isSelected) ...[
                             const SizedBox(width: 8),
-                            Icon(Icons.check_rounded, size: 16, color: colors.brand),
+                            Icon(Icons.check_rounded,
+                                size: 16, color: colors.brand),
                           ],
                         ],
                       ),
@@ -288,7 +301,8 @@ class _AppSelectState<T> extends State<AppSelect<T>> {
               ),
             ],
           ),
-        ] else if (widget.helperText != null && widget.helperText!.isNotEmpty) ...[
+        ] else if (widget.helperText != null &&
+            widget.helperText!.isNotEmpty) ...[
           const SizedBox(height: 4),
           Text(
             widget.helperText!,

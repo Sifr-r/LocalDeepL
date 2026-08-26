@@ -82,10 +82,22 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
     } catch (_) {
       setState(() {
         _entries = [
-          const GlossaryEntry(source: 'arbitration', target: 'arbitrage', note: 'Commercial dispute resolution'),
-          const GlossaryEntry(source: 'plaintiff', target: 'demandeur', note: 'Civil litigation context'),
-          const GlossaryEntry(source: 'force majeure', target: 'force majeure', note: 'Unforeseen event exemption'),
-          const GlossaryEntry(source: 'jurisdiction', target: 'juridiction', note: 'Court authority territory'),
+          const GlossaryEntry(
+              source: 'arbitration',
+              target: 'arbitrage',
+              note: 'Commercial dispute resolution'),
+          const GlossaryEntry(
+              source: 'plaintiff',
+              target: 'demandeur',
+              note: 'Civil litigation context'),
+          const GlossaryEntry(
+              source: 'force majeure',
+              target: 'force majeure',
+              note: 'Unforeseen event exemption'),
+          const GlossaryEntry(
+              source: 'jurisdiction',
+              target: 'juridiction',
+              note: 'Court authority territory'),
         ];
         _activeViewIndex = 1;
       });
@@ -154,7 +166,8 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
     DocuVerseModal.show(
       context: context,
       title: 'Import Terminology Glossary',
-      description: 'Upload a terminology file or import from a remote lexicon URL',
+      description:
+          'Upload a terminology file or import from a remote lexicon URL',
       maxWidth: 540,
       actions: [
         DocuVerseButton(
@@ -172,20 +185,28 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                 await repo.importGlossaryUrl(
                   url: urlController.text.trim(),
                   format: format,
-                  name: nameController.text.trim().isNotEmpty ? nameController.text.trim() : null,
+                  name: nameController.text.trim().isNotEmpty
+                      ? nameController.text.trim()
+                      : null,
                 );
               } else {
                 await repo.importGlossaryJson(
                   format: format,
-                  name: nameController.text.trim().isNotEmpty ? nameController.text.trim() : null,
-                  text: textController.text.trim().isNotEmpty ? textController.text.trim() : null,
+                  name: nameController.text.trim().isNotEmpty
+                      ? nameController.text.trim()
+                      : null,
+                  text: textController.text.trim().isNotEmpty
+                      ? textController.text.trim()
+                      : null,
                 );
               }
             } catch (_) {
               // Simulated add for seamless testing
               final newLib = GlossaryListItem(
                 id: 'imported-${DateTime.now().millisecondsSinceEpoch}',
-                name: nameController.text.trim().isNotEmpty ? nameController.text.trim() : 'Imported Glossary',
+                name: nameController.text.trim().isNotEmpty
+                    ? nameController.text.trim()
+                    : 'Imported Glossary',
                 format: format,
                 entryCount: 16,
                 enabled: true,
@@ -239,13 +260,23 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                       child: DropdownButton<String>(
                         value: format,
                         dropdownColor: modalContext.docuVerse.card,
-                        style: TextStyle(fontSize: 13, color: modalContext.docuVerse.foreground),
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: modalContext.docuVerse.foreground),
                         items: const [
-                          DropdownMenuItem(value: 'json_pairs', child: Text('JSON Pairs / Paired Text')),
-                          DropdownMenuItem(value: 'csv', child: Text('CSV (Comma Separated)')),
-                          DropdownMenuItem(value: 'tsv', child: Text('TSV (Tab Separated)')),
-                          DropdownMenuItem(value: 'tbx', child: Text('TBX Glossary File')),
-                          DropdownMenuItem(value: 'xliff', child: Text('XLIFF Translation File')),
+                          DropdownMenuItem(
+                              value: 'json_pairs',
+                              child: Text('JSON Pairs / Paired Text')),
+                          DropdownMenuItem(
+                              value: 'csv',
+                              child: Text('CSV (Comma Separated)')),
+                          DropdownMenuItem(
+                              value: 'tsv', child: Text('TSV (Tab Separated)')),
+                          DropdownMenuItem(
+                              value: 'tbx', child: Text('TBX Glossary File')),
+                          DropdownMenuItem(
+                              value: 'xliff',
+                              child: Text('XLIFF Translation File')),
                         ],
                         onChanged: (val) {
                           if (val != null) setModalState(() => format = val);
@@ -308,7 +339,9 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                           ),
                         ),
                         const SizedBox(width: 10),
-                        DocuVerseBadge(text: '${_libraries.where((l) => l.enabled).length} active',
+                        DocuVerseBadge(
+                          text:
+                              '${_libraries.where((l) => l.enabled).length} active',
                           variant: DocuVerseBadgeVariant.success,
                           hasDot: true,
                         ),
@@ -317,7 +350,8 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                     const SizedBox(height: 4),
                     Text(
                       'Manage domain lexicons, term overrides, and dictionary mappings',
-                      style: TextStyle(fontSize: 12, color: tokens.foregroundMuted),
+                      style: TextStyle(
+                          fontSize: 12, color: tokens.foregroundMuted),
                     ),
                   ],
                 ),
@@ -334,13 +368,19 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          _buildTabButton('Libraries (${_libraries.length})', 0, tokens),
                           _buildTabButton(
-                            _selectedLibrary != null ? 'Entries (${_entries.length})' : 'Entries',
+                              'Libraries (${_libraries.length})', 0, tokens),
+                          _buildTabButton(
+                            _selectedLibrary != null
+                                ? 'Entries (${_entries.length})'
+                                : 'Entries',
                             1,
                             tokens,
                           ),
-                          _buildTabButton('Merged Lexicon (${_mergedLexicon.length})', 2, tokens),
+                          _buildTabButton(
+                              'Merged Lexicon (${_mergedLexicon.length})',
+                              2,
+                              tokens),
                         ],
                       ),
                     ),
@@ -361,7 +401,9 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
             Expanded(
               child: _activeViewIndex == 0
                   ? _buildLibrariesTable(tokens)
-                  : (_activeViewIndex == 1 ? _buildEntriesView(tokens) : _buildMergedView(tokens)),
+                  : (_activeViewIndex == 1
+                      ? _buildEntriesView(tokens)
+                      : _buildMergedView(tokens)),
             ),
           ],
         ),
@@ -412,23 +454,60 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                   horizontalMargin: 16,
                   columnSpacing: 24,
                   columns: const [
-                    DataColumn(label: Text('Priority', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                    DataColumn(label: Text('Name', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                    DataColumn(label: Text('Format', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                    DataColumn(label: Text('Entries', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                    DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                    DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                    DataColumn(
+                        label: Text('Priority',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12))),
+                    DataColumn(
+                        label: Text('Name',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12))),
+                    DataColumn(
+                        label: Text('Format',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12))),
+                    DataColumn(
+                        label: Text('Entries',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12))),
+                    DataColumn(
+                        label: Text('Status',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12))),
+                    DataColumn(
+                        label: Text('Actions',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12))),
                   ],
                   rows: _libraries.map((lib) {
                     return DataRow(
                       cells: [
-                        DataCell(Text('#${lib.priority}', style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: tokens.foregroundMuted))),
-                        DataCell(Text(lib.name, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: tokens.brand))),
-                        DataCell(Text(lib.format.toUpperCase(), style: TextStyle(fontFamily: 'monospace', fontSize: 11, color: tokens.foregroundMuted))),
-                        DataCell(Text('${lib.entryCount}', style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: tokens.foreground))),
+                        DataCell(Text('#${lib.priority}',
+                            style: TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 12,
+                                color: tokens.foregroundMuted))),
+                        DataCell(Text(lib.name,
+                            style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                                color: tokens.brand))),
+                        DataCell(Text(lib.format.toUpperCase(),
+                            style: TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 11,
+                                color: tokens.foregroundMuted))),
+                        DataCell(Text('${lib.entryCount}',
+                            style: TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 12,
+                                color: tokens.foreground))),
                         DataCell(
-                          DocuVerseBadge(text: lib.enabled ? 'Enabled' : 'Disabled',
-                            variant: lib.enabled ? DocuVerseBadgeVariant.success : DocuVerseBadgeVariant.neutral,
+                          DocuVerseBadge(
+                            text: lib.enabled ? 'Enabled' : 'Disabled',
+                            variant: lib.enabled
+                                ? DocuVerseBadgeVariant.success
+                                : DocuVerseBadgeVariant.neutral,
                             hasDot: lib.enabled,
                             onTap: () => _toggleLibrary(lib, !lib.enabled),
                           ),
@@ -472,7 +551,8 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
             title: _selectedLibrary != null
                 ? '${_selectedLibrary!.name} (${_entries.length} terms)'
                 : 'Glossary Entries',
-            description: 'Source terms mapped to target domain translations with contextual notes',
+            description:
+                'Source terms mapped to target domain translations with contextual notes',
             action: DocuVerseButton(
               text: 'Back to libraries',
               variant: DocuVerseButtonVariant.ghost,
@@ -485,7 +565,8 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                 ? Center(
                     child: Text(
                       'No terms found in this glossary library.',
-                      style: TextStyle(color: tokens.foregroundMuted, fontSize: 13),
+                      style: TextStyle(
+                          color: tokens.foregroundMuted, fontSize: 13),
                     ),
                   )
                 : ListView.separated(
@@ -494,7 +575,8 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                     itemBuilder: (context, index) {
                       final entry = _entries[index];
                       return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
                           color: tokens.cardRaised,
                           borderRadius: BorderRadius.circular(6),
@@ -514,7 +596,8 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                                 ),
                               ),
                             ),
-                            Icon(Icons.arrow_forward, size: 14, color: tokens.foregroundSubtle),
+                            Icon(Icons.arrow_forward,
+                                size: 14, color: tokens.foregroundSubtle),
                             const SizedBox(width: 12),
                             Expanded(
                               flex: 2,
@@ -562,18 +645,21 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
         children: [
           const DocuVerseSectionHeader(
             title: 'Merged Lexicon Table',
-            description: 'Combined active terms from all enabled libraries applied during OCR and translation',
+            description:
+                'Combined active terms from all enabled libraries applied during OCR and translation',
           ),
           Expanded(
             child: entries.isEmpty
                 ? Center(
                     child: Text(
                       'No active merged terms available.',
-                      style: TextStyle(color: tokens.foregroundMuted, fontSize: 13),
+                      style: TextStyle(
+                          color: tokens.foregroundMuted, fontSize: 13),
                     ),
                   )
                 : GridView.builder(
-                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    gridDelegate:
+                        const SliverGridDelegateWithMaxCrossAxisExtent(
                       maxCrossAxisExtent: 320,
                       mainAxisExtent: 44,
                       crossAxisSpacing: 10,
@@ -583,7 +669,8 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                     itemBuilder: (context, index) {
                       final item = entries[index];
                       return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
                           color: tokens.cardRaised,
                           borderRadius: BorderRadius.circular(6),
@@ -605,7 +692,8 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                               ),
                             ),
                             const SizedBox(width: 6),
-                            Icon(Icons.arrow_forward, size: 12, color: tokens.foregroundSubtle),
+                            Icon(Icons.arrow_forward,
+                                size: 12, color: tokens.foregroundSubtle),
                             const SizedBox(width: 6),
                             Flexible(
                               child: Text(

@@ -124,7 +124,8 @@ void main() {
       expect(
         () => apiClient.get<dynamic>('/test'),
         throwsA(
-          isA<NetworkException>().having((e) => e.isTimeout, 'isTimeout', isTrue),
+          isA<NetworkException>()
+              .having((e) => e.isTimeout, 'isTimeout', isTrue),
         ),
       );
     });

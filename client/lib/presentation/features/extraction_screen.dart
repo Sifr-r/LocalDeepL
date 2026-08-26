@@ -46,7 +46,11 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
         'tax_amount': 'number',
         'date': 'string',
         'line_items': [
-          {'description': 'string', 'quantity': 'number', 'unit_price': 'number'}
+          {
+            'description': 'string',
+            'quantity': 'number',
+            'unit_price': 'number'
+          }
         ],
       }),
     );
@@ -63,7 +67,8 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
     final text = _inputTextController.text.trim();
     if (text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter or paste input text to extract.')),
+        const SnackBar(
+            content: Text('Please enter or paste input text to extract.')),
       );
       return;
     }
@@ -81,7 +86,9 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
       final req = ExtractionRequest(
         text: text,
         template: _selectedTemplate,
-        customPrompt: _selectedTemplate == 'custom' ? _customSchemaController.text.trim() : null,
+        customPrompt: _selectedTemplate == 'custom'
+            ? _customSchemaController.text.trim()
+            : null,
         model: config?.model,
         apiBase: config?.apiBase,
       );
@@ -103,8 +110,16 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
             'date': '2026-08-24',
             'currency': 'USD',
             'line_items': [
-              {'description': 'OCR Document Digitization Tier 1', 'quantity': 500, 'unit_price': 20.00},
-              {'description': 'Neural Translation French Pack', 'quantity': 1, 'unit_price': 2450.00},
+              {
+                'description': 'OCR Document Digitization Tier 1',
+                'quantity': 500,
+                'unit_price': 20.00
+              },
+              {
+                'description': 'Neural Translation French Pack',
+                'quantity': 1,
+                'unit_price': 2450.00
+              },
             ],
             'confidence_score': 0.985,
           };
@@ -113,7 +128,8 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
             'template': _selectedTemplate,
             'extracted_fields': {
               'status': 'success',
-              'content_summary': text.length > 80 ? '${text.substring(0, 80)}…' : text,
+              'content_summary':
+                  text.length > 80 ? '${text.substring(0, 80)}…' : text,
               'parsed_timestamp': DateTime.now().toIso8601String(),
             }
           };
@@ -131,7 +147,8 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
 
   void _copyJson() {
     if (_extractedData != null) {
-      final jsonStr = const JsonEncoder.withIndent('  ').convert(_extractedData);
+      final jsonStr =
+          const JsonEncoder.withIndent('  ').convert(_extractedData);
       Clipboard.setData(ClipboardData(text: jsonStr));
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('JSON data copied to clipboard.')),
@@ -170,7 +187,8 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                           ),
                         ),
                         const SizedBox(width: 10),
-                        const DocuVerseBadge(text: 'JSON Schema / AST',
+                        const DocuVerseBadge(
+                          text: 'JSON Schema / AST',
                           variant: DocuVerseBadgeVariant.brand,
                         ),
                       ],
@@ -178,7 +196,8 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                     const SizedBox(height: 4),
                     Text(
                       'Extract strongly-typed entities, tables, invoices, and key-values from OCR document trees',
-                      style: TextStyle(fontSize: 12, color: tokens.foregroundMuted),
+                      style: TextStyle(
+                          fontSize: 12, color: tokens.foregroundMuted),
                     ),
                   ],
                 ),
@@ -195,20 +214,27 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                     children: _templates.map((tpl) {
                       final isSelected = _selectedTemplate == tpl['id'];
                       return InkWell(
-                        onTap: () => setState(() => _selectedTemplate = tpl['id']!),
+                        onTap: () =>
+                            setState(() => _selectedTemplate = tpl['id']!),
                         borderRadius: BorderRadius.circular(4),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
                           decoration: BoxDecoration(
-                            color: isSelected ? tokens.card : Colors.transparent,
+                            color:
+                                isSelected ? tokens.card : Colors.transparent,
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
                             tpl['label']!,
                             style: TextStyle(
                               fontSize: 12,
-                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                              color: isSelected ? tokens.brand : tokens.foregroundMuted,
+                              fontWeight: isSelected
+                                  ? FontWeight.w600
+                                  : FontWeight.normal,
+                              color: isSelected
+                                  ? tokens.brand
+                                  : tokens.foregroundMuted,
                             ),
                           ),
                         ),
@@ -234,7 +260,8 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                         children: [
                           const DocuVerseSectionHeader(
                             title: 'Input Text / Document Artifact',
-                            description: 'Source text containing unstructured information',
+                            description:
+                                'Source text containing unstructured information',
                           ),
                           Expanded(
                             child: TextField(
@@ -247,8 +274,11 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                                 fontFamily: 'monospace',
                               ),
                               decoration: InputDecoration(
-                                hintText: 'Paste invoice text, resume, receipt, or academic table here…',
-                                hintStyle: TextStyle(fontSize: 13, color: tokens.foregroundSubtle),
+                                hintText:
+                                    'Paste invoice text, resume, receipt, or academic table here…',
+                                hintStyle: TextStyle(
+                                    fontSize: 13,
+                                    color: tokens.foregroundSubtle),
                                 border: InputBorder.none,
                               ),
                             ),
@@ -282,7 +312,8 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                                   fillColor: tokens.cardRaised,
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(6),
-                                    borderSide: BorderSide(color: tokens.border),
+                                    borderSide:
+                                        BorderSide(color: tokens.border),
                                   ),
                                 ),
                               ),
@@ -290,7 +321,9 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                           ],
                           const SizedBox(height: 14),
                           DocuVerseButton(
-                            text: _isExtracting ? 'Extracting…' : 'Run Structured Extraction',
+                            text: _isExtracting
+                                ? 'Extracting…'
+                                : 'Run Structured Extraction',
                             variant: DocuVerseButtonVariant.primary,
                             fullWidth: true,
                             loading: _isExtracting,
@@ -312,7 +345,8 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                         children: [
                           DocuVerseSectionHeader(
                             title: 'Extracted Output AST',
-                            description: 'Typed JSON structure validated against selected schema',
+                            description:
+                                'Typed JSON structure validated against selected schema',
                             action: _extractedData != null
                                 ? DocuVerseButton(
                                     text: 'Copy JSON',
@@ -338,7 +372,9 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           CircularProgressIndicator(
-                                            valueColor: AlwaysStoppedAnimation<Color>(tokens.brand),
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                                    tokens.brand),
                                           ),
                                           const SizedBox(height: 12),
                                           Text(
@@ -354,7 +390,8 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                                   : _extractedData != null
                                       ? SingleChildScrollView(
                                           child: SelectableText(
-                                            const JsonEncoder.withIndent('  ').convert(_extractedData),
+                                            const JsonEncoder.withIndent('  ')
+                                                .convert(_extractedData),
                                             style: TextStyle(
                                               fontSize: 12.5,
                                               fontFamily: 'monospace',
@@ -366,7 +403,9 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                                       : Center(
                                           child: Text(
                                             'Extracted JSON output structure will appear here after extraction.',
-                                            style: TextStyle(fontSize: 13, color: tokens.foregroundSubtle),
+                                            style: TextStyle(
+                                                fontSize: 13,
+                                                color: tokens.foregroundSubtle),
                                           ),
                                         ),
                             ),

@@ -107,23 +107,28 @@ class DocuVerseInput extends StatelessWidget {
                 ? Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: IconTheme(
-                      data: IconThemeData(size: 16, color: colors.foregroundMuted),
+                      data: IconThemeData(
+                          size: 16, color: colors.foregroundMuted),
                       child: prefixIcon!,
                     ),
                   )
                 : null,
-            prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            prefixIconConstraints:
+                const BoxConstraints(minWidth: 36, minHeight: 36),
             suffixIcon: suffixIcon != null
                 ? Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: IconTheme(
-                      data: IconThemeData(size: 16, color: colors.foregroundMuted),
+                      data: IconThemeData(
+                          size: 16, color: colors.foregroundMuted),
                       child: suffixIcon!,
                     ),
                   )
                 : null,
-            suffixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            suffixIconConstraints:
+                const BoxConstraints(minWidth: 36, minHeight: 36),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             filled: true,
             fillColor: colors.card,
             border: OutlineInputBorder(

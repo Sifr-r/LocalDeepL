@@ -79,7 +79,10 @@ class BottomProgressDock extends StatelessWidget {
                               colors: isProcessing
                                   ? [colors.brand, colors.info]
                                   : stage == 'Complete'
-                                      ? [colors.success, const Color(0xFF10B981)]
+                                      ? [
+                                          colors.success,
+                                          const Color(0xFF10B981)
+                                        ]
                                       : [colors.muted, colors.foregroundSubtle],
                             ),
                           ),
@@ -121,7 +124,8 @@ class BottomProgressDock extends StatelessWidget {
                         height: 12,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(colors.brand),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(colors.brand),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -150,7 +154,8 @@ class BottomProgressDock extends StatelessWidget {
                 children: [
                   _buildMetricPill(
                     label: 'Blocks',
-                    value: '$processedBlocks${totalBlocks > 0 ? "/$totalBlocks" : ""}',
+                    value:
+                        '$processedBlocks${totalBlocks > 0 ? "/$totalBlocks" : ""}',
                     colors: colors,
                   ),
                   const SizedBox(width: 8),
@@ -173,7 +178,8 @@ class BottomProgressDock extends StatelessWidget {
                       label: 'Avg Conf',
                       value: '${(avgConf * 100).round()}%',
                       colors: colors,
-                      highlightColor: avgConf >= 0.85 ? colors.success : colors.warning,
+                      highlightColor:
+                          avgConf >= 0.85 ? colors.success : colors.warning,
                     ),
                   ],
                 ],
@@ -200,7 +206,8 @@ class BottomProgressDock extends StatelessWidget {
     );
   }
 
-  Widget _buildStageStepper(DocuVerseThemeTokens colors, JobProgressState state) {
+  Widget _buildStageStepper(
+      DocuVerseThemeTokens colors, JobProgressState state) {
     final stages = JobProgressState.pipelineStages;
     final currentIdx = state.currentStageIndex;
     final isDone = state.stage == 'Complete';
@@ -214,7 +221,8 @@ class BottomProgressDock extends StatelessWidget {
           return Expanded(
             child: Container(
               height: 2,
-              color: isPast ? colors.brand : colors.muted.withValues(alpha: 0.4),
+              color:
+                  isPast ? colors.brand : colors.muted.withValues(alpha: 0.4),
             ),
           );
         }

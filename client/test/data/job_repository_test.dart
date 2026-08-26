@@ -18,7 +18,9 @@ void main() {
       repo = JobRepositoryImpl(apiClient);
     });
 
-    test('hits /api/jobs/{jobId}/result with token query param and Bearer header', () async {
+    test(
+        'hits /api/jobs/{jobId}/result with token query param and Bearer header',
+        () async {
       final expectedBytes = Uint8List.fromList([1, 2, 3, 4]);
       when(() => apiClient.getBytes(
             ApiConstants.jobResult('job-42'),

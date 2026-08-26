@@ -10,7 +10,8 @@ final activeTabProvider = StateProvider<AppTab>((ref) => AppTab.workstation);
 final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.dark);
 
 /// Selected LLM / OCR provider preset name.
-final activeProviderPresetProvider = StateProvider<String>((ref) => 'Ollama (Local)');
+final activeProviderPresetProvider =
+    StateProvider<String>((ref) => 'Ollama (Local)');
 
 /// Server health model.
 @immutable

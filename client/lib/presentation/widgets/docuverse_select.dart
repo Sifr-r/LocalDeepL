@@ -100,7 +100,8 @@ class DocuVerseSelect<T> extends StatelessWidget {
               fontSize: 11,
               color: colors.foregroundSubtle,
             ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             filled: true,
             fillColor: colors.card,
             border: OutlineInputBorder(

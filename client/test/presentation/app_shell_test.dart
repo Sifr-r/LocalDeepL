@@ -31,7 +31,9 @@ void main() {
   }
 
   group('AppShell & TabRibbon Tests', () {
-    testWidgets('Renders OmniScribe brand, v2.0 badge, and default Workstation view', (WidgetTester tester) async {
+    testWidgets(
+        'Renders OmniScribe brand, v2.0 badge, and default Workstation view',
+        (WidgetTester tester) async {
       await tester.pumpWidget(buildAppShell());
       await tester.pump();
 
@@ -40,7 +42,9 @@ void main() {
       expect(find.text('Document Workstation'), findsOneWidget);
     });
 
-    testWidgets('Switches to Translation tab when Translation tab button is tapped', (WidgetTester tester) async {
+    testWidgets(
+        'Switches to Translation tab when Translation tab button is tapped',
+        (WidgetTester tester) async {
       await tester.pumpWidget(buildAppShell());
       await tester.pump();
 
@@ -52,7 +56,9 @@ void main() {
       expect(find.text('Translation Workbench'), findsOneWidget);
     });
 
-    testWidgets('Switches to Transcription tab when Transcription tab is tapped', (WidgetTester tester) async {
+    testWidgets(
+        'Switches to Transcription tab when Transcription tab is tapped',
+        (WidgetTester tester) async {
       await tester.pumpWidget(buildAppShell());
       await tester.pump();
 
@@ -62,7 +68,8 @@ void main() {
       expect(find.text('Audio & Video Transcription'), findsOneWidget);
     });
 
-    testWidgets('Switches to Extraction tab when Extraction tab is tapped', (WidgetTester tester) async {
+    testWidgets('Switches to Extraction tab when Extraction tab is tapped',
+        (WidgetTester tester) async {
       await tester.pumpWidget(buildAppShell());
       await tester.pump();
 
@@ -72,7 +79,8 @@ void main() {
       expect(find.text('Schema & Entity Extraction'), findsOneWidget);
     });
 
-    testWidgets('Switches to Glossary tab when Glossary tab is tapped', (WidgetTester tester) async {
+    testWidgets('Switches to Glossary tab when Glossary tab is tapped',
+        (WidgetTester tester) async {
       await tester.pumpWidget(buildAppShell());
       await tester.pump();
 
@@ -82,7 +90,8 @@ void main() {
       expect(find.text('Glossary & Translation Memories'), findsOneWidget);
     });
 
-    testWidgets('Switches to Jobs tab when Jobs tab is tapped', (WidgetTester tester) async {
+    testWidgets('Switches to Jobs tab when Jobs tab is tapped',
+        (WidgetTester tester) async {
       await tester.pumpWidget(buildAppShell());
       await tester.pump();
 
@@ -92,7 +101,8 @@ void main() {
       expect(find.text('Job Execution History'), findsOneWidget);
     });
 
-    testWidgets('Switches to Settings tab when Settings tab is tapped', (WidgetTester tester) async {
+    testWidgets('Switches to Settings tab when Settings tab is tapped',
+        (WidgetTester tester) async {
       await tester.pumpWidget(buildAppShell());
       await tester.pump();
 
@@ -102,7 +112,8 @@ void main() {
       expect(find.text('System Configuration'), findsOneWidget);
     });
 
-    testWidgets('ServerHealthBadge displays status correctly', (WidgetTester tester) async {
+    testWidgets('ServerHealthBadge displays status correctly',
+        (WidgetTester tester) async {
       await tester.pumpWidget(buildAppShell(serverStatus: ServerHealth.online));
       await tester.pump();
 

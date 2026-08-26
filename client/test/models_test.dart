@@ -143,7 +143,8 @@ void main() {
         'confidence': 0.94,
       };
 
-      final revisedFrame = WsEnvelope.fromJson(revisedJson) as WsBlockRevisedFrame;
+      final revisedFrame =
+          WsEnvelope.fromJson(revisedJson) as WsBlockRevisedFrame;
       final revisedItem = revisedFrame.toBBoxItem();
       expect(revisedItem.revised, isTrue);
       expect(revisedItem.confidence, 0.94);

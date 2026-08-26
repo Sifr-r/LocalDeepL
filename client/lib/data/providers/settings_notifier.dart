@@ -4,8 +4,7 @@ import 'package:omniscribe_client/data/providers/repository_providers.dart';
 import 'package:omniscribe_client/data/providers/settings_state.dart';
 import 'package:omniscribe_client/data/repositories/config_repository.dart';
 
-final settingsStateProvider =
-    NotifierProvider<SettingsNotifier, SettingsState>(
+final settingsStateProvider = NotifierProvider<SettingsNotifier, SettingsState>(
   SettingsNotifier.new,
 );
 

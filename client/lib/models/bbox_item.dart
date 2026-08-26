@@ -39,7 +39,8 @@ class BBoxItem {
   double get width => (x1 - x0).clamp(0.0, 1.0);
   double get height => (y1 - y0).clamp(0.0, 1.0);
 
-  int? get confidencePercent => confidence != null ? (confidence! * 100).round() : null;
+  int? get confidencePercent =>
+      confidence != null ? (confidence! * 100).round() : null;
 
   /// Confidence classification for color-coding:
   /// - High: >= 0.85 (Green)
@@ -59,8 +60,12 @@ class BBoxItem {
       bboxList.length == 4,
       'BBox coordinates must have exactly 4 numbers [x0, y0, x1, y1]',
     );
-    final pageIdx = (json['page'] as num?)?.toInt() ?? (json['page_idx'] as num?)?.toInt() ?? 0;
-    final blockIdx = (json['block'] as num?)?.toInt() ?? (json['block_idx'] as num?)?.toInt() ?? 0;
+    final pageIdx = (json['page'] as num?)?.toInt() ??
+        (json['page_idx'] as num?)?.toInt() ??
+        0;
+    final blockIdx = (json['block'] as num?)?.toInt() ??
+        (json['block_idx'] as num?)?.toInt() ??
+        0;
     final blockId = json['block_id'] as String? ?? 'p${pageIdx}_b$blockIdx';
 
     return BBoxItem(

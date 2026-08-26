@@ -18,7 +18,8 @@ class UploadDropzone extends StatefulWidget {
     this.maxBytes = 50 * 1024 * 1024, // 50MB
   });
 
-  final void Function(Uint8List bytes, String filename, int pageCount)? onFileLoaded;
+  final void Function(Uint8List bytes, String filename, int pageCount)?
+      onFileLoaded;
   final int maxBytes;
 
   @override
@@ -90,7 +91,8 @@ class _UploadDropzoneState extends State<UploadDropzone> {
     final ext = filename.split('.').last.toLowerCase();
     if (!supportedExtensions.contains(ext)) {
       setState(() {
-        _errorMessage = 'Unsupported format .$ext. Please upload PDF, PNG, JPG, WEBP, or AVIF';
+        _errorMessage =
+            'Unsupported format .$ext. Please upload PDF, PNG, JPG, WEBP, or AVIF';
       });
       return;
     }
@@ -148,14 +150,11 @@ class _UploadDropzoneState extends State<UploadDropzone> {
       },
       child: Container(
         decoration: BoxDecoration(
-          color: _isDragging
-              ? colors.brand.withValues(alpha: 0.12)
-              : colors.card,
+          color:
+              _isDragging ? colors.brand.withValues(alpha: 0.12) : colors.card,
           borderRadius: BorderRadius.circular(colors.cardRadius),
           border: Border.all(
-            color: _isDragging
-                ? colors.brand
-                : colors.borderStrong,
+            color: _isDragging ? colors.brand : colors.borderStrong,
             width: _isDragging ? 2.0 : 1.2,
           ),
         ),
@@ -177,7 +176,9 @@ class _UploadDropzoneState extends State<UploadDropzone> {
                   ),
                 ),
                 child: Icon(
-                  _isDragging ? Icons.file_download_outlined : Icons.cloud_upload_outlined,
+                  _isDragging
+                      ? Icons.file_download_outlined
+                      : Icons.cloud_upload_outlined,
                   size: 32,
                   color: colors.brand,
                 ),
@@ -186,7 +187,9 @@ class _UploadDropzoneState extends State<UploadDropzone> {
 
               // Title & Call to Action
               Text(
-                _isDragging ? 'Drop file to load' : 'Upload document for OCR processing',
+                _isDragging
+                    ? 'Drop file to load'
+                    : 'Upload document for OCR processing',
                 style: TextStyle(
                   fontFamily: DocuVerseTypography.fontDisplay,
                   fontSize: 18,
@@ -213,11 +216,16 @@ class _UploadDropzoneState extends State<UploadDropzone> {
                 runSpacing: 6,
                 alignment: WrapAlignment.center,
                 children: const [
-                  DocuVerseBadge(text: 'PDF', variant: DocuVerseBadgeVariant.brand),
-                  DocuVerseBadge(text: 'PNG', variant: DocuVerseBadgeVariant.neutral),
-                  DocuVerseBadge(text: 'JPG', variant: DocuVerseBadgeVariant.neutral),
-                  DocuVerseBadge(text: 'WEBP', variant: DocuVerseBadgeVariant.neutral),
-                  DocuVerseBadge(text: 'AVIF', variant: DocuVerseBadgeVariant.neutral),
+                  DocuVerseBadge(
+                      text: 'PDF', variant: DocuVerseBadgeVariant.brand),
+                  DocuVerseBadge(
+                      text: 'PNG', variant: DocuVerseBadgeVariant.neutral),
+                  DocuVerseBadge(
+                      text: 'JPG', variant: DocuVerseBadgeVariant.neutral),
+                  DocuVerseBadge(
+                      text: 'WEBP', variant: DocuVerseBadgeVariant.neutral),
+                  DocuVerseBadge(
+                      text: 'AVIF', variant: DocuVerseBadgeVariant.neutral),
                 ],
               ),
               const SizedBox(height: 24),
@@ -236,11 +244,13 @@ class _UploadDropzoneState extends State<UploadDropzone> {
               if (_errorMessage != null) ...[
                 const SizedBox(height: 16),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: colors.danger.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(colors.radiusInput),
-                    border: Border.all(color: colors.danger.withValues(alpha: 0.3)),
+                    border:
+                        Border.all(color: colors.danger.withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -266,7 +276,8 @@ class _UploadDropzoneState extends State<UploadDropzone> {
               if (docState.hasDocument && docState.filename != null) ...[
                 const SizedBox(height: 24),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
                     color: colors.cardRaised,
                     borderRadius: BorderRadius.circular(colors.radiusInput),
@@ -275,7 +286,8 @@ class _UploadDropzoneState extends State<UploadDropzone> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.check_circle_outline, size: 18, color: colors.success),
+                      Icon(Icons.check_circle_outline,
+                          size: 18, color: colors.success),
                       const SizedBox(width: 8),
                       Text(
                         'Loaded: ${docState.filename}',

@@ -9,7 +9,8 @@ import 'package:omniscribe_client/data/repositories/ocr_repository.dart';
 import 'package:omniscribe_client/data/repositories/provider_repository.dart';
 
 /// Base URL provider for the OmniScribe backend server.
-final apiBaseUrlProvider = StateProvider<String>((ref) => 'http://127.0.0.1:8000');
+final apiBaseUrlProvider =
+    StateProvider<String>((ref) => 'http://127.0.0.1:8000');
 
 /// Global/active auth token provider.
 final authTokenProvider = StateProvider<String?>((ref) => null);

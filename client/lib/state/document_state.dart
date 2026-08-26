@@ -45,7 +45,8 @@ class DocumentStateNotifier extends ChangeNotifier {
 
   /// Sets the currently active page index (0-indexed)
   void selectPage(int pageIndex) {
-    if (pageIndex < 0 || (_state.pageCount > 0 && pageIndex >= _state.pageCount)) {
+    if (pageIndex < 0 ||
+        (_state.pageCount > 0 && pageIndex >= _state.pageCount)) {
       return;
     }
     _state = _state.copyWith(
@@ -85,7 +86,9 @@ class DocumentStateNotifier extends ChangeNotifier {
     final currentPage = updatedPages[page];
     final currentBBoxes = List<BBoxItem>.from(currentPage.bboxes);
     final existingIdx = currentBBoxes.indexWhere(
-      (b) => b.blockId == bbox.blockId || (b.block == bbox.block && b.page == bbox.page),
+      (b) =>
+          b.blockId == bbox.blockId ||
+          (b.block == bbox.block && b.page == bbox.page),
     );
 
     if (existingIdx >= 0) {
@@ -100,7 +103,8 @@ class DocumentStateNotifier extends ChangeNotifier {
     BBoxItem? newSelected = _state.selectedBBox;
     if (_state.selectedBBox != null &&
         (_state.selectedBBox!.blockId == bbox.blockId ||
-            (_state.selectedBBox!.page == bbox.page && _state.selectedBBox!.block == bbox.block))) {
+            (_state.selectedBBox!.page == bbox.page &&
+                _state.selectedBBox!.block == bbox.block))) {
       newSelected = bbox;
     }
 
@@ -185,7 +189,8 @@ class DocumentStateNotifier extends ChangeNotifier {
   void setPagePreview(int page, Uint8List previewBytes) {
     final updatedPages = List<PageResult>.from(_state.pages);
     if (page >= 0 && page < updatedPages.length) {
-      updatedPages[page] = updatedPages[page].copyWith(previewBytes: previewBytes);
+      updatedPages[page] =
+          updatedPages[page].copyWith(previewBytes: previewBytes);
       _state = _state.copyWith(pages: updatedPages);
       notifyListeners();
     }
