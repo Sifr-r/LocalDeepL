@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omniscribe_client/data/models/process_settings.dart';
 import 'package:omniscribe_client/data/providers/settings_notifier.dart';
 import 'package:omniscribe_client/data/providers/settings_state.dart';
-import 'package:omniscribe_client/state/provider_browser_provider.dart';
+import 'package:omniscribe_client/data/providers/provider_notifier.dart';
 import 'package:omniscribe_client/theme/docuverse_theme.dart';
 import 'package:omniscribe_client/presentation/providers/provider_modal.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
