@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/data/models/provider_preset.dart';
 import 'package:omniscribe_client/data/providers/provider_browser_state.dart';
 import 'package:omniscribe_client/data/providers/repository_providers.dart';
+import 'package:omniscribe_client/data/providers/settings_notifier.dart';
 import 'package:omniscribe_client/data/repositories/provider_repository.dart';
 
 /// Riverpod entry-point for the Provider Browser feature.
@@ -69,5 +71,80 @@ class ProviderBrowserNotifier extends Notifier<ProviderBrowserState> {
         loadingModelIds: state.loadingModelIds.difference({id}),
       );
     }
+  }
+
+  Future<ValidateProviderResponse> validateProvider(
+    String id,
+    String base,
+    String? key, {
+    String? model,
+  }) async {
+    state = state.copyWith(isValidating: true);
+    try {
+      final res = await _repo.validateProvider(
+        ValidateProviderRequest(
+          providerId: id,
+          apiBase: base,
+          apiKey: key,
+          model: model,
+        ),
+      );
+      final newStatus = Map<String, String>.from(state.validationStatus);
+      newStatus[id] = res.valid
+          ? 'Connected successfully (${res.modelCount} models)'
+          : (res.error ?? 'Validation failed');
+      state = state.copyWith(
+        validationStatus: newStatus,
+        isValidating: false,
+      );
+      if (res.valid) {
+        // ignore: unawaited_futures
+        fetchModelsForProvider(id);
+      }
+      return res;
+    } catch (e) {
+      final newStatus = Map<String, String>.from(state.validationStatus);
+      newStatus[id] = e.toString();
+      state = state.copyWith(validationStatus: newStatus, isValidating: false);
+      return ValidateProviderResponse(valid: false, error: e.toString());
+    }
+  }
+
+  Future<void> setActiveProvider(
+    String id,
+    String? apiBase,
+    String? apiKey,
+    String? model,
+  ) async {
+    state = state.copyWith(isFetching: true, clearError: true);
+    try {
+      await _repo.setActiveProvider(
+        SetActiveProviderRequest(
+          providerId: id,
+          apiBase: apiBase,
+          apiKey: apiKey,
+          model: model,
+        ),
+      );
+      // Cross-notifier coordination: mirror the active provider id into
+      // the Settings slice so the Settings tab badge / dropdown follow.
+      ref.read(settingsStateProvider.notifier).setActiveProvider(id);
+      await ref.read(settingsStateProvider.notifier).load();
+      state = state.copyWith(isFetching: false);
+    } catch (e) {
+      state = state.copyWith(isFetching: false, error: e.toString());
+      rethrow;
+    }
+  }
+
+  void setSearchQuery(String query) {
+    state = state.copyWith(searchQuery: query);
+  }
+
+  void selectActiveProvider(ProviderPreset? provider) {
+    state = state.copyWith(
+      activeProvider: provider,
+      clearActiveProvider: provider == null,
+    );
   }
 }

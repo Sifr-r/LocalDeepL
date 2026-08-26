@@ -4,6 +4,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:omniscribe_client/data/models/provider_preset.dart';
 import 'package:omniscribe_client/data/providers/provider_notifier.dart';
 import 'package:omniscribe_client/data/providers/repository_providers.dart';
+import 'package:omniscribe_client/data/providers/settings_notifier.dart';
 import 'package:omniscribe_client/data/repositories/config_repository.dart';
 import 'package:omniscribe_client/data/repositories/provider_repository.dart';
 
@@ -14,6 +15,23 @@ class _MockConfigRepository extends Mock implements ConfigRepository {}
 void main() {
   late _MockProviderRepository repo;
   late _MockConfigRepository configRepo;
+
+  setUpAll(() {
+    // mocktail needs a registered fallback for every custom type that
+    // appears as an `any()` argument (it can't synthesize complex types
+    // under sound null safety). Task 4's validateProvider +
+    // setActiveProvider tests reach into the repo with any() against
+    // these request types.
+    registerFallbackValue(
+      const ValidateProviderRequest(
+        providerId: '',
+        apiBase: '',
+      ),
+    );
+    registerFallbackValue(
+      const SetActiveProviderRequest(providerId: ''),
+    );
+  });
 
   setUp(() {
     repo = _MockProviderRepository();
@@ -149,6 +167,133 @@ void main() {
       final state = container.read(providerBrowserProvider);
       expect(state.loadingModelIds.contains('openai'), isFalse);
       expect(state.modelsMap['openai'], isNull);
+    });
+  });
+
+  group('ProviderBrowserNotifier.validateProvider', () {
+    test('on success populates validationStatus and triggers model refetch', () async {
+      when(() => repo.validateProvider(any())).thenAnswer(
+        (_) async => const ValidateProviderResponse(valid: true, modelCount: 3),
+      );
+      when(() => repo.getProviderModels(any())).thenAnswer(
+        (_) async => const ProviderModelsResponse(models: ['m1']),
+      );
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(providerBrowserProvider.notifier);
+
+      final res = await notifier.validateProvider(
+        'openai', 'https://api.openai.com/v1', null,
+      );
+
+      expect(res.valid, isTrue);
+      final state = container.read(providerBrowserProvider);
+      expect(state.validationStatus['openai'], contains('3'));
+      expect(state.isValidating, isFalse);
+    });
+
+    test('on failure populates validationStatus with error and clears isValidating', () async {
+      when(() => repo.validateProvider(any())).thenAnswer(
+        (_) async => const ValidateProviderResponse(valid: false, error: 'bad creds'),
+      );
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(providerBrowserProvider.notifier);
+
+      final res = await notifier.validateProvider(
+        'openai', 'https://api.openai.com/v1', 'k',
+      );
+
+      expect(res.valid, isFalse);
+      final state = container.read(providerBrowserProvider);
+      expect(state.validationStatus['openai'], 'bad creds');
+      expect(state.isValidating, isFalse);
+    });
+  });
+
+  group('ProviderBrowserNotifier.setActiveProvider', () {
+    test('on success calls repo.setActiveProvider, mirrors activeProviderId into settingsStateProvider, and re-fetches settings', () async {
+      when(() => repo.setActiveProvider(any())).thenAnswer(
+        (_) async => const SetActiveProviderResponse(
+          apiBase: 'https://api.openai.com/v1',
+          model: 'gpt-4o',
+        ),
+      );
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(providerBrowserProvider.notifier);
+
+      await notifier.setActiveProvider(
+        'openai', 'https://api.openai.com/v1', 'k', 'gpt-4o',
+      );
+
+      final state = container.read(providerBrowserProvider);
+      expect(state.isFetching, isFalse);
+      expect(state.error, isNull);
+      verify(() => repo.setActiveProvider(any())).called(1);
+
+      // Cross-notifier coordination: settingsStateProvider.activeProviderId
+      // should now be 'openai' (mirrored by SettingsNotifier.setActiveProvider).
+      expect(container.read(settingsStateProvider).activeProviderId, 'openai');
+      // settings.load() was awaited, so configRepo.getConfig was hit.
+      verify(() => configRepo.getConfig()).called(1);
+    });
+
+    test('on failure populates error and rethrows without touching settings', () async {
+      when(() => repo.setActiveProvider(any())).thenThrow(Exception('reject'));
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(providerBrowserProvider.notifier);
+
+      await expectLater(
+        () => notifier.setActiveProvider('openai', null, null, null),
+        throwsA(isA<Exception>()),
+      );
+
+      final state = container.read(providerBrowserProvider);
+      expect(state.isFetching, isFalse);
+      expect(state.error, contains('reject'));
+      // settings.load() must NOT have been called when the repo throws
+      // (otherwise a downstream error would mask the original failure).
+      verifyNever(() => configRepo.getConfig());
+    });
+  });
+
+  group('ProviderBrowserNotifier.setSearchQuery', () {
+    test('mirrors the query string into state', () async {
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(providerBrowserProvider.notifier);
+
+      notifier.setSearchQuery('open');
+      expect(container.read(providerBrowserProvider).searchQuery, 'open');
+    });
+  });
+
+  group('ProviderBrowserNotifier.selectActiveProvider', () {
+    test('mirrors the provider into state', () async {
+      const preset = ProviderPreset(
+        id: 'openai',
+        name: 'OpenAI',
+        category: 'popular',
+        description: '',
+        recommendedBaseUrl: '',
+        defaultModel: '',
+      );
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(providerBrowserProvider.notifier);
+
+      notifier.selectActiveProvider(preset);
+      expect(container.read(providerBrowserProvider).activeProvider, preset);
+
+      notifier.selectActiveProvider(null);
+      expect(container.read(providerBrowserProvider).activeProvider, isNull);
     });
   });
 }
