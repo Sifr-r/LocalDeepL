@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:omniscribe_client/models/provider.dart';
+import 'package:omniscribe_client/data/models/provider_preset.dart';
+import 'package:omniscribe_client/data/providers/provider_browser_state.dart';
+import 'package:omniscribe_client/data/providers/provider_notifier.dart';
 import 'package:omniscribe_client/data/providers/settings_notifier.dart';
-import 'package:omniscribe_client/state/provider_browser_provider.dart';
-import 'package:omniscribe_client/state/provider_browser_state.dart';
 import 'package:omniscribe_client/theme/docuverse_theme.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
@@ -328,7 +328,7 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
               ),
             ),
             const Spacer(),
-            if (p.isRecommended)
+            if (p.isRecommended ?? false)
               const DocuVerseBadge(text: 'Recommended', variant: DocuVerseBadgeVariant.info),
           ],
         ),
