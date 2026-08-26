@@ -34,8 +34,9 @@ class _ProviderCardState extends State<ProviderCard> {
   IconData _getProviderIcon(String id) {
     final lower = id.toLowerCase();
     if (lower.contains('openai')) return Icons.auto_awesome;
-    if (lower.contains('anthropic') || lower.contains('claude'))
+    if (lower.contains('anthropic') || lower.contains('claude')) {
       return Icons.psychology;
+    }
     if (lower.contains('ollama')) return Icons.terminal;
     if (lower.contains('lmstudio')) return Icons.desktop_windows;
     if (lower.contains('openrouter')) return Icons.alt_route;
