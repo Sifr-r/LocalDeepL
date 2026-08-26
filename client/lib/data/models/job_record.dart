@@ -10,7 +10,9 @@ class JobRecord {
     required this.timestamp,
     required this.status,
     this.pages,
-    this.failedPages = const [],
+    this.failedPages = const <int>[],
+    this.textArtifactId,
+    this.textArtifactToken,
   });
 
   final String id;
@@ -22,6 +24,8 @@ class JobRecord {
   final String timestamp;
   final String status;
   final List<int> failedPages;
+  final String? textArtifactId;
+  final String? textArtifactToken;
 
   factory JobRecord.fromJson(Map<String, dynamic> json) {
     final failed = <int>[];
@@ -41,6 +45,8 @@ class JobRecord {
       timestamp: json['timestamp']?.toString() ?? '',
       status: json['status']?.toString() ?? 'unknown',
       failedPages: failed,
+      textArtifactId: json['text_artifact_id']?.toString(),
+      textArtifactToken: json['text_artifact_token']?.toString(),
     );
   }
 
@@ -55,6 +61,8 @@ class JobRecord {
       'timestamp': timestamp,
       'status': status,
       'failed_pages': failedPages,
+      if (textArtifactId != null) 'text_artifact_id': textArtifactId,
+      if (textArtifactToken != null) 'text_artifact_token': textArtifactToken,
     };
   }
 }

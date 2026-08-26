@@ -1,13 +1,21 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:omniscribe_client/models/job.dart';
-import 'package:omniscribe_client/state/jobs_provider.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_card.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_modal.dart';
+import 'package:omniscribe_client/core/theme/app_colors.dart';
+import 'package:omniscribe_client/data/models/job_record.dart';
+import 'package:omniscribe_client/data/providers/jobs_notifier.dart';
+import 'package:omniscribe_client/presentation/common/app_badge.dart';
+import 'package:omniscribe_client/presentation/common/app_button.dart';
+import 'package:omniscribe_client/presentation/common/app_card.dart';
+import 'package:omniscribe_client/presentation/common/app_modal.dart';
 
+/// Job Execution History screen.
+///
+/// Slice 2: consumes the Riverpod 2.x `jobsProvider` (`Notifier<JobsState>`)
+/// and the canonical `presentation/common/app_*` widgets. The DataTable,
+/// badge variant mapping, download spinner, and clear-confirm modal are
+/// preserved from the legacy DocuVerse-skinned implementation.
 class JobHistoryScreen extends ConsumerStatefulWidget {
   const JobHistoryScreen({super.key});
 
@@ -25,22 +33,22 @@ class _JobHistoryScreenState extends ConsumerState<JobHistoryScreen> {
     Future.microtask(() => ref.read(jobsProvider.notifier).fetchJobs());
   }
 
-  DocuVerseBadgeVariant _statusVariant(String status) {
+  AppBadgeVariant _statusVariant(String status) {
     switch (status.toLowerCase()) {
       case 'completed':
       case 'complete':
       case 'success':
-        return DocuVerseBadgeVariant.success;
+        return AppBadgeVariant.success;
       case 'processing':
       case 'pending':
-        return DocuVerseBadgeVariant.warning;
+        return AppBadgeVariant.warning;
       case 'failed':
       case 'error':
-        return DocuVerseBadgeVariant.danger;
+        return AppBadgeVariant.error;
       case 'cancelled':
-        return DocuVerseBadgeVariant.neutral;
+        return AppBadgeVariant.neutral;
       default:
-        return DocuVerseBadgeVariant.neutral;
+        return AppBadgeVariant.neutral;
     }
   }
 
@@ -52,10 +60,13 @@ class _JobHistoryScreenState extends ConsumerState<JobHistoryScreen> {
 
     try {
       final token = job.textArtifactToken ?? '';
-      final bytes = await ref.read(jobsProvider.notifier).downloadResult(job.id, token);
+      final Uint8List bytes = await ref
+          .read(jobsProvider.notifier)
+          .downloadResult(job.id, token);
       if (mounted) {
         setState(() {
-          _statusBanner = 'Downloaded searchable PDF for ${job.filename} (${bytes.lengthInBytes} bytes)';
+          _statusBanner =
+              'Downloaded searchable PDF for ${job.filename} (${bytes.lengthInBytes} bytes)';
         });
       }
     } catch (e) {
@@ -67,7 +78,11 @@ class _JobHistoryScreenState extends ConsumerState<JobHistoryScreen> {
     } finally {
       if (mounted) {
         setState(() {
-          _downloadingJobId = null;
+          // Only clear the slot if this download is still the active one —
+          // a concurrent download on another row should not lose its spinner.
+          if (_downloadingJobId == job.id) {
+            _downloadingJobId = null;
+          }
         });
       }
     }
@@ -90,21 +105,22 @@ class _JobHistoryScreenState extends ConsumerState<JobHistoryScreen> {
     }
   }
 
-  void _showClearConfirmDialog() {
-    DocuVerseModal.show(
+  Future<void> _showClearConfirmDialog() async {
+    await AppModal.show<void>(
       context: context,
       title: 'Clear All Job History?',
-      description: 'This will remove all job records and drop associated cached artifacts from the server.',
-      maxWidth: 480,
+      subtitle:
+          'This will remove all job records and drop associated cached artifacts from the server.',
+      maxWidth: AppModalWidth.sm,
       actions: [
-        DocuVerseButton(
+        AppButton(
           text: 'Cancel',
-          variant: DocuVerseButtonVariant.ghost,
+          variant: AppButtonVariant.ghost,
           onPressed: () => Navigator.of(context).pop(),
         ),
-        DocuVerseButton(
+        AppButton(
           text: 'Clear all jobs',
-          variant: DocuVerseButtonVariant.danger,
+          variant: AppButtonVariant.danger,
           onPressed: () async {
             Navigator.of(context).pop();
             await ref.read(jobsProvider.notifier).clearJobs();
@@ -116,11 +132,11 @@ class _JobHistoryScreenState extends ConsumerState<JobHistoryScreen> {
           },
         ),
       ],
-      child: Text(
+      content: Text(
         'This action is irreversible. All past OCR, translation, and extraction task logs will be wiped.',
         style: TextStyle(
           fontSize: 13,
-          color: context.docuVerse.foregroundMuted,
+          color: context.colors.textMuted,
         ),
       ),
     );
@@ -129,240 +145,334 @@ class _JobHistoryScreenState extends ConsumerState<JobHistoryScreen> {
   @override
   Widget build(BuildContext context) {
     final jobsState = ref.watch(jobsProvider);
-    final tokens = context.docuVerse;
+    final colors = context.colors;
+    final isErrorBanner =
+        _statusBanner != null && _statusBanner!.toLowerCase().contains('error');
 
     return Scaffold(
-      backgroundColor: tokens.app,
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          'Job Execution History',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: tokens.foreground,
-                            letterSpacing: -0.5,
+      backgroundColor: colors.background,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Text(
+                            'Job Execution History',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: -0.5,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        DocuVerseBadge(text: '${jobsState.jobs.length} jobs',
-                          variant: DocuVerseBadgeVariant.brand,
-                          hasDot: true,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Audit log of previous OCR, Translation, and Extraction pipeline tasks',
-                      style: TextStyle(fontSize: 12, color: tokens.foregroundMuted),
-                    ),
-                  ],
-                ),
-                Row(
-                  children: [
-                    DocuVerseButton(
-                      text: 'Refresh',
-                      variant: DocuVerseButtonVariant.secondary,
-                      loading: jobsState.isFetching,
-                      icon: const Icon(Icons.refresh, size: 14),
-                      onPressed: () => ref.read(jobsProvider.notifier).fetchJobs(),
-                    ),
-                    const SizedBox(width: 8),
-                    DocuVerseButton(
-                      text: 'Clear all',
-                      variant: DocuVerseButtonVariant.danger,
-                      disabled: jobsState.jobs.isEmpty,
-                      icon: const Icon(Icons.delete_outline, size: 14),
-                      onPressed: _showClearConfirmDialog,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            if (_statusBanner != null) ...[
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: _statusBanner!.contains('error')
-                      ? tokens.danger.withValues(alpha: 0.12)
-                      : tokens.info.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: _statusBanner!.contains('error')
-                        ? tokens.danger.withValues(alpha: 0.35)
-                        : tokens.info.withValues(alpha: 0.35),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      _statusBanner!.contains('error') ? Icons.error_outline : Icons.info_outline,
-                      size: 16,
-                      color: _statusBanner!.contains('error') ? tokens.danger : tokens.info,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _statusBanner!,
+                          const SizedBox(width: 10),
+                          AppBadge(
+                            label: '${jobsState.jobs.length} jobs',
+                            variant: AppBadgeVariant.brand,
+                            dot: true,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Audit log of previous OCR, Translation, and Extraction pipeline tasks',
                         style: TextStyle(
                           fontSize: 12,
-                          color: _statusBanner!.contains('error') ? tokens.danger : tokens.info,
-                          fontFamily: 'monospace',
+                          color: colors.textMuted,
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      AppButton(
+                        text: 'Refresh',
+                        variant: AppButtonVariant.secondary,
+                        loading: jobsState.isFetching,
+                        icon: const Icon(Icons.refresh, size: 14),
+                        onPressed: () =>
+                            ref.read(jobsProvider.notifier).fetchJobs(),
+                      ),
+                      const SizedBox(width: 8),
+                      AppButton(
+                        text: 'Clear all',
+                        variant: AppButtonVariant.danger,
+                        disabled: jobsState.jobs.isEmpty,
+                        icon: const Icon(Icons.delete_outline, size: 14),
+                        onPressed: _showClearConfirmDialog,
+                      ),
+                    ],
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
-            ],
 
-            // Main Jobs Table
-            Expanded(
-              child: DocuVerseCard(
-                padding: DocuVerseCardPadding.none,
-                child: jobsState.jobs.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.history, size: 48, color: tokens.foregroundSubtle),
-                            const SizedBox(height: 12),
-                            Text(
-                              jobsState.isFetching
-                                  ? 'Loading job history…'
-                                  : 'No historical OCR or translation jobs found.',
-                              style: TextStyle(color: tokens.foregroundMuted, fontSize: 13),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ClipRRect(
-                        borderRadius: BorderRadius.circular(tokens.radiusCard),
-                        child: SingleChildScrollView(
-                          child: DataTable(
-                            headingRowColor: WidgetStateProperty.all(tokens.cardRaised),
-                            dataRowColor: WidgetStateProperty.all(Colors.transparent),
-                            dividerThickness: 1,
-                            horizontalMargin: 16,
-                            columnSpacing: 24,
-                            columns: const [
-                              DataColumn(label: Text('Job ID', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                              DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                              DataColumn(label: Text('Filename', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                              DataColumn(label: Text('Pipeline / Model', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                              DataColumn(label: Text('Duration', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                              DataColumn(label: Text('Failed Pages', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                              DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                            ],
-                            rows: jobsState.jobs.map((job) {
-                              final isDownloading = _downloadingJobId == job.id;
-                              final isRunning = job.status.toLowerCase() == 'processing' ||
-                                  job.status.toLowerCase() == 'pending';
-
-                              return DataRow(
-                                cells: [
-                                  DataCell(
-                                    Text(
-                                      job.id.length > 8 ? '${job.id.substring(0, 8)}…' : job.id,
-                                      style: TextStyle(
-                                        fontFamily: 'monospace',
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: tokens.foreground,
-                                      ),
-                                    ),
-                                  ),
-                                  DataCell(
-                                    DocuVerseBadge(text: job.status.toUpperCase(),
-                                      variant: _statusVariant(job.status),
-                                    ),
-                                  ),
-                                  DataCell(
-                                    ConstrainedBox(
-                                      constraints: const BoxConstraints(maxWidth: 160),
-                                      child: Text(
-                                        job.filename,
-                                        style: TextStyle(fontSize: 12, color: tokens.foreground),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ),
-                                  DataCell(
-                                    Text(
-                                      '${job.pipelineMode} / ${job.model}',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontFamily: 'monospace',
-                                        color: tokens.foregroundMuted,
-                                      ),
-                                    ),
-                                  ),
-                                  DataCell(
-                                    Text(
-                                      job.durationS > 0 ? '${job.durationS.toStringAsFixed(1)}s' : '—',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontFamily: 'monospace',
-                                        color: tokens.foregroundMuted,
-                                      ),
-                                    ),
-                                  ),
-                                  DataCell(
-                                    job.failedPages.isNotEmpty
-                                        ? DocuVerseBadge(text: 'Pages: ${job.failedPages.join(", ")}',
-                                            variant: DocuVerseBadgeVariant.danger,
-                                          )
-                                        : Text('None', style: TextStyle(fontSize: 12, color: tokens.foregroundSubtle)),
-                                  ),
-                                  DataCell(
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (isRunning) ...[
-                                          DocuVerseButton(
-                                            text: 'Cancel',
-                                            variant: DocuVerseButtonVariant.danger,
-                                            size: DocuVerseButtonSize.sm,
-                                            onPressed: () => _handleCancel(job.id),
-                                          ),
-                                        ] else ...[
-                                          DocuVerseButton(
-                                            text: 'PDF',
-                                            variant: DocuVerseButtonVariant.ghost,
-                                            size: DocuVerseButtonSize.sm,
-                                            loading: isDownloading,
-                                            icon: const Icon(Icons.download, size: 14),
-                                            onPressed: () => _handleDownload(job),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              );
-                            }).toList(),
+              if (_statusBanner != null) ...[
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: (isErrorBanner ? colors.error : colors.info)
+                        .withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: (isErrorBanner ? colors.error : colors.info)
+                          .withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        isErrorBanner
+                            ? Icons.error_outline
+                            : Icons.info_outline,
+                        size: 16,
+                        color: isErrorBanner ? colors.error : colors.info,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _statusBanner!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isErrorBanner ? colors.error : colors.info,
+                            fontFamily: 'monospace',
                           ),
                         ),
                       ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // Main Jobs Table
+              Expanded(
+                child: AppCard(
+                  padding: AppCardPadding.none,
+                  child: jobsState.jobs.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.history,
+                                size: 48,
+                                color: colors.textMuted,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                jobsState.isFetching
+                                    ? 'Loading job history…'
+                                    : 'No historical OCR or translation jobs found.',
+                                style: TextStyle(
+                                  color: colors.textMuted,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: SingleChildScrollView(
+                            child: DataTable(
+                              headingRowColor: WidgetStateProperty.all(
+                                colors.cardRaised,
+                              ),
+                              dataRowColor: WidgetStateProperty.all(
+                                Colors.transparent,
+                              ),
+                              dividerThickness: 1,
+                              horizontalMargin: 16,
+                              columnSpacing: 24,
+                              columns: const [
+                                DataColumn(
+                                  label: Text(
+                                    'Job ID',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                DataColumn(
+                                  label: Text(
+                                    'Status',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                DataColumn(
+                                  label: Text(
+                                    'Filename',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                DataColumn(
+                                  label: Text(
+                                    'Pipeline / Model',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                DataColumn(
+                                  label: Text(
+                                    'Duration',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                DataColumn(
+                                  label: Text(
+                                    'Failed Pages',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                DataColumn(
+                                  label: Text(
+                                    'Actions',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              rows: jobsState.jobs.map((job) {
+                                final isDownloading = _downloadingJobId == job.id;
+                                final isRunning =
+                                    job.status.toLowerCase() == 'processing' ||
+                                        job.status.toLowerCase() == 'pending';
+
+                                return DataRow(
+                                  cells: [
+                                    DataCell(
+                                      Text(
+                                        job.id.length > 8
+                                            ? '${job.id.substring(0, 8)}…'
+                                            : job.id,
+                                        style: const TextStyle(
+                                          fontFamily: 'monospace',
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    DataCell(
+                                      AppBadge(
+                                        label: job.status.toUpperCase(),
+                                        variant: _statusVariant(job.status),
+                                      ),
+                                    ),
+                                    DataCell(
+                                      ConstrainedBox(
+                                        constraints:
+                                            const BoxConstraints(maxWidth: 160),
+                                        child: Text(
+                                          job.filename,
+                                          style: const TextStyle(fontSize: 12),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ),
+                                    DataCell(
+                                      Text(
+                                        '${job.pipelineMode} / ${job.model}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontFamily: 'monospace',
+                                          color: colors.textMuted,
+                                        ),
+                                      ),
+                                    ),
+                                    DataCell(
+                                      Text(
+                                        job.durationS > 0
+                                            ? '${job.durationS.toStringAsFixed(1)}s'
+                                            : '—',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontFamily: 'monospace',
+                                          color: colors.textMuted,
+                                        ),
+                                      ),
+                                    ),
+                                    DataCell(
+                                      job.failedPages.isNotEmpty
+                                          ? AppBadge(
+                                              label:
+                                                  'Pages: ${job.failedPages.join(", ")}',
+                                              variant: AppBadgeVariant.error,
+                                            )
+                                          : Text(
+                                              'None',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: colors.textMuted,
+                                              ),
+                                            ),
+                                    ),
+                                    DataCell(
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (isRunning)
+                                            AppButton(
+                                              text: 'Cancel',
+                                              variant: AppButtonVariant.danger,
+                                              size: AppButtonSize.sm,
+                                              onPressed: () =>
+                                                  _handleCancel(job.id),
+                                            )
+                                          else
+                                            AppButton(
+                                              text: 'PDF',
+                                              variant: AppButtonVariant.ghost,
+                                              size: AppButtonSize.sm,
+                                              loading: isDownloading,
+                                              icon: const Icon(
+                                                Icons.download,
+                                                size: 14,
+                                              ),
+                                              onPressed: () =>
+                                                  _handleDownload(job),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

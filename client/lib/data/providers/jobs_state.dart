@@ -1,8 +1,13 @@
-import 'package:omniscribe_client/models/job.dart';
+import 'package:omniscribe_client/data/models/job_record.dart';
 
+/// Immutable state for the Jobs vertical.
+///
+/// Mirrors the shape slice 1 used for [SettingsState]: a single value object
+/// with a `copyWith` that supports both positional updates and a
+/// `clearError` flag for explicit null resets.
 class JobsState {
   const JobsState({
-    this.jobs = const [],
+    this.jobs = const <JobRecord>[],
     this.isFetching = false,
     this.error,
   });

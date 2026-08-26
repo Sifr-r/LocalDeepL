@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:omniscribe_client/core/constants/api_constants.dart';
 import 'package:omniscribe_client/core/network/api_client.dart';
 import 'package:omniscribe_client/data/models/job_record.dart';
@@ -11,6 +13,10 @@ abstract class JobRepository {
 
   /// Cancel a running or queued job by ID.
   Future<bool> cancelJob(String jobId);
+
+  /// Download the per-job result PDF bytes, authenticated with [token].
+  /// Pass an empty [token] for unauthenticated downloads.
+  Future<Uint8List> downloadResult(String jobId, String token);
 }
 
 class JobRepositoryImpl implements JobRepository {
@@ -49,5 +55,18 @@ class JobRepositoryImpl implements JobRepository {
       ApiConstants.cancelJob(jobId),
     );
     return json['cancelled'] as bool? ?? false;
+  }
+
+  @override
+  Future<Uint8List> downloadResult(String jobId, String token) async {
+    final headers = <String, String>{};
+    if (token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    return _apiClient.getBytes(
+      ApiConstants.jobResult(jobId),
+      queryParameters: {'token': token},
+      headers: headers,
+    );
   }
 }
