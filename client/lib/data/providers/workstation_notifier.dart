@@ -558,4 +558,27 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
       statusMessage: 'Cancelled by user',
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // Keyboard Shortcut Plumbing
+  // ---------------------------------------------------------------------------
+
+  /// Increments the file-pick signal so any mounted listener (the upload
+  /// dropzone) opens its native file picker. Idempotent on intent: every
+  /// tap fires exactly one picker dialog.
+  ///
+  /// The signal is exposed as a monotonically increasing [WorkstationState.filePickSignal]
+  /// int so Riverpod listeners can detect each increment without relying on
+  /// identity changes (a plain boolean flip would be lost across consecutive
+  /// taps because the toggle would settle back to `false`).
+  void incrementFilePick() {
+    state = state.copyWith(filePickSignal: state.filePickSignal + 1);
+  }
+
+  /// Convenience for the Ctrl+Enter shortcut: process the current document
+  /// with default settings (the workstation dock's tweaked values are not
+  /// observable from the AppShell key handler in Phase A).
+  Future<void> processCurrentDocument() async {
+    await processOcrSync(settings: ProcessSettings.defaultSettings());
+  }
 }

@@ -42,6 +42,11 @@ class WorkstationState {
     this.scoredBlocks = 0,
     this.trustSummary,
     this.error,
+    // Keyboard shortcut plumbing: bumped each time the AppShell fires
+    // Ctrl+O (or any other trigger) so listeners (e.g. the upload dropzone)
+    // can react by opening the native file picker. A monotonically
+    // increasing int keeps the change observable by Riverpod listeners.
+    this.filePickSignal = 0,
   })  : // Defensively copy mutable inputs so the @immutable contract holds even
         // when callers pass regular (growable) collections.
         // [loadedBytes] is a Uint8List (a typed buffer view); we do NOT copy it
@@ -85,6 +90,12 @@ class WorkstationState {
   final int scoredBlocks;
   final TrustSummary? trustSummary;
   final String? error;
+
+  /// Monotonically increasing counter incremented whenever the workstation
+  /// should open its native file picker (Ctrl+O shortcut, "Open" toolbar
+  /// action, etc.). Consumers compare the value across rebuilds to detect
+  /// a pick-request and react exactly once per increment.
+  final int filePickSignal;
 
   /// Ordered stages of the OCR pipeline.
   static const List<String> pipelineStages = [
@@ -218,6 +229,8 @@ class WorkstationState {
     bool clearTrustSummary = false,
     String? error,
     bool clearError = false,
+    // Keyboard shortcut plumbing
+    int? filePickSignal,
   }) {
     return WorkstationState(
       loadedBytes: clearLoadedBytes ? null : (loadedBytes ?? this.loadedBytes),
@@ -256,6 +269,7 @@ class WorkstationState {
       trustSummary:
           clearTrustSummary ? null : (trustSummary ?? this.trustSummary),
       error: clearError ? null : (error ?? this.error),
+      filePickSignal: filePickSignal ?? this.filePickSignal,
     );
   }
 
@@ -291,7 +305,8 @@ class WorkstationState {
           totalBlocks == other.totalBlocks &&
           scoredBlocks == other.scoredBlocks &&
           trustSummary == other.trustSummary &&
-          error == other.error;
+          error == other.error &&
+          filePickSignal == other.filePickSignal;
 
   @override
   int get hashCode => Object.hashAll([
@@ -332,5 +347,6 @@ class WorkstationState {
         scoredBlocks,
         trustSummary,
         error,
+        filePickSignal,
       ]);
 }

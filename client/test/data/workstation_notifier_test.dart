@@ -945,4 +945,20 @@ void main() {
       expect(state.activeJobId, 'job-fresh');
     });
   });
+
+  group('Keyboard Shortcut Plumbing', () {
+    test('incrementFilePick bumps the signal', () {
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(workstationProvider.notifier);
+
+      expect(container.read(workstationProvider).filePickSignal, 0);
+
+      notifier.incrementFilePick();
+      expect(container.read(workstationProvider).filePickSignal, 1);
+
+      notifier.incrementFilePick();
+      expect(container.read(workstationProvider).filePickSignal, 2);
+    });
+  });
 }
