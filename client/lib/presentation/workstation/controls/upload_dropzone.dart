@@ -3,11 +3,11 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/core/theme/app_colors.dart';
+import 'package:omniscribe_client/core/theme/app_typography.dart';
 import 'package:omniscribe_client/data/providers/workstation_notifier.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
-import 'package:omniscribe_client/theme/docuverse_typography.dart';
+import 'package:omniscribe_client/presentation/common/app_badge.dart';
+import 'package:omniscribe_client/presentation/common/app_button.dart';
 
 /// Drag & Drop zone supporting desktop_drop and native file_picker
 /// Supports PDF, PNG, JPG, WEBP, AVIF with file size validation.
@@ -134,7 +134,7 @@ class _UploadDropzoneState extends ConsumerState<UploadDropzone> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.docuVerse;
+    final colors = context.colors;
     final wsState = ref.watch(workstationProvider);
 
     return DropTarget(
@@ -152,7 +152,7 @@ class _UploadDropzoneState extends ConsumerState<UploadDropzone> {
         decoration: BoxDecoration(
           color:
               _isDragging ? colors.brand.withValues(alpha: 0.12) : colors.card,
-          borderRadius: BorderRadius.circular(colors.cardRadius),
+          borderRadius: BorderRadius.circular(8),
           border: Border.all(
             color: _isDragging ? colors.brand : colors.borderStrong,
             width: _isDragging ? 2.0 : 1.2,
@@ -190,21 +190,16 @@ class _UploadDropzoneState extends ConsumerState<UploadDropzone> {
                 _isDragging
                     ? 'Drop file to load'
                     : 'Upload document for OCR processing',
-                style: TextStyle(
-                  fontFamily: DocuVerseTypography.fontDisplay,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: colors.foreground,
+                style: AppTypography.titleMedium(
+                  color: colors.textPrimary,
                 ),
               ),
               const SizedBox(height: 8),
 
               Text(
                 'Drag and drop your file here, or browse files on your computer',
-                style: TextStyle(
-                  fontFamily: DocuVerseTypography.fontBody,
-                  fontSize: 13,
-                  color: colors.foregroundMuted,
+                style: AppTypography.bodySmall(
+                  color: colors.textMuted,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -216,25 +211,25 @@ class _UploadDropzoneState extends ConsumerState<UploadDropzone> {
                 runSpacing: 6,
                 alignment: WrapAlignment.center,
                 children: [
-                  DocuVerseBadge(
-                      text: 'PDF', variant: DocuVerseBadgeVariant.brand),
-                  DocuVerseBadge(
-                      text: 'PNG', variant: DocuVerseBadgeVariant.neutral),
-                  DocuVerseBadge(
-                      text: 'JPG', variant: DocuVerseBadgeVariant.neutral),
-                  DocuVerseBadge(
-                      text: 'WEBP', variant: DocuVerseBadgeVariant.neutral),
-                  DocuVerseBadge(
-                      text: 'AVIF', variant: DocuVerseBadgeVariant.neutral),
+                  AppBadge(
+                      label: 'PDF', variant: AppBadgeVariant.brand),
+                  AppBadge(
+                      label: 'PNG', variant: AppBadgeVariant.neutral),
+                  AppBadge(
+                      label: 'JPG', variant: AppBadgeVariant.neutral),
+                  AppBadge(
+                      label: 'WEBP', variant: AppBadgeVariant.neutral),
+                  AppBadge(
+                      label: 'AVIF', variant: AppBadgeVariant.neutral),
                 ],
               ),
               const SizedBox(height: 24),
 
               // Browse Button
-              DocuVerseButton(
+              AppButton(
                 text: 'Browse Files',
-                variant: DocuVerseButtonVariant.primary,
-                size: DocuVerseButtonSize.lg,
+                variant: AppButtonVariant.primary,
+                size: AppButtonSize.lg,
                 icon: const Icon(Icons.folder_open_rounded, size: 16),
                 loading: _isLoading,
                 onPressed: _pickFile,
@@ -247,23 +242,21 @@ class _UploadDropzoneState extends ConsumerState<UploadDropzone> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: colors.danger.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(colors.radiusInput),
+                    color: colors.error.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
                     border:
-                        Border.all(color: colors.danger.withValues(alpha: 0.3)),
+                        Border.all(color: colors.error.withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.error_outline, size: 16, color: colors.danger),
+                      Icon(Icons.error_outline, size: 16, color: colors.error),
                       const SizedBox(width: 8),
                       Flexible(
                         child: Text(
                           _errorMessage!,
-                          style: TextStyle(
-                            fontFamily: DocuVerseTypography.fontBody,
-                            fontSize: 12,
-                            color: colors.danger,
+                          style: AppTypography.bodySmall(
+                            color: colors.error,
                           ),
                         ),
                       ),
@@ -280,7 +273,7 @@ class _UploadDropzoneState extends ConsumerState<UploadDropzone> {
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
                     color: colors.cardRaised,
-                    borderRadius: BorderRadius.circular(colors.radiusInput),
+                    borderRadius: BorderRadius.circular(6),
                     border: Border.all(color: colors.border),
                   ),
                   child: Row(
@@ -291,21 +284,17 @@ class _UploadDropzoneState extends ConsumerState<UploadDropzone> {
                       const SizedBox(width: 8),
                       Text(
                         'Loaded: ${wsState.filename}',
-                        style: TextStyle(
-                          fontFamily: DocuVerseTypography.fontMono,
-                          fontSize: 12,
-                          color: colors.foreground,
+                        style: AppTypography.codeSmall(
+                          color: colors.textPrimary,
                         ),
                       ),
                       if (wsState.loadedBytes != null) ...[
                         const SizedBox(width: 8),
                         Text(
                           '(${_formatSize(wsState.loadedBytes!.length)}, ${wsState.pageCount} pages)',
-                          style: TextStyle(
-                            fontFamily: DocuVerseTypography.fontMono,
-                            fontSize: 11,
-                            color: colors.foregroundMuted,
-                          ),
+                          style: AppTypography.codeSmall(
+                            color: colors.textMuted,
+                          ).copyWith(fontSize: 11),
                         ),
                       ],
                     ],

@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/core/theme/app_colors.dart';
+import 'package:omniscribe_client/core/theme/app_typography.dart';
 import 'package:omniscribe_client/data/models/process_settings.dart';
 import 'package:omniscribe_client/data/providers/workstation_notifier.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_card.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_section_header.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_slider.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_toggle.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
-import 'package:omniscribe_client/theme/docuverse_typography.dart';
+import 'package:omniscribe_client/presentation/common/app_badge.dart';
+import 'package:omniscribe_client/presentation/common/app_card.dart';
+import 'package:omniscribe_client/presentation/common/app_toggle.dart';
+import 'package:omniscribe_client/presentation/common/section_header.dart';
 
-/// Quality Repair Loop controls dock matching DocuVerse design system.
+/// Quality Repair Loop controls dock matching the unified design system.
 class QualityRepairDock extends ConsumerWidget {
   const QualityRepairDock({
     super.key,
@@ -23,7 +22,7 @@ class QualityRepairDock extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.docuVerse;
+    final colors = context.colors;
     final wsState = ref.watch(workstationProvider);
 
     final isRepairEnabled = settings.qualityRepairEnabled;
@@ -34,31 +33,31 @@ class QualityRepairDock extends ConsumerWidget {
     final retriesAttempted = wsState.totalRetriesAttempted;
     final avgConf = wsState.avgConfidence;
 
-    return DocuVerseCard(
-      variant: DocuVerseCardVariant.raised,
-      padding: DocuVerseCardPadding.md,
+    return AppCard(
+      variant: AppCardVariant.raised,
+      padding: AppCardPadding.md,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           // Header with Loop Badge
-          DocuVerseSectionHeader(
+          SectionHeader(
             title: 'Quality Repair Loop',
-            action: DocuVerseBadge(
-              text: isRepairEnabled ? 'ACTIVE' : 'OFF',
+            action: AppBadge(
+              label: isRepairEnabled ? 'ACTIVE' : 'OFF',
               variant: isRepairEnabled
-                  ? DocuVerseBadgeVariant.revised
-                  : DocuVerseBadgeVariant.neutral,
-              size: DocuVerseBadgeSize.sm,
+                  ? AppBadgeVariant.info
+                  : AppBadgeVariant.neutral,
+              size: AppBadgeSize.sm,
             ),
           ),
 
           // Enable Quality Repair Loop Switch
-          DocuVerseToggle(
+          AppToggle(
             label: 'Auto-Repair Low Confidence Blocks',
-            description:
+            subtitle:
                 'Iteratively prompts VLM to refine blocks falling below the target threshold.',
-            checked: isRepairEnabled,
+            value: isRepairEnabled,
             onChanged: (enabled) {
               onSettingsChanged(
                   settings.copyWith(qualityRepairEnabled: enabled));
@@ -68,35 +67,106 @@ class QualityRepairDock extends ConsumerWidget {
 
           if (isRepairEnabled) ...[
             // Quality Target Threshold Slider (0.50 - 1.00)
-            DocuVerseSlider(
-              label: 'Quality Target Threshold',
-              value: target,
-              min: 0.50,
-              max: 1.00,
-              divisions: 50,
-              valueLabel: '${(target * 100).round()}%',
-              helperText:
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        'Quality Target Threshold',
+                        style: AppTypography.labelMedium(
+                          color: colors.textPrimary,
+                        ).copyWith(fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${(target * 100).round()}%',
+                      style: AppTypography.codeSmall(
+                        color: colors.brand,
+                      ).copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+                SliderTheme(
+                  data: SliderThemeData(
+                    activeTrackColor: colors.brand,
+                    inactiveTrackColor: colors.cardRaised,
+                    thumbColor: colors.brand,
+                    overlayColor: colors.brand.withValues(alpha: 0.15),
+                    trackHeight: 3,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                  ),
+                  child: Slider(
+                    value: target,
+                    min: 0.50,
+                    max: 1.00,
+                    divisions: 50,
+                    onChanged: (val) {
+                      onSettingsChanged(settings.copyWith(qualityTarget: val));
+                    },
+                  ),
+                ),
+                Text(
                   'Blocks scoring below this confidence trigger self-correction retries.',
-              onChanged: (val) {
-                onSettingsChanged(settings.copyWith(qualityTarget: val));
-              },
+                  style: AppTypography.micro(color: colors.textMuted),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
 
             // Max Retries Slider (1 - 5)
-            DocuVerseSlider(
-              label: 'Max Repair Retries',
-              value: maxRetries.toDouble(),
-              min: 1.0,
-              max: 5.0,
-              divisions: 4,
-              valueLabel:
-                  '$maxRetries ${maxRetries == 1 ? "retry" : "retries"}',
-              helperText:
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        'Max Repair Retries',
+                        style: AppTypography.labelMedium(
+                          color: colors.textPrimary,
+                        ).copyWith(fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$maxRetries ${maxRetries == 1 ? "retry" : "retries"}',
+                      style: AppTypography.codeSmall(
+                        color: colors.brand,
+                      ).copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+                SliderTheme(
+                  data: SliderThemeData(
+                    activeTrackColor: colors.brand,
+                    inactiveTrackColor: colors.cardRaised,
+                    thumbColor: colors.brand,
+                    overlayColor: colors.brand.withValues(alpha: 0.15),
+                    trackHeight: 3,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                  ),
+                  child: Slider(
+                    value: maxRetries.toDouble(),
+                    min: 1.0,
+                    max: 5.0,
+                    divisions: 4,
+                    onChanged: (val) {
+                      onSettingsChanged(settings.copyWith(maxRetries: val.round()));
+                    },
+                  ),
+                ),
+                Text(
                   'Maximum re-prompts per degraded block before finalizing.',
-              onChanged: (val) {
-                onSettingsChanged(settings.copyWith(maxRetries: val.round()));
-              },
+                  style: AppTypography.micro(color: colors.textMuted),
+                ),
+              ],
             ),
             const SizedBox(height: 14),
 
@@ -114,26 +184,24 @@ class QualityRepairDock extends ConsumerWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        'Loop Statistics',
-                        style: TextStyle(
-                          fontFamily: DocuVerseTypography.fontBody,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: colors.foregroundMuted,
+                      Flexible(
+                        child: Text(
+                          'Loop Statistics',
+                          style: AppTypography.labelMedium(
+                            color: colors.textMuted,
+                          ).copyWith(fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       if (avgConf != null) ...[
+                        const SizedBox(width: 8),
                         Text(
                           'Avg Conf: ${(avgConf * 100).round()}%',
-                          style: TextStyle(
-                            fontFamily: DocuVerseTypography.fontMono,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
+                          style: AppTypography.codeSmall(
                             color: avgConf >= target
                                 ? colors.success
                                 : colors.warning,
-                          ),
+                          ).copyWith(fontWeight: FontWeight.w600),
                         ),
                       ],
                     ],
@@ -145,7 +213,7 @@ class QualityRepairDock extends ConsumerWidget {
                         child: _MetricItem(
                           label: 'Repaired Blocks',
                           value: '$repairedCount',
-                          valueColor: colors.revisedCyan,
+                          valueColor: colors.cyan,
                         ),
                       ),
                       Container(width: 1, height: 28, color: colors.border),
@@ -181,26 +249,21 @@ class _MetricItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.docuVerse;
+    final colors = context.colors;
 
     return Column(
       children: [
         Text(
           value,
-          style: TextStyle(
-            fontFamily: DocuVerseTypography.fontMono,
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
+          style: AppTypography.titleMedium(
             color: valueColor,
-          ),
+          ).copyWith(fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 2),
         Text(
           label,
-          style: TextStyle(
-            fontFamily: DocuVerseTypography.fontBody,
-            fontSize: 10,
-            color: colors.foregroundMuted,
+          style: AppTypography.micro(
+            color: colors.textMuted,
           ),
           textAlign: TextAlign.center,
         ),

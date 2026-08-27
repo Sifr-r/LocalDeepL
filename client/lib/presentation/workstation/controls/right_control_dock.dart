@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/core/theme/app_colors.dart';
+import 'package:omniscribe_client/core/theme/app_typography.dart';
 import 'package:omniscribe_client/data/models/process_settings.dart';
 import 'package:omniscribe_client/data/providers/workstation_notifier.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_card.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_section_header.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_select.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_slider.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_toggle.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
-import 'package:omniscribe_client/theme/docuverse_typography.dart';
+import 'package:omniscribe_client/presentation/common/app_badge.dart';
+import 'package:omniscribe_client/presentation/common/app_button.dart';
+import 'package:omniscribe_client/presentation/common/app_card.dart';
+import 'package:omniscribe_client/presentation/common/app_select.dart';
+import 'package:omniscribe_client/presentation/common/app_toggle.dart';
+import 'package:omniscribe_client/presentation/common/section_header.dart';
 import 'quality_repair_dock.dart';
+import 'trust_breakdown_panel.dart';
 
 /// Right-hand control dock holding OCR configuration, processor selectors,
 /// image preprocessing, quality repair loop, and the primary execution CTA.
@@ -47,7 +47,7 @@ class _RightControlDockState extends ConsumerState<RightControlDock> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.docuVerse;
+    final colors = context.colors;
     final wsState = ref.watch(workstationProvider);
     final s = widget.settings;
 
@@ -59,38 +59,37 @@ class _RightControlDockState extends ConsumerState<RightControlDock> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Main Pipeline Card
-          DocuVerseCard(
-            variant: DocuVerseCardVariant.defaultCard,
-            padding: DocuVerseCardPadding.md,
+          AppCard(
+            padding: AppCardPadding.md,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                DocuVerseSectionHeader(
+                SectionHeader(
                   title: 'Pipeline Configuration',
-                  action: DocuVerseBadge(
-                    text: s.pipelineMode.label,
-                    variant: DocuVerseBadgeVariant.brand,
-                    size: DocuVerseBadgeSize.sm,
+                  action: AppBadge(
+                    label: s.pipelineMode.label,
+                    variant: AppBadgeVariant.brand,
+                    size: AppBadgeSize.sm,
                   ),
                 ),
 
                 // Pipeline Mode Selector
-                DocuVerseSelect<PipelineMode>(
+                AppSelect<PipelineMode>(
                   label: 'Pipeline Mode',
                   value: s.pipelineMode,
                   items: const [
-                    DocuVerseSelectItem(
+                    AppSelectItem(
                       value: PipelineMode.hybrid,
                       label: 'Hybrid (OCR + VLM)',
                       subtitle:
                           'Combines grounded coordinates with multimodal reasoning',
                     ),
-                    DocuVerseSelectItem(
+                    AppSelectItem(
                       value: PipelineMode.grounded,
                       label: 'Grounded BBox',
                       subtitle: 'Fast layout detection with bounding boxes',
                     ),
-                    DocuVerseSelectItem(
+                    AppSelectItem(
                       value: PipelineMode.groundedNative,
                       label: 'Grounded Native',
                       subtitle: 'Direct model-native token grounding',
@@ -108,14 +107,14 @@ class _RightControlDockState extends ConsumerState<RightControlDock> {
                 Row(
                   children: [
                     Expanded(
-                      child: DocuVerseSelect<DenseMode>(
+                      child: AppSelect<DenseMode>(
                         label: 'Dense Mode',
                         value: s.denseMode,
                         items: const [
-                          DocuVerseSelectItem(
+                          AppSelectItem(
                               value: DenseMode.auto, label: 'Auto'),
-                          DocuVerseSelectItem(value: DenseMode.on, label: 'On'),
-                          DocuVerseSelectItem(
+                          AppSelectItem(value: DenseMode.on, label: 'On'),
+                          AppSelectItem(
                               value: DenseMode.off, label: 'Off'),
                         ],
                         onChanged: (mode) {
@@ -128,22 +127,22 @@ class _RightControlDockState extends ConsumerState<RightControlDock> {
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: DocuVerseSelect<SpellcheckMode>(
+                      child: AppSelect<SpellcheckMode>(
                         label: 'Spellcheck',
                         value: s.spellcheck,
                         items: const [
-                          DocuVerseSelectItem(
+                          AppSelectItem(
                               value: SpellcheckMode.none, label: 'None'),
-                          DocuVerseSelectItem(
+                          AppSelectItem(
                               value: SpellcheckMode.enUS,
                               label: 'English (US)'),
-                          DocuVerseSelectItem(
+                          AppSelectItem(
                               value: SpellcheckMode.ar, label: 'Arabic'),
-                          DocuVerseSelectItem(
+                          AppSelectItem(
                               value: SpellcheckMode.de, label: 'German'),
-                          DocuVerseSelectItem(
+                          AppSelectItem(
                               value: SpellcheckMode.es, label: 'Spanish'),
-                          DocuVerseSelectItem(
+                          AppSelectItem(
                               value: SpellcheckMode.fr, label: 'French'),
                         ],
                         onChanged: (mode) {
@@ -159,30 +158,98 @@ class _RightControlDockState extends ConsumerState<RightControlDock> {
                 const SizedBox(height: 12),
 
                 // DPI & Concurrency Sliders
-                DocuVerseSlider(
-                  label: 'Raster DPI',
-                  value: s.dpi.toDouble(),
-                  min: 150,
-                  max: 400,
-                  divisions: 25,
-                  valueLabel: '${s.dpi} DPI',
-                  onChanged: (val) {
-                    widget.onSettingsChanged(s.copyWith(dpi: val.round()));
-                  },
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            'Raster DPI',
+                            style: AppTypography.labelMedium(
+                              color: colors.textPrimary,
+                            ).copyWith(fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${s.dpi} DPI',
+                          style: AppTypography.codeSmall(
+                            color: colors.brand,
+                          ).copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                    SliderTheme(
+                      data: SliderThemeData(
+                        activeTrackColor: colors.brand,
+                        inactiveTrackColor: colors.cardRaised,
+                        thumbColor: colors.brand,
+                        overlayColor: colors.brand.withValues(alpha: 0.15),
+                        trackHeight: 3,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                      ),
+                      child: Slider(
+                        value: s.dpi.toDouble(),
+                        min: 150,
+                        max: 400,
+                        divisions: 25,
+                        onChanged: (val) {
+                          widget.onSettingsChanged(s.copyWith(dpi: val.round()));
+                        },
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 10),
 
-                DocuVerseSlider(
-                  label: 'Page Concurrency',
-                  value: s.concurrency.toDouble(),
-                  min: 1,
-                  max: 16,
-                  divisions: 15,
-                  valueLabel: '${s.concurrency} workers',
-                  onChanged: (val) {
-                    widget.onSettingsChanged(
-                        s.copyWith(concurrency: val.round()));
-                  },
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            'Page Concurrency',
+                            style: AppTypography.labelMedium(
+                              color: colors.textPrimary,
+                            ).copyWith(fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${s.concurrency} workers',
+                          style: AppTypography.codeSmall(
+                            color: colors.brand,
+                          ).copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                    SliderTheme(
+                      data: SliderThemeData(
+                        activeTrackColor: colors.brand,
+                        inactiveTrackColor: colors.cardRaised,
+                        thumbColor: colors.brand,
+                        overlayColor: colors.brand.withValues(alpha: 0.15),
+                        trackHeight: 3,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                      ),
+                      child: Slider(
+                        value: s.concurrency.toDouble(),
+                        min: 1,
+                        max: 16,
+                        divisions: 15,
+                        onChanged: (val) {
+                          widget.onSettingsChanged(
+                              s.copyWith(concurrency: val.round()));
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -190,19 +257,16 @@ class _RightControlDockState extends ConsumerState<RightControlDock> {
           const SizedBox(height: 12),
 
           // Document Processors Card
-          DocuVerseCard(
-            variant: DocuVerseCardVariant.defaultCard,
-            padding: DocuVerseCardPadding.md,
+          AppCard(
+            padding: AppCardPadding.md,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const DocuVerseSectionHeader(title: 'Document Processors'),
+                const SectionHeader(title: 'Document Processors'),
                 Text(
                   'Select analyzers to enrich document structure and reading order:',
-                  style: TextStyle(
-                    fontFamily: DocuVerseTypography.fontBody,
-                    fontSize: 11,
-                    color: colors.foregroundMuted,
+                  style: AppTypography.bodySmall(
+                    color: colors.textMuted,
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -216,8 +280,7 @@ class _RightControlDockState extends ConsumerState<RightControlDock> {
                       message: info.description,
                       child: InkWell(
                         onTap: () => _toggleProcessor(info.id),
-                        borderRadius:
-                            BorderRadius.circular(colors.buttonRadius),
+                        borderRadius: BorderRadius.circular(6),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 150),
                           padding: const EdgeInsets.symmetric(
@@ -226,8 +289,7 @@ class _RightControlDockState extends ConsumerState<RightControlDock> {
                             color: isSelected
                                 ? colors.brand.withValues(alpha: 0.15)
                                 : colors.cardRaised,
-                            borderRadius:
-                                BorderRadius.circular(colors.buttonRadius),
+                            borderRadius: BorderRadius.circular(6),
                             border: Border.all(
                               color: isSelected
                                   ? colors.brand.withValues(alpha: 0.5)
@@ -245,15 +307,14 @@ class _RightControlDockState extends ConsumerState<RightControlDock> {
                               ],
                               Text(
                                 info.label,
-                                style: TextStyle(
-                                  fontFamily: DocuVerseTypography.fontBody,
-                                  fontSize: 11,
+                                style: AppTypography.bodySmall(
+                                  color: isSelected
+                                      ? colors.brand
+                                      : colors.textMuted,
+                                ).copyWith(
                                   fontWeight: isSelected
                                       ? FontWeight.w600
                                       : FontWeight.w500,
-                                  color: isSelected
-                                      ? colors.brand
-                                      : colors.foregroundMuted,
                                 ),
                               ),
                             ],
@@ -275,10 +336,15 @@ class _RightControlDockState extends ConsumerState<RightControlDock> {
           ),
           const SizedBox(height: 12),
 
+          // Trust Breakdown Panel (When document is present or bboxes exist)
+          if (hasDoc || wsState.allBBoxes.isNotEmpty) ...[
+            const TrustBreakdownPanel(),
+            const SizedBox(height: 12),
+          ],
+
           // Advanced Image Preprocessing Accordion Card
-          DocuVerseCard(
-            variant: DocuVerseCardVariant.defaultCard,
-            padding: DocuVerseCardPadding.sm,
+          AppCard(
+            padding: AppCardPadding.sm,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -294,16 +360,12 @@ class _RightControlDockState extends ConsumerState<RightControlDock> {
                         Row(
                           children: [
                             Icon(Icons.tune_rounded,
-                                size: 14, color: colors.foregroundMuted),
+                                size: 14, color: colors.textMuted),
                             const SizedBox(width: 6),
                             Text(
                               'IMAGE PREPROCESSING',
-                              style: TextStyle(
-                                fontFamily: DocuVerseTypography.fontBody,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.6,
-                                color: colors.foregroundMuted,
+                              style: AppTypography.micro(
+                                color: colors.textMuted,
                               ),
                             ),
                           ],
@@ -313,7 +375,7 @@ class _RightControlDockState extends ConsumerState<RightControlDock> {
                               ? Icons.expand_less_rounded
                               : Icons.expand_more_rounded,
                           size: 18,
-                          color: colors.foregroundMuted,
+                          color: colors.textMuted,
                         ),
                       ],
                     ),
@@ -329,33 +391,33 @@ class _RightControlDockState extends ConsumerState<RightControlDock> {
                     ),
                     child: Column(
                       children: [
-                        DocuVerseToggle(
+                        AppToggle(
                           label: 'Orientation Detection',
-                          checked: s.orientationDetection,
+                          value: s.orientationDetection,
                           onChanged: (v) => widget.onSettingsChanged(
                               s.copyWith(orientationDetection: v)),
                         ),
-                        DocuVerseToggle(
+                        AppToggle(
                           label: 'Deskew Image',
-                          checked: s.deskew,
+                          value: s.deskew,
                           onChanged: (v) =>
                               widget.onSettingsChanged(s.copyWith(deskew: v)),
                         ),
-                        DocuVerseToggle(
+                        AppToggle(
                           label: 'Denoise Image',
-                          checked: s.denoise,
+                          value: s.denoise,
                           onChanged: (v) =>
                               widget.onSettingsChanged(s.copyWith(denoise: v)),
                         ),
-                        DocuVerseToggle(
+                        AppToggle(
                           label: 'Normalize Contrast',
-                          checked: s.normalizeContrast,
+                          value: s.normalizeContrast,
                           onChanged: (v) => widget.onSettingsChanged(
                               s.copyWith(normalizeContrast: v)),
                         ),
-                        DocuVerseToggle(
+                        AppToggle(
                           label: 'Crop Cleanup',
-                          checked: s.cropCleanup,
+                          value: s.cropCleanup,
                           onChanged: (v) => widget
                               .onSettingsChanged(s.copyWith(cropCleanup: v)),
                         ),
@@ -369,10 +431,10 @@ class _RightControlDockState extends ConsumerState<RightControlDock> {
           const SizedBox(height: 16),
 
           // Primary Process Action CTA
-          DocuVerseButton(
+          AppButton(
             text: isProcessing ? 'Processing Document...' : 'Process Document',
-            variant: DocuVerseButtonVariant.primary,
-            size: DocuVerseButtonSize.lg,
+            variant: AppButtonVariant.primary,
+            size: AppButtonSize.lg,
             fullWidth: true,
             icon: const Icon(Icons.bolt_rounded, size: 18),
             loading: isProcessing,

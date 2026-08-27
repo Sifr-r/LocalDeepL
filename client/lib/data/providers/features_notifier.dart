@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -20,11 +21,28 @@ final translationProvider =
 
 class TranslationNotifier extends Notifier<TranslationState> {
   late final FeatureRepository _repo;
+  Timer? _pollTimer;
 
   @override
   TranslationState build() {
     _repo = ref.watch(featureRepositoryProvider);
+    ref.onDispose(stopPolling);
     return const TranslationState.initial();
+  }
+
+  void startPolling(String jobId) {
+    stopPolling();
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
+      await checkTranslationStatus(jobId);
+      if (!state.isTranslating) {
+        stopPolling();
+      }
+    });
+  }
+
+  void stopPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
   }
 
   void setSourceText(String text) {
@@ -130,6 +148,7 @@ class TranslationNotifier extends Notifier<TranslationState> {
     String? apiBase,
     String? apiKey,
     String? fallbackModel,
+    bool autoPoll = true,
   }) async {
     final text = state.sourceText.trim();
     if (text.isEmpty) {
@@ -161,6 +180,9 @@ class TranslationNotifier extends Notifier<TranslationState> {
         asyncJobId: res.jobId,
         asyncStatus: 'Job ${res.jobId} queued. Polling progress...',
       );
+      if (autoPoll) {
+        startPolling(res.jobId);
+      }
       return res.jobId;
     } catch (e) {
       state = state.copyWith(
@@ -184,6 +206,7 @@ class TranslationNotifier extends Notifier<TranslationState> {
               status.result?.toString() ?? 'Translation completed.',
           asyncStatus: 'Completed.',
         );
+        stopPolling();
       } else if (stateStr == 'FAILURE' ||
           stateStr == 'FAILED' ||
           status.error != null) {
@@ -193,6 +216,7 @@ class TranslationNotifier extends Notifier<TranslationState> {
           error: err,
           asyncStatus: 'Failed: $err',
         );
+        stopPolling();
       } else {
         state = state.copyWith(
           asyncStatus:
@@ -205,6 +229,7 @@ class TranslationNotifier extends Notifier<TranslationState> {
         error: e.toString(),
         asyncStatus: 'Polling error: $e',
       );
+      stopPolling();
     }
   }
 }
@@ -220,14 +245,17 @@ final transcriptionProvider =
 
 class TranscriptionNotifier extends Notifier<TranscriptionState> {
   late final FeatureRepository _repo;
+  Timer? _playbackTimer;
 
   @override
   TranscriptionState build() {
     _repo = ref.watch(featureRepositoryProvider);
+    ref.onDispose(stopPlayback);
     return const TranscriptionState.initial();
   }
 
   void setAudio(Uint8List bytes, String filename, {double? duration}) {
+    stopPlayback();
     state = state.copyWith(
       audioBytes: bytes,
       audioFilename: filename,
@@ -261,6 +289,7 @@ class TranscriptionNotifier extends Notifier<TranscriptionState> {
   }
 
   void clearAudio() {
+    stopPlayback();
     state = state.copyWith(
       clearAudio: true,
       totalDuration: 0.0,
@@ -287,6 +316,41 @@ class TranscriptionNotifier extends Notifier<TranscriptionState> {
 
   void setIsPlaying(bool isPlaying) {
     state = state.copyWith(isPlaying: isPlaying);
+  }
+
+  void startPlayback() {
+    _playbackTimer?.cancel();
+    state = state.copyWith(isPlaying: true);
+
+    _playbackTimer =
+        Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      if (state.currentPlaybackTime >= state.totalDuration) {
+        stopPlayback();
+        setPlaybackTime(0.0);
+      } else {
+        setPlaybackTime(state.currentPlaybackTime + 0.1);
+      }
+    });
+  }
+
+  void pausePlayback() {
+    _playbackTimer?.cancel();
+    _playbackTimer = null;
+    state = state.copyWith(isPlaying: false);
+  }
+
+  void stopPlayback() {
+    _playbackTimer?.cancel();
+    _playbackTimer = null;
+    state = state.copyWith(isPlaying: false);
+  }
+
+  void togglePlayback() {
+    if (state.isPlaying) {
+      pausePlayback();
+    } else {
+      startPlayback();
+    }
   }
 
   void setResult(TranscriptionResponse result) {
@@ -317,8 +381,8 @@ class TranscriptionNotifier extends Notifier<TranscriptionState> {
     state = state.copyWith(
       currentPlaybackTime: segment.start,
       activeSegmentId: segment.id,
-      isPlaying: true,
     );
+    startPlayback();
   }
 
   Future<void> transcribe({

@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/core/theme/app_colors.dart';
+import 'package:omniscribe_client/core/theme/app_typography.dart';
 import 'package:omniscribe_client/data/models/bbox_item.dart';
 import 'package:omniscribe_client/data/providers/workstation_notifier.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_card.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_section_header.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
-import 'package:omniscribe_client/theme/docuverse_typography.dart';
+import 'package:omniscribe_client/presentation/common/app_badge.dart';
+import 'package:omniscribe_client/presentation/common/app_button.dart';
+import 'package:omniscribe_client/presentation/common/app_card.dart';
+import 'package:omniscribe_client/presentation/common/section_header.dart';
 
 /// Detail inspector panel for the currently selected bounding box.
 class BBoxInspector extends ConsumerStatefulWidget {
@@ -87,23 +87,22 @@ class _BBoxInspectorState extends ConsumerState<BBoxInspector> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.docuVerse;
+    final colors = context.colors;
     final bbox = widget.bbox;
 
-    DocuVerseBadgeVariant confBadgeVariant;
+    AppBadgeVariant confBadgeVariant;
     if (bbox.confidence == null) {
-      confBadgeVariant = DocuVerseBadgeVariant.neutral;
+      confBadgeVariant = AppBadgeVariant.neutral;
     } else if (bbox.confidence! >= 0.85) {
-      confBadgeVariant = DocuVerseBadgeVariant.success;
+      confBadgeVariant = AppBadgeVariant.success;
     } else if (bbox.confidence! >= 0.60) {
-      confBadgeVariant = DocuVerseBadgeVariant.warning;
+      confBadgeVariant = AppBadgeVariant.warning;
     } else {
-      confBadgeVariant = DocuVerseBadgeVariant.danger;
+      confBadgeVariant = AppBadgeVariant.error;
     }
 
-    return DocuVerseCard(
-      variant: DocuVerseCardVariant.defaultCard,
-      padding: DocuVerseCardPadding.md,
+    return AppCard(
+      padding: AppCardPadding.md,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -123,11 +122,8 @@ class _BBoxInspectorState extends ConsumerState<BBoxInspector> {
                         'Bounding Box Inspector',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: DocuVerseTypography.fontDisplay,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: colors.foreground,
+                        style: AppTypography.titleSmall(
+                          color: colors.textPrimary,
                         ),
                       ),
                     ),
@@ -136,7 +132,7 @@ class _BBoxInspectorState extends ConsumerState<BBoxInspector> {
               ),
               IconButton(
                 icon: const Icon(Icons.close_rounded, size: 18),
-                color: colors.foregroundMuted,
+                color: colors.textMuted,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
                 tooltip: 'Close Inspector',
@@ -151,30 +147,30 @@ class _BBoxInspectorState extends ConsumerState<BBoxInspector> {
             spacing: 6,
             runSpacing: 6,
             children: [
-              DocuVerseBadge(
-                text: bbox.blockId,
-                variant: DocuVerseBadgeVariant.brand,
-                size: DocuVerseBadgeSize.sm,
+              AppBadge(
+                label: bbox.blockId,
+                variant: AppBadgeVariant.brand,
+                size: AppBadgeSize.sm,
               ),
-              DocuVerseBadge(
-                text: bbox.confidencePercent != null
+              AppBadge(
+                label: bbox.confidencePercent != null
                     ? '${bbox.confidencePercent}% CONF'
                     : 'NO CONF',
                 variant: confBadgeVariant,
-                size: DocuVerseBadgeSize.sm,
+                size: AppBadgeSize.sm,
               ),
               if (bbox.isRevised)
-                const DocuVerseBadge(
-                  text: 'REVISED',
-                  variant: DocuVerseBadgeVariant.revised,
-                  size: DocuVerseBadgeSize.sm,
+                const AppBadge(
+                  label: 'REVISED',
+                  variant: AppBadgeVariant.info,
+                  size: AppBadgeSize.sm,
                 ),
             ],
           ),
           const SizedBox(height: 12),
 
           // Block Kind & Coordinates
-          const DocuVerseSectionHeader(title: 'Block Properties'),
+          const SectionHeader(title: 'Block Properties'),
           Row(
             children: [
               Expanded(
@@ -183,10 +179,8 @@ class _BBoxInspectorState extends ConsumerState<BBoxInspector> {
                   children: [
                     Text(
                       'Block Kind',
-                      style: TextStyle(
-                        fontFamily: DocuVerseTypography.fontBody,
-                        fontSize: 11,
-                        color: colors.foregroundMuted,
+                      style: AppTypography.micro(
+                        color: colors.textMuted,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -194,7 +188,7 @@ class _BBoxInspectorState extends ConsumerState<BBoxInspector> {
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       decoration: BoxDecoration(
                         color: colors.cardRaised,
-                        borderRadius: BorderRadius.circular(colors.radiusInput),
+                        borderRadius: BorderRadius.circular(6),
                         border: Border.all(color: colors.border),
                       ),
                       child: DropdownButtonHideUnderline(
@@ -203,13 +197,10 @@ class _BBoxInspectorState extends ConsumerState<BBoxInspector> {
                           isExpanded: true,
                           dropdownColor: colors.cardRaised,
                           icon: Icon(Icons.arrow_drop_down,
-                              size: 18, color: colors.foregroundMuted),
-                          style: TextStyle(
-                            fontFamily: DocuVerseTypography.fontBody,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: colors.foreground,
-                          ),
+                              size: 18, color: colors.textMuted),
+                          style: AppTypography.bodySmall(
+                            color: colors.textPrimary,
+                          ).copyWith(fontWeight: FontWeight.w500),
                           items: const [
                             DropdownMenuItem(
                                 value: 'paragraph', child: Text('Paragraph')),
@@ -246,10 +237,8 @@ class _BBoxInspectorState extends ConsumerState<BBoxInspector> {
                   children: [
                     Text(
                       'Dimensions (W × H)',
-                      style: TextStyle(
-                        fontFamily: DocuVerseTypography.fontBody,
-                        fontSize: 11,
-                        color: colors.foregroundMuted,
+                      style: AppTypography.micro(
+                        color: colors.textMuted,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -259,15 +248,13 @@ class _BBoxInspectorState extends ConsumerState<BBoxInspector> {
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       decoration: BoxDecoration(
                         color: colors.cardRaised,
-                        borderRadius: BorderRadius.circular(colors.radiusInput),
+                        borderRadius: BorderRadius.circular(6),
                         border: Border.all(color: colors.border),
                       ),
                       child: Text(
                         '${(bbox.width * 100).toStringAsFixed(1)}% × ${(bbox.height * 100).toStringAsFixed(1)}%',
-                        style: TextStyle(
-                          fontFamily: DocuVerseTypography.fontMono,
-                          fontSize: 11,
-                          color: colors.foreground,
+                        style: AppTypography.codeSmall(
+                          color: colors.textPrimary,
                         ),
                       ),
                     ),
@@ -289,16 +276,14 @@ class _BBoxInspectorState extends ConsumerState<BBoxInspector> {
             child: Row(
               children: [
                 Icon(Icons.crop_free_rounded,
-                    size: 12, color: colors.foregroundSubtle),
+                    size: 12, color: colors.textMuted),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     'bbox: [${bbox.x0.toStringAsFixed(3)}, ${bbox.y0.toStringAsFixed(3)}, ${bbox.x1.toStringAsFixed(3)}, ${bbox.y1.toStringAsFixed(3)}]',
-                    style: TextStyle(
-                      fontFamily: DocuVerseTypography.fontMono,
-                      fontSize: 10,
-                      color: colors.foregroundSubtle,
-                    ),
+                    style: AppTypography.codeSmall(
+                      color: colors.textMuted,
+                    ).copyWith(fontSize: 10),
                   ),
                 ),
               ],
@@ -307,7 +292,7 @@ class _BBoxInspectorState extends ConsumerState<BBoxInspector> {
           const SizedBox(height: 14),
 
           // OCR Extracted Text Section
-          DocuVerseSectionHeader(
+          SectionHeader(
             title: 'Extracted Content',
             action: InkWell(
               onTap: _copyText,
@@ -324,12 +309,9 @@ class _BBoxInspectorState extends ConsumerState<BBoxInspector> {
                   const SizedBox(width: 4),
                   Text(
                     _hasCopied ? 'Copied' : 'Copy Text',
-                    style: TextStyle(
-                      fontFamily: DocuVerseTypography.fontBody,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
+                    style: AppTypography.bodySmall(
                       color: _hasCopied ? colors.success : colors.brand,
-                    ),
+                    ).copyWith(fontSize: 11, fontWeight: FontWeight.w500),
                   ),
                 ],
               ),
@@ -340,19 +322,16 @@ class _BBoxInspectorState extends ConsumerState<BBoxInspector> {
           Container(
             decoration: BoxDecoration(
               color: colors.cardRaised,
-              borderRadius: BorderRadius.circular(colors.radiusInput),
+              borderRadius: BorderRadius.circular(6),
               border: Border.all(color: colors.borderStrong),
             ),
             child: TextField(
               controller: _textController,
               maxLines: 4,
               minLines: 3,
-              style: TextStyle(
-                fontFamily: DocuVerseTypography.fontBody,
-                fontSize: 13,
-                height: 1.4,
-                color: colors.foreground,
-              ),
+              style: AppTypography.bodySmall(
+                color: colors.textPrimary,
+              ).copyWith(fontSize: 13, height: 1.4),
               onChanged: (_) {
                 if (!_isEditing) {
                   setState(() {
@@ -364,11 +343,9 @@ class _BBoxInspectorState extends ConsumerState<BBoxInspector> {
                 contentPadding: const EdgeInsets.all(10),
                 border: InputBorder.none,
                 hintText: 'OCR text content...',
-                hintStyle: TextStyle(
-                  fontFamily: DocuVerseTypography.fontBody,
-                  fontSize: 12,
-                  color: colors.foregroundSubtle,
-                ),
+                hintStyle: AppTypography.bodySmall(
+                  color: colors.textMuted,
+                ).copyWith(fontSize: 12),
               ),
             ),
           ),
@@ -379,19 +356,19 @@ class _BBoxInspectorState extends ConsumerState<BBoxInspector> {
             Row(
               children: [
                 Expanded(
-                  child: DocuVerseButton(
+                  child: AppButton(
                     text: 'Save Edits',
-                    variant: DocuVerseButtonVariant.primary,
-                    size: DocuVerseButtonSize.sm,
+                    variant: AppButtonVariant.primary,
+                    size: AppButtonSize.sm,
                     icon: const Icon(Icons.check, size: 14),
                     onPressed: _saveEdits,
                   ),
                 ),
                 const SizedBox(width: 8),
-                DocuVerseButton(
+                AppButton(
                   text: 'Cancel',
-                  variant: DocuVerseButtonVariant.ghost,
-                  size: DocuVerseButtonSize.sm,
+                  variant: AppButtonVariant.ghost,
+                  size: AppButtonSize.sm,
                   onPressed: () {
                     _textController.text = widget.bbox.text;
                     setState(() {

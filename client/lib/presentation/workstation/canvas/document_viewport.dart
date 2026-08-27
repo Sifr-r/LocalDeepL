@@ -2,13 +2,13 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/core/theme/app_colors.dart';
+import 'package:omniscribe_client/core/theme/app_typography.dart';
 import 'package:omniscribe_client/data/models/bbox_item.dart';
 import 'package:omniscribe_client/data/models/document_result.dart';
 import 'package:omniscribe_client/data/providers/workstation_notifier.dart';
 import 'package:omniscribe_client/data/providers/workstation_state.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
-import 'package:omniscribe_client/theme/docuverse_typography.dart';
+import 'package:omniscribe_client/presentation/common/app_badge.dart';
 import 'bbox_painter.dart';
 
 /// GPU-Accelerated Document Viewport with InteractiveViewer zoom/pan,
@@ -124,7 +124,7 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.docuVerse;
+    final colors = context.colors;
     final wsState = ref.watch(workstationProvider);
     final notifier = ref.read(workstationProvider.notifier);
 
@@ -133,9 +133,9 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
 
     return Container(
       decoration: BoxDecoration(
-        color: colors.app,
+        color: colors.background,
         border: Border.all(color: colors.border),
-        borderRadius: BorderRadius.all(Radius.circular(colors.cardRadius)),
+        borderRadius: const BorderRadius.all(Radius.circular(8)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -146,9 +146,9 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
           // 2. Interactive Zoomable / Pannable Document Viewport
           Expanded(
             child: ClipRRect(
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(colors.cardRadius),
-                bottomRight: Radius.circular(colors.cardRadius),
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(8),
+                bottomRight: Radius.circular(8),
               ),
               child: Stack(
                 children: [
@@ -200,7 +200,7 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
     BuildContext context,
     WorkstationState wsState,
     WorkstationNotifier notifier,
-    DocuVerseThemeTokens colors,
+    AppColorScheme colors,
   ) {
     final hasDoc = wsState.hasDocument;
     final currentPageIndex = wsState.selectedPageIndex;
@@ -212,9 +212,9 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
       decoration: BoxDecoration(
         color: colors.cardRaised,
         border: Border(bottom: BorderSide(color: colors.border)),
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(colors.cardRadius),
-          topRight: Radius.circular(colors.cardRadius),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(8),
+          topRight: Radius.circular(8),
         ),
       ),
       child: Row(
@@ -235,11 +235,8 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
                     'GPU Document Viewport',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: DocuVerseTypography.fontDisplay,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: colors.foreground,
+                    style: AppTypography.titleSmall(
+                      color: colors.textPrimary,
                     ),
                   ),
                 ),
@@ -250,20 +247,18 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
                       '• ${wsState.filename!}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: DocuVerseTypography.fontMono,
-                        fontSize: 12,
-                        color: colors.foregroundMuted,
+                      style: AppTypography.codeSmall(
+                        color: colors.textMuted,
                       ),
                     ),
                   ),
                 ],
                 if (wsState.allBBoxes.isNotEmpty) ...[
                   const SizedBox(width: 10),
-                  DocuVerseBadge(
-                    text: '${wsState.allBBoxes.length} BBOXES',
-                    variant: DocuVerseBadgeVariant.brand,
-                    size: DocuVerseBadgeSize.sm,
+                  AppBadge(
+                    label: '${wsState.allBBoxes.length} BBOXES',
+                    variant: AppBadgeVariant.brand,
+                    size: AppBadgeSize.sm,
                   ),
                 ],
               ],
@@ -283,8 +278,8 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
                   constraints:
                       const BoxConstraints(minWidth: 32, minHeight: 32),
                   color: currentPageIndex > 0
-                      ? colors.foreground
-                      : colors.foregroundSubtle,
+                      ? colors.textPrimary
+                      : colors.textMuted,
                   onPressed: currentPageIndex > 0
                       ? () => notifier.selectPage(currentPageIndex - 1)
                       : null,
@@ -293,12 +288,9 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: Text(
                     'Page ${currentPageIndex + 1} of $totalPages',
-                    style: TextStyle(
-                      fontFamily: DocuVerseTypography.fontMono,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: colors.foreground,
-                    ),
+                    style: AppTypography.codeSmall(
+                      color: colors.textPrimary,
+                    ).copyWith(fontWeight: FontWeight.w500),
                   ),
                 ),
                 IconButton(
@@ -308,8 +300,8 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
                   constraints:
                       const BoxConstraints(minWidth: 32, minHeight: 32),
                   color: currentPageIndex < totalPages - 1
-                      ? colors.foreground
-                      : colors.foregroundSubtle,
+                      ? colors.textPrimary
+                      : colors.textMuted,
                   onPressed: currentPageIndex < totalPages - 1
                       ? () => notifier.selectPage(currentPageIndex + 1)
                       : null,
@@ -349,19 +341,16 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
                           size: 14,
                           color: wsState.showBBoxes
                               ? colors.brand
-                              : colors.foregroundMuted,
+                              : colors.textMuted,
                         ),
                         const SizedBox(width: 4),
                         Text(
                           'Boxes',
-                          style: TextStyle(
-                            fontFamily: DocuVerseTypography.fontBody,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
+                          style: AppTypography.bodySmall(
                             color: wsState.showBBoxes
                                 ? colors.brand
-                                : colors.foregroundMuted,
-                          ),
+                                : colors.textMuted,
+                          ).copyWith(fontSize: 11, fontWeight: FontWeight.w500),
                         ),
                       ],
                     ),
@@ -398,19 +387,16 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
                           size: 14,
                           color: wsState.showHeatmap
                               ? colors.success
-                              : colors.foregroundMuted,
+                              : colors.textMuted,
                         ),
                         const SizedBox(width: 4),
                         Text(
                           'Heatmap',
-                          style: TextStyle(
-                            fontFamily: DocuVerseTypography.fontBody,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
+                          style: AppTypography.bodySmall(
                             color: wsState.showHeatmap
                                 ? colors.success
-                                : colors.foregroundMuted,
-                          ),
+                                : colors.textMuted,
+                          ).copyWith(fontSize: 11, fontWeight: FontWeight.w500),
                         ),
                       ],
                     ),
@@ -430,7 +416,7 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
     WorkstationNotifier notifier,
     PageResult? currentPage,
     List<BBoxItem> bboxes,
-    DocuVerseThemeTokens colors,
+    AppColorScheme colors,
   ) {
     // Determine canvas physical aspect ratio & base size
     const double baseWidth = 680.0;
@@ -496,7 +482,7 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
   }
 
   Widget _buildPagePlaceholder(
-      DocuVerseThemeTokens colors, WorkstationState wsState) {
+      AppColorScheme colors, WorkstationState wsState) {
     return Container(
       color: colors.card,
       padding: const EdgeInsets.all(32),
@@ -507,18 +493,15 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
             Icon(
               Icons.description_outlined,
               size: 48,
-              color: colors.foregroundSubtle.withValues(alpha: 0.5),
+              color: colors.textMuted.withValues(alpha: 0.5),
             ),
             const SizedBox(height: 12),
             Text(
               wsState.hasDocument
                   ? 'Page ${wsState.selectedPageIndex + 1}'
                   : 'No Document Loaded',
-              style: TextStyle(
-                fontFamily: DocuVerseTypography.fontDisplay,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: colors.foregroundMuted,
+              style: AppTypography.titleMedium(
+                color: colors.textMuted,
               ),
             ),
             const SizedBox(height: 6),
@@ -526,10 +509,8 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
               wsState.hasDocument
                   ? 'Normalized bbox overlay rendered in GPU viewport'
                   : 'Drop or select a PDF / image file from the dropzone to start',
-              style: TextStyle(
-                fontFamily: DocuVerseTypography.fontBody,
-                fontSize: 12,
-                color: colors.foregroundSubtle,
+              style: AppTypography.bodySmall(
+                color: colors.textMuted,
               ),
               textAlign: TextAlign.center,
             ),
@@ -540,7 +521,7 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
   }
 
   Widget _buildFloatingControls(
-    DocuVerseThemeTokens colors,
+    AppColorScheme colors,
     WorkstationState wsState,
     WorkstationNotifier notifier,
   ) {
@@ -550,7 +531,7 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: BoxDecoration(
         color: colors.cardRaised.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(colors.cardRadius),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: colors.borderStrong),
         boxShadow: [
           BoxShadow(
@@ -568,7 +549,7 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
             tooltip: 'Zoom out',
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             padding: EdgeInsets.zero,
-            color: colors.foreground,
+            color: colors.textPrimary,
             onPressed: _zoomOut,
           ),
           InkWell(
@@ -578,12 +559,9 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               child: Text(
                 '$zoomPercent%',
-                style: TextStyle(
-                  fontFamily: DocuVerseTypography.fontMono,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
+                style: AppTypography.codeSmall(
                   color: colors.brand,
-                ),
+                ).copyWith(fontWeight: FontWeight.w600),
               ),
             ),
           ),
@@ -592,7 +570,7 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
             tooltip: 'Zoom in',
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             padding: EdgeInsets.zero,
-            color: colors.foreground,
+            color: colors.textPrimary,
             onPressed: _zoomIn,
           ),
           Container(
@@ -605,7 +583,7 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
             tooltip: 'Reset Zoom (100%)',
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             padding: EdgeInsets.zero,
-            color: colors.foregroundMuted,
+            color: colors.textMuted,
             onPressed: _resetZoom,
           ),
         ],

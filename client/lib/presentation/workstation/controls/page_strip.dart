@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/core/theme/app_colors.dart';
+import 'package:omniscribe_client/core/theme/app_typography.dart';
 import 'package:omniscribe_client/data/providers/workstation_notifier.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
-import 'package:omniscribe_client/theme/docuverse_typography.dart';
 
 /// Thumbnail strip allowing users to quickly preview and switch between pages.
 class PageStrip extends ConsumerWidget {
@@ -15,7 +15,7 @@ class PageStrip extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.docuVerse;
+    final colors = context.colors;
     final wsState = ref.watch(workstationProvider);
     final notifier = ref.read(workstationProvider.notifier);
 
@@ -34,7 +34,7 @@ class PageStrip extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: colors.cardRaised,
-        borderRadius: BorderRadius.circular(colors.cardRadius),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: colors.border),
       ),
       child: Column(
@@ -45,21 +45,15 @@ class PageStrip extends ConsumerWidget {
             children: [
               Text(
                 'PAGES ($pageCount)',
-                style: TextStyle(
-                  fontFamily: DocuVerseTypography.fontBody,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.6,
-                  color: colors.foregroundMuted,
+                style: AppTypography.micro(
+                  color: colors.textMuted,
                 ),
               ),
               Text(
                 '${wsState.pages.where((p) => p.bboxes.isNotEmpty).length}/$pageCount scanned',
-                style: TextStyle(
-                  fontFamily: DocuVerseTypography.fontMono,
-                  fontSize: 10,
-                  color: colors.foregroundSubtle,
-                ),
+                style: AppTypography.codeSmall(
+                  color: colors.textMuted,
+                ).copyWith(fontSize: 10),
               ),
             ],
           ),
@@ -117,7 +111,7 @@ class PageStrip extends ConsumerWidget {
                                     size: 20,
                                     color: isSelected
                                         ? colors.brand
-                                        : colors.foregroundSubtle,
+                                        : colors.textMuted,
                                   ),
                                 ),
                                 if (hasScanned)
@@ -148,15 +142,15 @@ class PageStrip extends ConsumerWidget {
                             boxCount > 0
                                 ? 'P.${index + 1} ($boxCount)'
                                 : 'P.${index + 1}',
-                            style: TextStyle(
-                              fontFamily: DocuVerseTypography.fontMono,
+                            style: AppTypography.codeSmall(
+                              color: isSelected
+                                  ? colors.brand
+                                  : colors.textMuted,
+                            ).copyWith(
                               fontSize: 10,
                               fontWeight: isSelected
                                   ? FontWeight.w700
                                   : FontWeight.w500,
-                              color: isSelected
-                                  ? colors.brand
-                                  : colors.foregroundMuted,
                             ),
                           ),
                         ),

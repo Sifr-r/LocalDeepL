@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/core/theme/app_theme.dart';
 import 'package:omniscribe_client/data/providers/settings_notifier.dart';
 import 'package:omniscribe_client/presentation/shell/app_shell.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,8 +37,8 @@ class _OmniScribeAppState extends ConsumerState<OmniScribeApp> {
     return MaterialApp(
       title: 'OmniScribe',
       debugShowCheckedModeBanner: false,
-      theme: DocuVerseTheme.lightTheme,
-      darkTheme: DocuVerseTheme.darkTheme,
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
       themeMode: settings.isDarkMode ? ThemeMode.dark : ThemeMode.light,
       home: const AppShell(),
     );

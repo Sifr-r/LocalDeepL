@@ -1,7 +1,7 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:omniscribe_client/core/theme/app_colors.dart';
 import 'package:omniscribe_client/data/models/bbox_item.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
 
 /// CustomPainter rendering normalized bounding boxes, confidence heatmap fills,
 /// revision indicators, and selection handles over document canvas.
@@ -19,7 +19,7 @@ class BBoxPainter extends CustomPainter {
   final List<BBoxItem> bboxes;
   final BBoxItem? selectedBBox;
   final BBoxItem? hoveredBBox;
-  final DocuVerseThemeTokens colors;
+  final AppColorScheme colors;
   final bool showBBoxes;
   final bool showHeatmap;
   final bool showLabels;
@@ -84,7 +84,7 @@ class BBoxPainter extends CustomPainter {
     final fillPaint = Paint()..style = PaintingStyle.fill;
     if (isSelected) {
       fillPaint.color = isRevised
-          ? colors.revisedCyan.withValues(alpha: 0.25)
+          ? colors.cyan.withValues(alpha: 0.25)
           : colors.brand.withValues(alpha: 0.20);
       canvas.drawRect(rect, fillPaint);
     } else if (isHovered) {
@@ -92,7 +92,7 @@ class BBoxPainter extends CustomPainter {
       canvas.drawRect(rect, fillPaint);
     } else if (showHeatmap) {
       fillPaint.color = isRevised
-          ? colors.revisedCyan.withValues(alpha: 0.15)
+          ? colors.cyan.withValues(alpha: 0.15)
           : tierColor.withValues(alpha: 0.12);
       canvas.drawRect(rect, fillPaint);
     }
@@ -105,7 +105,7 @@ class BBoxPainter extends CustomPainter {
 
     if (isSelected) {
       borderPaint
-        ..color = isRevised ? colors.revisedCyan : colors.brand
+        ..color = isRevised ? colors.cyan : colors.brand
         ..strokeWidth = 2.4;
       canvas.drawRect(rect, borderPaint);
     } else if (isRevised) {
@@ -113,7 +113,7 @@ class BBoxPainter extends CustomPainter {
       _drawDashedRect(
         canvas: canvas,
         rect: rect,
-        color: colors.revisedCyan,
+        color: colors.cyan,
         strokeWidth: isHovered ? 2.0 : 1.6,
         dashWidth: 4.0,
         dashSpace: 3.0,
@@ -133,7 +133,7 @@ class BBoxPainter extends CustomPainter {
     // 3. Corner Handles for Selected Box
     if (isSelected) {
       _drawCornerHandles(
-          canvas, rect, isRevised ? colors.revisedCyan : colors.brand);
+          canvas, rect, isRevised ? colors.cyan : colors.brand);
     }
 
     // 4. Label Pill (Kind + Confidence badge)
@@ -150,10 +150,10 @@ class BBoxPainter extends CustomPainter {
   }
 
   Color _getConfidenceColor(double? confidence) {
-    if (confidence == null) return colors.foregroundMuted;
+    if (confidence == null) return colors.textMuted;
     if (confidence >= 0.85) return colors.success;
     if (confidence >= 0.60) return colors.warning;
-    return colors.danger;
+    return colors.error;
   }
 
   void _drawDashedRect({
@@ -262,7 +262,7 @@ class BBoxPainter extends CustomPainter {
 
     final pillBgPaint = Paint()
       ..color = box.isRevised
-          ? colors.revisedCyan
+          ? colors.cyan
           : isSelected
               ? colors.brand
               : tierColor.withValues(alpha: 0.90)

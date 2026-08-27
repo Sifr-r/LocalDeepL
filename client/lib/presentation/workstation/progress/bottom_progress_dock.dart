@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/core/theme/app_colors.dart';
+import 'package:omniscribe_client/core/theme/app_typography.dart';
 import 'package:omniscribe_client/data/providers/workstation_notifier.dart';
 import 'package:omniscribe_client/data/providers/workstation_state.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
-import 'package:omniscribe_client/theme/docuverse_typography.dart';
+import 'package:omniscribe_client/presentation/common/app_button.dart';
 
 /// Live Bottom Progress Dock displaying the stage stepper, animated progress bar,
 /// quality loop counters, and cancel controls.
@@ -18,7 +18,7 @@ class BottomProgressDock extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.docuVerse;
+    final colors = context.colors;
     final wsState = ref.watch(workstationProvider);
     final notifier = ref.read(workstationProvider.notifier);
 
@@ -85,7 +85,7 @@ class BottomProgressDock extends ConsumerWidget {
                                           colors.success,
                                           const Color(0xFF10B981)
                                         ]
-                                      : [colors.muted, colors.foregroundSubtle],
+                                      : [colors.muted, colors.textMuted],
                             ),
                           ),
                         ),
@@ -97,16 +97,13 @@ class BottomProgressDock extends ConsumerWidget {
               const SizedBox(width: 12),
               Text(
                 '$percentInt%',
-                style: TextStyle(
-                  fontFamily: DocuVerseTypography.fontMono,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
+                style: AppTypography.codeSmall(
                   color: isProcessing
                       ? colors.brand
                       : stage == 'Complete'
                           ? colors.success
-                          : colors.foregroundMuted,
-                ),
+                          : colors.textMuted,
+                ).copyWith(fontWeight: FontWeight.w700, fontSize: 12),
               ),
             ],
           ),
@@ -138,11 +135,9 @@ class BottomProgressDock extends ConsumerWidget {
                     Flexible(
                       child: Text(
                         statusMsg,
-                        style: TextStyle(
-                          fontFamily: DocuVerseTypography.fontBody,
-                          fontSize: 12,
-                          color: colors.foregroundMuted,
-                        ),
+                        style: AppTypography.bodySmall(
+                          color: colors.textMuted,
+                        ).copyWith(fontSize: 12),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -172,7 +167,7 @@ class BottomProgressDock extends ConsumerWidget {
                     label: 'Repaired',
                     value: '$repaired',
                     colors: colors,
-                    highlightColor: repaired > 0 ? colors.revisedCyan : null,
+                    highlightColor: repaired > 0 ? colors.cyan : null,
                   ),
                   if (avgConf != null) ...[
                     const SizedBox(width: 8),
@@ -190,10 +185,10 @@ class BottomProgressDock extends ConsumerWidget {
               // Right: Cancel Button
               if (isProcessing) ...[
                 const SizedBox(width: 16),
-                DocuVerseButton(
+                AppButton(
                   text: 'Cancel',
-                  variant: DocuVerseButtonVariant.danger,
-                  size: DocuVerseButtonSize.sm,
+                  variant: AppButtonVariant.danger,
+                  size: AppButtonSize.sm,
                   icon: const Icon(Icons.stop_circle_outlined, size: 14),
                   onPressed: () {
                     notifier.cancelOcr();
@@ -209,7 +204,7 @@ class BottomProgressDock extends ConsumerWidget {
   }
 
   Widget _buildStageStepper(
-      DocuVerseThemeTokens colors, WorkstationState state) {
+      AppColorScheme colors, WorkstationState state) {
     const stages = WorkstationState.pipelineStages;
     final currentIdx = state.currentStageIndex;
     final isDone = state.stage == 'Complete';
@@ -268,7 +263,7 @@ class BottomProgressDock extends ConsumerWidget {
             width: 4,
             height: 4,
             decoration: BoxDecoration(
-              color: colors.foregroundSubtle.withValues(alpha: 0.5),
+              color: colors.textMuted.withValues(alpha: 0.5),
               shape: BoxShape.circle,
             ),
           );
@@ -290,15 +285,14 @@ class BottomProgressDock extends ConsumerWidget {
             const SizedBox(width: 4),
             Text(
               stageName,
-              style: TextStyle(
-                fontFamily: DocuVerseTypography.fontBody,
-                fontSize: 10,
-                fontWeight: isStageActive ? FontWeight.w700 : FontWeight.w500,
+              style: AppTypography.micro(
                 color: isStageActive
                     ? colors.brand
                     : isStagePast
-                        ? colors.foreground
-                        : colors.foregroundSubtle,
+                        ? colors.textPrimary
+                        : colors.textMuted,
+              ).copyWith(
+                fontWeight: isStageActive ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
           ],
@@ -310,7 +304,7 @@ class BottomProgressDock extends ConsumerWidget {
   Widget _buildMetricPill({
     required String label,
     required String value,
-    required DocuVerseThemeTokens colors,
+    required AppColorScheme colors,
     Color? highlightColor,
   }) {
     return Container(
@@ -325,20 +319,15 @@ class BottomProgressDock extends ConsumerWidget {
         children: [
           Text(
             '$label: ',
-            style: TextStyle(
-              fontFamily: DocuVerseTypography.fontBody,
-              fontSize: 10,
-              color: colors.foregroundMuted,
+            style: AppTypography.micro(
+              color: colors.textMuted,
             ),
           ),
           Text(
             value,
-            style: TextStyle(
-              fontFamily: DocuVerseTypography.fontMono,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: highlightColor ?? colors.foreground,
-            ),
+            style: AppTypography.codeSmall(
+              color: highlightColor ?? colors.textPrimary,
+            ).copyWith(fontSize: 10, fontWeight: FontWeight.w600),
           ),
         ],
       ),
