@@ -242,15 +242,17 @@ class _AppButtonState extends State<AppButton> {
         children.add(const SizedBox(width: 6));
       }
       children.add(
-        Text(
-          widget.text!,
-          style: AppTypography.labelLarge(
-            color: textColor,
-          ).copyWith(
-            fontSize: widget.size.fontSize,
-            fontWeight: FontWeight.w500,
+        Flexible(
+          child: Text(
+            widget.text!,
+            style: AppTypography.labelLarge(
+              color: textColor,
+            ).copyWith(
+              fontSize: widget.size.fontSize,
+              fontWeight: FontWeight.w500,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
-          overflow: TextOverflow.ellipsis,
         ),
       );
     }

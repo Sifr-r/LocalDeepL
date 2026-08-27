@@ -1,15 +1,17 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/core/theme/app_colors.dart';
+import 'package:omniscribe_client/core/theme/app_typography.dart';
 import 'package:omniscribe_client/data/models/feature_models.dart';
 import 'package:omniscribe_client/data/providers/features_notifier.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_card.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_input.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_modal.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_section_header.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
+import 'package:omniscribe_client/presentation/common/app_badge.dart';
+import 'package:omniscribe_client/presentation/common/app_button.dart';
+import 'package:omniscribe_client/presentation/common/app_card.dart';
+import 'package:omniscribe_client/presentation/common/app_input.dart';
+import 'package:omniscribe_client/presentation/common/app_modal.dart';
+import 'package:omniscribe_client/presentation/common/app_select.dart';
+import 'package:omniscribe_client/presentation/common/section_header.dart';
 
 class GlossaryScreen extends ConsumerStatefulWidget {
   const GlossaryScreen({super.key});
@@ -35,21 +37,20 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
     final urlController = TextEditingController();
     String formatValue = 'json_pairs';
 
-    DocuVerseModal.show<void>(
+    AppModal.show<void>(
       context: context,
       title: 'Import Terminology Glossary',
-      description:
-          'Upload a terminology file or import from a remote lexicon URL',
-      maxWidth: 540,
+      subtitle: 'Upload a terminology file or import from a remote lexicon URL',
+      maxWidth: AppModalWidth.md,
       actions: [
-        DocuVerseButton(
+        AppButton(
           text: 'Cancel',
-          variant: DocuVerseButtonVariant.ghost,
+          variant: AppButtonVariant.ghost,
           onPressed: () => Navigator.of(context).pop(),
         ),
-        DocuVerseButton(
+        AppButton(
           text: 'Import Glossary',
-          variant: DocuVerseButtonVariant.primary,
+          variant: AppButtonVariant.primary,
           onPressed: () async {
             final notifier = ref.read(glossaryProvider.notifier);
             final fmt = GlossaryFormat.fromString(formatValue);
@@ -77,92 +78,63 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
           },
         ),
       ],
-      child: StatefulBuilder(
+      content: StatefulBuilder(
         builder: (modalContext, setModalState) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              DocuVerseInput(
+              AppInput(
                 controller: nameController,
                 label: 'Glossary Name',
                 placeholder: 'e.g. Financial Terms EN-ES',
               ),
               const SizedBox(height: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Format',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: modalContext.docuVerse.foregroundMuted,
-                    ),
+              AppSelect<String>(
+                label: 'Format',
+                value: formatValue,
+                items: const [
+                  AppSelectItem(
+                    value: 'json_pairs',
+                    label: 'JSON Pairs / Paired Text',
                   ),
-                  const SizedBox(height: 6),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    decoration: BoxDecoration(
-                      color: modalContext.docuVerse.cardRaised,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: modalContext.docuVerse.border),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: formatValue,
-                        dropdownColor: modalContext.docuVerse.card,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: modalContext.docuVerse.foreground,
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'json_pairs',
-                            child: Text('JSON Pairs / Paired Text'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'csv',
-                            child: Text('CSV (Comma Separated)'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'tsv',
-                            child: Text('TSV (Tab Separated)'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'tbx',
-                            child: Text('TBX Glossary File'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'xliff',
-                            child: Text('XLIFF Translation File'),
-                          ),
-                        ],
-                        onChanged: (val) {
-                          if (val != null) {
-                            setModalState(() => formatValue = val);
-                          }
-                        },
-                      ),
-                    ),
+                  AppSelectItem(
+                    value: 'csv',
+                    label: 'CSV (Comma Separated)',
+                  ),
+                  AppSelectItem(
+                    value: 'tsv',
+                    label: 'TSV (Tab Separated)',
+                  ),
+                  AppSelectItem(
+                    value: 'tbx',
+                    label: 'TBX Glossary File',
+                  ),
+                  AppSelectItem(
+                    value: 'xliff',
+                    label: 'XLIFF Translation File',
                   ),
                 ],
+                onChanged: (val) {
+                  if (val != null) {
+                    setModalState(() => formatValue = val);
+                  }
+                },
               ),
               const SizedBox(height: 12),
-              DocuVerseInput(
+              AppInput(
                 controller: textController,
                 label: 'Inline Lexicon Content',
                 placeholder: 'source = target\nplaintiff = demandeur',
                 maxLines: 4,
-                isMono: true,
+                monospace: true,
               ),
               const SizedBox(height: 12),
-              DocuVerseInput(
+              AppInput(
                 controller: urlController,
                 label: 'Or Import From URL',
                 placeholder: 'https://example.com/lexicon.json',
-                isMono: true,
+                monospace: true,
               ),
             ],
           );
@@ -175,12 +147,12 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(glossaryProvider);
     final notifier = ref.read(glossaryProvider.notifier);
-    final tokens = context.docuVerse;
+    final colors = context.colors;
 
     final activeCount = state.libraries.where((l) => l.enabled).length;
 
     return Scaffold(
-      backgroundColor: tokens.app,
+      backgroundColor: colors.background,
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -198,27 +170,23 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                       children: [
                         Text(
                           'Terminology Glossary',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: tokens.foreground,
-                            letterSpacing: -0.5,
+                          style: AppTypography.displaySmall(
+                            color: colors.textPrimary,
                           ),
                         ),
                         const SizedBox(width: 10),
-                        DocuVerseBadge(
-                          text: '$activeCount active',
-                          variant: DocuVerseBadgeVariant.success,
-                          hasDot: true,
+                        AppBadge(
+                          label: '$activeCount active',
+                          variant: AppBadgeVariant.success,
+                          style: AppBadgeStyle.filled,
                         ),
                       ],
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Manage domain lexicons, term overrides, and dictionary mappings',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: tokens.foregroundMuted,
+                      style: AppTypography.bodySmall(
+                        color: colors.textMuted,
                       ),
                     ),
                   ],
@@ -229,9 +197,9 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                     Container(
                       padding: const EdgeInsets.all(3),
                       decoration: BoxDecoration(
-                        color: tokens.cardRaised,
+                        color: colors.cardRaised,
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: tokens.border),
+                        border: Border.all(color: colors.border),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -241,7 +209,7 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                             0,
                             state.activeViewIndex,
                             notifier,
-                            tokens,
+                            colors,
                           ),
                           _buildTabButton(
                             state.selectedLibrary != null
@@ -250,22 +218,22 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                             1,
                             state.activeViewIndex,
                             notifier,
-                            tokens,
+                            colors,
                           ),
                           _buildTabButton(
                             'Merged Lexicon (${state.mergedLexicon.length})',
                             2,
                             state.activeViewIndex,
                             notifier,
-                            tokens,
+                            colors,
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(width: 12),
-                    DocuVerseButton(
+                    AppButton(
                       text: 'Import glossary',
-                      variant: DocuVerseButtonVariant.primary,
+                      variant: AppButtonVariant.primary,
                       icon: const Icon(Icons.add, size: 14),
                       onPressed: _showImportModal,
                     ),
@@ -278,10 +246,10 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
             // Views Content
             Expanded(
               child: state.activeViewIndex == 0
-                  ? _buildLibrariesTable(state, notifier, tokens)
+                  ? _buildLibrariesTable(state, notifier, colors)
                   : (state.activeViewIndex == 1
-                      ? _buildEntriesView(state, notifier, tokens)
-                      : _buildMergedView(state, tokens)),
+                      ? _buildEntriesView(state, notifier, colors)
+                      : _buildMergedView(state, colors)),
             ),
           ],
         ),
@@ -294,7 +262,7 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
     int index,
     int activeViewIndex,
     GlossaryNotifier notifier,
-    DocuVerseThemeTokens tokens,
+    AppColorScheme colors,
   ) {
     final isSelected = activeViewIndex == index;
     return InkWell(
@@ -303,7 +271,7 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected ? tokens.card : Colors.transparent,
+          color: isSelected ? colors.surface : Colors.transparent,
           borderRadius: BorderRadius.circular(4),
         ),
         child: Text(
@@ -311,7 +279,7 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
           style: TextStyle(
             fontSize: 12,
             fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-            color: isSelected ? tokens.brand : tokens.foregroundMuted,
+            color: isSelected ? colors.brand : colors.textMuted,
           ),
         ),
       ),
@@ -321,22 +289,22 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
   Widget _buildLibrariesTable(
     GlossaryState state,
     GlossaryNotifier notifier,
-    DocuVerseThemeTokens tokens,
+    AppColorScheme colors,
   ) {
-    return DocuVerseCard(
-      padding: DocuVerseCardPadding.none,
+    return AppCard(
+      padding: AppCardPadding.none,
       child: state.libraries.isEmpty
           ? Center(
               child: Text(
                 'No glossary libraries imported yet. Click "Import glossary" to add terminology.',
-                style: TextStyle(color: tokens.foregroundMuted, fontSize: 13),
+                style: AppTypography.bodySmall(color: colors.textMuted),
               ),
             )
           : ClipRRect(
-              borderRadius: BorderRadius.circular(tokens.radiusCard),
+              borderRadius: BorderRadius.circular(8),
               child: SingleChildScrollView(
                 child: DataTable(
-                  headingRowColor: WidgetStateProperty.all(tokens.cardRaised),
+                  headingRowColor: WidgetStateProperty.all(colors.cardRaised),
                   dataRowColor: WidgetStateProperty.all(Colors.transparent),
                   dividerThickness: 1,
                   horizontalMargin: 16,
@@ -403,72 +371,68 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                         DataCell(
                           Text(
                             '#${lib.priority}',
-                            style: TextStyle(
-                              fontFamily: 'monospace',
-                              fontSize: 12,
-                              color: tokens.foregroundMuted,
+                            style: AppTypography.codeSmall(
+                              color: colors.textMuted,
                             ),
                           ),
                         ),
                         DataCell(
                           Text(
                             lib.name,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                              color: tokens.brand,
-                            ),
+                            style: AppTypography.bodySmall(
+                              color: colors.brand,
+                            ).copyWith(fontWeight: FontWeight.w600),
                           ),
                         ),
                         DataCell(
                           Text(
                             lib.format.value.toUpperCase(),
-                            style: TextStyle(
-                              fontFamily: 'monospace',
-                              fontSize: 11,
-                              color: tokens.foregroundMuted,
+                            style: AppTypography.codeSmall(
+                              color: colors.textMuted,
                             ),
                           ),
                         ),
                         DataCell(
                           Text(
                             '${lib.entryCount}',
-                            style: TextStyle(
-                              fontFamily: 'monospace',
-                              fontSize: 12,
-                              color: tokens.foreground,
+                            style: AppTypography.codeSmall(
+                              color: colors.textPrimary,
                             ),
                           ),
                         ),
                         DataCell(
-                          DocuVerseBadge(
-                            text: lib.enabled ? 'Enabled' : 'Disabled',
-                            variant: lib.enabled
-                                ? DocuVerseBadgeVariant.success
-                                : DocuVerseBadgeVariant.neutral,
-                            hasDot: lib.enabled,
+                          InkWell(
                             onTap: () {
-                              unawaited(notifier.toggleLibrary(lib, !lib.enabled));
+                              unawaited(
+                                  notifier.toggleLibrary(lib, !lib.enabled));
                             },
+                            borderRadius: BorderRadius.circular(10),
+                            child: AppBadge(
+                              label: lib.enabled ? 'Enabled' : 'Disabled',
+                              variant: lib.enabled
+                                  ? AppBadgeVariant.success
+                                  : AppBadgeVariant.neutral,
+                              style: AppBadgeStyle.filled,
+                            ),
                           ),
                         ),
                         DataCell(
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              DocuVerseButton(
+                              AppButton(
                                 text: 'View entries',
-                                variant: DocuVerseButtonVariant.ghost,
-                                size: DocuVerseButtonSize.sm,
+                                variant: AppButtonVariant.ghost,
+                                size: AppButtonSize.sm,
                                 onPressed: () {
                                   unawaited(notifier.loadEntries(lib));
                                 },
                               ),
                               const SizedBox(width: 4),
-                              DocuVerseButton(
+                              AppButton(
                                 text: 'Delete',
-                                variant: DocuVerseButtonVariant.danger,
-                                size: DocuVerseButtonSize.sm,
+                                variant: AppButtonVariant.danger,
+                                size: AppButtonSize.sm,
                                 onPressed: () {
                                   unawaited(notifier.deleteLibrary(lib.id));
                                 },
@@ -488,34 +452,32 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
   Widget _buildEntriesView(
     GlossaryState state,
     GlossaryNotifier notifier,
-    DocuVerseThemeTokens tokens,
+    AppColorScheme colors,
   ) {
-    return DocuVerseCard(
-      padding: DocuVerseCardPadding.md,
+    return AppCard(
+      padding: AppCardPadding.md,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          DocuVerseSectionHeader(
+          SectionHeader(
             title: state.selectedLibrary != null
                 ? '${state.selectedLibrary!.name} (${state.entries.length} terms)'
                 : 'Glossary Entries',
-            description:
-                'Source terms mapped to target domain translations with contextual notes',
-            action: DocuVerseButton(
+            action: AppButton(
               text: 'Back to libraries',
-              variant: DocuVerseButtonVariant.ghost,
-              size: DocuVerseButtonSize.sm,
+              variant: AppButtonVariant.ghost,
+              size: AppButtonSize.sm,
               onPressed: () => notifier.setActiveViewIndex(0),
             ),
           ),
+          const SizedBox(height: 8),
           Expanded(
             child: state.entries.isEmpty
                 ? Center(
                     child: Text(
                       'No terms found in this glossary library.',
-                      style: TextStyle(
-                        color: tokens.foregroundMuted,
-                        fontSize: 13,
+                      style: AppTypography.bodySmall(
+                        color: colors.textMuted,
                       ),
                     ),
                   )
@@ -530,9 +492,9 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                           vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          color: tokens.cardRaised,
+                          color: colors.cardRaised,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: tokens.border),
+                          border: Border.all(color: colors.border),
                         ),
                         child: Row(
                           children: [
@@ -540,30 +502,24 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                               flex: 2,
                               child: Text(
                                 entry.source,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  fontFamily: 'monospace',
-                                  color: tokens.foreground,
-                                ),
+                                style: AppTypography.code(
+                                  color: colors.textPrimary,
+                                ).copyWith(fontWeight: FontWeight.w600),
                               ),
                             ),
                             Icon(
                               Icons.arrow_forward,
                               size: 14,
-                              color: tokens.foregroundSubtle,
+                              color: colors.textMuted,
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               flex: 2,
                               child: Text(
                                 entry.target,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  fontFamily: 'monospace',
-                                  color: tokens.brand,
-                                ),
+                                style: AppTypography.code(
+                                  color: colors.brand,
+                                ).copyWith(fontWeight: FontWeight.w600),
                               ),
                             ),
                             if (entry.note != null && entry.note!.isNotEmpty)
@@ -571,11 +527,9 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                                 flex: 3,
                                 child: Text(
                                   entry.note!,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontStyle: FontStyle.italic,
-                                    color: tokens.foregroundMuted,
-                                  ),
+                                  style: AppTypography.bodySmall(
+                                    color: colors.textMuted,
+                                  ).copyWith(fontStyle: FontStyle.italic),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
@@ -592,28 +546,26 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
 
   Widget _buildMergedView(
     GlossaryState state,
-    DocuVerseThemeTokens tokens,
+    AppColorScheme colors,
   ) {
     final entries = state.mergedLexicon.entries.toList();
 
-    return DocuVerseCard(
-      padding: DocuVerseCardPadding.md,
+    return AppCard(
+      padding: AppCardPadding.md,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const DocuVerseSectionHeader(
+          const SectionHeader(
             title: 'Merged Lexicon Table',
-            description:
-                'Combined active terms from all enabled libraries applied during OCR and translation',
           ),
+          const SizedBox(height: 8),
           Expanded(
             child: entries.isEmpty
                 ? Center(
                     child: Text(
                       'No active merged terms available.',
-                      style: TextStyle(
-                        color: tokens.foregroundMuted,
-                        fontSize: 13,
+                      style: AppTypography.bodySmall(
+                        color: colors.textMuted,
                       ),
                     ),
                   )
@@ -634,9 +586,9 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: tokens.cardRaised,
+                          color: colors.cardRaised,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: tokens.border),
+                          border: Border.all(color: colors.border),
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -644,12 +596,9 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                             Flexible(
                               child: Text(
                                 item.key,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  fontFamily: 'monospace',
-                                  color: tokens.foreground,
-                                ),
+                                style: AppTypography.codeSmall(
+                                  color: colors.textPrimary,
+                                ).copyWith(fontWeight: FontWeight.w600),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
@@ -657,18 +606,15 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                             Icon(
                               Icons.arrow_forward,
                               size: 12,
-                              color: tokens.foregroundSubtle,
+                              color: colors.textMuted,
                             ),
                             const SizedBox(width: 6),
                             Flexible(
                               child: Text(
                                 item.value,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  fontFamily: 'monospace',
-                                  color: tokens.success,
-                                ),
+                                style: AppTypography.codeSmall(
+                                  color: colors.success,
+                                ).copyWith(fontWeight: FontWeight.w600),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),

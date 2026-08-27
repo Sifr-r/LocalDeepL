@@ -44,7 +44,7 @@ enum AppTab {
   ),
   jobs(
     id: 'jobs',
-    label: 'Jobs',
+    label: 'Job History',
     testId: 'app-tab-btn-jobs',
     icon: Icons.layers_outlined,
     selectedIcon: Icons.layers,

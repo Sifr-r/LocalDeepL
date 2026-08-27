@@ -123,6 +123,90 @@ class _AppCardState extends State<AppCard> {
     }
 
     final hasHeader = widget.header != null || widget.title != null;
+    final hasFooter = widget.footer != null;
+
+    Widget content;
+    if (hasHeader || hasFooter) {
+      content = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Optional Header
+          if (hasHeader) ...[
+            if (widget.header != null)
+              widget.header!
+            else
+              Padding(
+                padding: EdgeInsets.only(
+                  left: widget.padding.value,
+                  right: widget.padding.value,
+                  top: widget.padding.value,
+                  bottom: 12,
+                ),
+                child: Row(
+                  children: [
+                    if (widget.headerLeading != null) ...[
+                      widget.headerLeading!,
+                      const SizedBox(width: 8),
+                    ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (widget.title != null)
+                            Text(
+                              widget.title!,
+                              style: AppTypography.titleMedium(
+                                color: colors.textPrimary,
+                              ),
+                            ),
+                          if (widget.subtitle != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              widget.subtitle!,
+                              style: AppTypography.bodySmall(
+                                color: colors.textMuted,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if (widget.headerAction != null) widget.headerAction!,
+                  ],
+                ),
+              ),
+            Divider(height: 1, color: colors.border),
+          ],
+
+          // Card Body Content
+          Flexible(
+            fit: FlexFit.loose,
+            child: Padding(
+              padding: EdgeInsets.all(widget.padding.value),
+              child: widget.child,
+            ),
+          ),
+
+          // Optional Footer
+          if (hasFooter) ...[
+            Divider(height: 1, color: colors.border),
+            Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: widget.padding.value,
+                vertical: 12,
+              ),
+              child: widget.footer!,
+            ),
+          ],
+        ],
+      );
+    } else {
+      content = Padding(
+        padding: EdgeInsets.all(widget.padding.value),
+        child: widget.child,
+      );
+    }
 
     final cardBody = Container(
       width: widget.width,
@@ -135,77 +219,7 @@ class _AppCardState extends State<AppCard> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Optional Header
-            if (hasHeader) ...[
-              if (widget.header != null)
-                widget.header!
-              else
-                Padding(
-                  padding: EdgeInsets.only(
-                    left: widget.padding.value,
-                    right: widget.padding.value,
-                    top: widget.padding.value,
-                    bottom: 12,
-                  ),
-                  child: Row(
-                    children: [
-                      if (widget.headerLeading != null) ...[
-                        widget.headerLeading!,
-                        const SizedBox(width: 8),
-                      ],
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (widget.title != null)
-                              Text(
-                                widget.title!,
-                                style: AppTypography.titleMedium(
-                                  color: colors.textPrimary,
-                                ),
-                              ),
-                            if (widget.subtitle != null) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                widget.subtitle!,
-                                style: AppTypography.bodySmall(
-                                  color: colors.textMuted,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      if (widget.headerAction != null) widget.headerAction!,
-                    ],
-                  ),
-                ),
-              Divider(height: 1, color: colors.border),
-            ],
-
-            // Card Body Content
-            Padding(
-              padding: EdgeInsets.all(widget.padding.value),
-              child: widget.child,
-            ),
-
-            // Optional Footer
-            if (widget.footer != null) ...[
-              Divider(height: 1, color: colors.border),
-              Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: widget.padding.value,
-                  vertical: 12,
-                ),
-                child: widget.footer!,
-              ),
-            ],
-          ],
-        ),
+        child: content,
       ),
     );
 

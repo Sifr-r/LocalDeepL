@@ -27,7 +27,7 @@ class _ServerHealthBadgeState extends ConsumerState<ServerHealthBadge>
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1600),
-    )..repeat(reverse: true);
+    );
 
     _pulseAnimation = Tween<double>(begin: 0.35, end: 1.0).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
@@ -45,6 +45,16 @@ class _ServerHealthBadgeState extends ConsumerState<ServerHealthBadge>
     final colors = context.colors;
     final healthState = ref.watch(serverHealthProvider);
     final statusColor = healthState.status.getColor(context);
+
+    if (healthState.status == ServerHealth.checking) {
+      if (!_pulseController.isAnimating) {
+        _pulseController.repeat(reverse: true);
+      }
+    } else {
+      if (_pulseController.isAnimating) {
+        _pulseController.stop();
+      }
+    }
 
     final tooltipText =
         '${healthState.status.label} • ${healthState.endpoint}\n'

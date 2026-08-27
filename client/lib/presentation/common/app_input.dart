@@ -174,9 +174,11 @@ class _AppInputState extends State<AppInput> {
         if (widget.label != null) ...[
           Row(
             children: [
-              Text(
-                widget.label!,
-                style: AppTypography.captionStrong(color: colors.textSecondary),
+              Flexible(
+                child: Text(
+                  widget.label!,
+                  style: AppTypography.captionStrong(color: colors.textSecondary),
+                ),
               ),
               if (widget.isRequired) ...[
                 const SizedBox(width: 4),

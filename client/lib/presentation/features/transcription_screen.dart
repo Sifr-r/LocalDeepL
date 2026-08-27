@@ -3,15 +3,17 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/core/theme/app_colors.dart';
+import 'package:omniscribe_client/core/theme/app_typography.dart';
 import 'package:omniscribe_client/data/models/feature_models.dart';
 import 'package:omniscribe_client/data/providers/features_notifier.dart';
 import 'package:omniscribe_client/data/providers/settings_notifier.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_card.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_input.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_section_header.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
+import 'package:omniscribe_client/presentation/common/app_badge.dart';
+import 'package:omniscribe_client/presentation/common/app_button.dart';
+import 'package:omniscribe_client/presentation/common/app_card.dart';
+import 'package:omniscribe_client/presentation/common/app_input.dart';
+import 'package:omniscribe_client/presentation/common/app_select.dart';
+import 'package:omniscribe_client/presentation/common/section_header.dart';
 
 class TranscriptionScreen extends ConsumerStatefulWidget {
   const TranscriptionScreen({super.key});
@@ -25,7 +27,6 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
   late final TextEditingController _modelController;
   late final TextEditingController _languageController;
   late final TextEditingController _promptController;
-  Timer? _playbackTimer;
 
   @override
   void initState() {
@@ -50,7 +51,6 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
 
   @override
   void dispose() {
-    _playbackTimer?.cancel();
     _modelController.dispose();
     _languageController.dispose();
     _promptController.dispose();
@@ -89,39 +89,11 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
   }
 
   void _togglePlayback() {
-    final state = ref.read(transcriptionProvider);
-    if (state.isPlaying) {
-      _pausePlayback();
-    } else {
-      _startPlayback();
-    }
-  }
-
-  void _startPlayback() {
-    _playbackTimer?.cancel();
-    final notifier = ref.read(transcriptionProvider.notifier);
-    notifier.setIsPlaying(true);
-
-    _playbackTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      final state = ref.read(transcriptionProvider);
-      if (state.currentPlaybackTime >= state.totalDuration) {
-        timer.cancel();
-        notifier.setIsPlaying(false);
-        notifier.setPlaybackTime(0.0);
-      } else {
-        notifier.setPlaybackTime(state.currentPlaybackTime + 0.1);
-      }
-    });
-  }
-
-  void _pausePlayback() {
-    _playbackTimer?.cancel();
-    ref.read(transcriptionProvider.notifier).setIsPlaying(false);
+    ref.read(transcriptionProvider.notifier).togglePlayback();
   }
 
   void _seekToSegment(TranscriptionSegment segment) {
     ref.read(transcriptionProvider.notifier).seekToSegment(segment);
-    _startPlayback();
   }
 
   void _exportTxt(TranscriptionResponse? result) {
@@ -163,10 +135,10 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(transcriptionProvider);
     final notifier = ref.read(transcriptionProvider.notifier);
-    final tokens = context.docuVerse;
+    final colors = context.colors;
 
     return Scaffold(
-      backgroundColor: tokens.app,
+      backgroundColor: colors.background,
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -184,70 +156,46 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                       children: [
                         Text(
                           'Voice & Audio Transcription',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: tokens.foreground,
-                            letterSpacing: -0.5,
+                          style: AppTypography.displaySmall(
+                            color: colors.textPrimary,
                           ),
                         ),
                         const SizedBox(width: 10),
-                        const DocuVerseBadge(
-                          text: 'Whisper / Faster-Whisper',
-                          variant: DocuVerseBadgeVariant.brand,
+                        const AppBadge(
+                          label: 'Whisper / Faster-Whisper',
+                          variant: AppBadgeVariant.brand,
                         ),
                       ],
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Transcribe speech with timestamped segments and interactive audio player simulation',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: tokens.foregroundMuted,
+                      style: AppTypography.bodySmall(
+                        color: colors.textMuted,
                       ),
                     ),
                   ],
                 ),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      decoration: BoxDecoration(
-                        color: tokens.cardRaised,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: tokens.border),
+                SizedBox(
+                  width: 220,
+                  child: AppSelect<String>(
+                    value: state.engine,
+                    items: const [
+                      AppSelectItem(
+                        value: 'api',
+                        label: 'OpenAI / Remote API',
                       ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: state.engine,
-                          dropdownColor: tokens.card,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: tokens.foreground,
-                          ),
-                          icon: Icon(
-                            Icons.arrow_drop_down,
-                            color: tokens.foregroundMuted,
-                          ),
-                          items: const [
-                            DropdownMenuItem(
-                              value: 'api',
-                              child: Text('OpenAI / Remote API'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'faster-whisper',
-                              child: Text('Faster-Whisper (Local)'),
-                            ),
-                          ],
-                          onChanged: (val) {
-                            if (val != null) {
-                              notifier.setEngine(val);
-                            }
-                          },
-                        ),
+                      AppSelectItem(
+                        value: 'faster-whisper',
+                        label: 'Faster-Whisper (Local)',
                       ),
-                    ),
-                  ],
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        notifier.setEngine(val);
+                      }
+                    },
+                  ),
                 ),
               ],
             ),
@@ -261,15 +209,15 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                   // Left Pane (1/3 width)
                   SizedBox(
                     width: 340,
-                    child: DocuVerseCard(
-                      padding: DocuVerseCardPadding.md,
+                    child: AppCard(
+                      padding: AppCardPadding.md,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const DocuVerseSectionHeader(
+                          const SectionHeader(
                             title: 'Audio File & Controls',
-                            description: 'Select audio (WAV, MP3, M4A, FLAC)',
                           ),
+                          const SizedBox(height: 8),
                           // Dropzone / File Picker Container
                           InkWell(
                             onTap: _pickSampleAudioFile,
@@ -278,12 +226,12 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                               width: double.infinity,
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
-                                color: tokens.cardRaised,
+                                color: colors.cardRaised,
                                 borderRadius: BorderRadius.circular(6),
                                 border: Border.all(
                                   color: state.audioFilename != null
-                                      ? tokens.brand
-                                      : tokens.border,
+                                      ? colors.brand
+                                      : colors.border,
                                   style: BorderStyle.solid,
                                 ),
                               ),
@@ -296,18 +244,16 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                         : Icons.cloud_upload_outlined,
                                     size: 32,
                                     color: state.audioFilename != null
-                                        ? tokens.brand
-                                        : tokens.foregroundMuted,
+                                        ? colors.brand
+                                        : colors.textMuted,
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
                                     state.audioFilename ??
                                         'Click to load audio file',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: tokens.foreground,
-                                    ),
+                                    style: AppTypography.labelMedium(
+                                      color: colors.textPrimary,
+                                    ).copyWith(fontWeight: FontWeight.w600),
                                     textAlign: TextAlign.center,
                                   ),
                                   const SizedBox(height: 4),
@@ -315,9 +261,8 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                     state.audioFilename != null
                                         ? 'Duration: ${state.totalDuration.toStringAsFixed(1)}s'
                                         : 'Supports WAV, MP3, M4A, FLAC, OGG',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: tokens.foregroundMuted,
+                                    style: AppTypography.codeSmall(
+                                      color: colors.textMuted,
                                     ),
                                   ),
                                 ],
@@ -331,9 +276,9 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                             Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: tokens.cardRaised,
+                                color: colors.cardRaised,
                                 borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: tokens.border),
+                                border: Border.all(color: colors.border),
                               ),
                               child: Column(
                                 children: [
@@ -345,7 +290,7 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                               ? Icons.pause_circle_filled
                                               : Icons.play_circle_filled,
                                           size: 28,
-                                          color: tokens.brand,
+                                          color: colors.brand,
                                         ),
                                         onPressed: _togglePlayback,
                                       ),
@@ -362,10 +307,10 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                                 const RoundSliderOverlayShape(
                                               overlayRadius: 10,
                                             ),
-                                            activeTrackColor: tokens.brand,
+                                            activeTrackColor: colors.brand,
                                             inactiveTrackColor:
-                                                tokens.borderStrong,
-                                            thumbColor: tokens.brand,
+                                                colors.borderStrong,
+                                            thumbColor: colors.brand,
                                           ),
                                           child: Slider(
                                             value: state.currentPlaybackTime
@@ -392,18 +337,14 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                     children: [
                                       Text(
                                         '${state.currentPlaybackTime.toStringAsFixed(1)}s',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontFamily: 'monospace',
-                                          color: tokens.foregroundMuted,
+                                        style: AppTypography.codeSmall(
+                                          color: colors.textMuted,
                                         ),
                                       ),
                                       Text(
                                         '${state.totalDuration.toStringAsFixed(1)}s',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontFamily: 'monospace',
-                                          color: tokens.foregroundMuted,
+                                        style: AppTypography.codeSmall(
+                                          color: colors.textMuted,
                                         ),
                                       ),
                                     ],
@@ -415,21 +356,21 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                           ],
 
                           // Inputs
-                          DocuVerseInput(
+                          AppInput(
                             controller: _modelController,
                             label: 'Model ID',
                             placeholder: 'whisper-1',
-                            isMono: true,
+                            monospace: true,
                           ),
                           const SizedBox(height: 10),
-                          DocuVerseInput(
+                          AppInput(
                             controller: _languageController,
                             label: 'Language (ISO Code)',
                             placeholder:
                                 'Auto-detect if blank (e.g. en, fr, de)',
                           ),
                           const SizedBox(height: 10),
-                          DocuVerseInput(
+                          AppInput(
                             controller: _promptController,
                             label: 'Glossary / Vocabulary Prompt',
                             placeholder: 'Optional domain terms...',
@@ -437,11 +378,11 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                           ),
                           const Spacer(),
 
-                          DocuVerseButton(
+                          AppButton(
                             text: state.isTranscribing
                                 ? 'Transcribing…'
                                 : 'Start Transcription',
-                            variant: DocuVerseButtonVariant.primary,
+                            variant: AppButtonVariant.primary,
                             fullWidth: true,
                             loading: state.isTranscribing,
                             disabled: state.audioBytes == null,
@@ -456,33 +397,31 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
 
                   // Right Pane: Timestamped Segments
                   Expanded(
-                    child: DocuVerseCard(
-                      padding: DocuVerseCardPadding.md,
+                    child: AppCard(
+                      padding: AppCardPadding.md,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          DocuVerseSectionHeader(
+                          SectionHeader(
                             title: 'Transcription Segments',
-                            description:
-                                'Click any segment to seek and play from that timestamp',
                             action: state.result != null &&
                                     state.result!.segments.isNotEmpty
                                 ? Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      DocuVerseButton(
+                                      AppButton(
                                         text: 'Export .TXT',
-                                        variant: DocuVerseButtonVariant.ghost,
-                                        size: DocuVerseButtonSize.sm,
+                                        variant: AppButtonVariant.ghost,
+                                        size: AppButtonSize.sm,
                                         onPressed: () =>
                                             _exportTxt(state.result),
                                       ),
                                       const SizedBox(width: 6),
-                                      DocuVerseButton(
+                                      AppButton(
                                         text: 'Export .SRT',
                                         variant:
-                                            DocuVerseButtonVariant.secondary,
-                                        size: DocuVerseButtonSize.sm,
+                                            AppButtonVariant.secondary,
+                                        size: AppButtonSize.sm,
                                         onPressed: () =>
                                             _exportSrt(state.result),
                                       ),
@@ -490,6 +429,7 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                   )
                                 : null,
                           ),
+                          const SizedBox(height: 8),
                           Expanded(
                             child: state.isTranscribing
                                 ? Center(
@@ -499,15 +439,14 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                         CircularProgressIndicator(
                                           valueColor:
                                               AlwaysStoppedAnimation<Color>(
-                                            tokens.brand,
+                                            colors.brand,
                                           ),
                                         ),
                                         const SizedBox(height: 12),
                                         Text(
                                           'Processing audio waveform & extracting tokens…',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: tokens.foregroundMuted,
+                                          style: AppTypography.bodySmall(
+                                            color: colors.textMuted,
                                           ),
                                         ),
                                       ],
@@ -518,9 +457,8 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                     ? Center(
                                         child: Text(
                                           'Select an audio file and click "Start Transcription" to view interactive segments.',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            color: tokens.foregroundSubtle,
+                                          style: AppTypography.bodySmall(
+                                            color: colors.textMuted,
                                           ),
                                         ),
                                       )
@@ -551,15 +489,15 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                               padding: const EdgeInsets.all(12),
                                               decoration: BoxDecoration(
                                                 color: isActive
-                                                    ? tokens.brand
+                                                    ? colors.brand
                                                         .withValues(alpha: 0.15)
-                                                    : tokens.cardRaised,
+                                                    : colors.cardRaised,
                                                 borderRadius:
                                                     BorderRadius.circular(6),
                                                 border: Border.all(
                                                   color: isActive
-                                                      ? tokens.brand
-                                                      : tokens.border,
+                                                      ? colors.brand
+                                                      : colors.border,
                                                 ),
                                               ),
                                               child: Row(
@@ -574,8 +512,8 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                                     ),
                                                     decoration: BoxDecoration(
                                                       color: isActive
-                                                          ? tokens.brand
-                                                          : tokens.card,
+                                                          ? colors.brand
+                                                          : colors.card,
                                                       borderRadius:
                                                           BorderRadius.circular(
                                                         4,
@@ -589,9 +527,9 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                                         fontWeight:
                                                             FontWeight.bold,
                                                         color: isActive
-                                                            ? tokens
+                                                            ? colors
                                                                 .brandForeground
-                                                            : tokens.brand,
+                                                            : colors.brand,
                                                       ),
                                                     ),
                                                   ),
@@ -599,12 +537,9 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                                   Expanded(
                                                     child: Text(
                                                       segment.text,
-                                                      style: TextStyle(
-                                                        fontSize: 13,
-                                                        color:
-                                                            tokens.foreground,
-                                                        height: 1.4,
-                                                      ),
+                                                      style: AppTypography.bodySmall(
+                                                        color: colors.textPrimary,
+                                                      ).copyWith(height: 1.4),
                                                     ),
                                                   ),
                                                 ],

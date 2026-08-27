@@ -27,19 +27,32 @@ class SectionHeader extends StatelessWidget {
     final colors = context.colors;
 
     final headerRow = Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          title.toUpperCase(),
-          style: AppTypography.micro(
-            color: colors.textMuted,
+        Flexible(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  title.toUpperCase(),
+                  style: AppTypography.micro(
+                    color: colors.textMuted,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (badge != null) ...[
+                const SizedBox(width: 8),
+                badge!,
+              ],
+            ],
           ),
         ),
-        if (badge != null) ...[
+        if (action != null) ...[
           const SizedBox(width: 8),
-          badge!,
+          action!,
         ],
-        const Spacer(),
-        if (action != null) action!,
       ],
     );
 

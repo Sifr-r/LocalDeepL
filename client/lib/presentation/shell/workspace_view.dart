@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/core/theme/app_colors.dart';
+import 'package:omniscribe_client/core/theme/app_typography.dart';
 import 'package:omniscribe_client/data/providers/settings_notifier.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_card.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
+import 'package:omniscribe_client/presentation/common/app_badge.dart';
+import 'package:omniscribe_client/presentation/common/app_card.dart';
 
 class WorkspaceView extends ConsumerWidget {
   const WorkspaceView({super.key, required this.onNavigateTab});
@@ -13,7 +14,7 @@ class WorkspaceView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsStateProvider);
-    final tokens = context.docuVerse;
+    final colors = context.colors;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -30,15 +31,15 @@ class WorkspaceView extends ConsumerWidget {
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      tokens.brand.withValues(alpha: 0.2),
-                      tokens.card,
+                      colors.brand.withValues(alpha: 0.2),
+                      colors.card,
                     ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
-                  borderRadius: BorderRadius.circular(tokens.radiusCard + 4),
+                  borderRadius: BorderRadius.circular(12),
                   border:
-                      Border.all(color: tokens.brand.withValues(alpha: 0.3)),
+                      Border.all(color: colors.brand.withValues(alpha: 0.3)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -48,31 +49,31 @@ class WorkspaceView extends ConsumerWidget {
                         Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: tokens.brand,
+                            color: colors.brand,
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Icon(Icons.document_scanner,
                               color: Colors.white, size: 24),
                         ),
                         const SizedBox(width: 14),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'OmniScribe AI Document Suite',
-                              style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: tokens.foreground,
-                                letterSpacing: -0.5,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'OmniScribe AI Document Suite',
+                                style: AppTypography.titleLarge(
+                                  color: colors.textPrimary,
+                                ).copyWith(fontWeight: FontWeight.bold, letterSpacing: -0.5),
                               ),
-                            ),
-                            Text(
-                              'Universal Document OCR, Neural Translation, Voice Transcription & Schema Extraction',
-                              style: TextStyle(
-                                  fontSize: 13, color: tokens.foregroundMuted),
-                            ),
-                          ],
+                              Text(
+                                'Universal Document OCR, Neural Translation, Voice Transcription & Schema Extraction',
+                                style: AppTypography.bodySmall(
+                                  color: colors.textMuted,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -81,20 +82,19 @@ class WorkspaceView extends ConsumerWidget {
                       spacing: 12,
                       runSpacing: 8,
                       children: [
-                        DocuVerseBadge(
-                          text:
+                        AppBadge(
+                          label:
                               'Active Provider: ${settings.activeProviderId.toUpperCase()}',
-                          variant: DocuVerseBadgeVariant.brand,
+                          variant: AppBadgeVariant.brand,
                         ),
-                        DocuVerseBadge(
-                          text:
+                        AppBadge(
+                          label:
                               'Model: ${settings.runtimeConfig?.model ?? 'auto'}',
-                          variant: DocuVerseBadgeVariant.neutral,
+                          variant: AppBadgeVariant.neutral,
                         ),
-                        const DocuVerseBadge(
-                          text: 'Server: Offline',
-                          variant: DocuVerseBadgeVariant.danger,
-                          hasDot: true,
+                        const AppBadge(
+                          label: 'Server: Offline',
+                          variant: AppBadgeVariant.error,
                         ),
                       ],
                     ),
@@ -105,11 +105,8 @@ class WorkspaceView extends ConsumerWidget {
 
               Text(
                 'AI WORKSPACES & MODULES',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: tokens.foregroundMuted,
-                  letterSpacing: 0.8,
+                style: AppTypography.micro(
+                  color: colors.textMuted,
                 ),
               ),
               const SizedBox(height: 12),
@@ -194,13 +191,13 @@ class WorkspaceView extends ConsumerWidget {
     required String badge,
     required VoidCallback onTap,
   }) {
-    final tokens = context.docuVerse;
+    final colors = context.colors;
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(tokens.radiusCard),
-      child: DocuVerseCard(
-        padding: DocuVerseCardPadding.md,
+      borderRadius: BorderRadius.circular(8),
+      child: AppCard(
+        padding: AppCardPadding.md,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -211,14 +208,14 @@ class WorkspaceView extends ConsumerWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: tokens.cardRaised,
+                    color: colors.cardRaised,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: tokens.border),
+                    border: Border.all(color: colors.border),
                   ),
-                  child: Icon(icon, size: 18, color: tokens.brand),
+                  child: Icon(icon, size: 18, color: colors.brand),
                 ),
-                DocuVerseBadge(
-                    text: badge, variant: DocuVerseBadgeVariant.neutral),
+                AppBadge(
+                    label: badge, variant: AppBadgeVariant.neutral),
               ],
             ),
             Column(
@@ -226,16 +223,16 @@ class WorkspaceView extends ConsumerWidget {
               children: [
                 Text(
                   title,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: tokens.foreground,
-                  ),
+                  style: AppTypography.titleSmall(
+                    color: colors.textPrimary,
+                  ).copyWith(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   description,
-                  style: TextStyle(fontSize: 12, color: tokens.foregroundMuted),
+                  style: AppTypography.bodySmall(
+                    color: colors.textMuted,
+                  ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),

@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/core/theme/app_colors.dart';
+import 'package:omniscribe_client/core/theme/app_typography.dart';
 import 'package:omniscribe_client/data/models/provider_preset.dart';
 import 'package:omniscribe_client/data/providers/provider_browser_state.dart';
 import 'package:omniscribe_client/data/providers/provider_notifier.dart';
 import 'package:omniscribe_client/data/providers/settings_notifier.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_input.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_modal.dart';
+import 'package:omniscribe_client/presentation/common/app_badge.dart';
+import 'package:omniscribe_client/presentation/common/app_button.dart';
+import 'package:omniscribe_client/presentation/common/app_input.dart';
+import 'package:omniscribe_client/presentation/common/app_modal.dart';
 import 'provider_card.dart';
 
 class ProviderModal extends ConsumerStatefulWidget {
@@ -29,13 +30,13 @@ class ProviderModal extends ConsumerStatefulWidget {
     String targetNamespace = 'ocr',
     VoidCallback? onApplied,
   }) {
-    return DocuVerseModal.show(
+    return AppModal.show(
       context: context,
       title: 'LLM Provider Browser',
-      description:
+      subtitle:
           'Select and configure AI model endpoints for $targetNamespace processing',
-      maxWidth: 720,
-      child: ProviderModal(
+      maxWidth: AppModalWidth.xl,
+      content: ProviderModal(
         initialProvider: initialProvider,
         targetNamespace: targetNamespace,
         onApplied: onApplied,
@@ -164,10 +165,10 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
   Widget build(BuildContext context) {
     final state = ref.watch(providerBrowserProvider);
     final config = ref.watch(settingsStateProvider);
-    final tokens = context.docuVerse;
+    final colors = context.colors;
 
     if (_selectedProvider != null) {
-      return _buildConnectForm(tokens, state);
+      return _buildConnectForm(colors, state);
     }
 
     return Column(
@@ -175,12 +176,11 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
       mainAxisSize: MainAxisSize.min,
       children: [
         // Search bar
-        DocuVerseInput(
+        AppInput(
           controller: _searchController,
           placeholder:
               'Search providers (e.g. OpenAI, Anthropic, Ollama, LM Studio...)',
-          prefixIcon:
-              Icon(Icons.search, size: 16, color: tokens.foregroundMuted),
+          prefixIcon: Icon(Icons.search, size: 16, color: colors.textMuted),
           onChanged: (q) =>
               ref.read(providerBrowserProvider.notifier).setSearchQuery(q),
         ),
@@ -191,7 +191,7 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
             child: Padding(
               padding: const EdgeInsets.all(32),
               child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(tokens.brand),
+                valueColor: AlwaysStoppedAnimation<Color>(colors.brand),
               ),
             ),
           ),
@@ -201,7 +201,7 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
               padding: const EdgeInsets.all(32),
               child: Text(
                 'No providers found matching "${_searchController.text}".',
-                style: TextStyle(color: tokens.foregroundMuted, fontSize: 13),
+                style: AppTypography.bodySmall(color: colors.textMuted),
               ),
             ),
           ),
@@ -210,11 +210,8 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
           if (state.popularProviders.isNotEmpty) ...[
             Text(
               'POPULAR PROVIDERS',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: tokens.foregroundMuted,
-                letterSpacing: 0.8,
+              style: AppTypography.micro(
+                color: colors.textMuted,
               ),
             ),
             const SizedBox(height: 8),
@@ -259,11 +256,8 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
           if (state.otherProviders.isNotEmpty) ...[
             Text(
               'LOCAL & CLOUD PROVIDERS',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: tokens.foregroundMuted,
-                letterSpacing: 0.8,
+              style: AppTypography.micro(
+                color: colors.textMuted,
               ),
             ),
             const SizedBox(height: 8),
@@ -308,7 +302,7 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
   }
 
   Widget _buildConnectForm(
-      DocuVerseThemeTokens tokens, ProviderBrowserState state) {
+      AppColorScheme colors, ProviderBrowserState state) {
     final p = _selectedProvider!;
     final availableModels = state.modelsMap[p.id] ?? p.models;
 
@@ -329,23 +323,23 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.arrow_back, size: 14, color: tokens.brand),
+                  Icon(Icons.arrow_back, size: 14, color: colors.brand),
                   const SizedBox(width: 4),
                   Text(
                     'All providers',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: tokens.brand,
-                    ),
+                    style: AppTypography.bodySmall(
+                      color: colors.brand,
+                    ).copyWith(fontWeight: FontWeight.w600),
                   ),
                 ],
               ),
             ),
             const Spacer(),
             if (p.isRecommended ?? false)
-              const DocuVerseBadge(
-                  text: 'Recommended', variant: DocuVerseBadgeVariant.info),
+              const AppBadge(
+                label: 'Recommended',
+                variant: AppBadgeVariant.info,
+              ),
           ],
         ),
         const SizedBox(height: 12),
@@ -353,34 +347,31 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: tokens.cardRaised,
-            borderRadius: BorderRadius.circular(tokens.radiusCard),
-            border: Border.all(color: tokens.border),
+            color: colors.cardRaised,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: colors.border),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 'Configuring ${p.name}',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: tokens.foreground,
-                ),
+                style: AppTypography.bodyLarge(
+                  color: colors.textPrimary,
+                ).copyWith(fontWeight: FontWeight.w600),
               ),
               if (p.description.isNotEmpty) ...[
                 const SizedBox(height: 2),
                 Text(
                   p.description,
-                  style: TextStyle(fontSize: 12, color: tokens.foregroundMuted),
+                  style: AppTypography.bodySmall(color: colors.textMuted),
                 ),
               ],
               if (p.notes.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(
                   p.notes,
-                  style:
-                      TextStyle(fontSize: 11, color: tokens.foregroundSubtle),
+                  style: AppTypography.codeSmall(color: colors.textMuted),
                 ),
               ],
             ],
@@ -389,27 +380,27 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
         const SizedBox(height: 16),
 
         // Fields
-        DocuVerseInput(
+        AppInput(
           controller: _apiBaseController,
           label: 'API Base URL',
           placeholder: p.recommendedBaseUrl.isNotEmpty
               ? p.recommendedBaseUrl
               : 'http://localhost:1234/v1',
-          hint: 'The OpenAI-compatible endpoint URL',
-          isMono: true,
+          helperText: 'The OpenAI-compatible endpoint URL',
+          monospace: true,
         ),
         const SizedBox(height: 12),
 
-        DocuVerseInput(
+        AppInput(
           controller: _apiKeyController,
           label: 'API Key',
           placeholder:
               p.requiresKey ? 'Enter API Key...' : 'Optional / Not required',
-          isPassword: true,
-          hint: p.envKeys.isNotEmpty
+          obscureText: true,
+          helperText: p.envKeys.isNotEmpty
               ? 'Environment variable: ${p.envKeys.join(", ")}'
               : null,
-          isMono: true,
+          monospace: true,
         ),
         const SizedBox(height: 12),
 
@@ -421,11 +412,9 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
               children: [
                 Text(
                   'Model ID',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: tokens.foregroundMuted,
-                  ),
+                  style: AppTypography.labelMedium(
+                    color: colors.textMuted,
+                  ).copyWith(fontWeight: FontWeight.w600),
                 ),
                 if (availableModels.isNotEmpty)
                   PopupMenuButton<String>(
@@ -435,10 +424,9 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
                           vertical: 2, horizontal: 4),
                       child: Text(
                         'Select model (${availableModels.length})',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: tokens.brand,
-                            fontWeight: FontWeight.w500),
+                        style: AppTypography.bodySmall(
+                          color: colors.brand,
+                        ).copyWith(fontWeight: FontWeight.w500),
                       ),
                     ),
                     itemBuilder: (context) => availableModels
@@ -446,8 +434,9 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
                           (m) => PopupMenuItem<String>(
                             value: m,
                             child: Text(m,
-                                style: const TextStyle(
-                                    fontSize: 12, fontFamily: 'monospace')),
+                                style: AppTypography.codeSmall(
+                                  color: colors.textPrimary,
+                                )),
                           ),
                         )
                         .toList(),
@@ -458,11 +447,11 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
               ],
             ),
             const SizedBox(height: 6),
-            DocuVerseInput(
+            AppInput(
               controller: _modelController,
               placeholder:
                   'e.g. allenai/olmocr-2-7b, gpt-4o, claude-3-5-sonnet',
-              isMono: true,
+              monospace: true,
             ),
           ],
         ),
@@ -474,13 +463,13 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: _testSuccess
-                  ? tokens.success.withValues(alpha: 0.12)
-                  : tokens.danger.withValues(alpha: 0.12),
+                  ? colors.success.withValues(alpha: 0.12)
+                  : colors.error.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
                 color: _testSuccess
-                    ? tokens.success.withValues(alpha: 0.35)
-                    : tokens.danger.withValues(alpha: 0.35),
+                    ? colors.success.withValues(alpha: 0.35)
+                    : colors.error.withValues(alpha: 0.35),
               ),
             ),
             child: Row(
@@ -490,16 +479,14 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
                       ? Icons.check_circle_outline
                       : Icons.error_outline,
                   size: 16,
-                  color: _testSuccess ? tokens.success : tokens.danger,
+                  color: _testSuccess ? colors.success : colors.error,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     _testMessage!,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _testSuccess ? tokens.success : tokens.danger,
-                      fontFamily: 'monospace',
+                    style: AppTypography.codeSmall(
+                      color: _testSuccess ? colors.success : colors.error,
                     ),
                   ),
                 ),
@@ -513,18 +500,18 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            DocuVerseButton(
+            AppButton(
               text: 'Test connection',
-              variant: DocuVerseButtonVariant.secondary,
+              variant: AppButtonVariant.secondary,
               loading: _isTesting,
               onPressed: _runConnectionTest,
               icon: const Icon(Icons.bolt, size: 14),
             ),
             Row(
               children: [
-                DocuVerseButton(
+                AppButton(
                   text: 'Cancel',
-                  variant: DocuVerseButtonVariant.ghost,
+                  variant: AppButtonVariant.ghost,
                   onPressed: () {
                     setState(() {
                       _selectedProvider = null;
@@ -532,9 +519,9 @@ class _ProviderModalState extends ConsumerState<ProviderModal> {
                   },
                 ),
                 const SizedBox(width: 8),
-                DocuVerseButton(
+                AppButton(
                   text: 'Apply as active',
-                  variant: DocuVerseButtonVariant.primary,
+                  variant: AppButtonVariant.primary,
                   loading: _isSaving,
                   onPressed: _applyProvider,
                 ),

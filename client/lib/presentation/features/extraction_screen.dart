@@ -3,13 +3,14 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/core/theme/app_colors.dart';
+import 'package:omniscribe_client/core/theme/app_typography.dart';
 import 'package:omniscribe_client/data/providers/features_notifier.dart';
 import 'package:omniscribe_client/data/providers/settings_notifier.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_card.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_section_header.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
+import 'package:omniscribe_client/presentation/common/app_badge.dart';
+import 'package:omniscribe_client/presentation/common/app_button.dart';
+import 'package:omniscribe_client/presentation/common/app_card.dart';
+import 'package:omniscribe_client/presentation/common/section_header.dart';
 
 class ExtractionScreen extends ConsumerStatefulWidget {
   const ExtractionScreen({super.key});
@@ -85,10 +86,10 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(extractionProvider);
     final notifier = ref.read(extractionProvider.notifier);
-    final tokens = context.docuVerse;
+    final colors = context.colors;
 
     return Scaffold(
-      backgroundColor: tokens.app,
+      backgroundColor: colors.background,
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -106,26 +107,22 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                       children: [
                         Text(
                           'Structured Information Extraction',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: tokens.foreground,
-                            letterSpacing: -0.5,
+                          style: AppTypography.displaySmall(
+                            color: colors.textPrimary,
                           ),
                         ),
                         const SizedBox(width: 10),
-                        const DocuVerseBadge(
-                          text: 'JSON Schema / AST',
-                          variant: DocuVerseBadgeVariant.brand,
+                        const AppBadge(
+                          label: 'JSON Schema / AST',
+                          variant: AppBadgeVariant.brand,
                         ),
                       ],
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Extract strongly-typed entities, tables, invoices, and key-values from OCR document trees',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: tokens.foregroundMuted,
+                      style: AppTypography.bodySmall(
+                        color: colors.textMuted,
                       ),
                     ),
                   ],
@@ -134,9 +131,9 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                 Container(
                   padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
-                    color: tokens.cardRaised,
+                    color: colors.cardRaised,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: tokens.border),
+                    border: Border.all(color: colors.border),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -152,8 +149,9 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                             vertical: 5,
                           ),
                           decoration: BoxDecoration(
-                            color:
-                                isSelected ? tokens.card : Colors.transparent,
+                            color: isSelected
+                                ? colors.surface
+                                : Colors.transparent,
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
@@ -164,8 +162,8 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                                   ? FontWeight.w600
                                   : FontWeight.normal,
                               color: isSelected
-                                  ? tokens.brand
-                                  : tokens.foregroundMuted,
+                                  ? colors.brand
+                                  : colors.textMuted,
                             ),
                           ),
                         ),
@@ -184,15 +182,13 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                 children: [
                   // Left Pane: Input Text & Custom Prompt
                   Expanded(
-                    child: DocuVerseCard(
-                      padding: DocuVerseCardPadding.md,
+                    child: AppCard(
+                      padding: AppCardPadding.md,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          DocuVerseSectionHeader(
+                          SectionHeader(
                             title: 'Input Text / Document Artifact',
-                            description:
-                                'Source text containing unstructured information',
                             action: _inputTextController.text.isNotEmpty
                                 ? InkWell(
                                     onTap: () {
@@ -201,32 +197,29 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                                       setState(() {});
                                     },
                                     child: Text(
-                                      'Clear',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: tokens.danger,
+                                       'Clear',
+                                      style: AppTypography.codeSmall(
+                                        color: colors.error,
                                       ),
                                     ),
                                   )
                                 : null,
                           ),
+                          const SizedBox(height: 8),
                           Expanded(
                             child: TextField(
                               controller: _inputTextController,
                               maxLines: null,
                               expands: true,
                               onChanged: notifier.setInputText,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: tokens.foreground,
-                                fontFamily: 'monospace',
+                              style: AppTypography.code(
+                                color: colors.textPrimary,
                               ),
                               decoration: InputDecoration(
                                 hintText:
                                     'Paste invoice text, resume, receipt, or academic table here…',
-                                hintStyle: TextStyle(
-                                  fontSize: 13,
-                                  color: tokens.foregroundSubtle,
+                                hintStyle: AppTypography.code(
+                                  color: colors.textMuted,
                                 ),
                                 border: InputBorder.none,
                               ),
@@ -234,15 +227,13 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                           ),
                           if (state.selectedTemplate == 'custom') ...[
                             const SizedBox(height: 12),
-                            Divider(color: tokens.border, height: 1),
+                            Divider(color: colors.border, height: 1),
                             const SizedBox(height: 8),
                             Text(
                               'Custom JSON Schema Definition',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: tokens.foregroundMuted,
-                              ),
+                              style: AppTypography.labelMedium(
+                                color: colors.textMuted,
+                              ).copyWith(fontWeight: FontWeight.w600),
                             ),
                             const SizedBox(height: 6),
                             SizedBox(
@@ -252,29 +243,27 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                                 maxLines: null,
                                 expands: true,
                                 onChanged: notifier.setCustomSchema,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: tokens.success,
-                                  fontFamily: 'monospace',
+                                style: AppTypography.code(
+                                  color: colors.success,
                                 ),
                                 decoration: InputDecoration(
                                   filled: true,
-                                  fillColor: tokens.cardRaised,
+                                  fillColor: colors.cardRaised,
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(6),
                                     borderSide:
-                                        BorderSide(color: tokens.border),
+                                        BorderSide(color: colors.border),
                                   ),
                                 ),
                               ),
                             ),
                           ],
                           const SizedBox(height: 14),
-                          DocuVerseButton(
+                          AppButton(
                             text: state.isExtracting
                                 ? 'Extracting…'
                                 : 'Run Structured Extraction',
-                            variant: DocuVerseButtonVariant.primary,
+                            variant: AppButtonVariant.primary,
                             fullWidth: true,
                             loading: state.isExtracting,
                             icon: const Icon(Icons.auto_fix_high, size: 16),
@@ -288,34 +277,33 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
 
                   // Right Pane: Extracted JSON AST Output
                   Expanded(
-                    child: DocuVerseCard(
-                      padding: DocuVerseCardPadding.md,
+                    child: AppCard(
+                      padding: AppCardPadding.md,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          DocuVerseSectionHeader(
+                          SectionHeader(
                             title: 'Extracted Output AST',
-                            description:
-                                'Typed JSON structure validated against selected schema',
                             action: state.extractedData != null
-                                ? DocuVerseButton(
+                                ? AppButton(
                                     text: 'Copy JSON',
-                                    variant: DocuVerseButtonVariant.ghost,
-                                    size: DocuVerseButtonSize.sm,
+                                    variant: AppButtonVariant.ghost,
+                                    size: AppButtonSize.sm,
                                     icon: const Icon(Icons.copy, size: 14),
                                     onPressed: () =>
                                         _copyJson(state.extractedData),
                                   )
                                 : null,
                           ),
+                          const SizedBox(height: 8),
                           Expanded(
                             child: Container(
                               width: double.infinity,
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: tokens.cardRaised,
+                                color: colors.cardRaised,
                                 borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: tokens.border),
+                                border: Border.all(color: colors.border),
                               ),
                               child: state.isExtracting
                                   ? Center(
@@ -325,15 +313,14 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                                           CircularProgressIndicator(
                                             valueColor:
                                                 AlwaysStoppedAnimation<Color>(
-                                              tokens.brand,
+                                              colors.brand,
                                             ),
                                           ),
                                           const SizedBox(height: 12),
                                           Text(
                                             'Parsing entities and validating against schema…',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: tokens.foregroundMuted,
+                                            style: AppTypography.bodySmall(
+                                              color: colors.textMuted,
                                             ),
                                           ),
                                         ],
@@ -344,20 +331,16 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                                           child: SelectableText(
                                             const JsonEncoder.withIndent('  ')
                                                 .convert(state.extractedData),
-                                            style: TextStyle(
-                                              fontSize: 12.5,
-                                              fontFamily: 'monospace',
-                                              color: tokens.success,
-                                              height: 1.4,
-                                            ),
+                                            style: AppTypography.code(
+                                              color: colors.success,
+                                            ).copyWith(height: 1.4),
                                           ),
                                         )
                                       : Center(
                                           child: Text(
                                             'Extracted JSON output structure will appear here after extraction.',
-                                            style: TextStyle(
-                                              fontSize: 13,
-                                              color: tokens.foregroundSubtle,
+                                            style: AppTypography.bodySmall(
+                                              color: colors.textMuted,
                                             ),
                                           ),
                                         ),

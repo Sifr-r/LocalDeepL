@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:omniscribe_client/core/theme/app_colors.dart';
+import 'package:omniscribe_client/core/theme/app_typography.dart';
 import 'package:omniscribe_client/data/models/provider_preset.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
+import 'package:omniscribe_client/presentation/common/app_badge.dart';
+import 'package:omniscribe_client/presentation/common/app_button.dart';
 
 class ProviderCard extends StatefulWidget {
   const ProviderCard({
@@ -49,16 +50,16 @@ class _ProviderCardState extends State<ProviderCard> {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = context.docuVerse;
+    final colors = context.colors;
     final effectiveModels =
         widget.models.isNotEmpty ? widget.models : widget.provider.models;
 
     return Container(
       decoration: BoxDecoration(
-        color: tokens.cardRaised,
-        borderRadius: BorderRadius.circular(tokens.radiusCard),
+        color: colors.cardRaised,
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: widget.isActive ? tokens.brand : tokens.border,
+          color: widget.isActive ? colors.brand : colors.border,
           width: widget.isActive ? 1.5 : 1,
         ),
       ),
@@ -75,14 +76,14 @@ class _ProviderCardState extends State<ProviderCard> {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: tokens.card,
+                  color: colors.surface,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: tokens.borderStrong),
+                  border: Border.all(color: colors.borderStrong),
                 ),
                 child: Icon(
                   _getProviderIcon(widget.provider.id),
                   size: 18,
-                  color: widget.isActive ? tokens.brand : tokens.foreground,
+                  color: widget.isActive ? colors.brand : colors.textPrimary,
                 ),
               ),
               const SizedBox(width: 10),
@@ -96,41 +97,38 @@ class _ProviderCardState extends State<ProviderCard> {
                         Flexible(
                           child: Text(
                             widget.provider.name,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: tokens.foreground,
-                            ),
+                            style: AppTypography.bodyMedium(
+                              color: colors.textPrimary,
+                            ).copyWith(fontWeight: FontWeight.w600),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         if (widget.isActive) ...[
                           const SizedBox(width: 6),
-                          const DocuVerseBadge(
-                            text: 'Active',
-                            variant: DocuVerseBadgeVariant.brand,
-                            hasDot: true,
+                          const AppBadge(
+                            label: 'Active',
+                            variant: AppBadgeVariant.brand,
                           ),
                         ],
                         if (widget.provider.isRecommended ?? false) ...[
                           const SizedBox(width: 6),
-                          const DocuVerseBadge(
-                            text: 'Recommended',
-                            variant: DocuVerseBadgeVariant.info,
+                          const AppBadge(
+                            label: 'Recommended',
+                            variant: AppBadgeVariant.info,
                           ),
                         ],
                         if (!widget.provider.requiresKey) ...[
                           const SizedBox(width: 6),
-                          const DocuVerseBadge(
-                            text: 'Local',
-                            variant: DocuVerseBadgeVariant.success,
+                          const AppBadge(
+                            label: 'Local',
+                            variant: AppBadgeVariant.success,
                           ),
                         ],
                         if (widget.provider.isCustom ?? false) ...[
                           const SizedBox(width: 6),
-                          const DocuVerseBadge(
-                            text: 'Custom',
-                            variant: DocuVerseBadgeVariant.warning,
+                          const AppBadge(
+                            label: 'Custom',
+                            variant: AppBadgeVariant.warning,
                           ),
                         ],
                       ],
@@ -139,9 +137,8 @@ class _ProviderCardState extends State<ProviderCard> {
                       const SizedBox(height: 2),
                       Text(
                         widget.provider.description,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: tokens.foregroundMuted,
+                        style: AppTypography.bodySmall(
+                          color: colors.textMuted,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -154,26 +151,21 @@ class _ProviderCardState extends State<ProviderCard> {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  DocuVerseButton(
+                  AppButton(
                     onPressed:
                         widget.isLoadingModels ? null : widget.onRefreshModels,
-                    variant: DocuVerseButtonVariant.ghost,
-                    size: DocuVerseButtonSize.sm,
-                    icon: Icon(
-                      Icons.refresh,
-                      size: 14,
-                      color: tokens.foregroundMuted,
-                    ),
-                    tooltip: 'Refresh models',
+                    variant: AppButtonVariant.ghost,
+                    size: AppButtonSize.sm,
+                    icon: const Icon(Icons.refresh, size: 14),
                   ),
                   const SizedBox(width: 4),
-                  DocuVerseButton(
+                  AppButton(
                     text: widget.isActive ? 'Configure' : 'Connect',
                     onPressed: widget.onConnect,
                     variant: widget.isActive
-                        ? DocuVerseButtonVariant.primary
-                        : DocuVerseButtonVariant.secondary,
-                    size: DocuVerseButtonSize.sm,
+                        ? AppButtonVariant.primary
+                        : AppButtonVariant.secondary,
+                    size: AppButtonSize.sm,
                   ),
                 ],
               ),
@@ -185,9 +177,9 @@ class _ProviderCardState extends State<ProviderCard> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: tokens.card,
+              color: colors.surface,
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: tokens.border.withValues(alpha: 0.5)),
+              border: Border.all(color: colors.border.withValues(alpha: 0.5)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -211,30 +203,28 @@ class _ProviderCardState extends State<ProviderCard> {
                               child: CircularProgressIndicator(
                                 strokeWidth: 1.5,
                                 valueColor:
-                                    AlwaysStoppedAnimation<Color>(tokens.brand),
+                                    AlwaysStoppedAnimation<Color>(colors.brand),
                               ),
                             ),
                             const SizedBox(width: 6),
                             Text(
                               'Discovering models…',
-                              style: TextStyle(
-                                  fontSize: 11, color: tokens.foregroundMuted),
+                              style: AppTypography.bodySmall(
+                                color: colors.textMuted,
+                              ),
                             ),
                           ] else ...[
                             Text(
                               '${effectiveModels.length} models available',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                                color: tokens.foregroundMuted,
-                              ),
+                              style: AppTypography.bodySmall(
+                                color: colors.textMuted,
+                              ).copyWith(fontWeight: FontWeight.w500),
                             ),
                             if (widget.provider.defaultModel.isNotEmpty) ...[
                               Text(
                                 ' (default: ${widget.provider.defaultModel})',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: tokens.foregroundSubtle,
+                                style: AppTypography.bodySmall(
+                                  color: colors.textMuted,
                                 ),
                               ),
                             ],
@@ -246,14 +236,14 @@ class _ProviderCardState extends State<ProviderCard> {
                             ? Icons.keyboard_arrow_up
                             : Icons.keyboard_arrow_down,
                         size: 16,
-                        color: tokens.foregroundMuted,
+                        color: colors.textMuted,
                       ),
                     ],
                   ),
                 ),
                 if (_isExpanded && effectiveModels.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  Divider(color: tokens.border, height: 1),
+                  Divider(color: colors.border, height: 1),
                   const SizedBox(height: 6),
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxHeight: 140),
@@ -268,10 +258,8 @@ class _ProviderCardState extends State<ProviderCard> {
                             Expanded(
                               child: Text(
                                 modelName,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontFamily: 'monospace',
-                                  color: tokens.foreground,
+                                style: AppTypography.codeSmall(
+                                  color: colors.textPrimary,
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -283,11 +271,9 @@ class _ProviderCardState extends State<ProviderCard> {
                                     horizontal: 6, vertical: 2),
                                 child: Text(
                                   'Use',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: tokens.brand,
-                                  ),
+                                  style: AppTypography.codeSmall(
+                                    color: colors.brand,
+                                  ).copyWith(fontWeight: FontWeight.w600),
                                 ),
                               ),
                             ),

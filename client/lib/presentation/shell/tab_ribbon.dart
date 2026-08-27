@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omniscribe_client/core/enums/app_tab.dart';
 import 'package:omniscribe_client/core/theme/app_colors.dart';
 import 'package:omniscribe_client/core/theme/app_typography.dart';
+import 'package:omniscribe_client/data/providers/settings_notifier.dart';
 import 'package:omniscribe_client/presentation/common/app_badge.dart';
+import 'package:omniscribe_client/presentation/providers/provider_modal.dart';
 import 'server_health_badge.dart';
 import 'shell_state.dart';
 
@@ -22,8 +24,8 @@ class TabRibbon extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final activeTab = ref.watch(activeTabProvider);
-    final themeMode = ref.watch(themeModeProvider);
-    final providerPreset = ref.watch(activeProviderPresetProvider);
+    final settings = ref.watch(settingsStateProvider);
+    final providerPreset = settings.activeProviderId.toUpperCase();
 
     return Container(
       height: 56,
@@ -39,7 +41,7 @@ class TabRibbon extends ConsumerWidget {
           // -------------------------------------------------------------------
           // Brand Logo & Version
           // -------------------------------------------------------------------
-          _buildBrand(context, colors),
+          _buildBrand(context, colors, ref),
           const SizedBox(width: 24),
 
           // -------------------------------------------------------------------
@@ -74,7 +76,11 @@ class TabRibbon extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               // Provider Preset Pill
-              _ProviderPresetPill(providerName: providerPreset),
+              InkWell(
+                onTap: () => ProviderModal.show(context),
+                borderRadius: BorderRadius.circular(14),
+                child: _ProviderPresetPill(providerName: providerPreset),
+              ),
               const SizedBox(width: 8),
 
               // Server Health Badge
@@ -83,12 +89,14 @@ class TabRibbon extends ConsumerWidget {
 
               // Dark / Light Theme Toggle
               _ThemeToggleButton(
-                isDark: themeMode == ThemeMode.dark,
+                isDark: settings.isDarkMode,
                 onToggle: () {
+                  final nextIsDark = !settings.isDarkMode;
                   ref.read(themeModeProvider.notifier).state =
-                      themeMode == ThemeMode.dark
-                          ? ThemeMode.light
-                          : ThemeMode.dark;
+                      nextIsDark ? ThemeMode.dark : ThemeMode.light;
+                  ref
+                      .read(settingsStateProvider.notifier)
+                      .toggleDarkMode(nextIsDark);
                 },
               ),
             ],
@@ -98,61 +106,68 @@ class TabRibbon extends ConsumerWidget {
     );
   }
 
-  Widget _buildBrand(BuildContext context, AppColorScheme colors) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        // Glowing brand logo glyph
-        Container(
-          width: 30,
-          height: 30,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.brand,
-                AppColors.cyan,
+  Widget _buildBrand(
+      BuildContext context, AppColorScheme colors, WidgetRef ref) {
+    return InkWell(
+      onTap: () {
+        ref.read(activeTabProvider.notifier).state = AppTab.workstation;
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Glowing brand logo glyph
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppColors.brand,
+                  AppColors.cyan,
+                ],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.brand.withValues(alpha: 0.35),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
               ],
             ),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.brand.withValues(alpha: 0.35),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
+            child: const Center(
+              child: Icon(
+                Icons.auto_awesome,
+                size: 16,
+                color: Colors.white,
               ),
-            ],
-          ),
-          child: const Center(
-            child: Icon(
-              Icons.auto_awesome,
-              size: 16,
-              color: Colors.white,
             ),
           ),
-        ),
-        const SizedBox(width: 10),
+          const SizedBox(width: 10),
 
-        // Brand Name
-        Text(
-          'OmniScribe',
-          style: AppTypography.displaySmall(color: colors.textPrimary).copyWith(
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.2,
+          // Brand Name
+          Text(
+            'OmniScribe',
+            style: AppTypography.displaySmall(color: colors.textPrimary).copyWith(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.2,
+            ),
           ),
-        ),
-        const SizedBox(width: 8),
+          const SizedBox(width: 8),
 
-        // Version Pill
-        const AppBadge(
-          label: 'v2.0',
-          variant: AppBadgeVariant.neutral,
-          size: AppBadgeSize.sm,
-        ),
-      ],
+          // Version Pill
+          const AppBadge(
+            label: 'v2.0',
+            variant: AppBadgeVariant.neutral,
+            size: AppBadgeSize.sm,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -199,8 +214,10 @@ class _TabButtonState extends State<_TabButton> {
         cursor: SystemMouseCursors.click,
         onEnter: (_) => setState(() => _isHovered = true),
         onExit: (_) => setState(() => _isHovered = false),
-        child: GestureDetector(
+        child: InkWell(
+          key: ValueKey(widget.tab.testId),
           onTap: widget.onTap,
+          borderRadius: BorderRadius.circular(6),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 160),
             curve: Curves.easeOut,
