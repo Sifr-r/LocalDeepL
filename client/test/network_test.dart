@@ -142,6 +142,12 @@ void main() {
         unauthInvocations++;
       });
       final dio = flagged.rawDio;
+      // The per-method catch-block pattern owns the onUnauthorized hook
+      // (the centralized onError interceptor approach was tried but
+      // reverted: Dio's onError chain only fires for transport-layer
+      // failures, not for handler.reject() in onRequest). Clear and add
+      // the test interceptor so the request fails with 401 the same way
+      // it would for a real server response.
       dio.interceptors.clear();
       dio.interceptors.add(
         InterceptorsWrapper(
@@ -160,10 +166,6 @@ void main() {
         ),
       );
 
-      // The exception must still propagate (callback is for UI flagging only).
-      // Use explicit try/catch + await so the catch block runs BEFORE we
-      // check the counter — `expect(throwsA)` returns before the Dio
-      // catch-block future has settled.
       try {
         await flagged.get<dynamic>('/test');
         fail('expected UnauthorizedException');
