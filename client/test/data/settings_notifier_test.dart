@@ -47,12 +47,8 @@ void main() {
         'ocr_provider': 'openai',
       });
       when(() => repo.getConfig()).thenAnswer((_) async => config);
-      when(() => repo.getModels(namespace: 'ocr'))
+      when(() => repo.getModelsForProvider('openai'))
           .thenAnswer((_) async => ['allenai/olmocr-2-7b', 'qwen2-vl']);
-      when(() => repo.getModels(namespace: 'translation'))
-          .thenAnswer((_) async => ['nllb-200']);
-      when(() => repo.getModels(namespace: 'transcription'))
-          .thenAnswer((_) async => ['whisper-1']);
 
       final container = makeContainer();
       addTearDown(container.dispose);
@@ -65,9 +61,37 @@ void main() {
       expect(state.runtimeConfig, config);
       expect(state.activeProviderId, 'openai');
       expect(state.ocrModels, ['allenai/olmocr-2-7b', 'qwen2-vl']);
-      expect(state.translationModels, ['nllb-200']);
-      expect(state.transcriptionModels, ['whisper-1']);
+      expect(state.translationModels, isEmpty);
+      expect(state.transcriptionModels, isEmpty);
       expect(state.error, isNull);
+      // Phase A: translation/transcription routes are deferred — the
+      // deprecated namespace API must not be called anymore.
+      verifyNever(() => repo.getModels(namespace: any(named: 'namespace')));
+    });
+
+    test('load() routes ocr models through active provider', () async {
+      final config = RuntimeConfig.fromJson(<String, dynamic>{
+        'api_base': 'http://example.test/v1',
+        'api_key': '',
+        'model': 'gpt-4o',
+        'ocr_provider': 'openai',
+      });
+      when(() => repo.getConfig()).thenAnswer((_) async => config);
+      when(() => repo.getModelsForProvider('openai'))
+          .thenAnswer((_) async => ['gpt-4o']);
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(settingsStateProvider.notifier);
+
+      await notifier.load();
+
+      final state = container.read(settingsStateProvider);
+      expect(state.activeProviderId, 'openai');
+      expect(state.ocrModels, ['gpt-4o']);
+      expect(state.translationModels, isEmpty);
+      expect(state.transcriptionModels, isEmpty);
+      verify(() => repo.getModelsForProvider('openai')).called(1);
     });
 
     test('on failure populates error and clears isLoading', () async {
@@ -106,12 +130,8 @@ void main() {
         return configCallCount == 1 ? initial : updated;
       });
       when(() => repo.updateConfig(any())).thenAnswer((_) async => updated);
-      when(() => repo.getModels(namespace: 'ocr'))
+      when(() => repo.getModelsForProvider('openai'))
           .thenAnswer((_) async => ['allenai/olmocr-2-7b']);
-      when(() => repo.getModels(namespace: 'translation'))
-          .thenAnswer((_) async => const <String>[]);
-      when(() => repo.getModels(namespace: 'transcription'))
-          .thenAnswer((_) async => const <String>[]);
 
       final container = makeContainer();
       addTearDown(container.dispose);

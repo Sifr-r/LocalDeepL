@@ -21,10 +21,12 @@ class SettingsNotifier extends Notifier<SettingsState> {
     state = state.copyWith(isLoading: true, clearError: true);
     try {
       final config = await _repo.getConfig();
-      final ocrModels = await _repo.getModels(namespace: 'ocr');
-      final translationModels = await _repo.getModels(namespace: 'translation');
-      final transcriptionModels =
-          await _repo.getModels(namespace: 'transcription');
+      final ocrModels =
+          await _repo.getModelsForProvider(state.activeProviderId);
+      // Translation and transcription routes are deferred per the harness
+      // rebuild spec; we deliberately do not call the server for them.
+      final translationModels = <String>[];
+      final transcriptionModels = <String>[];
 
       state = state.copyWith(
         isLoading: false,
