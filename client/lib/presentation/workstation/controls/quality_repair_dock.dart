@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:omniscribe_client/models/job_progress_state.dart';
-import 'package:omniscribe_client/models/process_settings.dart';
-import 'package:omniscribe_client/state/progress_provider.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
-import 'package:omniscribe_client/theme/docuverse_typography.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/data/models/process_settings.dart';
+import 'package:omniscribe_client/data/providers/workstation_notifier.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_card.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_section_header.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_slider.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_toggle.dart';
+import 'package:omniscribe_client/theme/docuverse_theme.dart';
+import 'package:omniscribe_client/theme/docuverse_typography.dart';
 
 /// Quality Repair Loop controls dock matching DocuVerse design system.
-class QualityRepairDock extends StatelessWidget {
+class QualityRepairDock extends ConsumerWidget {
   const QualityRepairDock({
     super.key,
     required this.settings,
@@ -22,17 +22,17 @@ class QualityRepairDock extends StatelessWidget {
   final ValueChanged<ProcessSettings> onSettingsChanged;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.docuVerse;
-    final progressState = ProgressProvider.of(context);
+    final wsState = ref.watch(workstationProvider);
 
     final isRepairEnabled = settings.qualityRepairEnabled;
-    final target = settings.qualityTarget;
+    final target = settings.qualityTarget ?? 0.85;
     final maxRetries = settings.maxRetries;
 
-    final repairedCount = progressState.repairedCount;
-    final retriesAttempted = progressState.totalRetriesAttempted;
-    final avgConf = progressState.avgConfidence;
+    final repairedCount = wsState.repairedCount;
+    final retriesAttempted = wsState.totalRetriesAttempted;
+    final avgConf = wsState.avgConfidence;
 
     return DocuVerseCard(
       variant: DocuVerseCardVariant.raised,

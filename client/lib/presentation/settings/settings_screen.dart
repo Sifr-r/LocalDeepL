@@ -148,25 +148,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Settings & Configuration',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: tokens.foreground,
-                            letterSpacing: -0.5,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Settings & Configuration',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: tokens.foreground,
+                              letterSpacing: -0.5,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Configure endpoints, pipeline parameters, inference providers, and limits',
-                          style: TextStyle(
-                              fontSize: 12, color: tokens.foregroundMuted),
-                        ),
-                      ],
+                          const SizedBox(height: 4),
+                          Text(
+                            'Configure endpoints, pipeline parameters, inference providers, and limits',
+                            style: TextStyle(
+                                fontSize: 12, color: tokens.foregroundMuted),
+                          ),
+                        ],
+                      ),
                     ),
                     Row(
                       children: [
@@ -555,14 +557,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Widget _buildSecurityAuthTab(
       DocuVerseThemeTokens tokens, SettingsState settings) {
-    return Column(
+    return const Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         DocuVerseCard(
           padding: DocuVerseCardPadding.lg,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
+            children: [
               DocuVerseSectionHeader(
                 title: 'Security & Auth',
                 description:

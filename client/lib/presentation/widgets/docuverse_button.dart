@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:omniscribe_client/theme/docuverse_colors.dart';
 import 'package:omniscribe_client/theme/docuverse_theme.dart';
 import 'package:omniscribe_client/theme/docuverse_typography.dart';
 
@@ -133,20 +132,29 @@ class DocuVerseButton extends StatelessWidget {
         ));
       }
       if (text != null) {
-        if (icon != null) rowChildren.add(const SizedBox(width: 6));
-        rowChildren.add(Text(
-          text!,
-          style: TextStyle(
-            fontFamily: DocuVerseTypography.fontBody,
-            fontSize: _fontSize,
-            fontWeight: FontWeight.w500,
-            color: fg,
+        if (icon != null) {
+          rowChildren.add(const SizedBox(width: 6));
+        }
+        rowChildren.add(
+          Flexible(
+            child: Text(
+              text!,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              style: TextStyle(
+                fontFamily: DocuVerseTypography.fontBody,
+                fontSize: _fontSize,
+                fontWeight: FontWeight.w500,
+                color: fg,
+              ),
+            ),
           ),
-        ));
+        );
       }
       if (child != null) {
-        if (icon != null || text != null)
+        if (icon != null || text != null) {
           rowChildren.add(const SizedBox(width: 6));
+        }
         rowChildren.add(child!);
       }
 

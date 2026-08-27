@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:omniscribe_client/core/theme/app_colors.dart';
 import 'package:omniscribe_client/core/theme/app_theme.dart';
 import 'package:omniscribe_client/core/theme/app_typography.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  GoogleFonts.config.allowRuntimeFetching = false;
+
   group('AppColors & Confidence Helper', () {
     test('Dark theme tokens match DocuVerse specifications', () {
       expect(AppColors.darkBackground, const Color(0xFF0B0F19));

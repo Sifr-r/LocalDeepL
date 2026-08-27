@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:omniscribe_client/models/document_view_model.dart';
-import 'package:omniscribe_client/state/document_provider.dart';
-import 'package:omniscribe_client/state/progress_provider.dart';
-import 'package:omniscribe_client/theme/docuverse_colors.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/data/providers/workstation_notifier.dart';
 import 'package:omniscribe_client/theme/docuverse_theme.dart';
 import 'package:omniscribe_client/theme/docuverse_typography.dart';
 
 /// Thumbnail strip allowing users to quickly preview and switch between pages.
-class PageStrip extends StatelessWidget {
+class PageStrip extends ConsumerWidget {
   const PageStrip({
     super.key,
     this.orientation = Axis.horizontal,
@@ -16,15 +14,13 @@ class PageStrip extends StatelessWidget {
   final Axis orientation;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.docuVerse;
-    final docState = DocumentProvider.of(context);
-    final docNotifier = DocumentProvider.notifierOf(context);
-    final progressState = ProgressProvider.of(context);
+    final wsState = ref.watch(workstationProvider);
+    final notifier = ref.read(workstationProvider.notifier);
 
-    final pageCount = docState.pageCount;
-    final selectedIdx = docState.selectedPageIndex;
-    final completedPages = progressState.completedPages;
+    final pageCount = wsState.pageCount;
+    final selectedIdx = wsState.selectedPageIndex;
 
     if (pageCount <= 1) {
       return const SizedBox.shrink();
@@ -58,7 +54,7 @@ class PageStrip extends StatelessWidget {
                 ),
               ),
               Text(
-                '${completedPages.length}/$pageCount processed',
+                '${wsState.pages.where((p) => p.bboxes.isNotEmpty).length}/$pageCount scanned',
                 style: TextStyle(
                   fontFamily: DocuVerseTypography.fontMono,
                   fontSize: 10,
@@ -78,14 +74,14 @@ class PageStrip extends StatelessWidget {
               ),
               itemBuilder: (context, index) {
                 final isSelected = index == selectedIdx;
-                final isCompleted = completedPages.contains(index);
-                final pageResult = index < docState.pages.length
-                    ? docState.pages[index]
+                final pageResult = index < wsState.pages.length
+                    ? wsState.pages[index]
                     : null;
                 final boxCount = pageResult?.bboxes.length ?? 0;
+                final hasScanned = boxCount > 0;
 
                 return InkWell(
-                  onTap: () => docNotifier.selectPage(index),
+                  onTap: () => notifier.selectPage(index),
                   borderRadius: BorderRadius.circular(6),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
@@ -124,7 +120,7 @@ class PageStrip extends StatelessWidget {
                                         : colors.foregroundSubtle,
                                   ),
                                 ),
-                                if (isCompleted)
+                                if (hasScanned)
                                   Positioned(
                                     top: 2,
                                     right: 2,
@@ -146,34 +142,23 @@ class PageStrip extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              'P.${index + 1}',
-                              style: TextStyle(
-                                fontFamily: DocuVerseTypography.fontMono,
-                                fontSize: 10,
-                                fontWeight: isSelected
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                                color: isSelected
-                                    ? colors.brand
-                                    : colors.foregroundMuted,
-                              ),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            boxCount > 0
+                                ? 'P.${index + 1} ($boxCount)'
+                                : 'P.${index + 1}',
+                            style: TextStyle(
+                              fontFamily: DocuVerseTypography.fontMono,
+                              fontSize: 10,
+                              fontWeight: isSelected
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: isSelected
+                                  ? colors.brand
+                                  : colors.foregroundMuted,
                             ),
-                            if (boxCount > 0) ...[
-                              const SizedBox(width: 3),
-                              Text(
-                                '($boxCount)',
-                                style: TextStyle(
-                                  fontFamily: DocuVerseTypography.fontMono,
-                                  fontSize: 8,
-                                  color: colors.foregroundSubtle,
-                                ),
-                              ),
-                            ],
-                          ],
+                          ),
                         ),
                       ],
                     ),

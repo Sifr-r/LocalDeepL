@@ -132,6 +132,8 @@ Protocol (`ctx.inject(JobQueue)`), never by module singleton.
 | `scripts/` | Repo-root developer utilities: confidence eval, fixture builder, debug/inspection scripts, bbox visualizers |
 | `examples/` | Sample PDFs and images used by `tests/`, `e2e/test_ui.py`, and the confidence scripts |
 | `tests/` | Unit, integration, security, and slow-path validation |
+| `client/lib/data/providers/features_state.dart` | Immutable state models (`TranslationState`, `TranscriptionState`, `GlossaryState`, `ExtractionState`) with copyWith, equality, and clearError support |
+| `client/lib/data/providers/features_notifier.dart` | Riverpod 2.x `Notifier` controllers (`translationProvider`, `transcriptionProvider`, `glossaryProvider`, `extractionProvider`) for feature operations |
 | `install.bat` / `install.ps1` | Windows one-click install: `uv` bootstrap, `uv sync --extra web --extra preprocessing`, Docker check, Desktop/Start-Menu shortcuts, post-install verification |
 | `start_app.vbs` | Windows terminal launcher for Redis + Celery + uvicorn; writes a timestamped append log to `start_app.log` |
 | `e2e/test_ui.py` | Headless Playwright smoke test against the running web UI |
@@ -876,7 +878,37 @@ Conducted an exhaustive 5-domain audit (66 findings across Core Pipeline, API & 
 | `src/omniscribe/core/workflows/stages/refine.py` | `HybridRefiner` — crop-and-re-OCR for empty sparse boxes and nearby duplicate deduplication |
 | `src/omniscribe/core/workflows/stages/__init__.py` | Stage package re-exports for `HybridConverter`, `HybridLayoutDetector`, `HybridOcrRunner`, `HybridRefiner`, and `decode_chunk_bytes` |
 | `src/omniscribe/core/workflows/hybrid.py` | Streamlined `HybridEngine` coordinating the 5 execution phases with 100% backward-compatible delegators |
-| `tests/core/workflows/test_workflows_stages.py` | Unit test suite for isolated converter and layout detector stages |
+### 2026-08-27: Flutter Client Consolidation (Slice 5: Workstation & Canvas Migration)
+
+| File | Responsibility |
+| --- | --- |
+| `client/lib/data/providers/workstation_state.dart` | Immutable Riverpod state model unifying document bytes, viewport transformations, bounding boxes, live OCR status, and confidence statistics |
+| `client/lib/data/providers/workstation_notifier.dart` | `WorkstationNotifier` managing document lifecycle, GPU-accelerated canvas pan/zoom, interactive bounding box manipulation, sync/async OCR dispatch, and real-time WebSocket progress ingestion |
+| `client/lib/presentation/workstation/workstation_screen.dart` | Riverpod 2.x `ConsumerStatefulWidget` rendering dropzone empty state and wide split-pane workstation layout |
+| `client/lib/presentation/workstation/canvas/bbox_painter.dart` | CustomPainter rendering normalized bounding boxes, confidence badges, heatmap tinting, and selection handles |
+| `client/lib/presentation/workstation/canvas/bbox_inspector.dart` | Inspect and edit OCR text, confidence scores, and normalized coordinates for selected bounding boxes |
+| `client/lib/presentation/workstation/canvas/document_viewport.dart` | GPU-accelerated canvas viewport with smooth pan/zoom, drag/drop handling, and floating zoom controls |
+| `client/lib/presentation/workstation/controls/page_strip.dart` | Page thumbnail navigation strip with per-page OCR bounding box indicators |
+| `client/lib/presentation/workstation/controls/quality_repair_dock.dart` | Real-time OCR quality metrics, confidence distribution, and low-confidence block repair controls |
+| `client/lib/presentation/workstation/controls/right_control_dock.dart` | Parameter controls for pipeline mode, spellcheck, layout enrichment, and document processors |
+| `client/lib/presentation/workstation/controls/upload_dropzone.dart` | Drag-and-drop document upload target supporting PDF and image formats |
+| `client/lib/presentation/workstation/progress/bottom_progress_dock.dart` | Multi-stage pipeline progress indicator with live stage percentage and cancel triggers |
+| `client/lib/presentation/shell/app_shell.dart` | Main application shell with dynamic screen tab routing and DocuVerse theme toggle |
+| `client/test/data/workstation_state_test.dart` | Unit tests for `WorkstationState` defaults, immutability, getters, `copyWith`, and equality |
+| `client/test/data/workstation_notifier_test.dart` | Unit tests for `WorkstationNotifier` document loading, bounding box editing, viewport manipulation, and OCR processing |
+| `client/test/presentation/workstation_screen_test.dart` | Widget tests for `WorkstationScreen` dropzone rendering and full split-pane viewport mode |
+| `client/test/presentation/app_shell_test.dart` | Navigation and screen mounting tests for `AppShell` and individual feature screens |
+
+### 2026-08-27: Flutter Client Consolidation (Slice 6: Legacy Purge, Zero-Issue Fast Gate & Windows Desktop Build)
+
+| File | Responsibility |
+| --- | --- |
+| `client/lib/presentation/widgets/docuverse_select.dart` | Accessible `DocuVerseSelect` dropdown with custom `selectedItemBuilder` to prevent vertical layout overflow |
+| `client/lib/presentation/widgets/docuverse_button.dart` | Flexible `DocuVerseButton` with ellipsis truncation preventing `RenderFlex` row overflow |
+| `client/lib/presentation/widgets/docuverse_slider.dart` | Constrained `DocuVerseSlider` with `Flexible` label preventing dock overflow |
+| `client/lib/presentation/features/translation_screen.dart` | Dual-pane `TranslationScreen` with bounded flex toggles and direct clipboard integration |
+| `client/lib/presentation/workstation/controls/page_strip.dart` | Scaled thumbnail caption container preventing overflow during multi-page navigation |
+| `client/build/windows/x64/runner/Debug/omniscribe_client.exe` | Verified native Windows x64 desktop executable build artifact |
 
 ## See Also
 
@@ -887,5 +919,6 @@ Conducted an exhaustive 5-domain audit (66 findings across Core Pipeline, API & 
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var reference
 - `audits/` — historical and comprehensive domain audit logs
 
-_Last updated: 2026-08-23_
+_Last updated: 2026-08-27_
+
 

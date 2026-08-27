@@ -1,3 +1,6 @@
+import 'bbox_item.dart';
+import 'document_result.dart';
+
 /// WebSocket frame envelope and polymorphic message models matching OmniScribe backend progress channels.
 
 abstract class WsEnvelope {
@@ -97,6 +100,16 @@ class BlockCompleteFrame extends WsEnvelope {
   final String kind;
   final double? confidence;
 
+  BBoxItem toBBoxItem() => BBoxItem(
+        blockId: 'p${pageIdx}_b$blockIdx',
+        page: pageIdx,
+        block: blockIdx,
+        bbox: bbox,
+        text: text,
+        kind: kind,
+        confidence: confidence,
+      );
+
   factory BlockCompleteFrame.fromJson(Map<String, dynamic> json) {
     final rawBbox = json['bbox'];
     final coords = <double>[];
@@ -143,6 +156,8 @@ class BlockRetryFrame extends WsEnvelope {
   final double confidence;
   final double target;
 
+  String get blockKey => 'p${pageIdx}_b$blockIdx';
+
   factory BlockRetryFrame.fromJson(Map<String, dynamic> json) {
     return BlockRetryFrame(
       pageIdx: (json['page_idx'] as num?)?.toInt() ?? 0,
@@ -183,6 +198,17 @@ class BlockRevisedFrame extends WsEnvelope {
   final String text;
   final String kind;
   final double? confidence;
+
+  BBoxItem toBBoxItem() => BBoxItem(
+        blockId: 'p${pageIdx}_b$blockIdx',
+        page: pageIdx,
+        block: blockIdx,
+        bbox: bbox,
+        text: text,
+        kind: kind,
+        confidence: confidence,
+        revised: true,
+      );
 
   factory BlockRevisedFrame.fromJson(Map<String, dynamic> json) {
     final rawBbox = json['bbox'];
@@ -252,6 +278,15 @@ class QualitySummaryFrame extends WsEnvelope {
   final int repairedCount;
   final int belowTargetCount;
   final int? pageIdx;
+
+  QualitySummary get summary => QualitySummary(
+        scope: scope,
+        target: target,
+        avgConfidence: avgConfidence,
+        repairedCount: repairedCount,
+        belowTargetCount: belowTargetCount,
+        pageIdx: pageIdx,
+      );
 
   factory QualitySummaryFrame.fromJson(Map<String, dynamic> json) {
     return QualitySummaryFrame(

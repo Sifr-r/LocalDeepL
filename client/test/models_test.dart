@@ -1,10 +1,8 @@
-import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:omniscribe_client/models/bbox_item.dart';
-import 'package:omniscribe_client/models/process_settings.dart';
-import 'package:omniscribe_client/models/quality_summary.dart';
-import 'package:omniscribe_client/models/trust_summary.dart';
-import 'package:omniscribe_client/models/ws_envelope.dart';
+import 'package:omniscribe_client/data/models/bbox_item.dart';
+import 'package:omniscribe_client/data/models/document_result.dart';
+import 'package:omniscribe_client/data/models/process_settings.dart';
+import 'package:omniscribe_client/data/models/ws_frames.dart';
 
 void main() {
   group('BBoxItem Model Tests', () {
@@ -82,16 +80,16 @@ void main() {
     test('Parses legacy ProgressFrame without type field', () {
       final jsonMap = {
         'status': 'Extracting tokens...',
-        'percent': 45.0,
+        'percent': 45,
         'stage': 'OCR',
         'warning': false,
       };
 
       final frame = WsEnvelope.fromJson(jsonMap);
-      expect(frame, isA<WsProgressFrame>());
-      final p = frame as WsProgressFrame;
+      expect(frame, isA<ProgressFrame>());
+      final p = frame as ProgressFrame;
       expect(p.status, 'Extracting tokens...');
-      expect(p.percent, 45.0);
+      expect(p.percent, 45);
       expect(p.stage, 'OCR');
     });
 
@@ -107,15 +105,15 @@ void main() {
       };
 
       final frame = WsEnvelope.fromJson(jsonMap);
-      expect(frame, isA<WsBlockCompleteFrame>());
-      final b = frame as WsBlockCompleteFrame;
+      expect(frame, isA<BlockCompleteFrame>());
+      final b = frame as BlockCompleteFrame;
       expect(b.pageIdx, 0);
       expect(b.blockIdx, 2);
 
       final bboxItem = b.toBBoxItem();
       expect(bboxItem.blockId, 'p0_b2');
       expect(bboxItem.confidence, 0.95);
-      expect(bboxItem.revised, isFalse);
+      expect(bboxItem.isRevised, isFalse);
     });
 
     test('Parses block_retry and block_revised frames', () {
@@ -128,7 +126,7 @@ void main() {
         'target': 0.85,
       };
 
-      final retryFrame = WsEnvelope.fromJson(retryJson) as WsBlockRetryFrame;
+      final retryFrame = WsEnvelope.fromJson(retryJson) as BlockRetryFrame;
       expect(retryFrame.attempt, 2);
       expect(retryFrame.blockKey, 'p0_b5');
 
@@ -144,9 +142,9 @@ void main() {
       };
 
       final revisedFrame =
-          WsEnvelope.fromJson(revisedJson) as WsBlockRevisedFrame;
+          WsEnvelope.fromJson(revisedJson) as BlockRevisedFrame;
       final revisedItem = revisedFrame.toBBoxItem();
-      expect(revisedItem.revised, isTrue);
+      expect(revisedItem.isRevised, isTrue);
       expect(revisedItem.confidence, 0.94);
     });
 
@@ -160,7 +158,7 @@ void main() {
         'below_target_count': 0,
       };
 
-      final frame = WsEnvelope.fromJson(jsonMap) as WsQualitySummaryFrame;
+      final frame = WsEnvelope.fromJson(jsonMap) as QualitySummaryFrame;
       expect(frame.summary.target, 0.85);
       expect(frame.summary.repairedCount, 3);
       expect(frame.summary.avgConfidencePercent, 93);
@@ -168,14 +166,28 @@ void main() {
   });
 
   group('ProcessSettings Tests', () {
-    test('Default values match DocuVerse standards', () {
+    test('Default values match standard defaults', () {
       const s = ProcessSettings();
-      expect(s.dpi, 300);
-      expect(s.concurrency, 4);
+      expect(s.dpi, 192);
+      expect(s.concurrency, 3);
       expect(s.pipelineMode, PipelineMode.hybrid);
       expect(s.qualityRepairEnabled, isTrue);
-      expect(s.qualityTarget, 0.85);
-      expect(s.maxRetries, 3);
+      expect(s.qualityTarget, isNull);
+      expect(s.maxRetries, 2);
+    });
+  });
+
+  group('TrustSummary Tests', () {
+    test('parses from raw header string', () {
+      const rawHeader =
+          '{"block_count": 10, "scored_count": 10, "flagged_count": 0, "average": 0.96}';
+      final summary = TrustSummary.tryParseHeader(rawHeader);
+
+      expect(summary, isNotNull);
+      expect(summary!.blockCount, 10);
+      expect(summary.scoredCount, 10);
+      expect(summary.flaggedCount, 0);
+      expect(summary.average, 0.96);
     });
   });
 }

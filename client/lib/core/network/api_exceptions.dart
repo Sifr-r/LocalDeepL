@@ -1,4 +1,5 @@
 /// Domain exceptions for OmniScribe network and API operations.
+library;
 
 /// Base exception class for all OmniScribe API errors.
 abstract class ApiException implements Exception {

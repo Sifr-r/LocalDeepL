@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omniscribe_client/data/providers/settings_notifier.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
-import 'package:omniscribe_client/presentation/providers/provider_modal.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_card.dart';
+import 'package:omniscribe_client/theme/docuverse_theme.dart';
 
 class WorkspaceView extends ConsumerWidget {
   const WorkspaceView({super.key, required this.onNavigateTab});
@@ -93,7 +91,7 @@ class WorkspaceView extends ConsumerWidget {
                               'Model: ${settings.runtimeConfig?.model ?? 'auto'}',
                           variant: DocuVerseBadgeVariant.neutral,
                         ),
-                        DocuVerseBadge(
+                        const DocuVerseBadge(
                           text: 'Server: Offline',
                           variant: DocuVerseBadgeVariant.danger,
                           hasDot: true,

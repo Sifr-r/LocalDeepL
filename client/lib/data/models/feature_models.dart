@@ -1,4 +1,5 @@
 /// Domain models for OmniScribe features: Translation, Transcription, Structured Extraction, Glossary, and Document Export.
+library;
 
 /// Structured information extraction templates.
 enum ExtractionTemplate {
@@ -217,6 +218,45 @@ class NLLBTranslationResponse {
         'target_lang': targetLang,
       };
 }
+
+class TranslationJobStatusResponse {
+  const TranslationJobStatusResponse({
+    required this.jobId,
+    required this.state,
+    this.status,
+    this.result,
+    this.error,
+    this.detail,
+  });
+
+  final String jobId;
+  final String state;
+  final String? status;
+  final dynamic result;
+  final String? error;
+  final String? detail;
+
+  factory TranslationJobStatusResponse.fromJson(Map<String, dynamic> json) {
+    return TranslationJobStatusResponse(
+      jobId: json['job_id']?.toString() ?? '',
+      state: json['state']?.toString() ?? json['status']?.toString() ?? 'PENDING',
+      status: json['status']?.toString(),
+      result: json['result'],
+      error: json['error']?.toString(),
+      detail: json['detail']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'job_id': jobId,
+        'state': state,
+        if (status != null) 'status': status,
+        if (result != null) 'result': result,
+        if (error != null) 'error': error,
+        if (detail != null) 'detail': detail,
+      };
+}
+
 
 // ---------------------------------------------------------------------------
 // Transcription Models
@@ -490,6 +530,32 @@ class GlossaryListItem {
     );
   }
 
+  GlossaryListItem copyWith({
+    String? id,
+    String? name,
+    GlossaryFormat? format,
+    int? entryCount,
+    bool? enabled,
+    int? priority,
+    String? group,
+    String? sourceUri,
+    String? encoding,
+    bool clearSourceUri = false,
+    bool clearEncoding = false,
+  }) {
+    return GlossaryListItem(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      format: format ?? this.format,
+      entryCount: entryCount ?? this.entryCount,
+      enabled: enabled ?? this.enabled,
+      priority: priority ?? this.priority,
+      group: group ?? this.group,
+      sourceUri: clearSourceUri ? null : (sourceUri ?? this.sourceUri),
+      encoding: clearEncoding ? null : (encoding ?? this.encoding),
+    );
+  }
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
@@ -501,6 +567,34 @@ class GlossaryListItem {
         if (sourceUri != null) 'source_uri': sourceUri,
         if (encoding != null) 'encoding': encoding,
       };
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is GlossaryListItem &&
+        other.id == id &&
+        other.name == name &&
+        other.format == format &&
+        other.entryCount == entryCount &&
+        other.enabled == enabled &&
+        other.priority == priority &&
+        other.group == group &&
+        other.sourceUri == sourceUri &&
+        other.encoding == encoding;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        id,
+        name,
+        format,
+        entryCount,
+        enabled,
+        priority,
+        group,
+        sourceUri,
+        encoding,
+      );
 }
 
 class GlossaryPreviewResponse {

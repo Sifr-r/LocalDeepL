@@ -1,13 +1,15 @@
 /// Process settings, config update, and related domain enums matching OmniScribe API schemas.
+library;
 
 /// Pipeline processing strategy.
 enum PipelineMode {
-  hybrid('hybrid'),
-  grounded('grounded'),
-  groundedNative('grounded_native');
+  hybrid('hybrid', 'Hybrid (OCR + VLM)'),
+  grounded('grounded', 'Grounded BBox'),
+  groundedNative('grounded_native', 'Grounded Native');
 
-  const PipelineMode(this.value);
+  const PipelineMode(this.value, [this.label = '']);
   final String value;
+  final String label;
 
   static PipelineMode fromString(String? value) {
     if (value == null) return PipelineMode.hybrid;
@@ -20,14 +22,15 @@ enum PipelineMode {
 
 /// Dense OCR mode toggle.
 enum DenseMode {
-  auto('auto'),
-  on('on'),
-  off('off'),
-  always('always'),
-  never('never');
+  auto('auto', 'Auto'),
+  on('on', 'On'),
+  off('off', 'Off'),
+  always('always', 'Always'),
+  never('never', 'Never');
 
-  const DenseMode(this.value);
+  const DenseMode(this.value, [this.label = '']);
   final String value;
+  final String label;
 
   static DenseMode fromString(String? value) {
     if (value == null) return DenseMode.auto;
@@ -40,15 +43,16 @@ enum DenseMode {
 
 /// Spellcheck dictionary modes.
 enum SpellcheckMode {
-  none('none'),
-  ar('ar'),
-  enUS('en-US'),
-  de('de'),
-  es('es'),
-  fr('fr');
+  none('none', 'None'),
+  enUS('en-US', 'English (US)'),
+  ar('ar', 'Arabic'),
+  de('de', 'German'),
+  es('es', 'Spanish'),
+  fr('fr', 'French');
 
-  const SpellcheckMode(this.value);
+  const SpellcheckMode(this.value, [this.label = '']);
   final String value;
+  final String label;
 
   static SpellcheckMode fromString(String? value) {
     if (value == null) return SpellcheckMode.none;
@@ -86,12 +90,64 @@ enum DocumentProcessorName {
   }
 }
 
+/// Document Processor descriptor
+class DocumentProcessorInfo {
+  final String id;
+  final String label;
+  final String description;
+
+  const DocumentProcessorInfo({
+    required this.id,
+    required this.label,
+    required this.description,
+  });
+
+  static const List<DocumentProcessorInfo> all = [
+    DocumentProcessorInfo(
+      id: 'reading_order',
+      label: 'Reading Order',
+      description:
+          'Determines the natural human reading sequence across multiple columns and blocks.',
+    ),
+    DocumentProcessorInfo(
+      id: 'quality_analysis',
+      label: 'Quality Analysis',
+      description:
+          'Scores block clarity, contrast, and OCR character-level confidence.',
+    ),
+    DocumentProcessorInfo(
+      id: 'structure_analysis',
+      label: 'Structure Analysis',
+      description:
+          'Detects hierarchical document structure: headers, footers, body, lists.',
+    ),
+    DocumentProcessorInfo(
+      id: 'section_analysis',
+      label: 'Section Analysis',
+      description:
+          'Segments text into coherent semantic sections and chapter boundaries.',
+    ),
+    DocumentProcessorInfo(
+      id: 'layout_enrichment',
+      label: 'Layout Enrichment',
+      description:
+          'Enriches bounding boxes with semantic typography and alignment metadata.',
+    ),
+    DocumentProcessorInfo(
+      id: 'table_extraction',
+      label: 'Table Extraction',
+      description:
+          'Extracts structured table grids and cell relations into clean Markdown/JSON.',
+    ),
+  ];
+}
+
 /// Full runtime settings for OCR processing requests.
 class ProcessSettings {
   const ProcessSettings({
-    required this.apiBase,
-    required this.apiKey,
-    required this.model,
+    this.apiBase = 'http://localhost:1234/v1',
+    this.apiKey = '',
+    this.model = 'allenai/olmocr-2-7b',
     this.pipelineMode = PipelineMode.hybrid,
     this.dpi = 192,
     this.concurrency = 3,
@@ -153,6 +209,9 @@ class ProcessSettings {
   final double? qualityTarget;
   final int? qualityMaxRetries;
   final bool useAsync;
+
+  bool get qualityRepairEnabled => qualityLoopEnabled ?? true;
+  int get maxRetries => qualityMaxRetries ?? 2;
 
   factory ProcessSettings.defaultSettings({
     String apiBase = 'http://localhost:1234/v1',
@@ -219,8 +278,10 @@ class ProcessSettings {
     List<DocumentProcessorName>? documentProcessors,
     int? chunkPages,
     bool? qualityLoopEnabled,
+    bool? qualityRepairEnabled,
     double? qualityTarget,
     int? qualityMaxRetries,
+    int? maxRetries,
     bool? useAsync,
   }) {
     return ProcessSettings(
@@ -251,9 +312,9 @@ class ProcessSettings {
       confidenceThreshold: confidenceThreshold ?? this.confidenceThreshold,
       documentProcessors: documentProcessors ?? this.documentProcessors,
       chunkPages: chunkPages ?? this.chunkPages,
-      qualityLoopEnabled: qualityLoopEnabled ?? this.qualityLoopEnabled,
+      qualityLoopEnabled: qualityRepairEnabled ?? (qualityLoopEnabled ?? this.qualityLoopEnabled),
       qualityTarget: qualityTarget ?? this.qualityTarget,
-      qualityMaxRetries: qualityMaxRetries ?? this.qualityMaxRetries,
+      qualityMaxRetries: maxRetries ?? (qualityMaxRetries ?? this.qualityMaxRetries),
       useAsync: useAsync ?? this.useAsync,
     );
   }

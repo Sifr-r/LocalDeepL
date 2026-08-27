@@ -1,7 +1,6 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:omniscribe_client/models/bbox_item.dart';
-import 'package:omniscribe_client/theme/docuverse_colors.dart';
+import 'package:omniscribe_client/data/models/bbox_item.dart';
 import 'package:omniscribe_client/theme/docuverse_theme.dart';
 
 /// CustomPainter rendering normalized bounding boxes, confidence heatmap fills,
@@ -79,7 +78,7 @@ class BBoxPainter extends CustomPainter {
     if (rect.width <= 0 || rect.height <= 0) return;
 
     final Color tierColor = _getConfidenceColor(box.confidence);
-    final isRevised = box.revised;
+    final isRevised = box.isRevised;
 
     // 1. Box Fill (Heatmap / Hover / Selection)
     final fillPaint = Paint()..style = PaintingStyle.fill;
@@ -189,7 +188,6 @@ class BBoxPainter extends CustomPainter {
 
   void _drawCornerHandles(Canvas canvas, Rect rect, Color handleColor) {
     const double handleSize = 7.0;
-    const double half = handleSize / 2;
 
     final fillPaint = Paint()
       ..color = Colors.white
@@ -230,11 +228,11 @@ class BBoxPainter extends CustomPainter {
     final String confStr =
         box.confidence != null ? '${(box.confidence! * 100).round()}%' : '—';
     final String badgeText =
-        box.revised ? 'REV • $confStr' : '$kindLabel $confStr';
+        box.isRevised ? 'REV • $confStr' : '$kindLabel $confStr';
 
     final textSpan = TextSpan(
       text: badgeText,
-      style: TextStyle(
+      style: const TextStyle(
         fontFamily: 'JetBrains Mono',
         fontSize: 9,
         fontWeight: FontWeight.w700,
@@ -263,7 +261,7 @@ class BBoxPainter extends CustomPainter {
     );
 
     final pillBgPaint = Paint()
-      ..color = box.revised
+      ..color = box.isRevised
           ? colors.revisedCyan
           : isSelected
               ? colors.brand

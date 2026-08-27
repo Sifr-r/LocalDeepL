@@ -1,4 +1,5 @@
 /// Provider catalog, preset, and discovery models matching OmniScribe backend contracts.
+library;
 
 class ProviderPreset {
   const ProviderPreset({

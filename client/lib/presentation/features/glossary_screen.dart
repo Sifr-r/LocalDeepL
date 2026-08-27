@@ -1,15 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:omniscribe_client/models/glossary.dart';
-import 'package:omniscribe_client/state/features_provider.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
+import 'package:omniscribe_client/data/models/feature_models.dart';
+import 'package:omniscribe_client/data/providers/features_notifier.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_card.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_input.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_modal.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_section_header.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_toggle.dart';
+import 'package:omniscribe_client/theme/docuverse_theme.dart';
 
 class GlossaryScreen extends ConsumerStatefulWidget {
   const GlossaryScreen({super.key});
@@ -19,151 +19,23 @@ class GlossaryScreen extends ConsumerStatefulWidget {
 }
 
 class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
-  int _activeViewIndex = 0; // 0: Library, 1: Entries, 2: Merged
-  List<GlossaryListItem> _libraries = [];
-  GlossaryListItem? _selectedLibrary;
-  List<GlossaryEntry> _entries = [];
-  Map<String, String> _mergedLexicon = {};
-  bool _isLoading = false;
-
   @override
   void initState() {
     super.initState();
-    _loadLibraries();
-    _loadMergedLexicon();
-  }
-
-  Future<void> _loadLibraries() async {
-    setState(() => _isLoading = true);
-    try {
-      final repo = ref.read(featuresRepositoryProvider);
-      final libs = await repo.getGlossaries();
-      setState(() => _libraries = libs);
-    } catch (_) {
-      // Fallback sample glossary libraries for offline resilience
-      setState(() {
-        _libraries = const [
-          GlossaryListItem(
-            id: 'legal-en-fr',
-            name: 'Legal Terminology EN-FR',
-            format: 'json_pairs',
-            entryCount: 42,
-            enabled: true,
-            priority: 1,
-          ),
-          GlossaryListItem(
-            id: 'medical-terms',
-            name: 'Clinical Diagnostics Latin/EN',
-            format: 'csv',
-            entryCount: 128,
-            enabled: true,
-            priority: 2,
-          ),
-        ];
-      });
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _loadEntries(GlossaryListItem lib) async {
-    setState(() {
-      _selectedLibrary = lib;
-      _isLoading = true;
+    Future.microtask(() {
+      final notifier = ref.read(glossaryProvider.notifier);
+      unawaited(notifier.loadLibraries());
+      unawaited(notifier.loadMergedLexicon());
     });
-
-    try {
-      final repo = ref.read(featuresRepositoryProvider);
-      final entries = await repo.getGlossaryEntries(lib.id);
-      setState(() {
-        _entries = entries;
-        _activeViewIndex = 1;
-      });
-    } catch (_) {
-      setState(() {
-        _entries = [
-          const GlossaryEntry(
-              source: 'arbitration',
-              target: 'arbitrage',
-              note: 'Commercial dispute resolution'),
-          const GlossaryEntry(
-              source: 'plaintiff',
-              target: 'demandeur',
-              note: 'Civil litigation context'),
-          const GlossaryEntry(
-              source: 'force majeure',
-              target: 'force majeure',
-              note: 'Unforeseen event exemption'),
-          const GlossaryEntry(
-              source: 'jurisdiction',
-              target: 'juridiction',
-              note: 'Court authority territory'),
-        ];
-        _activeViewIndex = 1;
-      });
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _loadMergedLexicon() async {
-    try {
-      final repo = ref.read(featuresRepositoryProvider);
-      final merged = await repo.getMergedGlossary();
-      setState(() => _mergedLexicon = merged);
-    } catch (_) {
-      setState(() {
-        _mergedLexicon = {
-          'arbitration': 'arbitrage',
-          'plaintiff': 'demandeur',
-          'force majeure': 'force majeure',
-          'jurisdiction': 'juridiction',
-          'biopsy': 'biopsie',
-          'prognosis': 'pronostic',
-        };
-      });
-    }
-  }
-
-  Future<void> _toggleLibrary(GlossaryListItem lib, bool enabled) async {
-    try {
-      final repo = ref.read(featuresRepositoryProvider);
-      await repo.toggleGlossary(lib.id, enabled);
-    } catch (_) {}
-    setState(() {
-      _libraries = _libraries.map((item) {
-        if (item.id == lib.id) {
-          return item.copyWith(enabled: enabled);
-        }
-        return item;
-      }).toList();
-    });
-    _loadMergedLexicon();
-  }
-
-  Future<void> _deleteLibrary(String id) async {
-    try {
-      final repo = ref.read(featuresRepositoryProvider);
-      await repo.deleteGlossary(id);
-    } catch (_) {}
-    setState(() {
-      _libraries.removeWhere((item) => item.id == id);
-      if (_selectedLibrary?.id == id) {
-        _selectedLibrary = null;
-        _entries = [];
-        _activeViewIndex = 0;
-      }
-    });
-    _loadMergedLexicon();
   }
 
   void _showImportModal() {
     final nameController = TextEditingController();
     final textController = TextEditingController();
     final urlController = TextEditingController();
-    String format = 'json_pairs';
+    String formatValue = 'json_pairs';
 
-    DocuVerseModal.show(
+    DocuVerseModal.show<void>(
       context: context,
       title: 'Import Terminology Glossary',
       description:
@@ -179,47 +51,28 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
           text: 'Import Glossary',
           variant: DocuVerseButtonVariant.primary,
           onPressed: () async {
-            final repo = ref.read(featuresRepositoryProvider);
-            try {
-              if (urlController.text.trim().isNotEmpty) {
-                await repo.importGlossaryUrl(
-                  url: urlController.text.trim(),
-                  format: format,
-                  name: nameController.text.trim().isNotEmpty
-                      ? nameController.text.trim()
-                      : null,
-                );
-              } else {
-                await repo.importGlossaryJson(
-                  format: format,
-                  name: nameController.text.trim().isNotEmpty
-                      ? nameController.text.trim()
-                      : null,
-                  text: textController.text.trim().isNotEmpty
-                      ? textController.text.trim()
-                      : null,
-                );
-              }
-            } catch (_) {
-              // Simulated add for seamless testing
-              final newLib = GlossaryListItem(
-                id: 'imported-${DateTime.now().millisecondsSinceEpoch}',
-                name: nameController.text.trim().isNotEmpty
-                    ? nameController.text.trim()
-                    : 'Imported Glossary',
-                format: format,
-                entryCount: 16,
-                enabled: true,
-                priority: _libraries.length + 1,
+            final notifier = ref.read(glossaryProvider.notifier);
+            final fmt = GlossaryFormat.fromString(formatValue);
+            final urlText = urlController.text.trim();
+            final nameText = nameController.text.trim();
+            final contentText = textController.text.trim();
+
+            if (urlText.isNotEmpty) {
+              await notifier.importGlossaryUrl(
+                url: urlText,
+                format: fmt,
+                name: nameText.isNotEmpty ? nameText : null,
               );
-              setState(() {
-                _libraries.add(newLib);
-              });
+            } else {
+              await notifier.importGlossaryJson(
+                format: fmt,
+                name: nameText.isNotEmpty ? nameText : null,
+                text: contentText.isNotEmpty ? contentText : null,
+              );
             }
+
             if (mounted) {
               Navigator.of(context).pop();
-              _loadLibraries();
-              _loadMergedLexicon();
             }
           },
         ),
@@ -258,28 +111,38 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                     ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
-                        value: format,
+                        value: formatValue,
                         dropdownColor: modalContext.docuVerse.card,
                         style: TextStyle(
-                            fontSize: 13,
-                            color: modalContext.docuVerse.foreground),
+                          fontSize: 13,
+                          color: modalContext.docuVerse.foreground,
+                        ),
                         items: const [
                           DropdownMenuItem(
-                              value: 'json_pairs',
-                              child: Text('JSON Pairs / Paired Text')),
+                            value: 'json_pairs',
+                            child: Text('JSON Pairs / Paired Text'),
+                          ),
                           DropdownMenuItem(
-                              value: 'csv',
-                              child: Text('CSV (Comma Separated)')),
+                            value: 'csv',
+                            child: Text('CSV (Comma Separated)'),
+                          ),
                           DropdownMenuItem(
-                              value: 'tsv', child: Text('TSV (Tab Separated)')),
+                            value: 'tsv',
+                            child: Text('TSV (Tab Separated)'),
+                          ),
                           DropdownMenuItem(
-                              value: 'tbx', child: Text('TBX Glossary File')),
+                            value: 'tbx',
+                            child: Text('TBX Glossary File'),
+                          ),
                           DropdownMenuItem(
-                              value: 'xliff',
-                              child: Text('XLIFF Translation File')),
+                            value: 'xliff',
+                            child: Text('XLIFF Translation File'),
+                          ),
                         ],
                         onChanged: (val) {
-                          if (val != null) setModalState(() => format = val);
+                          if (val != null) {
+                            setModalState(() => formatValue = val);
+                          }
                         },
                       ),
                     ),
@@ -310,7 +173,11 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(glossaryProvider);
+    final notifier = ref.read(glossaryProvider.notifier);
     final tokens = context.docuVerse;
+
+    final activeCount = state.libraries.where((l) => l.enabled).length;
 
     return Scaffold(
       backgroundColor: tokens.app,
@@ -340,8 +207,7 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                         ),
                         const SizedBox(width: 10),
                         DocuVerseBadge(
-                          text:
-                              '${_libraries.where((l) => l.enabled).length} active',
+                          text: '$activeCount active',
                           variant: DocuVerseBadgeVariant.success,
                           hasDot: true,
                         ),
@@ -351,7 +217,9 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                     Text(
                       'Manage domain lexicons, term overrides, and dictionary mappings',
                       style: TextStyle(
-                          fontSize: 12, color: tokens.foregroundMuted),
+                        fontSize: 12,
+                        color: tokens.foregroundMuted,
+                      ),
                     ),
                   ],
                 ),
@@ -369,18 +237,28 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           _buildTabButton(
-                              'Libraries (${_libraries.length})', 0, tokens),
-                          _buildTabButton(
-                            _selectedLibrary != null
-                                ? 'Entries (${_entries.length})'
-                                : 'Entries',
-                            1,
+                            'Libraries (${state.libraries.length})',
+                            0,
+                            state.activeViewIndex,
+                            notifier,
                             tokens,
                           ),
                           _buildTabButton(
-                              'Merged Lexicon (${_mergedLexicon.length})',
-                              2,
-                              tokens),
+                            state.selectedLibrary != null
+                                ? 'Entries (${state.entries.length})'
+                                : 'Entries',
+                            1,
+                            state.activeViewIndex,
+                            notifier,
+                            tokens,
+                          ),
+                          _buildTabButton(
+                            'Merged Lexicon (${state.mergedLexicon.length})',
+                            2,
+                            state.activeViewIndex,
+                            notifier,
+                            tokens,
+                          ),
                         ],
                       ),
                     ),
@@ -399,11 +277,11 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
 
             // Views Content
             Expanded(
-              child: _activeViewIndex == 0
-                  ? _buildLibrariesTable(tokens)
-                  : (_activeViewIndex == 1
-                      ? _buildEntriesView(tokens)
-                      : _buildMergedView(tokens)),
+              child: state.activeViewIndex == 0
+                  ? _buildLibrariesTable(state, notifier, tokens)
+                  : (state.activeViewIndex == 1
+                      ? _buildEntriesView(state, notifier, tokens)
+                      : _buildMergedView(state, tokens)),
             ),
           ],
         ),
@@ -411,10 +289,16 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
     );
   }
 
-  Widget _buildTabButton(String label, int index, DocuVerseThemeTokens tokens) {
-    final isSelected = _activeViewIndex == index;
+  Widget _buildTabButton(
+    String label,
+    int index,
+    int activeViewIndex,
+    GlossaryNotifier notifier,
+    DocuVerseThemeTokens tokens,
+  ) {
+    final isSelected = activeViewIndex == index;
     return InkWell(
-      onTap: () => setState(() => _activeViewIndex = index),
+      onTap: () => notifier.setActiveViewIndex(index),
       borderRadius: BorderRadius.circular(4),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -434,10 +318,14 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
     );
   }
 
-  Widget _buildLibrariesTable(DocuVerseThemeTokens tokens) {
+  Widget _buildLibrariesTable(
+    GlossaryState state,
+    GlossaryNotifier notifier,
+    DocuVerseThemeTokens tokens,
+  ) {
     return DocuVerseCard(
       padding: DocuVerseCardPadding.none,
-      child: _libraries.isEmpty
+      child: state.libraries.isEmpty
           ? Center(
               child: Text(
                 'No glossary libraries imported yet. Click "Import glossary" to add terminology.',
@@ -455,53 +343,103 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                   columnSpacing: 24,
                   columns: const [
                     DataColumn(
-                        label: Text('Priority',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 12))),
+                      label: Text(
+                        'Priority',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
                     DataColumn(
-                        label: Text('Name',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 12))),
+                      label: Text(
+                        'Name',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
                     DataColumn(
-                        label: Text('Format',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 12))),
+                      label: Text(
+                        'Format',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
                     DataColumn(
-                        label: Text('Entries',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 12))),
+                      label: Text(
+                        'Entries',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
                     DataColumn(
-                        label: Text('Status',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 12))),
+                      label: Text(
+                        'Status',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
                     DataColumn(
-                        label: Text('Actions',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 12))),
+                      label: Text(
+                        'Actions',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
                   ],
-                  rows: _libraries.map((lib) {
+                  rows: state.libraries.map((lib) {
                     return DataRow(
                       cells: [
-                        DataCell(Text('#${lib.priority}',
+                        DataCell(
+                          Text(
+                            '#${lib.priority}',
                             style: TextStyle(
-                                fontFamily: 'monospace',
-                                fontSize: 12,
-                                color: tokens.foregroundMuted))),
-                        DataCell(Text(lib.name,
+                              fontFamily: 'monospace',
+                              fontSize: 12,
+                              color: tokens.foregroundMuted,
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            lib.name,
                             style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
-                                color: tokens.brand))),
-                        DataCell(Text(lib.format.toUpperCase(),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: tokens.brand,
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            lib.format.value.toUpperCase(),
                             style: TextStyle(
-                                fontFamily: 'monospace',
-                                fontSize: 11,
-                                color: tokens.foregroundMuted))),
-                        DataCell(Text('${lib.entryCount}',
+                              fontFamily: 'monospace',
+                              fontSize: 11,
+                              color: tokens.foregroundMuted,
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            '${lib.entryCount}',
                             style: TextStyle(
-                                fontFamily: 'monospace',
-                                fontSize: 12,
-                                color: tokens.foreground))),
+                              fontFamily: 'monospace',
+                              fontSize: 12,
+                              color: tokens.foreground,
+                            ),
+                          ),
+                        ),
                         DataCell(
                           DocuVerseBadge(
                             text: lib.enabled ? 'Enabled' : 'Disabled',
@@ -509,7 +447,9 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                                 ? DocuVerseBadgeVariant.success
                                 : DocuVerseBadgeVariant.neutral,
                             hasDot: lib.enabled,
-                            onTap: () => _toggleLibrary(lib, !lib.enabled),
+                            onTap: () {
+                              unawaited(notifier.toggleLibrary(lib, !lib.enabled));
+                            },
                           ),
                         ),
                         DataCell(
@@ -520,14 +460,18 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                                 text: 'View entries',
                                 variant: DocuVerseButtonVariant.ghost,
                                 size: DocuVerseButtonSize.sm,
-                                onPressed: () => _loadEntries(lib),
+                                onPressed: () {
+                                  unawaited(notifier.loadEntries(lib));
+                                },
                               ),
                               const SizedBox(width: 4),
                               DocuVerseButton(
                                 text: 'Delete',
                                 variant: DocuVerseButtonVariant.danger,
                                 size: DocuVerseButtonSize.sm,
-                                onPressed: () => _deleteLibrary(lib.id),
+                                onPressed: () {
+                                  unawaited(notifier.deleteLibrary(lib.id));
+                                },
                               ),
                             ],
                           ),
@@ -541,15 +485,19 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
     );
   }
 
-  Widget _buildEntriesView(DocuVerseThemeTokens tokens) {
+  Widget _buildEntriesView(
+    GlossaryState state,
+    GlossaryNotifier notifier,
+    DocuVerseThemeTokens tokens,
+  ) {
     return DocuVerseCard(
       padding: DocuVerseCardPadding.md,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           DocuVerseSectionHeader(
-            title: _selectedLibrary != null
-                ? '${_selectedLibrary!.name} (${_entries.length} terms)'
+            title: state.selectedLibrary != null
+                ? '${state.selectedLibrary!.name} (${state.entries.length} terms)'
                 : 'Glossary Entries',
             description:
                 'Source terms mapped to target domain translations with contextual notes',
@@ -557,26 +505,30 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
               text: 'Back to libraries',
               variant: DocuVerseButtonVariant.ghost,
               size: DocuVerseButtonSize.sm,
-              onPressed: () => setState(() => _activeViewIndex = 0),
+              onPressed: () => notifier.setActiveViewIndex(0),
             ),
           ),
           Expanded(
-            child: _entries.isEmpty
+            child: state.entries.isEmpty
                 ? Center(
                     child: Text(
                       'No terms found in this glossary library.',
                       style: TextStyle(
-                          color: tokens.foregroundMuted, fontSize: 13),
+                        color: tokens.foregroundMuted,
+                        fontSize: 13,
+                      ),
                     ),
                   )
                 : ListView.separated(
-                    itemCount: _entries.length,
+                    itemCount: state.entries.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 6),
                     itemBuilder: (context, index) {
-                      final entry = _entries[index];
+                      final entry = state.entries[index];
                       return Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 10),
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
                           color: tokens.cardRaised,
                           borderRadius: BorderRadius.circular(6),
@@ -596,8 +548,11 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                                 ),
                               ),
                             ),
-                            Icon(Icons.arrow_forward,
-                                size: 14, color: tokens.foregroundSubtle),
+                            Icon(
+                              Icons.arrow_forward,
+                              size: 14,
+                              color: tokens.foregroundSubtle,
+                            ),
                             const SizedBox(width: 12),
                             Expanded(
                               flex: 2,
@@ -635,8 +590,11 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
     );
   }
 
-  Widget _buildMergedView(DocuVerseThemeTokens tokens) {
-    final entries = _mergedLexicon.entries.toList();
+  Widget _buildMergedView(
+    GlossaryState state,
+    DocuVerseThemeTokens tokens,
+  ) {
+    final entries = state.mergedLexicon.entries.toList();
 
     return DocuVerseCard(
       padding: DocuVerseCardPadding.md,
@@ -654,7 +612,9 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                     child: Text(
                       'No active merged terms available.',
                       style: TextStyle(
-                          color: tokens.foregroundMuted, fontSize: 13),
+                        color: tokens.foregroundMuted,
+                        fontSize: 13,
+                      ),
                     ),
                   )
                 : GridView.builder(
@@ -670,7 +630,9 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                       final item = entries[index];
                       return Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: tokens.cardRaised,
                           borderRadius: BorderRadius.circular(6),
@@ -692,8 +654,11 @@ class _GlossaryScreenState extends ConsumerState<GlossaryScreen> {
                               ),
                             ),
                             const SizedBox(width: 6),
-                            Icon(Icons.arrow_forward,
-                                size: 12, color: tokens.foregroundSubtle),
+                            Icon(
+                              Icons.arrow_forward,
+                              size: 12,
+                              color: tokens.foregroundSubtle,
+                            ),
                             const SizedBox(width: 6),
                             Flexible(
                               child: Text(

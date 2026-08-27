@@ -2,16 +2,16 @@ import 'dart:typed_data';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:omniscribe_client/state/document_provider.dart';
-import 'package:omniscribe_client/theme/docuverse_colors.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
-import 'package:omniscribe_client/theme/docuverse_typography.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/data/providers/workstation_notifier.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
+import 'package:omniscribe_client/theme/docuverse_theme.dart';
+import 'package:omniscribe_client/theme/docuverse_typography.dart';
 
 /// Drag & Drop zone supporting desktop_drop and native file_picker
 /// Supports PDF, PNG, JPG, WEBP, AVIF with file size validation.
-class UploadDropzone extends StatefulWidget {
+class UploadDropzone extends ConsumerStatefulWidget {
   const UploadDropzone({
     super.key,
     this.onFileLoaded,
@@ -23,10 +23,10 @@ class UploadDropzone extends StatefulWidget {
   final int maxBytes;
 
   @override
-  State<UploadDropzone> createState() => _UploadDropzoneState();
+  ConsumerState<UploadDropzone> createState() => _UploadDropzoneState();
 }
 
-class _UploadDropzoneState extends State<UploadDropzone> {
+class _UploadDropzoneState extends ConsumerState<UploadDropzone> {
   bool _isDragging = false;
   bool _isLoading = false;
   String? _errorMessage;
@@ -103,8 +103,8 @@ class _UploadDropzoneState extends State<UploadDropzone> {
       estimatedPages = _estimatePdfPages(bytes);
     }
 
-    final docNotifier = DocumentProvider.notifierOf(context);
-    docNotifier.loadDocument(
+    final notifier = ref.read(workstationProvider.notifier);
+    notifier.loadDocument(
       bytes,
       filename,
       pageCount: estimatedPages,
@@ -135,7 +135,7 @@ class _UploadDropzoneState extends State<UploadDropzone> {
   @override
   Widget build(BuildContext context) {
     final colors = context.docuVerse;
-    final docState = DocumentProvider.of(context);
+    final wsState = ref.watch(workstationProvider);
 
     return DropTarget(
       onDragEntered: (_) => setState(() => _isDragging = true),
@@ -211,11 +211,11 @@ class _UploadDropzoneState extends State<UploadDropzone> {
               const SizedBox(height: 16),
 
               // Format Pills
-              Wrap(
+              const Wrap(
                 spacing: 8,
                 runSpacing: 6,
                 alignment: WrapAlignment.center,
-                children: const [
+                children: [
                   DocuVerseBadge(
                       text: 'PDF', variant: DocuVerseBadgeVariant.brand),
                   DocuVerseBadge(
@@ -273,7 +273,7 @@ class _UploadDropzoneState extends State<UploadDropzone> {
               ],
 
               // Current Document Status summary (if already loaded)
-              if (docState.hasDocument && docState.filename != null) ...[
+              if (wsState.hasDocument && wsState.filename != null) ...[
                 const SizedBox(height: 24),
                 Container(
                   padding:
@@ -290,17 +290,17 @@ class _UploadDropzoneState extends State<UploadDropzone> {
                           size: 18, color: colors.success),
                       const SizedBox(width: 8),
                       Text(
-                        'Loaded: ${docState.filename}',
+                        'Loaded: ${wsState.filename}',
                         style: TextStyle(
                           fontFamily: DocuVerseTypography.fontMono,
                           fontSize: 12,
                           color: colors.foreground,
                         ),
                       ),
-                      if (docState.loadedBytes != null) ...[
+                      if (wsState.loadedBytes != null) ...[
                         const SizedBox(width: 8),
                         Text(
-                          '(${_formatSize(docState.loadedBytes!.length)}, ${docState.pageCount} pages)',
+                          '(${_formatSize(wsState.loadedBytes!.length)}, ${wsState.pageCount} pages)',
                           style: TextStyle(
                             fontFamily: DocuVerseTypography.fontMono,
                             fontSize: 11,

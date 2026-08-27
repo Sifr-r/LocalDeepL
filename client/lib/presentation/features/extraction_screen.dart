@@ -1,15 +1,15 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:omniscribe_client/models/extraction.dart';
+import 'package:omniscribe_client/data/providers/features_notifier.dart';
 import 'package:omniscribe_client/data/providers/settings_notifier.dart';
-import 'package:omniscribe_client/state/features_provider.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_card.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_section_header.dart';
+import 'package:omniscribe_client/theme/docuverse_theme.dart';
 
 class ExtractionScreen extends ConsumerStatefulWidget {
   const ExtractionScreen({super.key});
@@ -19,14 +19,10 @@ class ExtractionScreen extends ConsumerStatefulWidget {
 }
 
 class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
-  late TextEditingController _inputTextController;
-  late TextEditingController _customSchemaController;
-  String _selectedTemplate = 'invoice';
-  bool _isExtracting = false;
-  dynamic _extractedData;
-  String? _statusMessage;
+  late final TextEditingController _inputTextController;
+  late final TextEditingController _customSchemaController;
 
-  final List<Map<String, String>> _templates = [
+  static const List<Map<String, String>> _templates = [
     {'id': 'invoice', 'label': 'Invoice'},
     {'id': 'resume', 'label': 'Resume'},
     {'id': 'academic', 'label': 'Academic'},
@@ -37,23 +33,11 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
   @override
   void initState() {
     super.initState();
-    _inputTextController = TextEditingController();
-    _customSchemaController = TextEditingController(
-      text: const JsonEncoder.withIndent('  ').convert({
-        'invoice_number': 'string',
-        'vendor_name': 'string',
-        'total_amount': 'number',
-        'tax_amount': 'number',
-        'date': 'string',
-        'line_items': [
-          {
-            'description': 'string',
-            'quantity': 'number',
-            'unit_price': 'number'
-          }
-        ],
-      }),
-    );
+    final extractionState = ref.read(extractionProvider);
+    _inputTextController =
+        TextEditingController(text: extractionState.inputText);
+    _customSchemaController =
+        TextEditingController(text: extractionState.customSchema);
   }
 
   @override
@@ -68,88 +52,29 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
     if (text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Please enter or paste input text to extract.')),
+          content: Text('Please enter or paste input text to extract.'),
+        ),
       );
       return;
     }
 
-    setState(() {
-      _isExtracting = true;
-      _extractedData = null;
-      _statusMessage = null;
-    });
+    final notifier = ref.read(extractionProvider.notifier);
+    notifier.setInputText(text);
+    notifier.setCustomSchema(_customSchemaController.text.trim());
 
-    final repo = ref.read(featuresRepositoryProvider);
     final config = ref.read(settingsStateProvider).runtimeConfig;
-
-    try {
-      final req = ExtractionRequest(
-        text: text,
-        template: _selectedTemplate,
-        customPrompt: _selectedTemplate == 'custom'
-            ? _customSchemaController.text.trim()
-            : null,
-        model: config?.model,
-        apiBase: config?.apiBase,
-      );
-
-      final res = await repo.extract(req);
-      setState(() {
-        _extractedData = res.extractedData;
-        _statusMessage = 'Extraction complete.';
-      });
-    } catch (e) {
-      // Fallback synthetic structured extraction for offline UI testing
-      setState(() {
-        if (_selectedTemplate == 'invoice') {
-          _extractedData = {
-            'invoice_number': 'INV-2026-0881',
-            'vendor_name': 'Acme Document Services LLC',
-            'total_amount': 12450.00,
-            'tax_amount': 1245.00,
-            'date': '2026-08-24',
-            'currency': 'USD',
-            'line_items': [
-              {
-                'description': 'OCR Document Digitization Tier 1',
-                'quantity': 500,
-                'unit_price': 20.00
-              },
-              {
-                'description': 'Neural Translation French Pack',
-                'quantity': 1,
-                'unit_price': 2450.00
-              },
-            ],
-            'confidence_score': 0.985,
-          };
-        } else {
-          _extractedData = {
-            'template': _selectedTemplate,
-            'extracted_fields': {
-              'status': 'success',
-              'content_summary':
-                  text.length > 80 ? '${text.substring(0, 80)}…' : text,
-              'parsed_timestamp': DateTime.now().toIso8601String(),
-            }
-          };
-        }
-        _statusMessage = 'Extracted with schema verification.';
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isExtracting = false;
-        });
-      }
-    }
+    await notifier.extract(
+      model: config?.model,
+      apiBase: config?.apiBase,
+      apiKey: config?.apiKey,
+    );
   }
 
-  void _copyJson() {
-    if (_extractedData != null) {
+  void _copyJson(dynamic extractedData) {
+    if (extractedData != null) {
       final jsonStr =
-          const JsonEncoder.withIndent('  ').convert(_extractedData);
-      Clipboard.setData(ClipboardData(text: jsonStr));
+          const JsonEncoder.withIndent('  ').convert(extractedData);
+      unawaited(Clipboard.setData(ClipboardData(text: jsonStr)));
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('JSON data copied to clipboard.')),
       );
@@ -158,6 +83,8 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(extractionProvider);
+    final notifier = ref.read(extractionProvider.notifier);
     final tokens = context.docuVerse;
 
     return Scaffold(
@@ -197,7 +124,9 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                     Text(
                       'Extract strongly-typed entities, tables, invoices, and key-values from OCR document trees',
                       style: TextStyle(
-                          fontSize: 12, color: tokens.foregroundMuted),
+                        fontSize: 12,
+                        color: tokens.foregroundMuted,
+                      ),
                     ),
                   ],
                 ),
@@ -212,14 +141,16 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: _templates.map((tpl) {
-                      final isSelected = _selectedTemplate == tpl['id'];
+                      final isSelected = state.selectedTemplate == tpl['id'];
                       return InkWell(
                         onTap: () =>
-                            setState(() => _selectedTemplate = tpl['id']!),
+                            notifier.setSelectedTemplate(tpl['id']!),
                         borderRadius: BorderRadius.circular(4),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 5),
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
                           decoration: BoxDecoration(
                             color:
                                 isSelected ? tokens.card : Colors.transparent,
@@ -258,16 +189,33 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const DocuVerseSectionHeader(
+                          DocuVerseSectionHeader(
                             title: 'Input Text / Document Artifact',
                             description:
                                 'Source text containing unstructured information',
+                            action: _inputTextController.text.isNotEmpty
+                                ? InkWell(
+                                    onTap: () {
+                                      _inputTextController.clear();
+                                      notifier.clearInputText();
+                                      setState(() {});
+                                    },
+                                    child: Text(
+                                      'Clear',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: tokens.danger,
+                                      ),
+                                    ),
+                                  )
+                                : null,
                           ),
                           Expanded(
                             child: TextField(
                               controller: _inputTextController,
                               maxLines: null,
                               expands: true,
+                              onChanged: notifier.setInputText,
                               style: TextStyle(
                                 fontSize: 13,
                                 color: tokens.foreground,
@@ -277,13 +225,14 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                                 hintText:
                                     'Paste invoice text, resume, receipt, or academic table here…',
                                 hintStyle: TextStyle(
-                                    fontSize: 13,
-                                    color: tokens.foregroundSubtle),
+                                  fontSize: 13,
+                                  color: tokens.foregroundSubtle,
+                                ),
                                 border: InputBorder.none,
                               ),
                             ),
                           ),
-                          if (_selectedTemplate == 'custom') ...[
+                          if (state.selectedTemplate == 'custom') ...[
                             const SizedBox(height: 12),
                             Divider(color: tokens.border, height: 1),
                             const SizedBox(height: 8),
@@ -302,6 +251,7 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                                 controller: _customSchemaController,
                                 maxLines: null,
                                 expands: true,
+                                onChanged: notifier.setCustomSchema,
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: tokens.success,
@@ -321,12 +271,12 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                           ],
                           const SizedBox(height: 14),
                           DocuVerseButton(
-                            text: _isExtracting
+                            text: state.isExtracting
                                 ? 'Extracting…'
                                 : 'Run Structured Extraction',
                             variant: DocuVerseButtonVariant.primary,
                             fullWidth: true,
-                            loading: _isExtracting,
+                            loading: state.isExtracting,
                             icon: const Icon(Icons.auto_fix_high, size: 16),
                             onPressed: _handleExtract,
                           ),
@@ -347,13 +297,14 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                             title: 'Extracted Output AST',
                             description:
                                 'Typed JSON structure validated against selected schema',
-                            action: _extractedData != null
+                            action: state.extractedData != null
                                 ? DocuVerseButton(
                                     text: 'Copy JSON',
                                     variant: DocuVerseButtonVariant.ghost,
                                     size: DocuVerseButtonSize.sm,
                                     icon: const Icon(Icons.copy, size: 14),
-                                    onPressed: _copyJson,
+                                    onPressed: () =>
+                                        _copyJson(state.extractedData),
                                   )
                                 : null,
                           ),
@@ -366,7 +317,7 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                                 borderRadius: BorderRadius.circular(6),
                                 border: Border.all(color: tokens.border),
                               ),
-                              child: _isExtracting
+                              child: state.isExtracting
                                   ? Center(
                                       child: Column(
                                         mainAxisSize: MainAxisSize.min,
@@ -374,7 +325,8 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                                           CircularProgressIndicator(
                                             valueColor:
                                                 AlwaysStoppedAnimation<Color>(
-                                                    tokens.brand),
+                                              tokens.brand,
+                                            ),
                                           ),
                                           const SizedBox(height: 12),
                                           Text(
@@ -387,11 +339,11 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                                         ],
                                       ),
                                     )
-                                  : _extractedData != null
+                                  : state.extractedData != null
                                       ? SingleChildScrollView(
                                           child: SelectableText(
                                             const JsonEncoder.withIndent('  ')
-                                                .convert(_extractedData),
+                                                .convert(state.extractedData),
                                             style: TextStyle(
                                               fontSize: 12.5,
                                               fontFamily: 'monospace',
@@ -404,8 +356,9 @@ class _ExtractionScreenState extends ConsumerState<ExtractionScreen> {
                                           child: Text(
                                             'Extracted JSON output structure will appear here after extraction.',
                                             style: TextStyle(
-                                                fontSize: 13,
-                                                color: tokens.foregroundSubtle),
+                                              fontSize: 13,
+                                              color: tokens.foregroundSubtle,
+                                            ),
                                           ),
                                         ),
                             ),

@@ -2,16 +2,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:omniscribe_client/models/translation.dart';
+import 'package:omniscribe_client/data/providers/features_notifier.dart';
 import 'package:omniscribe_client/data/providers/settings_notifier.dart';
-import 'package:omniscribe_client/state/features_provider.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_card.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_input.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_section_header.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_toggle.dart';
+import 'package:omniscribe_client/theme/docuverse_theme.dart';
 
 class TranslationScreen extends ConsumerStatefulWidget {
   const TranslationScreen({super.key});
@@ -21,18 +19,11 @@ class TranslationScreen extends ConsumerStatefulWidget {
 }
 
 class _TranslationScreenState extends ConsumerState<TranslationScreen> {
-  late TextEditingController _sourceTextController;
-  String _targetLanguage = 'French';
-  String _selectedModel = '';
-  bool _useNllb = false;
+  late final TextEditingController _sourceTextController;
   bool _useTree = false;
-  bool _isTranslating = false;
-  String _translatedOutput = '';
-  String? _asyncJobId;
-  String? _asyncStatus;
   Timer? _pollingTimer;
 
-  final List<String> _languages = [
+  static const List<String> _languages = [
     'French',
     'Spanish',
     'German',
@@ -49,7 +40,8 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
   @override
   void initState() {
     super.initState();
-    _sourceTextController = TextEditingController();
+    final initialText = ref.read(translationProvider).sourceText;
+    _sourceTextController = TextEditingController(text: initialText);
   }
 
   @override
@@ -64,56 +56,22 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
     if (text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Please provide source text to translate.')),
+          content: Text('Please provide source text to translate.'),
+        ),
       );
       return;
     }
 
-    setState(() {
-      _isTranslating = true;
-      _translatedOutput = '';
-      _asyncStatus = null;
-    });
+    final notifier = ref.read(translationProvider.notifier);
+    notifier.setSourceText(text);
 
-    final repo = ref.read(featuresRepositoryProvider);
     final config = ref.read(settingsStateProvider).runtimeConfig;
-
-    try {
-      if (_useNllb) {
-        final res = await repo.translateNllb(
-          text: text,
-          targetLanguage: _targetLanguage,
-        );
-        setState(() {
-          _translatedOutput = res.translatedText;
-        });
-      } else {
-        final req = TranslationRequest(
-          text: text,
-          targetLanguage: _targetLanguage,
-          model: _selectedModel.isNotEmpty
-              ? _selectedModel
-              : (config?.translationModel ?? config?.model),
-          apiBase: config?.translationApiBase ?? config?.apiBase,
-          apiKey: config?.translationApiKey ?? config?.apiKey,
-          dualTranslate: config?.dualTranslate ?? false,
-        );
-        final res = await repo.translate(req);
-        setState(() {
-          _translatedOutput = res.translatedText;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _translatedOutput = 'Translation failed: $e';
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isTranslating = false;
-        });
-      }
-    }
+    await notifier.translate(
+      apiBase: config?.translationApiBase ?? config?.apiBase,
+      apiKey: config?.translationApiKey ?? config?.apiKey,
+      fallbackModel: config?.translationModel ?? config?.model,
+      dualTranslate: config?.dualTranslate ?? false,
+    );
   }
 
   Future<void> _handleAsyncTranslate() async {
@@ -121,87 +79,43 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
     if (text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Please provide source text for async translation.')),
+          content: Text('Please provide source text for async translation.'),
+        ),
       );
       return;
     }
 
-    setState(() {
-      _isTranslating = true;
-      _translatedOutput = '';
-      _asyncStatus = 'Queuing async translation job...';
-    });
+    final notifier = ref.read(translationProvider.notifier);
+    notifier.setSourceText(text);
 
-    final repo = ref.read(featuresRepositoryProvider);
     final config = ref.read(settingsStateProvider).runtimeConfig;
+    final jobId = await notifier.translateAsync(
+      apiBase: config?.translationApiBase ?? config?.apiBase,
+      apiKey: config?.translationApiKey ?? config?.apiKey,
+      fallbackModel: config?.translationModel ?? config?.model,
+    );
 
-    try {
-      final req = TranslationRequest(
-        text: text,
-        targetLanguage: _targetLanguage,
-        model: _selectedModel.isNotEmpty
-            ? _selectedModel
-            : (config?.translationModel ?? config?.model),
-        apiBase: config?.translationApiBase ?? config?.apiBase,
-      );
-      final res = await repo.translateAsync(req);
-
-      setState(() {
-        _asyncJobId = res.jobId;
-        _asyncStatus = 'Job ${res.jobId} queued. Polling progress...';
-      });
-
-      _startPolling(res.jobId);
-    } catch (e) {
-      setState(() {
-        _isTranslating = false;
-        _asyncStatus = 'Async translation failed: $e';
-      });
+    if (jobId != null) {
+      _startPolling(jobId);
     }
   }
 
   void _startPolling(String jobId) {
     _pollingTimer?.cancel();
     _pollingTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
-      try {
-        final repo = ref.read(featuresRepositoryProvider);
-        final status = await repo.getTranslationStatus(jobId);
+      final notifier = ref.read(translationProvider.notifier);
+      await notifier.checkTranslationStatus(jobId);
 
-        if (status.state.toUpperCase() == 'SUCCESS') {
-          timer.cancel();
-          setState(() {
-            _isTranslating = false;
-            _translatedOutput =
-                status.result?.toString() ?? 'Translation completed.';
-            _asyncStatus = 'Completed.';
-          });
-        } else if (status.state.toUpperCase() == 'FAILURE' ||
-            status.error != null) {
-          timer.cancel();
-          setState(() {
-            _isTranslating = false;
-            _asyncStatus =
-                'Failed: ${status.detail ?? status.error ?? "Unknown error"}';
-          });
-        } else {
-          setState(() {
-            _asyncStatus =
-                'Status: ${status.state} (${status.status ?? "in-flight"})';
-          });
-        }
-      } catch (e) {
+      final state = ref.read(translationProvider);
+      if (!state.isTranslating) {
         timer.cancel();
-        setState(() {
-          _isTranslating = false;
-          _asyncStatus = 'Polling error: $e';
-        });
       }
     });
   }
 
-  void _copyOutput() {
-    if (_translatedOutput.isNotEmpty) {
-      Clipboard.setData(ClipboardData(text: _translatedOutput));
+  void _copyOutput(String translatedOutput) {
+    if (translatedOutput.isNotEmpty) {
+      unawaited(Clipboard.setData(ClipboardData(text: translatedOutput)));
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Translated text copied to clipboard.')),
       );
@@ -210,7 +124,8 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final configState = ref.watch(settingsStateProvider);
+    final state = ref.watch(translationProvider);
+    final notifier = ref.read(translationProvider.notifier);
     final tokens = context.docuVerse;
 
     return Scaffold(
@@ -250,7 +165,9 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                     Text(
                       'Context-aware dual-engine translation with term preservation & sliding window',
                       style: TextStyle(
-                          fontSize: 12, color: tokens.foregroundMuted),
+                        fontSize: 12,
+                        color: tokens.foregroundMuted,
+                      ),
                     ),
                   ],
                 ),
@@ -266,12 +183,16 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                       ),
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
-                          value: _targetLanguage,
+                          value: state.targetLanguage,
                           dropdownColor: tokens.card,
-                          style:
-                              TextStyle(fontSize: 13, color: tokens.foreground),
-                          icon: Icon(Icons.arrow_drop_down,
-                              color: tokens.foregroundMuted),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: tokens.foreground,
+                          ),
+                          icon: Icon(
+                            Icons.arrow_drop_down,
+                            color: tokens.foregroundMuted,
+                          ),
                           items: _languages
                               .map(
                                 (lang) => DropdownMenuItem(
@@ -281,8 +202,9 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                               )
                               .toList(),
                           onChanged: (val) {
-                            if (val != null)
-                              setState(() => _targetLanguage = val);
+                            if (val != null) {
+                              notifier.setTargetLanguage(val);
+                            }
                           },
                         ),
                       ),
@@ -303,19 +225,23 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
               ),
               child: Row(
                 children: [
-                  DocuVerseToggle(
-                    label: 'NLLB Fast Engine',
-                    description: 'Direct Meta NLLB-200 offline translation',
-                    checked: _useNllb,
-                    onChanged: (val) => setState(() => _useNllb = val),
+                  Expanded(
+                    child: DocuVerseToggle(
+                      label: 'NLLB Fast Engine',
+                      description: 'Direct Meta NLLB-200 offline translation',
+                      checked: state.useNllb,
+                      onChanged: notifier.setUseNllb,
+                    ),
                   ),
                   const SizedBox(width: 32),
-                  DocuVerseToggle(
-                    label: 'Tree-Aware Translation',
-                    description:
-                        'Preserve hierarchical layout headers and tables',
-                    checked: _useTree,
-                    onChanged: (val) => setState(() => _useTree = val),
+                  Expanded(
+                    child: DocuVerseToggle(
+                      label: 'Tree-Aware Translation',
+                      description:
+                          'Preserve hierarchical layout headers and tables',
+                      checked: _useTree,
+                      onChanged: (val) => setState(() => _useTree = val),
+                    ),
                   ),
                 ],
               ),
@@ -340,12 +266,17 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                                 'Paste text or loaded document text artifact',
                             action: _sourceTextController.text.isNotEmpty
                                 ? InkWell(
-                                    onTap: () => setState(
-                                        () => _sourceTextController.clear()),
+                                    onTap: () {
+                                      _sourceTextController.clear();
+                                      notifier.clearSourceText();
+                                      setState(() {});
+                                    },
                                     child: Text(
                                       'Clear',
                                       style: TextStyle(
-                                          fontSize: 12, color: tokens.danger),
+                                        fontSize: 12,
+                                        color: tokens.danger,
+                                      ),
                                     ),
                                   )
                                 : null,
@@ -355,6 +286,7 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                               controller: _sourceTextController,
                               maxLines: null,
                               expands: true,
+                              onChanged: notifier.setSourceText,
                               style: TextStyle(
                                 fontSize: 13,
                                 color: tokens.foreground,
@@ -364,8 +296,9 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                                 hintText:
                                     'Enter or paste source document text here…',
                                 hintStyle: TextStyle(
-                                    fontSize: 13,
-                                    color: tokens.foregroundSubtle),
+                                  fontSize: 13,
+                                  color: tokens.foregroundSubtle,
+                                ),
                                 border: InputBorder.none,
                               ),
                             ),
@@ -375,11 +308,11 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                             children: [
                               Expanded(
                                 child: DocuVerseButton(
-                                  text: _isTranslating
+                                  text: state.isTranslating
                                       ? 'Translating…'
                                       : 'Translate (Sync)',
                                   variant: DocuVerseButtonVariant.primary,
-                                  loading: _isTranslating,
+                                  loading: state.isTranslating,
                                   icon: const Icon(Icons.translate, size: 14),
                                   onPressed: _handleSyncTranslate,
                                 ),
@@ -388,7 +321,7 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                               DocuVerseButton(
                                 text: 'Async',
                                 variant: DocuVerseButtonVariant.secondary,
-                                disabled: _isTranslating,
+                                disabled: state.isTranslating,
                                 tooltip:
                                     'Queue background task for large texts',
                                 onPressed: _handleAsyncTranslate,
@@ -409,20 +342,22 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           DocuVerseSectionHeader(
-                            title: 'Translated Output ($_targetLanguage)',
+                            title:
+                                'Translated Output (${state.targetLanguage})',
                             description:
                                 'Neural output with domain terminology preserved',
-                            action: _translatedOutput.isNotEmpty
+                            action: state.translatedOutput.isNotEmpty
                                 ? DocuVerseButton(
                                     text: 'Copy',
                                     variant: DocuVerseButtonVariant.ghost,
                                     size: DocuVerseButtonSize.sm,
                                     icon: const Icon(Icons.copy, size: 14),
-                                    onPressed: _copyOutput,
+                                    onPressed: () =>
+                                        _copyOutput(state.translatedOutput),
                                   )
                                 : null,
                           ),
-                          if (_asyncStatus != null) ...[
+                          if (state.asyncStatus != null) ...[
                             Container(
                               padding: const EdgeInsets.all(8),
                               margin: const EdgeInsets.only(bottom: 8),
@@ -432,7 +367,7 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                                 border: Border.all(color: tokens.border),
                               ),
                               child: Text(
-                                _asyncStatus!,
+                                state.asyncStatus!,
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontFamily: 'monospace',
@@ -449,7 +384,8 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                                 borderRadius: BorderRadius.circular(6),
                                 border: Border.all(color: tokens.border),
                               ),
-                              child: _isTranslating && _translatedOutput.isEmpty
+                              child: state.isTranslating &&
+                                      state.translatedOutput.isEmpty
                                   ? Center(
                                       child: Column(
                                         mainAxisSize: MainAxisSize.min,
@@ -457,7 +393,8 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                                           CircularProgressIndicator(
                                             valueColor:
                                                 AlwaysStoppedAnimation<Color>(
-                                                    tokens.brand),
+                                              tokens.brand,
+                                            ),
                                           ),
                                           const SizedBox(height: 12),
                                           Text(
@@ -472,15 +409,16 @@ class _TranslationScreenState extends ConsumerState<TranslationScreen> {
                                     )
                                   : SingleChildScrollView(
                                       child: SelectableText(
-                                        _translatedOutput.isNotEmpty
-                                            ? _translatedOutput
+                                        state.translatedOutput.isNotEmpty
+                                            ? state.translatedOutput
                                             : 'Translated text output will appear here once translation is triggered.',
                                         style: TextStyle(
                                           fontSize: 13,
                                           fontFamily: 'monospace',
-                                          color: _translatedOutput.isNotEmpty
-                                              ? tokens.foreground
-                                              : tokens.foregroundSubtle,
+                                          color:
+                                              state.translatedOutput.isNotEmpty
+                                                  ? tokens.foreground
+                                                  : tokens.foregroundSubtle,
                                         ),
                                       ),
                                     ),

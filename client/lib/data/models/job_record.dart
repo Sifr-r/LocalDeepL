@@ -1,4 +1,5 @@
 /// Job lifecycle, history records, and asynchronous submission models.
+library;
 
 class JobRecord {
   const JobRecord({

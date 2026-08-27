@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:omniscribe_client/theme/docuverse_colors.dart';
 import 'package:omniscribe_client/theme/docuverse_theme.dart';
 import 'package:omniscribe_client/theme/docuverse_typography.dart';
 

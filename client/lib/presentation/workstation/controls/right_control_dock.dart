@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:omniscribe_client/models/document_view_model.dart';
-import 'package:omniscribe_client/models/process_settings.dart';
-import 'package:omniscribe_client/state/document_provider.dart';
-import 'package:omniscribe_client/state/progress_provider.dart';
-import 'package:omniscribe_client/theme/docuverse_colors.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
-import 'package:omniscribe_client/theme/docuverse_typography.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/data/models/process_settings.dart';
+import 'package:omniscribe_client/data/providers/workstation_notifier.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_card.dart';
@@ -13,11 +9,13 @@ import 'package:omniscribe_client/presentation/widgets/docuverse_section_header.
 import 'package:omniscribe_client/presentation/widgets/docuverse_select.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_slider.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_toggle.dart';
+import 'package:omniscribe_client/theme/docuverse_theme.dart';
+import 'package:omniscribe_client/theme/docuverse_typography.dart';
 import 'quality_repair_dock.dart';
 
 /// Right-hand control dock holding OCR configuration, processor selectors,
 /// image preprocessing, quality repair loop, and the primary execution CTA.
-class RightControlDock extends StatefulWidget {
+class RightControlDock extends ConsumerStatefulWidget {
   const RightControlDock({
     super.key,
     required this.settings,
@@ -30,17 +28,19 @@ class RightControlDock extends StatefulWidget {
   final Future<void> Function(ProcessSettings settings) onProcessRequested;
 
   @override
-  State<RightControlDock> createState() => _RightControlDockState();
+  ConsumerState<RightControlDock> createState() => _RightControlDockState();
 }
 
-class _RightControlDockState extends State<RightControlDock> {
+class _RightControlDockState extends ConsumerState<RightControlDock> {
   bool _isAdvancedExpanded = false;
 
   void _toggleProcessor(String processorId) {
+    final proc = DocumentProcessorName.tryFromString(processorId);
+    if (proc == null) return;
     final current = widget.settings.documentProcessors;
-    final updated = current.contains(processorId)
-        ? current.where((p) => p != processorId).toList()
-        : [...current, processorId];
+    final updated = current.contains(proc)
+        ? current.where((p) => p != proc).toList()
+        : [...current, proc];
     widget.onSettingsChanged(
         widget.settings.copyWith(documentProcessors: updated));
   }
@@ -48,12 +48,11 @@ class _RightControlDockState extends State<RightControlDock> {
   @override
   Widget build(BuildContext context) {
     final colors = context.docuVerse;
-    final docState = DocumentProvider.of(context);
-    final progressState = ProgressProvider.of(context);
+    final wsState = ref.watch(workstationProvider);
     final s = widget.settings;
 
-    final isProcessing = progressState.isProcessing;
-    final hasDoc = docState.hasDocument;
+    final isProcessing = wsState.isProcessing;
+    final hasDoc = wsState.hasDocument;
 
     return SingleChildScrollView(
       child: Column(
@@ -197,7 +196,7 @@ class _RightControlDockState extends State<RightControlDock> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                DocuVerseSectionHeader(title: 'Document Processors'),
+                const DocuVerseSectionHeader(title: 'Document Processors'),
                 Text(
                   'Select analyzers to enrich document structure and reading order:',
                   style: TextStyle(
@@ -211,7 +210,8 @@ class _RightControlDockState extends State<RightControlDock> {
                   spacing: 6,
                   runSpacing: 6,
                   children: DocumentProcessorInfo.all.map((info) {
-                    final isSelected = s.documentProcessors.contains(info.id);
+                    final isSelected =
+                        s.documentProcessors.any((p) => p.value == info.id);
                     return Tooltip(
                       message: info.description,
                       child: InkWell(

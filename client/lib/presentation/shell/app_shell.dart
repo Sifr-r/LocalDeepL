@@ -75,17 +75,18 @@ class _AppShellState extends ConsumerState<AppShell> {
       const SettingsScreen(),
     ];
 
-    return Scaffold(
-      backgroundColor: tokens.app,
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(60),
-        child: Container(
-          decoration: BoxDecoration(
-            color: tokens.card,
-            border: Border(bottom: BorderSide(color: tokens.border, width: 1)),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: SafeArea(
+    return Container(
+      color: tokens.app,
+      child: Column(
+        children: [
+          Container(
+            height: 60,
+            decoration: BoxDecoration(
+              color: tokens.card,
+              border: Border(bottom: BorderSide(color: tokens.border, width: 1)),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: SafeArea(
             child: Row(
               children: [
                 // App Brand / Logo
@@ -196,7 +197,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                     const SizedBox(width: 12),
 
                     // Server Health Status Indicator (runtime — not tracked in SettingsState yet)
-                    DocuVerseBadge(
+                    const DocuVerseBadge(
                       text: 'Offline',
                       variant: DocuVerseBadgeVariant.danger,
                       hasDot: true,
@@ -226,11 +227,11 @@ class _AppShellState extends ConsumerState<AppShell> {
             ),
           ),
         ),
-      ),
-      body: IndexedStack(
-        index: _selectedTabIndex,
-        children: screens,
-      ),
-    );
-  }
+        Expanded(
+          child: screens[_selectedTabIndex],
+        ),
+      ],
+    ),
+  );
+}
 }

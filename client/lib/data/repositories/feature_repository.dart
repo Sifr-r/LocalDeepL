@@ -11,6 +11,7 @@ abstract class FeatureRepository {
   // Translation
   Future<TranslationResponse> translate(TranslationRequest request);
   Future<AsyncSubmitResponse> translateAsync(TranslationRequest request);
+  Future<TranslationJobStatusResponse> getTranslationStatus(String jobId);
   Future<NLLBTranslationResponse> translateNllb({
     required String text,
     required String targetLanguage,
@@ -80,6 +81,14 @@ class FeatureRepositoryImpl implements FeatureRepository {
       data: request.toJson(),
     );
     return AsyncSubmitResponse.fromJson(json);
+  }
+
+  @override
+  Future<TranslationJobStatusResponse> getTranslationStatus(String jobId) async {
+    final json = await _apiClient.get<Map<String, dynamic>>(
+      ApiConstants.translationStatus(jobId),
+    );
+    return TranslationJobStatusResponse.fromJson(json);
   }
 
   @override

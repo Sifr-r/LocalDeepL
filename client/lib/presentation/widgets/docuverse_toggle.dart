@@ -38,13 +38,16 @@ class DocuVerseToggle extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        label,
-                        style: TextStyle(
-                          fontFamily: DocuVerseTypography.fontBody,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: colors.foreground,
+                      Flexible(
+                        child: Text(
+                          label,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: DocuVerseTypography.fontBody,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: colors.foreground,
+                          ),
                         ),
                       ),
                       if (badge != null) ...[

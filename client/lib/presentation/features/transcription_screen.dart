@@ -1,18 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:omniscribe_client/models/transcription.dart';
+import 'package:omniscribe_client/data/models/feature_models.dart';
+import 'package:omniscribe_client/data/providers/features_notifier.dart';
 import 'package:omniscribe_client/data/providers/settings_notifier.dart';
-import 'package:omniscribe_client/state/features_provider.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_card.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_input.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_section_header.dart';
+import 'package:omniscribe_client/theme/docuverse_theme.dart';
 
 class TranscriptionScreen extends ConsumerStatefulWidget {
   const TranscriptionScreen({super.key});
@@ -23,35 +22,30 @@ class TranscriptionScreen extends ConsumerStatefulWidget {
 }
 
 class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
-  Uint8List? _audioBytes;
-  String? _audioFilename;
-  String _engine = 'api';
-  late TextEditingController _modelController;
-  late TextEditingController _languageController;
-  late TextEditingController _promptController;
-
-  bool _isTranscribing = false;
-  TranscriptionJobResponse? _result;
-  String? _errorMessage;
-
-  // Audio Playback Simulation State
-  bool _isPlaying = false;
-  double _currentPlaybackTime = 0.0;
-  double _totalDuration = 0.0;
+  late final TextEditingController _modelController;
+  late final TextEditingController _languageController;
+  late final TextEditingController _promptController;
   Timer? _playbackTimer;
-  int? _activeSegmentId;
 
   @override
   void initState() {
     super.initState();
     final config = ref.read(settingsStateProvider).runtimeConfig;
-    _engine = config?.transcriptionEngine ?? 'whisper-local';
-    _modelController =
-        TextEditingController(text: config?.transcriptionModel ?? 'whisper-1');
-    _languageController =
-        TextEditingController(text: config?.transcriptionLanguage ?? '');
-    _promptController =
-        TextEditingController(text: config?.transcriptionPrompt ?? '');
+    final transcriptionState = ref.read(transcriptionProvider);
+
+    _modelController = TextEditingController(
+      text: transcriptionState.model.isNotEmpty
+          ? transcriptionState.model
+          : (config?.transcriptionModel ?? 'whisper-1'),
+    );
+    _languageController = TextEditingController(
+      text: transcriptionState.language ??
+          (config?.transcriptionLanguage ?? ''),
+    );
+    _promptController = TextEditingController(
+      text: transcriptionState.prompt ??
+          (config?.transcriptionPrompt ?? ''),
+    );
   }
 
   @override
@@ -64,99 +58,39 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
   }
 
   void _pickSampleAudioFile() {
-    // Generate synthetic audio mock file or load mock bytes
     final mockBytes =
         Uint8List.fromList(utf8.encode('RIFF....WAVEfmt ....data....'));
-    setState(() {
-      _audioBytes = mockBytes;
-      _audioFilename = 'interview_recording_sample.wav';
-      _totalDuration = 45.0;
-      _currentPlaybackTime = 0.0;
-      _isPlaying = false;
-    });
+    ref.read(transcriptionProvider.notifier).setAudio(
+          mockBytes,
+          'interview_recording_sample.wav',
+          duration: 45.0,
+        );
   }
 
   Future<void> _handleTranscribe() async {
-    if (_audioBytes == null || _audioFilename == null) {
+    final state = ref.read(transcriptionProvider);
+    if (state.audioBytes == null || state.audioFilename == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select an audio file first.')),
       );
       return;
     }
 
-    setState(() {
-      _isTranscribing = true;
-      _result = null;
-      _errorMessage = null;
-    });
+    final notifier = ref.read(transcriptionProvider.notifier);
+    notifier.setModel(_modelController.text.trim());
+    notifier.setLanguage(_languageController.text.trim());
+    notifier.setPrompt(_promptController.text.trim());
 
-    final repo = ref.read(featuresRepositoryProvider);
-    try {
-      final res = await repo.transcribe(
-        fileBytes: _audioBytes!,
-        filename: _audioFilename!,
-        engine: _engine,
-        model: _modelController.text.trim(),
-        language: _languageController.text.trim().isNotEmpty
-            ? _languageController.text.trim()
-            : null,
-        prompt: _promptController.text.trim().isNotEmpty
-            ? _promptController.text.trim()
-            : null,
-      );
-
-      setState(() {
-        _result = res;
-        _totalDuration = res.duration ??
-            (res.segments.isNotEmpty ? res.segments.last.end : 45.0);
-      });
-    } catch (e) {
-      // Fallback demo segments on simulated error so UI testing is always smooth
-      final sampleSegments = [
-        const TranscriptionSegment(
-            id: 1,
-            start: 0.0,
-            end: 4.5,
-            text: "Welcome to OmniScribe document and audio intelligence."),
-        const TranscriptionSegment(
-            id: 2,
-            start: 4.5,
-            end: 11.2,
-            text:
-                "Today we are demonstrating neural transcription with precise segment timestamps."),
-        const TranscriptionSegment(
-            id: 3,
-            start: 11.2,
-            end: 18.0,
-            text:
-                "All speech segments are aligned and can be scrubbed interactively in real time."),
-        const TranscriptionSegment(
-            id: 4,
-            start: 18.0,
-            end: 26.5,
-            text:
-                "Exporting to SubRip SRT subtitles and plain text is supported with full precision."),
-      ];
-      setState(() {
-        _result = TranscriptionJobResponse(
-          text: sampleSegments.map((s) => s.text).join(' '),
-          segments: sampleSegments,
-          filename: _audioFilename,
-          duration: 26.5,
-        );
-        _totalDuration = 26.5;
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isTranscribing = false;
-        });
-      }
-    }
+    final config = ref.read(settingsStateProvider).runtimeConfig;
+    await notifier.transcribe(
+      apiBase: config?.transcriptionApiBase ?? config?.apiBase,
+      apiKey: config?.transcriptionApiKey ?? config?.apiKey,
+    );
   }
 
   void _togglePlayback() {
-    if (_isPlaying) {
+    final state = ref.read(transcriptionProvider);
+    if (state.isPlaying) {
       _pausePlayback();
     } else {
       _startPlayback();
@@ -165,69 +99,52 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
 
   void _startPlayback() {
     _playbackTimer?.cancel();
-    setState(() => _isPlaying = true);
+    final notifier = ref.read(transcriptionProvider.notifier);
+    notifier.setIsPlaying(true);
+
     _playbackTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      if (_currentPlaybackTime >= _totalDuration) {
+      final state = ref.read(transcriptionProvider);
+      if (state.currentPlaybackTime >= state.totalDuration) {
         timer.cancel();
-        setState(() {
-          _isPlaying = false;
-          _currentPlaybackTime = 0.0;
-        });
+        notifier.setIsPlaying(false);
+        notifier.setPlaybackTime(0.0);
       } else {
-        setState(() {
-          _currentPlaybackTime += 0.1;
-          _updateActiveSegment();
-        });
+        notifier.setPlaybackTime(state.currentPlaybackTime + 0.1);
       }
     });
   }
 
   void _pausePlayback() {
     _playbackTimer?.cancel();
-    setState(() => _isPlaying = false);
+    ref.read(transcriptionProvider.notifier).setIsPlaying(false);
   }
 
   void _seekToSegment(TranscriptionSegment segment) {
-    setState(() {
-      _currentPlaybackTime = segment.start;
-      _activeSegmentId = segment.id;
-    });
+    ref.read(transcriptionProvider.notifier).seekToSegment(segment);
     _startPlayback();
   }
 
-  void _updateActiveSegment() {
-    if (_result == null) return;
-    for (final seg in _result!.segments) {
-      if (_currentPlaybackTime >= seg.start &&
-          _currentPlaybackTime <= seg.end) {
-        if (_activeSegmentId != seg.id) {
-          _activeSegmentId = seg.id;
-        }
-        return;
-      }
-    }
-  }
-
-  void _exportTxt() {
-    if (_result == null) return;
-    Clipboard.setData(ClipboardData(text: _result!.text));
+  void _exportTxt(TranscriptionResponse? result) {
+    if (result == null) return;
+    unawaited(Clipboard.setData(ClipboardData(text: result.text)));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Transcript copied to clipboard.')),
     );
   }
 
-  void _exportSrt() {
-    if (_result == null) return;
+  void _exportSrt(TranscriptionResponse? result) {
+    if (result == null) return;
     final buffer = StringBuffer();
-    for (int i = 0; i < _result!.segments.length; i++) {
-      final seg = _result!.segments[i];
+    for (int i = 0; i < result.segments.length; i++) {
+      final seg = result.segments[i];
       buffer.writeln('${i + 1}');
       buffer.writeln(
-          '${_formatSrtTime(seg.start)} --> ${_formatSrtTime(seg.end)}');
+        '${_formatSrtTime(seg.start)} --> ${_formatSrtTime(seg.end)}',
+      );
       buffer.writeln(seg.text);
       buffer.writeln();
     }
-    Clipboard.setData(ClipboardData(text: buffer.toString()));
+    unawaited(Clipboard.setData(ClipboardData(text: buffer.toString())));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('SRT Subtitles copied to clipboard.')),
     );
@@ -244,6 +161,8 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(transcriptionProvider);
+    final notifier = ref.read(transcriptionProvider.notifier);
     final tokens = context.docuVerse;
 
     return Scaffold(
@@ -283,7 +202,9 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                     Text(
                       'Transcribe speech with timestamped segments and interactive audio player simulation',
                       style: TextStyle(
-                          fontSize: 12, color: tokens.foregroundMuted),
+                        fontSize: 12,
+                        color: tokens.foregroundMuted,
+                      ),
                     ),
                   ],
                 ),
@@ -298,22 +219,30 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                       ),
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
-                          value: _engine,
+                          value: state.engine,
                           dropdownColor: tokens.card,
-                          style:
-                              TextStyle(fontSize: 13, color: tokens.foreground),
-                          icon: Icon(Icons.arrow_drop_down,
-                              color: tokens.foregroundMuted),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: tokens.foreground,
+                          ),
+                          icon: Icon(
+                            Icons.arrow_drop_down,
+                            color: tokens.foregroundMuted,
+                          ),
                           items: const [
                             DropdownMenuItem(
-                                value: 'api',
-                                child: Text('OpenAI / Remote API')),
+                              value: 'api',
+                              child: Text('OpenAI / Remote API'),
+                            ),
                             DropdownMenuItem(
-                                value: 'faster-whisper',
-                                child: Text('Faster-Whisper (Local)')),
+                              value: 'faster-whisper',
+                              child: Text('Faster-Whisper (Local)'),
+                            ),
                           ],
                           onChanged: (val) {
-                            if (val != null) setState(() => _engine = val);
+                            if (val != null) {
+                              notifier.setEngine(val);
+                            }
                           },
                         ),
                       ),
@@ -352,7 +281,7 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                 color: tokens.cardRaised,
                                 borderRadius: BorderRadius.circular(6),
                                 border: Border.all(
-                                  color: _audioFilename != null
+                                  color: state.audioFilename != null
                                       ? tokens.brand
                                       : tokens.border,
                                   style: BorderStyle.solid,
@@ -362,17 +291,17 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(
-                                    _audioFilename != null
+                                    state.audioFilename != null
                                         ? Icons.audio_file
                                         : Icons.cloud_upload_outlined,
                                     size: 32,
-                                    color: _audioFilename != null
+                                    color: state.audioFilename != null
                                         ? tokens.brand
                                         : tokens.foregroundMuted,
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
-                                    _audioFilename ??
+                                    state.audioFilename ??
                                         'Click to load audio file',
                                     style: TextStyle(
                                       fontSize: 12,
@@ -383,12 +312,13 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    _audioFilename != null
-                                        ? 'Duration: ${_totalDuration.toStringAsFixed(1)}s'
+                                    state.audioFilename != null
+                                        ? 'Duration: ${state.totalDuration.toStringAsFixed(1)}s'
                                         : 'Supports WAV, MP3, M4A, FLAC, OGG',
                                     style: TextStyle(
-                                        fontSize: 11,
-                                        color: tokens.foregroundMuted),
+                                      fontSize: 11,
+                                      color: tokens.foregroundMuted,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -397,7 +327,7 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                           const SizedBox(height: 14),
 
                           // Simulated Audio Player
-                          if (_audioFilename != null) ...[
+                          if (state.audioFilename != null) ...[
                             Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
@@ -411,7 +341,7 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                     children: [
                                       IconButton(
                                         icon: Icon(
-                                          _isPlaying
+                                          state.isPlaying
                                               ? Icons.pause_circle_filled
                                               : Icons.play_circle_filled,
                                           size: 28,
@@ -426,29 +356,30 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                             trackHeight: 3,
                                             thumbShape:
                                                 const RoundSliderThumbShape(
-                                                    enabledThumbRadius: 6),
+                                              enabledThumbRadius: 6,
+                                            ),
                                             overlayShape:
                                                 const RoundSliderOverlayShape(
-                                                    overlayRadius: 10),
+                                              overlayRadius: 10,
+                                            ),
                                             activeTrackColor: tokens.brand,
                                             inactiveTrackColor:
                                                 tokens.borderStrong,
                                             thumbColor: tokens.brand,
                                           ),
                                           child: Slider(
-                                            value: _currentPlaybackTime.clamp(
-                                                0.0,
-                                                _totalDuration > 0
-                                                    ? _totalDuration
-                                                    : 1.0),
-                                            max: _totalDuration > 0
-                                                ? _totalDuration
+                                            value: state.currentPlaybackTime
+                                                .clamp(
+                                              0.0,
+                                              state.totalDuration > 0
+                                                  ? state.totalDuration
+                                                  : 1.0,
+                                            ),
+                                            max: state.totalDuration > 0
+                                                ? state.totalDuration
                                                 : 1.0,
                                             onChanged: (val) {
-                                              setState(() {
-                                                _currentPlaybackTime = val;
-                                                _updateActiveSegment();
-                                              });
+                                              notifier.setPlaybackTime(val);
                                             },
                                           ),
                                         ),
@@ -460,18 +391,20 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                         MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
-                                        '${_currentPlaybackTime.toStringAsFixed(1)}s',
+                                        '${state.currentPlaybackTime.toStringAsFixed(1)}s',
                                         style: TextStyle(
-                                            fontSize: 10,
-                                            fontFamily: 'monospace',
-                                            color: tokens.foregroundMuted),
+                                          fontSize: 10,
+                                          fontFamily: 'monospace',
+                                          color: tokens.foregroundMuted,
+                                        ),
                                       ),
                                       Text(
-                                        '${_totalDuration.toStringAsFixed(1)}s',
+                                        '${state.totalDuration.toStringAsFixed(1)}s',
                                         style: TextStyle(
-                                            fontSize: 10,
-                                            fontFamily: 'monospace',
-                                            color: tokens.foregroundMuted),
+                                          fontSize: 10,
+                                          fontFamily: 'monospace',
+                                          color: tokens.foregroundMuted,
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -505,13 +438,13 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                           const Spacer(),
 
                           DocuVerseButton(
-                            text: _isTranscribing
+                            text: state.isTranscribing
                                 ? 'Transcribing…'
                                 : 'Start Transcription',
                             variant: DocuVerseButtonVariant.primary,
                             fullWidth: true,
-                            loading: _isTranscribing,
-                            disabled: _audioBytes == null,
+                            loading: state.isTranscribing,
+                            disabled: state.audioBytes == null,
                             icon: const Icon(Icons.mic, size: 16),
                             onPressed: _handleTranscribe,
                           ),
@@ -532,8 +465,8 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                             title: 'Transcription Segments',
                             description:
                                 'Click any segment to seek and play from that timestamp',
-                            action: _result != null &&
-                                    _result!.segments.isNotEmpty
+                            action: state.result != null &&
+                                    state.result!.segments.isNotEmpty
                                 ? Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
@@ -541,7 +474,8 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                         text: 'Export .TXT',
                                         variant: DocuVerseButtonVariant.ghost,
                                         size: DocuVerseButtonSize.sm,
-                                        onPressed: _exportTxt,
+                                        onPressed: () =>
+                                            _exportTxt(state.result),
                                       ),
                                       const SizedBox(width: 6),
                                       DocuVerseButton(
@@ -549,14 +483,15 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                         variant:
                                             DocuVerseButtonVariant.secondary,
                                         size: DocuVerseButtonSize.sm,
-                                        onPressed: _exportSrt,
+                                        onPressed: () =>
+                                            _exportSrt(state.result),
                                       ),
                                     ],
                                   )
                                 : null,
                           ),
                           Expanded(
-                            child: _isTranscribing
+                            child: state.isTranscribing
                                 ? Center(
                                     child: Column(
                                       mainAxisSize: MainAxisSize.min,
@@ -564,39 +499,44 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                         CircularProgressIndicator(
                                           valueColor:
                                               AlwaysStoppedAnimation<Color>(
-                                                  tokens.brand),
+                                            tokens.brand,
+                                          ),
                                         ),
                                         const SizedBox(height: 12),
                                         Text(
                                           'Processing audio waveform & extracting tokens…',
                                           style: TextStyle(
-                                              fontSize: 12,
-                                              color: tokens.foregroundMuted),
+                                            fontSize: 12,
+                                            color: tokens.foregroundMuted,
+                                          ),
                                         ),
                                       ],
                                     ),
                                   )
-                                : (_result == null || _result!.segments.isEmpty)
+                                : (state.result == null ||
+                                        state.result!.segments.isEmpty)
                                     ? Center(
                                         child: Text(
                                           'Select an audio file and click "Start Transcription" to view interactive segments.',
                                           style: TextStyle(
-                                              fontSize: 13,
-                                              color: tokens.foregroundSubtle),
+                                            fontSize: 13,
+                                            color: tokens.foregroundSubtle,
+                                          ),
                                         ),
                                       )
                                     : ListView.separated(
-                                        itemCount: _result!.segments.length,
+                                        itemCount: state.result!.segments.length,
                                         separatorBuilder: (_, __) =>
                                             const SizedBox(height: 8),
                                         itemBuilder: (context, index) {
                                           final segment =
-                                              _result!.segments[index];
+                                              state.result!.segments[index];
                                           final isActive =
-                                              _activeSegmentId == segment.id ||
-                                                  (_currentPlaybackTime >=
+                                              state.activeSegmentId ==
+                                                      segment.id ||
+                                                  (state.currentPlaybackTime >=
                                                           segment.start &&
-                                                      _currentPlaybackTime <=
+                                                      state.currentPlaybackTime <=
                                                           segment.end);
 
                                           return InkWell(
@@ -606,7 +546,8 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                                 BorderRadius.circular(6),
                                             child: AnimatedContainer(
                                               duration: const Duration(
-                                                  milliseconds: 150),
+                                                milliseconds: 150,
+                                              ),
                                               padding: const EdgeInsets.all(12),
                                               decoration: BoxDecoration(
                                                 color: isActive
@@ -628,15 +569,17 @@ class _TranscriptionScreenState extends ConsumerState<TranscriptionScreen> {
                                                   Container(
                                                     padding: const EdgeInsets
                                                         .symmetric(
-                                                        horizontal: 6,
-                                                        vertical: 2),
+                                                      horizontal: 6,
+                                                      vertical: 2,
+                                                    ),
                                                     decoration: BoxDecoration(
                                                       color: isActive
                                                           ? tokens.brand
                                                           : tokens.card,
                                                       borderRadius:
                                                           BorderRadius.circular(
-                                                              4),
+                                                        4,
+                                                      ),
                                                     ),
                                                     child: Text(
                                                       '${segment.start.toStringAsFixed(1)}s - ${segment.end.toStringAsFixed(1)}s',

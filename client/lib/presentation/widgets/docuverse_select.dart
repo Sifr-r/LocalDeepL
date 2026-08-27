@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:omniscribe_client/theme/docuverse_colors.dart';
 import 'package:omniscribe_client/theme/docuverse_theme.dart';
 import 'package:omniscribe_client/theme/docuverse_typography.dart';
 
@@ -55,8 +54,27 @@ class DocuVerseSelect<T> extends StatelessWidget {
           const SizedBox(height: 6),
         ],
         DropdownButtonFormField<T>(
-          value: value,
+          isExpanded: true,
+          isDense: true,
+          initialValue: value,
+          itemHeight: null,
           onChanged: onChanged,
+          selectedItemBuilder: (BuildContext context) {
+            return items.map((item) {
+              return Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  item.label,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: DocuVerseTypography.fontBody,
+                    fontSize: 13,
+                    color: colors.foreground,
+                  ),
+                ),
+              );
+            }).toList();
+          },
           items: items.map((item) {
             return DropdownMenuItem<T>(
               value: item.value,

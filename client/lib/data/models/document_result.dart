@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'bbox_item.dart';
 
 /// Trust and quality analysis metrics extracted from X-Document-Trust header.
@@ -65,6 +65,28 @@ class TrustSummary {
         'histogram': histogram,
         'flag_counts': flagCounts,
       };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TrustSummary &&
+          runtimeType == other.runtimeType &&
+          blockCount == other.blockCount &&
+          scoredCount == other.scoredCount &&
+          flaggedCount == other.flaggedCount &&
+          average == other.average &&
+          mapEquals(histogram, other.histogram) &&
+          mapEquals(flagCounts, other.flagCounts);
+
+  @override
+  int get hashCode => Object.hash(
+        blockCount,
+        scoredCount,
+        flaggedCount,
+        average,
+        Object.hashAll(histogram.entries),
+        Object.hashAll(flagCounts.entries),
+      );
 }
 
 /// Structured page analysis representation.
@@ -76,6 +98,8 @@ class PageResult {
     this.bboxes = const [],
     this.text,
     this.raw,
+    this.imageUrl,
+    this.previewBytes,
   });
 
   final int page;
@@ -84,6 +108,15 @@ class PageResult {
   final List<BBoxItem> bboxes;
   final String? text;
   final Map<String, dynamic>? raw;
+  final String? imageUrl;
+  final Uint8List? previewBytes;
+
+  double get aspectRatio {
+    if (width != null && height != null && height! > 0) {
+      return width! / height!;
+    }
+    return 8.5 / 11.0;
+  }
 
   factory PageResult.fromJson(Map<String, dynamic> json) {
     final boxList = <BBoxItem>[];
@@ -101,6 +134,7 @@ class PageResult {
       height: (json['height'] as num?)?.toDouble(),
       bboxes: boxList,
       text: json['text']?.toString(),
+      imageUrl: json['image_url']?.toString(),
       raw: json,
     );
   }
@@ -111,7 +145,52 @@ class PageResult {
         if (height != null) 'height': height,
         'bboxes': bboxes.map((b) => b.toJson()).toList(),
         if (text != null) 'text': text,
+        if (imageUrl != null) 'image_url': imageUrl,
       };
+
+  PageResult copyWith({
+    int? page,
+    double? width,
+    double? height,
+    List<BBoxItem>? bboxes,
+    String? text,
+    Map<String, dynamic>? raw,
+    String? imageUrl,
+    Uint8List? previewBytes,
+  }) {
+    return PageResult(
+      page: page ?? this.page,
+      width: width ?? this.width,
+      height: height ?? this.height,
+      bboxes: bboxes ?? this.bboxes,
+      text: text ?? this.text,
+      raw: raw ?? this.raw,
+      imageUrl: imageUrl ?? this.imageUrl,
+      previewBytes: previewBytes ?? this.previewBytes,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PageResult &&
+          runtimeType == other.runtimeType &&
+          page == other.page &&
+          width == other.width &&
+          height == other.height &&
+          listEquals(bboxes, other.bboxes) &&
+          text == other.text &&
+          imageUrl == other.imageUrl;
+
+  @override
+  int get hashCode => Object.hash(
+        page,
+        width,
+        height,
+        Object.hashAll(bboxes),
+        text,
+        imageUrl,
+      );
 }
 
 /// Confidence distribution statistics.
@@ -120,17 +199,24 @@ class ConfidenceSummary {
     required this.average,
     required this.min,
     required this.max,
+    this.count = 0,
   });
 
   final double average;
   final double min;
   final double max;
+  final int count;
+
+  int get averagePercent => (average * 100).round();
+  int get minPercent => (min * 100).round();
+  int get maxPercent => (max * 100).round();
 
   factory ConfidenceSummary.fromJson(Map<String, dynamic> json) {
     return ConfidenceSummary(
       average: (json['average'] as num?)?.toDouble() ?? 0.0,
       min: (json['min'] as num?)?.toDouble() ?? 0.0,
       max: (json['max'] as num?)?.toDouble() ?? 0.0,
+      count: (json['count'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -138,7 +224,85 @@ class ConfidenceSummary {
         'average': average,
         'min': min,
         'max': max,
+        'count': count,
       };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ConfidenceSummary &&
+          runtimeType == other.runtimeType &&
+          average == other.average &&
+          min == other.min &&
+          max == other.max &&
+          count == other.count;
+
+  @override
+  int get hashCode => Object.hash(average, min, max, count);
+}
+
+/// Quality repair loop summary metrics.
+class QualitySummary {
+  const QualitySummary({
+    required this.scope,
+    required this.target,
+    required this.avgConfidence,
+    required this.repairedCount,
+    required this.belowTargetCount,
+    this.pageIdx,
+  });
+
+  final String scope;
+  final double target;
+  final double avgConfidence;
+  final int repairedCount;
+  final int belowTargetCount;
+  final int? pageIdx;
+
+  int get avgConfidencePercent => (avgConfidence * 100).round();
+  int get targetPercent => (target * 100).round();
+
+  factory QualitySummary.fromJson(Map<String, dynamic> json) {
+    return QualitySummary(
+      scope: json['scope']?.toString() ?? 'document',
+      target: (json['target'] as num?)?.toDouble() ?? 0.85,
+      avgConfidence: (json['avg_confidence'] as num?)?.toDouble() ?? 0.0,
+      repairedCount: (json['repaired_count'] as num?)?.toInt() ?? 0,
+      belowTargetCount: (json['below_target_count'] as num?)?.toInt() ?? 0,
+      pageIdx: (json['page_idx'] as num?)?.toInt(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'scope': scope,
+        'target': target,
+        'avg_confidence': avgConfidence,
+        'repaired_count': repairedCount,
+        'below_target_count': belowTargetCount,
+        if (pageIdx != null) 'page_idx': pageIdx,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is QualitySummary &&
+          runtimeType == other.runtimeType &&
+          scope == other.scope &&
+          target == other.target &&
+          avgConfidence == other.avgConfidence &&
+          repairedCount == other.repairedCount &&
+          belowTargetCount == other.belowTargetCount &&
+          pageIdx == other.pageIdx;
+
+  @override
+  int get hashCode => Object.hash(
+        scope,
+        target,
+        avgConfidence,
+        repairedCount,
+        belowTargetCount,
+        pageIdx,
+      );
 }
 
 /// Reference to a stored text artifact in OmniScribe artifact store.
