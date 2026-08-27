@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omniscribe_client/core/enums/app_tab.dart';
 import 'package:omniscribe_client/core/theme/app_colors.dart';
 import 'package:omniscribe_client/data/providers/workstation_notifier.dart';
+import 'package:omniscribe_client/presentation/common/auth_required_banner.dart';
 import 'package:omniscribe_client/presentation/features/extraction_screen.dart';
 import 'package:omniscribe_client/presentation/features/glossary_screen.dart';
 import 'package:omniscribe_client/presentation/features/transcription_screen.dart';
@@ -85,6 +86,7 @@ class AppShell extends ConsumerWidget {
           body: SafeArea(
             child: Column(
               children: [
+                const AuthRequiredBanner(),
                 const TabRibbon(),
                 Expanded(child: currentScreen),
               ],

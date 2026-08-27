@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscribe_client/core/theme/app_theme.dart';
+import 'package:omniscribe_client/data/providers/repository_providers.dart';
 import 'package:omniscribe_client/presentation/features/extraction_screen.dart';
 import 'package:omniscribe_client/presentation/features/glossary_screen.dart';
 import 'package:omniscribe_client/presentation/features/transcription_screen.dart';
@@ -266,6 +267,24 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Settings & Configuration'), findsOneWidget);
+    });
+
+    testWidgets('renders AuthRequiredBanner when flag is true', (tester) async {
+      tester.view.physicalSize = const Size(1920, 1080);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            authRequiredProvider.overrideWith((ref) => true),
+          ],
+          child: const MaterialApp(home: AppShell()),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('Authentication required'), findsOneWidget);
     });
   });
 }
