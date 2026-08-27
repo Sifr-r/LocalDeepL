@@ -559,7 +559,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
               SizedBox(height: 12),
               AppBadge(
-                label: 'Auth token UI deferred to slice 5',
+                label: 'Auth middleware deferred — settings have no effect today',
                 variant: AppBadgeVariant.neutral,
               ),
             ],
