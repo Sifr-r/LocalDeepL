@@ -32,6 +32,7 @@ class ApiClient {
     Duration sendTimeout = ApiConstants.defaultSendTimeout,
     String? Function()? authTokenProvider,
     Dio? dioOverride,
+    this.onUnauthorized,
   })  : _authTokenProvider = authTokenProvider,
         _dio = dioOverride ??
             Dio(
@@ -52,6 +53,12 @@ class ApiClient {
   final Dio _dio;
   final String? Function()? _authTokenProvider;
   String? _staticAuthToken;
+
+  /// Invoked synchronously whenever an outgoing request observes an HTTP 401.
+  /// Used by `repository_providers.dart` to flip `authRequiredProvider` so the
+  /// UI can surface an `AuthRequiredBanner`. The exception is still translated
+  /// and re-thrown — this hook is purely for flagging the UI.
+  final void Function()? onUnauthorized;
 
   Dio get rawDio => _dio;
   String get baseUrl => _dio.options.baseUrl;
@@ -95,6 +102,7 @@ class ApiClient {
       );
       return response.data as T;
     } on DioException catch (e) {
+      if (e.response?.statusCode == 401) onUnauthorized?.call();
       throw _translateDioError(e);
     } catch (e) {
       if (e is ApiException) rethrow;
@@ -123,6 +131,7 @@ class ApiClient {
         headers: _extractHeaders(response.headers),
       );
     } on DioException catch (e) {
+      if (e.response?.statusCode == 401) onUnauthorized?.call();
       throw _translateDioError(e);
     } catch (e) {
       if (e is ApiException) rethrow;
@@ -151,6 +160,7 @@ class ApiClient {
       );
       return response.data as T;
     } on DioException catch (e) {
+      if (e.response?.statusCode == 401) onUnauthorized?.call();
       throw _translateDioError(e);
     } catch (e) {
       if (e is ApiException) rethrow;
@@ -181,6 +191,7 @@ class ApiClient {
         headers: _extractHeaders(response.headers),
       );
     } on DioException catch (e) {
+      if (e.response?.statusCode == 401) onUnauthorized?.call();
       throw _translateDioError(e);
     } catch (e) {
       if (e is ApiException) rethrow;
@@ -209,6 +220,7 @@ class ApiClient {
       );
       return response.data as T;
     } on DioException catch (e) {
+      if (e.response?.statusCode == 401) onUnauthorized?.call();
       throw _translateDioError(e);
     } catch (e) {
       if (e is ApiException) rethrow;
@@ -235,6 +247,7 @@ class ApiClient {
       );
       return response.data as T;
     } on DioException catch (e) {
+      if (e.response?.statusCode == 401) onUnauthorized?.call();
       throw _translateDioError(e);
     } catch (e) {
       if (e is ApiException) rethrow;
@@ -267,6 +280,7 @@ class ApiClient {
       }
       return Uint8List.fromList(rawData);
     } on DioException catch (e) {
+      if (e.response?.statusCode == 401) onUnauthorized?.call();
       throw _translateDioError(e);
     } catch (e) {
       if (e is ApiException) rethrow;
@@ -300,6 +314,7 @@ class ApiClient {
         headers: _extractHeaders(response.headers),
       );
     } on DioException catch (e) {
+      if (e.response?.statusCode == 401) onUnauthorized?.call();
       throw _translateDioError(e);
     } catch (e) {
       if (e is ApiException) rethrow;
@@ -335,6 +350,7 @@ class ApiClient {
         headers: _extractHeaders(response.headers),
       );
     } on DioException catch (e) {
+      if (e.response?.statusCode == 401) onUnauthorized?.call();
       throw _translateDioError(e);
     } catch (e) {
       if (e is ApiException) rethrow;
@@ -372,6 +388,7 @@ class ApiClient {
         headers: _extractHeaders(response.headers),
       );
     } on DioException catch (e) {
+      if (e.response?.statusCode == 401) onUnauthorized?.call();
       throw _translateDioError(e);
     } catch (e) {
       if (e is ApiException) rethrow;

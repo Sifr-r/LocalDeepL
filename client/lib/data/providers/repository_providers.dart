@@ -15,12 +15,17 @@ final apiBaseUrlProvider =
 /// Global/active auth token provider.
 final authTokenProvider = StateProvider<String?>((ref) => null);
 
+/// True when the API client has observed a 401 since the last dismiss.
+/// Mounted as a banner by AppShell; flipping it does not auto-clear.
+final authRequiredProvider = StateProvider<bool>((ref) => false);
+
 /// Core ApiClient provider.
 final apiClientProvider = Provider<ApiClient>((ref) {
   final baseUrl = ref.watch(apiBaseUrlProvider);
   final client = ApiClient(
     baseUrl: baseUrl,
     authTokenProvider: () => ref.read(authTokenProvider),
+    onUnauthorized: () => ref.read(authRequiredProvider.notifier).state = true,
   );
   return client;
 });
