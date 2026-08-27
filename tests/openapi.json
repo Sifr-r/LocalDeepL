@@ -219,6 +219,71 @@
         "title": "JobStatusResponse",
         "type": "object"
       },
+      "SetActiveProviderRequest": {
+        "description": "Payload for ``POST /api/providers/active``.\n\nFields are aliases of the camelCase keys the Flutter client sends so\nwe keep the on-the-wire contract while still being ergonomic in\nPython (snake_case internally).",
+        "properties": {
+          "apiBase": {
+            "title": "Apibase",
+            "type": "string"
+          },
+          "apiKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Apikey"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "providerId": {
+            "title": "Providerid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "providerId",
+          "apiBase",
+          "model"
+        ],
+        "title": "SetActiveProviderRequest",
+        "type": "object"
+      },
+      "SetActiveProviderResponse": {
+        "description": "Ack for ``POST /api/providers/active`` \u2014 echoes the persisted state.",
+        "properties": {
+          "api_base": {
+            "title": "Api Base",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider_id": {
+            "title": "Provider Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "provider_id",
+          "api_base",
+          "model"
+        ],
+        "title": "SetActiveProviderResponse",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -878,6 +943,47 @@
           }
         },
         "summary": "List Providers",
+        "tags": [
+          "providers"
+        ]
+      }
+    },
+    "/api/providers/active": {
+      "post": {
+        "operationId": "set_active_api_providers_active_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetActiveProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetActiveProviderResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Active",
         "tags": [
           "providers"
         ]

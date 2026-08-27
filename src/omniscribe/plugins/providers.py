@@ -10,11 +10,11 @@ of truth and ``error`` as a non-blocking warning.
 from __future__ import annotations
 
 import logging
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 import httpx
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from omniscribe.config import RuntimeSettings, load_settings
 from omniscribe.core.llm.providers import ProviderConfig, ProviderFormatEnum
@@ -22,6 +22,31 @@ from omniscribe.harness.context import Context
 from omniscribe.harness.plugin import Plugin
 
 _LOGGER = logging.getLogger("omniscribe.plugins.providers")
+
+
+class SetActiveProviderRequest(BaseModel):
+    """Payload for ``POST /api/providers/active``.
+
+    Fields are aliases of the camelCase keys the Flutter client sends so
+    we keep the on-the-wire contract while still being ergonomic in
+    Python (snake_case internally).
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+    provider_id: str = Field(alias="providerId")
+    api_base: str = Field(alias="apiBase")
+    api_key: str | None = Field(default=None, alias="apiKey")
+    model: str
+
+
+class SetActiveProviderResponse(BaseModel):
+    """Ack for ``POST /api/providers/active`` — echoes the persisted state."""
+
+    status: Literal["ok"]
+    provider_id: str
+    api_base: str
+    model: str
+
 
 _O = ProviderFormatEnum.OPENAI_COMPATIBLE
 _A = ProviderFormatEnum.ANTHROPIC_COMPATIBLE
@@ -167,7 +192,12 @@ class ProviderManager(Protocol):
     def get_active(self) -> dict[str, str]: ...
 
     def set_active(
-        self, *, provider_id: str | None = None, api_base: str, model: str
+        self,
+        *,
+        provider_id: str | None = None,
+        api_base: str,
+        model: str,
+        api_key: str | None = None,
     ) -> dict[str, str]: ...
 
 
@@ -231,10 +261,17 @@ class ProviderManagerImpl:
         }
 
     def set_active(
-        self, *, provider_id: str | None = None, api_base: str, model: str
+        self,
+        *,
+        provider_id: str | None = None,
+        api_base: str,
+        model: str,
+        api_key: str | None = None,
     ) -> dict[str, str]:
         self._settings.llm_api_base = api_base
         self._settings.llm_model = model
+        if api_key:
+            self._settings.llm_api_key = api_key
         if provider_id:
             config = PROVIDER_TEMPLATES.get(provider_id)
             if config is not None and not api_base:
@@ -271,6 +308,23 @@ def build_providers_router(manager: ProviderManagerImpl) -> APIRouter:
             raise HTTPException(status_code=404, detail="unknown provider")
         return await manager.discover_models(
             provider_id, api_base=api_base, api_key=api_key
+        )
+
+    @router.post("/active", status_code=200)
+    async def set_active(
+        payload: SetActiveProviderRequest,
+    ) -> SetActiveProviderResponse:
+        manager.set_active(
+            provider_id=payload.provider_id,
+            api_base=payload.api_base,
+            model=payload.model,
+            api_key=payload.api_key,
+        )
+        return SetActiveProviderResponse(
+            status="ok",
+            provider_id=payload.provider_id,
+            api_base=payload.api_base,
+            model=payload.model,
         )
 
     return router

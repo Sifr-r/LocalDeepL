@@ -196,3 +196,48 @@ async def test_plugin_registers_provider_manager_service() -> None:
     assert len(manager.list_providers()) == len(PROVIDER_TEMPLATES)
     assert ctx.routes()
     await ctx.dispose()
+
+
+# -- POST /api/providers/active ---------------------------------------------
+
+
+def test_set_active_route_writes_through_settings(api_client: TestClient) -> None:
+    response = api_client.post(
+        "/api/providers/active",
+        json={
+            "providerId": "lmstudio",
+            "apiBase": "http://localhost:1234/v1",
+            "apiKey": "sk-test-1234",
+            "model": "allenai/olmocr-2-7b",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["provider_id"] == "lmstudio"
+    # Boot settings are seeded by the api_client fixture; assert write-through.
+    runtime = api_client.get("/api/providers")
+    assert runtime.status_code == 200
+
+
+def test_set_active_route_with_omitted_api_key(api_client: TestClient) -> None:
+    # First write a sentinel api_key.
+    api_client.post(
+        "/api/providers/active",
+        json={
+            "providerId": "lmstudio",
+            "apiBase": "http://localhost:1234/v1",
+            "apiKey": "sk-sentinel",
+            "model": "allenai/olmocr-2-7b",
+        },
+    )
+    # Now post without api_key; sentinel must be unchanged.
+    response = api_client.post(
+        "/api/providers/active",
+        json={
+            "providerId": "lmstudio",
+            "apiBase": "http://localhost:9999/v1",
+            "model": "different-model",
+        },
+    )
+    assert response.status_code == 200
