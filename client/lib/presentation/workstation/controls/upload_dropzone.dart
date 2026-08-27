@@ -137,6 +137,20 @@ class _UploadDropzoneState extends ConsumerState<UploadDropzone> {
     final colors = context.colors;
     final wsState = ref.watch(workstationProvider);
 
+    // React to file-pick shortcut signals (Ctrl+O from AppShell, future toolbar
+    // entries, etc.) by opening the native file picker. The signal is a
+    // monotonically increasing int so consecutive increments each fire exactly
+    // one picker dialog (a plain bool toggle would collapse to its previous
+    // value and be lost between rapid taps).
+    ref.listen<int>(
+      workstationProvider.select((s) => s.filePickSignal),
+      (prev, next) {
+        if (prev != null && next > prev) {
+          _pickFile();
+        }
+      },
+    );
+
     return DropTarget(
       onDragEntered: (_) => setState(() => _isDragging = true),
       onDragExited: (_) => setState(() => _isDragging = false),
