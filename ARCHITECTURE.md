@@ -939,6 +939,27 @@ Conducted an exhaustive 5-domain audit (66 findings across Core Pipeline, API & 
 | `client/lib/data/providers/features_notifier.dart` | Feature view-models encapsulating polling timers and audio playback timers with automatic lifecycle disposal |
 | `client/build/windows/x64/runner/Debug/omniscribe_client.exe` | Verified native Windows x64 desktop executable build artifact (0 errors, 0 warnings, 175/175 tests passing) |
 
+### 2026-08-27: Flutter Takeover — Phase A (Provider-Config Routes + Auth Banner + Shortcuts + Web Build)
+
+The Flutter client is the canonical UI surface; the Svelte reference UI is on a deprecation path (Phase B = deletion). Provider-config routes (`POST /api/providers/active`, `POST /api/providers/validate`) were added in Phase A; the deferred translation/transcription/extraction/export/glossary endpoints remain unimplemented (mock fallback notifiers only).
+
+| File | Responsibility |
+| --- | --- |
+| `src/omniscribe/plugins/providers.py` | New `SetActiveProviderRequest` / `SetActiveProviderResponse` / `ValidateProviderRequest` / `ValidateProviderResponse` Pydantic models; `ProviderManager.set_active(api_key=…)` extension; new `ProviderManager.validate(...)` async probe method; new `POST /api/providers/active` and `POST /api/providers/validate` routes |
+| `client/lib/presentation/common/auth_required_banner.dart` | Svelte-parity `AuthRequiredBanner` widget with Semantics wrapper; dismissible; matches Svelte `role="status"` + `aria-live="polite"` |
+| `client/lib/data/providers/repository_providers.dart` | `authRequiredProvider = StateProvider<bool>`; `apiClientProvider` factory wires `onUnauthorized` callback that flips the banner flag |
+| `client/lib/core/network/api_client.dart` | New `onUnauthorized` constructor param; called from every Dio 401 catch block (10 methods) for UI flagging (does not suppress exception propagation) |
+| `client/lib/data/repositories/config_repository.dart` | Split `getModels(namespace:)` into `getModelsForProvider(providerId)` + back-compat delegator; namespaces `translation` / `transcription` return `const []` (deferred) |
+| `client/lib/data/providers/settings_notifier.dart` | `load()` resolves `activeProviderId` from the freshly-fetched config BEFORE the model call (avoids initial-load wrong-provider bug); translation/transcription hard-empty |
+| `client/lib/data/providers/workstation_state.dart` | New `filePickSignal` int field for keyboard-shortcut signal plumbing |
+| `client/lib/data/providers/workstation_notifier.dart` | New `incrementFilePick()` + `processCurrentDocument()` methods |
+| `client/lib/presentation/workstation/controls/upload_dropzone.dart` | `ref.listen<int>` on `filePickSignal` to react to `Ctrl+O` shortcut by opening the file picker |
+| `client/lib/presentation/shell/app_shell.dart` | Mount `AuthRequiredBanner` above `TabRibbon`; bind `Ctrl+O` (workstation-only) and `Ctrl+Enter` (workstation-only with loaded document) shortcuts |
+| `client/lib/presentation/settings/settings_screen.dart` | Replaced "Auth token UI deferred to slice 5" badge with honest "Auth middleware deferred" copy |
+| `client/web/` | New Flutter web platform assets (`index.html`, `manifest.json`, icons); `client/build/web/index.html` builds cleanly via `flutter build web --release` |
+| `client/scripts/build_web.sh` | Manual web bundle build helper |
+| `tests/openapi.json` | Regenerated snapshot for the two new routes + four new schemas |
+
 ## See Also
 
 - [README.md](README.md) — feature overview, install, web workspace
