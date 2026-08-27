@@ -215,9 +215,12 @@ def test_set_active_route_writes_through_settings(api_client: TestClient) -> Non
     body = response.json()
     assert body["status"] == "ok"
     assert body["provider_id"] == "lmstudio"
-    # Boot settings are seeded by the api_client fixture; assert write-through.
-    runtime = api_client.get("/api/providers")
-    assert runtime.status_code == 200
+    # Boot settings are seeded by the api_client fixture; assert write-through
+    # by reaching the harness-owned manager the same way the unit test does.
+    manager = api_client.app.state.context.inject(ProviderManager)
+    assert manager._settings.llm_api_base == "http://localhost:1234/v1"
+    assert manager._settings.llm_api_key == "sk-test-1234"
+    assert manager._settings.llm_model == "allenai/olmocr-2-7b"
 
 
 def test_set_active_route_with_omitted_api_key(api_client: TestClient) -> None:
@@ -231,7 +234,7 @@ def test_set_active_route_with_omitted_api_key(api_client: TestClient) -> None:
             "model": "allenai/olmocr-2-7b",
         },
     )
-    # Now post without api_key; sentinel must be unchanged.
+    # Now post without api_key; sentinel must be unchanged while base + model flip.
     response = api_client.post(
         "/api/providers/active",
         json={
@@ -241,3 +244,9 @@ def test_set_active_route_with_omitted_api_key(api_client: TestClient) -> None:
         },
     )
     assert response.status_code == 200
+    # Reach the harness-owned manager (same pattern as
+    # ``test_set_active_writes_back_into_settings``) and confirm partial writes.
+    manager = api_client.app.state.context.inject(ProviderManager)
+    assert manager._settings.llm_api_key == "sk-sentinel"
+    assert manager._settings.llm_api_base == "http://localhost:9999/v1"
+    assert manager._settings.llm_model == "different-model"
