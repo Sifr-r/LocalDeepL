@@ -1,23 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/core/theme/app_colors.dart';
+import 'package:omniscribe_client/core/theme/app_typography.dart';
 import 'package:omniscribe_client/data/models/process_settings.dart';
+import 'package:omniscribe_client/data/providers/provider_notifier.dart';
 import 'package:omniscribe_client/data/providers/settings_notifier.dart';
 import 'package:omniscribe_client/data/providers/settings_state.dart';
-import 'package:omniscribe_client/data/providers/provider_notifier.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
+import 'package:omniscribe_client/presentation/common/app_badge.dart';
+import 'package:omniscribe_client/presentation/common/app_button.dart';
+import 'package:omniscribe_client/presentation/common/app_card.dart';
+import 'package:omniscribe_client/presentation/common/app_input.dart';
+import 'package:omniscribe_client/presentation/common/app_toggle.dart';
+import 'package:omniscribe_client/presentation/common/section_header.dart';
 import 'package:omniscribe_client/presentation/providers/provider_modal.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_card.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_input.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_section_header.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_toggle.dart';
 
 /// Settings & Configuration screen.
-///
-/// Migrated to the consolidated `settingsStateProvider` (`Notifier<SettingsState>`).
-/// Slice 1 wires the General & Server tab. Subsequent slices (Provider Browser, Job
-/// History, Translation / Transcription / Security) plug into the same provider.
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -93,8 +90,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         return;
       }
 
-      // Build the request payload from the current RuntimeConfig (full picture)
-      // plus any user-typed overrides from the text fields.
       final ProcessSettings payload =
           ProcessSettings.defaultSettings().copyWith(
         apiBase: _serverUrlController.text.trim().isEmpty
@@ -131,10 +126,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsStateProvider);
     final providerState = ref.watch(providerBrowserProvider);
-    final tokens = context.docuVerse;
+    final colors = context.colors;
 
     return Scaffold(
-      backgroundColor: tokens.app,
+      backgroundColor: colors.background,
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Center(
@@ -154,34 +149,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         children: [
                           Text(
                             'Settings & Configuration',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: tokens.foreground,
-                              letterSpacing: -0.5,
+                            style: AppTypography.displaySmall(
+                              color: colors.textPrimary,
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             'Configure endpoints, pipeline parameters, inference providers, and limits',
-                            style: TextStyle(
-                                fontSize: 12, color: tokens.foregroundMuted),
+                            style: AppTypography.bodySmall(
+                              color: colors.textMuted,
+                            ),
                           ),
                         ],
                       ),
                     ),
                     Row(
                       children: [
-                        DocuVerseButton(
+                        AppButton(
                           text: 'Browse providers',
-                          variant: DocuVerseButtonVariant.secondary,
+                          variant: AppButtonVariant.secondary,
                           icon: const Icon(Icons.hub, size: 14),
                           onPressed: () => ProviderModal.show(context),
                         ),
                         const SizedBox(width: 8),
-                        DocuVerseButton(
+                        AppButton(
                           text: 'Save settings',
-                          variant: DocuVerseButtonVariant.primary,
+                          variant: AppButtonVariant.primary,
                           loading: _isSaving,
                           icon: const Icon(Icons.check, size: 14),
                           onPressed: _saveAllSettings,
@@ -197,21 +190,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
-                      color: tokens.success.withValues(alpha: 0.12),
+                      color: colors.success.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(
-                          color: tokens.success.withValues(alpha: 0.35)),
+                        color: colors.success.withValues(alpha: 0.35),
+                      ),
                     ),
                     child: Row(
                       children: [
                         Icon(Icons.check_circle,
-                            size: 16, color: tokens.success),
+                            size: 16, color: colors.success),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             _saveStatusMessage!,
-                            style:
-                                TextStyle(fontSize: 12, color: tokens.success),
+                            style: AppTypography.bodySmall(
+                              color: colors.success,
+                            ),
                           ),
                         ),
                       ],
@@ -223,7 +218,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 // Tabs
                 Container(
                   decoration: BoxDecoration(
-                    border: Border(bottom: BorderSide(color: tokens.border)),
+                    border: Border(bottom: BorderSide(color: colors.border)),
                   ),
                   child: Row(
                     children: List.generate(_tabs.length, (index) {
@@ -237,7 +232,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             border: Border(
                               bottom: BorderSide(
                                 color: isSelected
-                                    ? tokens.brand
+                                    ? colors.brand
                                     : Colors.transparent,
                                 width: 2,
                               ),
@@ -251,8 +246,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                   ? FontWeight.w600
                                   : FontWeight.normal,
                               color: isSelected
-                                  ? tokens.brand
-                                  : tokens.foregroundMuted,
+                                  ? colors.brand
+                                  : colors.textMuted,
                             ),
                           ),
                         ),
@@ -264,13 +259,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
                 // Tab content
                 if (_activeTabIndex == 0)
-                  _buildGeneralServerTab(tokens, settings, providerState)
+                  _buildGeneralServerTab(colors, settings, providerState)
                 else if (_activeTabIndex == 1)
-                  _buildOcrPipelineTab(tokens, settings)
+                  _buildOcrPipelineTab(colors, settings)
                 else if (_activeTabIndex == 2)
-                  _buildTranslationVoiceTab(tokens, settings)
+                  _buildTranslationVoiceTab(colors, settings)
                 else if (_activeTabIndex == 3)
-                  _buildSecurityAuthTab(tokens, settings),
+                  _buildSecurityAuthTab(colors, settings),
               ],
             ),
           ),
@@ -280,7 +275,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Widget _buildGeneralServerTab(
-    DocuVerseThemeTokens tokens,
+    AppColorScheme colors,
     SettingsState settings,
     dynamic providerState,
   ) {
@@ -288,31 +283,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        DocuVerseCard(
-          padding: DocuVerseCardPadding.lg,
+        AppCard(
+          padding: AppCardPadding.lg,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const DocuVerseSectionHeader(
+              const SectionHeader(
                 title: 'OmniScribe Backend Connection',
-                description:
-                    'Specify the HTTP endpoint where the OmniScribe Python server is listening.',
               ),
+              const SizedBox(height: 8),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Expanded(
-                    child: DocuVerseInput(
+                    child: AppInput(
                       controller: _serverUrlController,
                       label: 'Backend Base URL',
                       placeholder: 'http://127.0.0.1:8000',
-                      isMono: true,
+                      monospace: true,
                     ),
                   ),
                   const SizedBox(width: 12),
-                  DocuVerseButton(
+                  AppButton(
                     text: 'Test connection',
-                    variant: DocuVerseButtonVariant.secondary,
+                    variant: AppButtonVariant.secondary,
                     icon: const Icon(Icons.network_check, size: 14),
                     onPressed: () {
                       ref
@@ -326,35 +320,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ),
         const SizedBox(height: 16),
-        DocuVerseCard(
-          padding: DocuVerseCardPadding.lg,
+        AppCard(
+          padding: AppCardPadding.lg,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              DocuVerseSectionHeader(
+              SectionHeader(
                 title: 'Active Inference Provider',
-                description:
-                    'Quick selector for currently active LLM backend provider.',
-                action: DocuVerseButton(
+                action: AppButton(
                   text: 'Provider catalog',
-                  variant: DocuVerseButtonVariant.ghost,
-                  size: DocuVerseButtonSize.sm,
+                  variant: AppButtonVariant.ghost,
+                  size: AppButtonSize.sm,
                   onPressed: () => ProviderModal.show(context),
                 ),
               ),
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(
                     child: Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: tokens.cardRaised,
+                        color: colors.cardRaised,
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: tokens.border),
+                        border: Border.all(color: colors.border),
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.memory, size: 20, color: tokens.brand),
+                          Icon(Icons.memory, size: 20, color: colors.brand),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
@@ -362,18 +355,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               children: [
                                 Text(
                                   'Provider: ${settings.activeProviderId.toUpperCase()}',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: tokens.foreground,
-                                  ),
+                                  style: AppTypography.bodySmall(
+                                    color: colors.textPrimary,
+                                  ).copyWith(fontWeight: FontWeight.w600),
                                 ),
                                 Text(
                                   'Endpoint: ${config?.apiBase ?? "—"} | Model: ${config?.model ?? "—"}',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontFamily: 'monospace',
-                                    color: tokens.foregroundMuted,
+                                  style: AppTypography.codeSmall(
+                                    color: colors.textMuted,
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -397,20 +386,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              DocuVerseToggle(
+              AppToggle(
                 label: 'Dark Mode Theme',
-                description:
-                    'Toggle between DocuVerse Obsidian Dark and Alabaster Light theme.',
-                checked: settings.isDarkMode,
+                subtitle:
+                    'Toggle between Obsidian Dark and Alabaster Light theme.',
+                value: settings.isDarkMode,
                 onChanged: (val) => ref
                     .read(settingsStateProvider.notifier)
                     .toggleDarkMode(val),
               ),
               if (settings.error != null) ...[
                 const SizedBox(height: 12),
-                DocuVerseBadge(
-                  text: 'Error: ${settings.error}',
-                  variant: DocuVerseBadgeVariant.danger,
+                AppBadge(
+                  label: 'Error: ${settings.error}',
+                  variant: AppBadgeVariant.error,
                 ),
               ],
             ],
@@ -421,40 +410,40 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Widget _buildOcrPipelineTab(
-      DocuVerseThemeTokens tokens, SettingsState settings) {
+      AppColorScheme colors, SettingsState settings) {
     final config = settings.runtimeConfig;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        DocuVerseCard(
-          padding: DocuVerseCardPadding.lg,
+        AppCard(
+          padding: AppCardPadding.lg,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const DocuVerseSectionHeader(
+              const SectionHeader(
                 title: 'OCR Parameters & Concurrency',
-                description:
-                    'Fine-tune rendering resolution, worker threads, and image constraints.',
               ),
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(
-                    child: DocuVerseInput(
+                    child: AppInput(
                       controller: _dpiController,
                       label: 'Rendering DPI',
                       placeholder: '200',
-                      hint: 'Default 200 DPI for balance of speed and clarity',
-                      isMono: true,
+                      helperText:
+                          'Default 200 DPI for balance of speed and clarity',
+                      monospace: true,
                     ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
-                    child: DocuVerseInput(
+                    child: AppInput(
                       controller: _concurrencyController,
                       label: 'Worker Concurrency',
                       placeholder: '4',
-                      hint: 'Simultaneous pages processed in parallel',
-                      isMono: true,
+                      helperText: 'Simultaneous pages processed in parallel',
+                      monospace: true,
                     ),
                   ),
                 ],
@@ -463,51 +452,52 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               Row(
                 children: [
                   Expanded(
-                    child: DocuVerseInput(
+                    child: AppInput(
                       controller: _denseThresholdController,
                       label: 'Dense Mode Threshold',
                       placeholder: '10',
-                      hint: 'Minimum block count to activate dense chunking',
-                      isMono: true,
+                      helperText:
+                          'Minimum block count to activate dense chunking',
+                      monospace: true,
                     ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
-                    child: DocuVerseInput(
+                    child: AppInput(
                       controller: _maxImageDimController,
                       label: 'Max Image Dimension (px)',
                       placeholder: '2048',
-                      hint:
-                          'Caps page canvas size before sending to vision model',
-                      isMono: true,
+                      helperText:
+                          'Caps page canvas size before vision model',
+                      monospace: true,
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-              DocuVerseToggle(
+              AppToggle(
                 label: 'Async Processing by Default',
-                description:
-                    'Queue background processing jobs (POST /api/process/async) instead of blocking requests.',
-                checked: settings.useAsync,
+                subtitle:
+                    'Queue background processing jobs instead of blocking requests.',
+                value: settings.useAsync,
                 onChanged: (val) =>
                     ref.read(settingsStateProvider.notifier).setUseAsync(val),
               ),
               const SizedBox(height: 12),
-              DocuVerseToggle(
+              AppToggle(
                 label: 'Dual Engine Cross-Validation',
-                description:
+                subtitle:
                     'Compare secondary OCR outputs for higher precision.',
-                checked: config?.dualEngine ?? false,
-                onChanged: (_) {}, // Wired through updateOcr on save
+                value: config?.dualEngine ?? false,
+                onChanged: (_) {},
               ),
               const SizedBox(height: 12),
-              DocuVerseToggle(
+              AppToggle(
                 label: 'Self-Correction & Spelling Repair',
-                description:
+                subtitle:
                     'Run automated lexical sanity checks on detected blocks.',
-                checked: config?.selfCorrection ?? false,
-                onChanged: (_) {}, // Wired through updateOcr on save
+                value: config?.selfCorrection ?? false,
+                onChanged: (_) {},
               ),
             ],
           ),
@@ -517,36 +507,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Widget _buildTranslationVoiceTab(
-      DocuVerseThemeTokens tokens, SettingsState settings) {
+      AppColorScheme colors, SettingsState settings) {
     final config = settings.runtimeConfig;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        DocuVerseCard(
-          padding: DocuVerseCardPadding.lg,
+        AppCard(
+          padding: AppCardPadding.lg,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const DocuVerseSectionHeader(
+              const SectionHeader(
                 title: 'Translation & Transcription',
-                description:
-                    'Cross-page context window and transcription defaults. Slice 4 will surface dedicated controls for each model.',
               ),
-              const SizedBox(height: 12),
-              DocuVerseToggle(
+              const SizedBox(height: 8),
+              AppToggle(
                 label: 'Cross-Page Translation Context',
-                description:
+                subtitle:
                     'Maintain translation continuity across page boundaries.',
-                checked: config?.crossPage ?? false,
+                value: config?.crossPage ?? false,
                 onChanged: (_) {},
               ),
               const SizedBox(height: 12),
-              DocuVerseInput(
+              AppInput(
                 controller: _slidingWindowController,
                 label: 'Sliding Window Words',
                 placeholder: '32',
-                hint: 'Word count shared between adjacent translation segments',
-                isMono: true,
+                helperText:
+                    'Word count shared between adjacent translation segments',
+                monospace: true,
               ),
             ],
           ),
@@ -556,24 +545,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Widget _buildSecurityAuthTab(
-      DocuVerseThemeTokens tokens, SettingsState settings) {
+      AppColorScheme colors, SettingsState settings) {
     return const Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        DocuVerseCard(
-          padding: DocuVerseCardPadding.lg,
+        AppCard(
+          padding: AppCardPadding.lg,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              DocuVerseSectionHeader(
+              SectionHeader(
                 title: 'Security & Auth',
-                description:
-                    'Auth token management lands in slice 5 once the auth middleware plugin is rebuilt.',
               ),
               SizedBox(height: 12),
-              DocuVerseBadge(
-                text: 'Auth token UI deferred to slice 5',
-                variant: DocuVerseBadgeVariant.neutral,
+              AppBadge(
+                label: 'Auth token UI deferred to slice 5',
+                variant: AppBadgeVariant.neutral,
               ),
             ],
           ),
