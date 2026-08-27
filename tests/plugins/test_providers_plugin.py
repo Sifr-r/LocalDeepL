@@ -250,3 +250,85 @@ def test_set_active_route_with_omitted_api_key(api_client: TestClient) -> None:
     assert manager._settings.llm_api_key == "sk-sentinel"
     assert manager._settings.llm_api_base == "http://localhost:9999/v1"
     assert manager._settings.llm_model == "different-model"
+
+
+# -- POST /api/providers/validate --------------------------------------------
+
+
+def test_validate_route_returns_model_count(api_client, monkeypatch) -> None:
+    """Stub httpx so the live probe never hits the network."""
+    import httpx
+
+    class _FakeResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    class _FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def get(self, url, headers=None):
+            return _FakeResponse({"data": [{"id": "m1"}, {"id": "m2"}, {"id": "m3"}]})
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeAsyncClient)
+    response = api_client.post(
+        "/api/providers/validate",
+        json={
+            "providerId": "lmstudio",
+            "apiBase": "http://localhost:1234/v1",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["valid"] is True
+    assert body["model_count"] == 3
+
+
+def test_validate_route_handles_offline_provider(api_client, monkeypatch) -> None:
+    import httpx
+
+    class _FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def get(self, url, headers=None):
+            raise httpx.ConnectError("connection refused")
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeAsyncClient)
+    response = api_client.post(
+        "/api/providers/validate",
+        json={
+            "providerId": "openai",
+            "apiBase": "http://127.0.0.1:1/v1",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["valid"] is False
+    assert body.get("error")
+
+
+def test_validate_route_unknown_provider(api_client) -> None:
+    response = api_client.post(
+        "/api/providers/validate",
+        json={
+            "providerId": "bogus",
+            "apiBase": "http://localhost:1234/v1",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["valid"] is False
+    assert body["error"] == "unknown provider"

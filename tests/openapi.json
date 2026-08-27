@@ -220,7 +220,7 @@
         "type": "object"
       },
       "SetActiveProviderRequest": {
-        "description": "Payload for ``POST /api/providers/active``.\n\nFields are aliases of the camelCase keys the Flutter client sends so\nwe keep the on-the-wire contract while still being ergonomic in\nPython (snake_case internally).",
+        "description": "Payload for ``POST /api/providers/active``.\n\n``populate_by_name=True`` accepts both the snake_case field names\n(the Flutter client's actual payload shape \u2014 see\n``client/lib/data/models/provider_preset.dart`` ``SetActiveProviderRequest.toJson``)\nand the camelCase aliases (used by the curl smoke test and any\nnon-Flutter client). The response is always snake_case because the\nresponse model has no aliases.",
         "properties": {
           "apiBase": {
             "title": "Apibase",
@@ -255,7 +255,7 @@
         "type": "object"
       },
       "SetActiveProviderResponse": {
-        "description": "Ack for ``POST /api/providers/active`` \u2014 echoes the persisted state.",
+        "description": "Ack for ``POST /api/providers/active`` \u2014 echoes the persisted state.\n\nsnake_case output (no aliases); the Flutter client parses\n``provider_id`` / ``api_base`` / ``model`` directly.",
         "properties": {
           "api_base": {
             "title": "Api Base",
@@ -282,6 +282,77 @@
           "model"
         ],
         "title": "SetActiveProviderResponse",
+        "type": "object"
+      },
+      "ValidateProviderRequest": {
+        "description": "Payload for ``POST /api/providers/validate``.\n\n``populate_by_name=True`` accepts both the snake_case field names\n(the Flutter client's actual payload shape \u2014 see\n``client/lib/data/repositories/provider_repository.dart`` ``validateProvider``)\nand the camelCase aliases (used by the curl smoke test and any\nnon-Flutter client). The response is always snake_case because the\nresponse model has no aliases.",
+        "properties": {
+          "apiBase": {
+            "title": "Apibase",
+            "type": "string"
+          },
+          "apiKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Apikey"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "providerId": {
+            "title": "Providerid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "providerId",
+          "apiBase"
+        ],
+        "title": "ValidateProviderRequest",
+        "type": "object"
+      },
+      "ValidateProviderResponse": {
+        "description": "Result of ``POST /api/providers/validate`` \u2014 wire probe of provider reachability.\n\nsnake_case output (no aliases); the Flutter client parses\n``valid`` / ``model_count`` / ``error`` directly.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "model_count": {
+            "title": "Model Count",
+            "type": "integer"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid",
+          "model_count"
+        ],
+        "title": "ValidateProviderResponse",
         "type": "object"
       },
       "ValidationError": {
@@ -984,6 +1055,47 @@
           }
         },
         "summary": "Set Active",
+        "tags": [
+          "providers"
+        ]
+      }
+    },
+    "/api/providers/validate": {
+      "post": {
+        "operationId": "validate_provider_api_providers_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidateProviderResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate Provider",
         "tags": [
           "providers"
         ]

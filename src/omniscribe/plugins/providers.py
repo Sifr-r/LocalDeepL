@@ -55,6 +55,36 @@ class SetActiveProviderResponse(BaseModel):
     model: str
 
 
+class ValidateProviderRequest(BaseModel):
+    """Payload for ``POST /api/providers/validate``.
+
+    ``populate_by_name=True`` accepts both the snake_case field names
+    (the Flutter client's actual payload shape — see
+    ``client/lib/data/repositories/provider_repository.dart`` ``validateProvider``)
+    and the camelCase aliases (used by the curl smoke test and any
+    non-Flutter client). The response is always snake_case because the
+    response model has no aliases.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+    provider_id: str = Field(alias="providerId")
+    api_base: str = Field(alias="apiBase")
+    api_key: str | None = Field(default=None, alias="apiKey")
+    model: str | None = None
+
+
+class ValidateProviderResponse(BaseModel):
+    """Result of ``POST /api/providers/validate`` — wire probe of provider reachability.
+
+    snake_case output (no aliases); the Flutter client parses
+    ``valid`` / ``model_count`` / ``error`` directly.
+    """
+
+    valid: bool
+    model_count: int
+    error: str | None = None
+
+
 _O = ProviderFormatEnum.OPENAI_COMPATIBLE
 _A = ProviderFormatEnum.ANTHROPIC_COMPATIBLE
 _OL = ProviderFormatEnum.OLLAMA_COMPATIBLE
@@ -207,6 +237,14 @@ class ProviderManager(Protocol):
         api_key: str | None = None,
     ) -> dict[str, str]: ...
 
+    async def validate(
+        self,
+        provider_id: str,
+        *,
+        api_base: str,
+        api_key: str | None = None,
+    ) -> ValidateProviderResponse: ...
+
 
 class ProviderManagerImpl:
     """Settings-backed manager; discovery goes through ``httpx.AsyncClient``."""
@@ -285,6 +323,46 @@ class ProviderManagerImpl:
                 self._settings.llm_api_base = config.api_url
         return self.get_active()
 
+    async def validate(
+        self,
+        provider_id: str,
+        *,
+        api_base: str,
+        api_key: str | None = None,
+    ) -> ValidateProviderResponse:
+        config = PROVIDER_TEMPLATES.get(provider_id)
+        if config is None:
+            return ValidateProviderResponse(
+                valid=False, model_count=0, error="unknown provider"
+            )
+        fallback = list(config.models)
+        base = (api_base or config.api_url or "").rstrip("/")
+        if not base:
+            return ValidateProviderResponse(
+                valid=False, model_count=0, error="no base URL for provider"
+            )
+        url = f"{base}/api/tags" if provider_id == "ollama" else f"{base}/models"
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        try:
+            client = self._client or httpx.AsyncClient(timeout=self._timeout)
+            try:
+                response = await client.get(url, headers=headers)
+                response.raise_for_status()
+                payload = response.json()
+            finally:
+                if self._client is None:
+                    await client.aclose()
+            if provider_id == "ollama":
+                models = [str(entry["name"]) for entry in payload.get("models", [])]
+            else:
+                models = [str(entry["id"]) for entry in payload.get("data", [])]
+            return ValidateProviderResponse(
+                valid=True, model_count=len(models or fallback), error=None
+            )
+        except Exception as exc:
+            _LOGGER.warning("validate failed for %s: %s", provider_id, exc)
+            return ValidateProviderResponse(valid=False, model_count=0, error=str(exc))
+
 
 class ProvidersSchema(BaseModel):
     discovery_timeout_seconds: float = 5.0
@@ -332,6 +410,16 @@ def build_providers_router(manager: ProviderManagerImpl) -> APIRouter:
             provider_id=payload.provider_id,
             api_base=payload.api_base,
             model=payload.model,
+        )
+
+    @router.post("/validate", status_code=200)
+    async def validate_provider(
+        payload: ValidateProviderRequest,
+    ) -> ValidateProviderResponse:
+        return await manager.validate(
+            payload.provider_id,
+            api_base=payload.api_base,
+            api_key=payload.api_key,
         )
 
     return router
