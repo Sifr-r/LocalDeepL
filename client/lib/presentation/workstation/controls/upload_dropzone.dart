@@ -174,9 +174,14 @@ class _UploadDropzoneState extends ConsumerState<UploadDropzone> {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
         child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+          // Wrap in SingleChildScrollView so the dropzone can scroll
+          // gracefully when the available vertical space is tight — e.g.
+          // when the AuthRequiredBanner is mounted above the TabRibbon
+          // (see app_shell.dart) at narrow viewport heights.
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
               // Icon Circle with Ambient Glow
               Container(
                 width: 64,
@@ -315,7 +320,8 @@ class _UploadDropzoneState extends ConsumerState<UploadDropzone> {
                   ),
                 ),
               ],
-            ],
+              ],
+            ),
           ),
         ),
       ),

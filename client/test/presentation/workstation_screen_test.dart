@@ -73,6 +73,31 @@ void main() {
       expect(find.text('Upload document for OCR processing'), findsOneWidget);
     });
 
+    testWidgets(
+        'Dropzone renders without overflow at narrow 800x600 viewport '
+        '(regression for Phase A follow-up #1 — AuthRequiredBanner mounted '
+        'in AppShell reduces available vertical space)',
+        (WidgetTester tester) async {
+      // Phase A follow-up #1: AuthRequiredBanner mounted above TabRibbon
+      // reduces the workstation's available vertical space. The dropzone
+      // must wrap in SingleChildScrollView so it scrolls rather than
+      // overflows at small viewports.
+      tester.view.physicalSize = const Size(800, 600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(buildWorkstationTest());
+      await tester.pumpAndSettle();
+
+      // No exception = no RenderFlex overflow. The dropzone content is
+      // visible (it scrolls into view inside SingleChildScrollView).
+      expect(tester.takeException(), isNull);
+      expect(find.byType(Scrollable), findsWidgets,
+          reason: 'dropzone must scroll when viewport is tight');
+      expect(find.text('Upload document for OCR processing'), findsOneWidget);
+    });
+
     testWidgets('Renders full split-pane viewport when document is loaded',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1920, 1080);
