@@ -1,21 +1,19 @@
 import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:omniscribe_client/models/bbox_item.dart';
-import 'package:omniscribe_client/models/document_view_model.dart';
-import 'package:omniscribe_client/models/page_result.dart';
-import 'package:omniscribe_client/state/document_provider.dart';
-import 'package:omniscribe_client/state/document_state.dart';
-import 'package:omniscribe_client/theme/docuverse_colors.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/data/models/bbox_item.dart';
+import 'package:omniscribe_client/data/models/document_result.dart';
+import 'package:omniscribe_client/data/providers/workstation_notifier.dart';
+import 'package:omniscribe_client/data/providers/workstation_state.dart';
+import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
 import 'package:omniscribe_client/theme/docuverse_theme.dart';
 import 'package:omniscribe_client/theme/docuverse_typography.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
 import 'bbox_painter.dart';
 
 /// GPU-Accelerated Document Viewport with InteractiveViewer zoom/pan,
 /// custom BBoxPainter overlay, hit-testing, and layer controls.
-class DocumentViewport extends StatefulWidget {
+class DocumentViewport extends ConsumerStatefulWidget {
   const DocumentViewport({
     super.key,
     this.onBBoxSelected,
@@ -24,10 +22,10 @@ class DocumentViewport extends StatefulWidget {
   final ValueChanged<BBoxItem?>? onBBoxSelected;
 
   @override
-  State<DocumentViewport> createState() => _DocumentViewportState();
+  ConsumerState<DocumentViewport> createState() => _DocumentViewportState();
 }
 
-class _DocumentViewportState extends State<DocumentViewport> {
+class _DocumentViewportState extends ConsumerState<DocumentViewport> {
   final TransformationController _transformController =
       TransformationController();
   final GlobalKey _canvasKey = GlobalKey();
@@ -58,13 +56,13 @@ class _DocumentViewportState extends State<DocumentViewport> {
 
   void _zoomIn() {
     final Matrix4 matrix = _transformController.value.clone();
-    matrix.scale(1.25, 1.25);
+    matrix.scaleByDouble(1.25, 1.25, 1.0, 1.0);
     _transformController.value = matrix;
   }
 
   void _zoomOut() {
     final Matrix4 matrix = _transformController.value.clone();
-    matrix.scale(0.8, 0.8);
+    matrix.scaleByDouble(0.8, 0.8, 1.0, 1.0);
     _transformController.value = matrix;
   }
 
@@ -73,9 +71,9 @@ class _DocumentViewportState extends State<DocumentViewport> {
   }
 
   void _handleTapUp(TapUpDetails details, Size canvasSize,
-      List<BBoxItem> bboxes, DocumentStateNotifier docNotifier) {
+      List<BBoxItem> bboxes, WorkstationNotifier notifier) {
     if (canvasSize.width <= 0 || canvasSize.height <= 0 || bboxes.isEmpty) {
-      docNotifier.selectBBox(null);
+      notifier.selectBBox(null);
       widget.onBBoxSelected?.call(null);
       return;
     }
@@ -90,21 +88,21 @@ class _DocumentViewportState extends State<DocumentViewport> {
     }).toList();
 
     if (hits.isEmpty) {
-      docNotifier.selectBBox(null);
+      notifier.selectBBox(null);
       widget.onBBoxSelected?.call(null);
     } else {
       // Pick the most specific (smallest area) box
       hits.sort((a, b) => (a.width * a.height).compareTo(b.width * b.height));
       final selected = hits.first;
-      docNotifier.selectBBox(selected);
+      notifier.selectBBox(selected);
       widget.onBBoxSelected?.call(selected);
     }
   }
 
   void _handlePointerHover(PointerHoverEvent event, Size canvasSize,
-      List<BBoxItem> bboxes, DocumentStateNotifier docNotifier) {
+      List<BBoxItem> bboxes, WorkstationNotifier notifier) {
     if (canvasSize.width <= 0 || canvasSize.height <= 0 || bboxes.isEmpty) {
-      docNotifier.hoverBBox(null);
+      notifier.hoverBBox(null);
       return;
     }
 
@@ -117,23 +115,21 @@ class _DocumentViewportState extends State<DocumentViewport> {
     }).toList();
 
     if (hits.isEmpty) {
-      docNotifier.hoverBBox(null);
+      notifier.hoverBBox(null);
     } else {
       hits.sort((a, b) => (a.width * a.height).compareTo(b.width * b.height));
-      docNotifier.hoverBBox(hits.first);
+      notifier.hoverBBox(hits.first);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.docuVerse;
-    final docState = DocumentProvider.of(context);
-    final docNotifier = DocumentProvider.notifierOf(context);
+    final wsState = ref.watch(workstationProvider);
+    final notifier = ref.read(workstationProvider.notifier);
 
-    final PageResult? currentPage = docState.currentPage;
-    final bboxes = docState.currentPageBBoxes;
-    final totalPages = docState.pageCount;
-    final currentPageIndex = docState.selectedPageIndex;
+    final PageResult? currentPage = wsState.currentPage;
+    final bboxes = wsState.currentPageBBoxes;
 
     return Container(
       decoration: BoxDecoration(
@@ -145,14 +141,14 @@ class _DocumentViewportState extends State<DocumentViewport> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // 1. Viewport Top Ribbon / Toolbar
-          _buildTopRibbon(context, docState, docNotifier, colors),
+          _buildTopRibbon(context, wsState, notifier, colors),
 
           // 2. Interactive Zoomable / Pannable Document Viewport
           Expanded(
             child: ClipRRect(
               borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(colors.cardRadius as double),
-                bottomRight: Radius.circular(colors.cardRadius as double),
+                bottomLeft: Radius.circular(colors.cardRadius),
+                bottomRight: Radius.circular(colors.cardRadius),
               ),
               child: Stack(
                 children: [
@@ -175,8 +171,8 @@ class _DocumentViewportState extends State<DocumentViewport> {
                       child: Center(
                         child: _buildDocumentCanvas(
                           context,
-                          docState,
-                          docNotifier,
+                          wsState,
+                          notifier,
                           currentPage,
                           bboxes,
                           colors,
@@ -189,8 +185,7 @@ class _DocumentViewportState extends State<DocumentViewport> {
                   Positioned(
                     right: 16,
                     bottom: 16,
-                    child:
-                        _buildFloatingControls(colors, docState, docNotifier),
+                    child: _buildFloatingControls(colors, wsState, notifier),
                   ),
                 ],
               ),
@@ -203,13 +198,13 @@ class _DocumentViewportState extends State<DocumentViewport> {
 
   Widget _buildTopRibbon(
     BuildContext context,
-    DocumentViewModel docState,
-    DocumentStateNotifier docNotifier,
+    WorkstationState wsState,
+    WorkstationNotifier notifier,
     DocuVerseThemeTokens colors,
   ) {
-    final hasDoc = docState.hasDocument;
-    final currentPageIndex = docState.selectedPageIndex;
-    final totalPages = math.max(1, docState.pageCount);
+    final hasDoc = wsState.hasDocument;
+    final currentPageIndex = wsState.selectedPageIndex;
+    final totalPages = math.max(1, wsState.pageCount);
 
     return Container(
       height: 48,
@@ -235,33 +230,38 @@ class _DocumentViewportState extends State<DocumentViewport> {
                   color: colors.brand,
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  'GPU Document Viewport',
-                  style: TextStyle(
-                    fontFamily: DocuVerseTypography.fontDisplay,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: colors.foreground,
+                Flexible(
+                  child: Text(
+                    'GPU Document Viewport',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: DocuVerseTypography.fontDisplay,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: colors.foreground,
+                    ),
                   ),
                 ),
-                if (docState.filename != null) ...[
+                if (wsState.filename != null) ...[
                   const SizedBox(width: 8),
                   Flexible(
                     child: Text(
-                      '• ${docState.filename!}',
+                      '• ${wsState.filename!}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontFamily: DocuVerseTypography.fontMono,
                         fontSize: 12,
                         color: colors.foregroundMuted,
                       ),
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
-                if (docState.allBBoxes.isNotEmpty) ...[
+                if (wsState.allBBoxes.isNotEmpty) ...[
                   const SizedBox(width: 10),
                   DocuVerseBadge(
-                    text: '${docState.allBBoxes.length} BBOXES',
+                    text: '${wsState.allBBoxes.length} BBOXES',
                     variant: DocuVerseBadgeVariant.brand,
                     size: DocuVerseBadgeSize.sm,
                   ),
@@ -286,7 +286,7 @@ class _DocumentViewportState extends State<DocumentViewport> {
                       ? colors.foreground
                       : colors.foregroundSubtle,
                   onPressed: currentPageIndex > 0
-                      ? () => docNotifier.selectPage(currentPageIndex - 1)
+                      ? () => notifier.selectPage(currentPageIndex - 1)
                       : null,
                 ),
                 Padding(
@@ -311,7 +311,7 @@ class _DocumentViewportState extends State<DocumentViewport> {
                       ? colors.foreground
                       : colors.foregroundSubtle,
                   onPressed: currentPageIndex < totalPages - 1
-                      ? () => docNotifier.selectPage(currentPageIndex + 1)
+                      ? () => notifier.selectPage(currentPageIndex + 1)
                       : null,
                 ),
                 const SizedBox(width: 12),
@@ -321,22 +321,22 @@ class _DocumentViewportState extends State<DocumentViewport> {
 
               // Layer Toggles
               Tooltip(
-                message: docState.showBBoxes
+                message: wsState.showBBoxes
                     ? 'Hide bounding boxes'
                     : 'Show bounding boxes',
                 child: InkWell(
-                  onTap: () => docNotifier.toggleBBoxes(),
+                  onTap: () => notifier.toggleBBoxes(),
                   borderRadius: BorderRadius.circular(4),
                   child: Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: docState.showBBoxes
+                      color: wsState.showBBoxes
                           ? colors.brand.withValues(alpha: 0.15)
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(
-                        color: docState.showBBoxes
+                        color: wsState.showBBoxes
                             ? colors.brand.withValues(alpha: 0.4)
                             : colors.border,
                       ),
@@ -347,7 +347,7 @@ class _DocumentViewportState extends State<DocumentViewport> {
                         Icon(
                           Icons.crop_free_rounded,
                           size: 14,
-                          color: docState.showBBoxes
+                          color: wsState.showBBoxes
                               ? colors.brand
                               : colors.foregroundMuted,
                         ),
@@ -358,7 +358,7 @@ class _DocumentViewportState extends State<DocumentViewport> {
                             fontFamily: DocuVerseTypography.fontBody,
                             fontSize: 11,
                             fontWeight: FontWeight.w500,
-                            color: docState.showBBoxes
+                            color: wsState.showBBoxes
                                 ? colors.brand
                                 : colors.foregroundMuted,
                           ),
@@ -370,22 +370,22 @@ class _DocumentViewportState extends State<DocumentViewport> {
               ),
               const SizedBox(width: 8),
               Tooltip(
-                message: docState.showHeatmap
+                message: wsState.showHeatmap
                     ? 'Disable confidence heatmap'
                     : 'Enable confidence heatmap',
                 child: InkWell(
-                  onTap: () => docNotifier.toggleHeatmap(),
+                  onTap: () => notifier.toggleHeatmap(),
                   borderRadius: BorderRadius.circular(4),
                   child: Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: docState.showHeatmap
+                      color: wsState.showHeatmap
                           ? colors.success.withValues(alpha: 0.15)
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(
-                        color: docState.showHeatmap
+                        color: wsState.showHeatmap
                             ? colors.success.withValues(alpha: 0.4)
                             : colors.border,
                       ),
@@ -396,7 +396,7 @@ class _DocumentViewportState extends State<DocumentViewport> {
                         Icon(
                           Icons.gradient_rounded,
                           size: 14,
-                          color: docState.showHeatmap
+                          color: wsState.showHeatmap
                               ? colors.success
                               : colors.foregroundMuted,
                         ),
@@ -407,7 +407,7 @@ class _DocumentViewportState extends State<DocumentViewport> {
                             fontFamily: DocuVerseTypography.fontBody,
                             fontSize: 11,
                             fontWeight: FontWeight.w500,
-                            color: docState.showHeatmap
+                            color: wsState.showHeatmap
                                 ? colors.success
                                 : colors.foregroundMuted,
                           ),
@@ -426,8 +426,8 @@ class _DocumentViewportState extends State<DocumentViewport> {
 
   Widget _buildDocumentCanvas(
     BuildContext context,
-    DocumentViewModel docState,
-    DocumentStateNotifier docNotifier,
+    WorkstationState wsState,
+    WorkstationNotifier notifier,
     PageResult? currentPage,
     List<BBoxItem> bboxes,
     DocuVerseThemeTokens colors,
@@ -458,11 +458,11 @@ class _DocumentViewportState extends State<DocumentViewport> {
         borderRadius: BorderRadius.circular(6),
         child: MouseRegion(
           onHover: (e) =>
-              _handlePointerHover(e, canvasSize, bboxes, docNotifier),
-          onExit: (_) => docNotifier.hoverBBox(null),
+              _handlePointerHover(e, canvasSize, bboxes, notifier),
+          onExit: (_) => notifier.hoverBBox(null),
           child: GestureDetector(
             onTapUp: (details) =>
-                _handleTapUp(details, canvasSize, bboxes, docNotifier),
+                _handleTapUp(details, canvasSize, bboxes, notifier),
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -473,18 +473,18 @@ class _DocumentViewportState extends State<DocumentViewport> {
                     fit: BoxFit.fill,
                   )
                 else
-                  _buildPagePlaceholder(colors, docState),
+                  _buildPagePlaceholder(colors, wsState),
 
                 // 2. Custom Painted Bounding Box Overlays
                 CustomPaint(
                   size: canvasSize,
                   painter: BBoxPainter(
                     bboxes: bboxes,
-                    selectedBBox: docState.selectedBBox,
-                    hoveredBBox: docState.hoveredBBox,
+                    selectedBBox: wsState.selectedBBox,
+                    hoveredBBox: wsState.hoveredBBox,
                     colors: colors,
-                    showBBoxes: docState.showBBoxes,
-                    showHeatmap: docState.showHeatmap,
+                    showBBoxes: wsState.showBBoxes,
+                    showHeatmap: wsState.showHeatmap,
                   ),
                 ),
               ],
@@ -496,7 +496,7 @@ class _DocumentViewportState extends State<DocumentViewport> {
   }
 
   Widget _buildPagePlaceholder(
-      DocuVerseThemeTokens colors, DocumentViewModel docState) {
+      DocuVerseThemeTokens colors, WorkstationState wsState) {
     return Container(
       color: colors.card,
       padding: const EdgeInsets.all(32),
@@ -511,8 +511,8 @@ class _DocumentViewportState extends State<DocumentViewport> {
             ),
             const SizedBox(height: 12),
             Text(
-              docState.hasDocument
-                  ? 'Page ${docState.selectedPageIndex + 1}'
+              wsState.hasDocument
+                  ? 'Page ${wsState.selectedPageIndex + 1}'
                   : 'No Document Loaded',
               style: TextStyle(
                 fontFamily: DocuVerseTypography.fontDisplay,
@@ -523,7 +523,7 @@ class _DocumentViewportState extends State<DocumentViewport> {
             ),
             const SizedBox(height: 6),
             Text(
-              docState.hasDocument
+              wsState.hasDocument
                   ? 'Normalized bbox overlay rendered in GPU viewport'
                   : 'Drop or select a PDF / image file from the dropzone to start',
               style: TextStyle(
@@ -541,8 +541,8 @@ class _DocumentViewportState extends State<DocumentViewport> {
 
   Widget _buildFloatingControls(
     DocuVerseThemeTokens colors,
-    DocumentViewModel docState,
-    DocumentStateNotifier docNotifier,
+    WorkstationState wsState,
+    WorkstationNotifier notifier,
   ) {
     final zoomPercent = (_currentScale * 100).round();
 

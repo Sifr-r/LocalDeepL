@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:omniscribe_client/models/job_progress_state.dart';
-import 'package:omniscribe_client/state/progress_provider.dart';
-import 'package:omniscribe_client/theme/docuverse_colors.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/data/providers/workstation_notifier.dart';
+import 'package:omniscribe_client/data/providers/workstation_state.dart';
+import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
 import 'package:omniscribe_client/theme/docuverse_theme.dart';
 import 'package:omniscribe_client/theme/docuverse_typography.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
-import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
 
 /// Live Bottom Progress Dock displaying the stage stepper, animated progress bar,
 /// quality loop counters, and cancel controls.
-class BottomProgressDock extends StatelessWidget {
+class BottomProgressDock extends ConsumerWidget {
   const BottomProgressDock({
     super.key,
     this.onCancelJob,
@@ -18,22 +17,22 @@ class BottomProgressDock extends StatelessWidget {
   final VoidCallback? onCancelJob;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.docuVerse;
-    final progressState = ProgressProvider.of(context);
-    final progressNotifier = ProgressProvider.notifierOf(context);
+    final wsState = ref.watch(workstationProvider);
+    final notifier = ref.read(workstationProvider.notifier);
 
-    final isProcessing = progressState.isProcessing;
-    final stage = progressState.stage;
-    final percent = progressState.percent;
-    final percentInt = progressState.percentInt;
-    final statusMsg = progressState.statusMessage;
+    final isProcessing = wsState.isProcessing;
+    final stage = wsState.stage;
+    final percent = wsState.percent;
+    final percentInt = wsState.percentInt;
+    final statusMsg = wsState.statusMessage;
 
-    final processedBlocks = progressState.processedBlocks;
-    final totalBlocks = progressState.totalBlocks;
-    final retries = progressState.totalRetriesAttempted;
-    final repaired = progressState.repairedCount;
-    final avgConf = progressState.avgConfidence;
+    final processedBlocks = wsState.processedBlocks;
+    final totalBlocks = wsState.totalBlocks;
+    final retries = wsState.totalRetriesAttempted;
+    final repaired = wsState.repairedCount;
+    final avgConf = wsState.avgConfidence;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -53,7 +52,10 @@ class BottomProgressDock extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // 1. Stage Stepper Row
-          _buildStageStepper(colors, progressState),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: _buildStageStepper(colors, wsState),
+          ),
           const SizedBox(height: 10),
 
           // 2. Animated Progress Bar & Percent
@@ -194,7 +196,7 @@ class BottomProgressDock extends StatelessWidget {
                   size: DocuVerseButtonSize.sm,
                   icon: const Icon(Icons.stop_circle_outlined, size: 14),
                   onPressed: () {
-                    progressNotifier.cancelJob();
+                    notifier.cancelOcr();
                     onCancelJob?.call();
                   },
                 ),
@@ -207,18 +209,25 @@ class BottomProgressDock extends StatelessWidget {
   }
 
   Widget _buildStageStepper(
-      DocuVerseThemeTokens colors, JobProgressState state) {
-    final stages = JobProgressState.pipelineStages;
+      DocuVerseThemeTokens colors, WorkstationState state) {
+    const stages = WorkstationState.pipelineStages;
     final currentIdx = state.currentStageIndex;
     final isDone = state.stage == 'Complete';
+    // When `currentStageIndex == -1` the active stage is not part of the
+    // pipeline (e.g. Idle / Error / Cancelled). Treat the same as "no active
+    // step" — every connector is dim, no node is highlighted.
+    final hasActiveStage = currentIdx >= 0;
 
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: List.generate(stages.length * 2 - 1, (i) {
         if (i.isOdd) {
           // Connector line
           final stageBefore = i ~/ 2;
-          final isPast = isDone || (currentIdx > stageBefore);
-          return Expanded(
+          final isPast =
+              isDone || (hasActiveStage && currentIdx > stageBefore);
+          return Flexible(
+            fit: FlexFit.loose,
             child: Container(
               height: 2,
               color:
@@ -229,8 +238,9 @@ class BottomProgressDock extends StatelessWidget {
 
         final stageIdx = i ~/ 2;
         final stageName = stages[stageIdx];
-        final isStageActive = !isDone && (currentIdx == stageIdx);
-        final isStagePast = isDone || (currentIdx > stageIdx);
+        final isStageActive =
+            hasActiveStage && !isDone && (currentIdx == stageIdx);
+        final isStagePast = isDone || (hasActiveStage && currentIdx > stageIdx);
 
         Color nodeBg;
         Color nodeBorder;

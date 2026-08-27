@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:omniscribe_client/models/bbox_item.dart';
-import 'package:omniscribe_client/state/document_provider.dart';
-import 'package:omniscribe_client/theme/docuverse_colors.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
-import 'package:omniscribe_client/theme/docuverse_typography.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:omniscribe_client/data/models/bbox_item.dart';
+import 'package:omniscribe_client/data/providers/workstation_notifier.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_badge.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_button.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_card.dart';
 import 'package:omniscribe_client/presentation/widgets/docuverse_section_header.dart';
+import 'package:omniscribe_client/theme/docuverse_theme.dart';
+import 'package:omniscribe_client/theme/docuverse_typography.dart';
 
 /// Detail inspector panel for the currently selected bounding box.
-class BBoxInspector extends StatefulWidget {
+class BBoxInspector extends ConsumerStatefulWidget {
   const BBoxInspector({
     super.key,
     required this.bbox,
@@ -22,10 +22,10 @@ class BBoxInspector extends StatefulWidget {
   final VoidCallback? onClose;
 
   @override
-  State<BBoxInspector> createState() => _BBoxInspectorState();
+  ConsumerState<BBoxInspector> createState() => _BBoxInspectorState();
 }
 
-class _BBoxInspectorState extends State<BBoxInspector> {
+class _BBoxInspectorState extends ConsumerState<BBoxInspector> {
   late TextEditingController _textController;
   bool _isEditing = false;
   bool _hasCopied = false;
@@ -67,12 +67,12 @@ class _BBoxInspectorState extends State<BBoxInspector> {
   }
 
   void _saveEdits() {
-    final docNotifier = DocumentProvider.notifierOf(context);
+    final notifier = ref.read(workstationProvider.notifier);
     final updated = widget.bbox.copyWith(
       text: _textController.text,
       revised: true,
     );
-    docNotifier.addOrUpdateBBox(widget.bbox.page, updated);
+    notifier.addOrUpdateBBox(widget.bbox.page, updated);
     setState(() {
       _isEditing = false;
     });
@@ -80,9 +80,9 @@ class _BBoxInspectorState extends State<BBoxInspector> {
 
   void _changeKind(String? newKind) {
     if (newKind == null) return;
-    final docNotifier = DocumentProvider.notifierOf(context);
+    final notifier = ref.read(workstationProvider.notifier);
     final updated = widget.bbox.copyWith(kind: newKind);
-    docNotifier.addOrUpdateBBox(widget.bbox.page, updated);
+    notifier.addOrUpdateBBox(widget.bbox.page, updated);
   }
 
   @override
@@ -112,20 +112,27 @@ class _BBoxInspectorState extends State<BBoxInspector> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Icon(Icons.layers_outlined, size: 16, color: colors.brand),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Bounding Box Inspector',
-                    style: TextStyle(
-                      fontFamily: DocuVerseTypography.fontDisplay,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: colors.foreground,
+              Flexible(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.layers_outlined, size: 16, color: colors.brand),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Bounding Box Inspector',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: DocuVerseTypography.fontDisplay,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: colors.foreground,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               IconButton(
                 icon: const Icon(Icons.close_rounded, size: 18),
@@ -156,7 +163,7 @@ class _BBoxInspectorState extends State<BBoxInspector> {
                 variant: confBadgeVariant,
                 size: DocuVerseBadgeSize.sm,
               ),
-              if (bbox.revised)
+              if (bbox.isRevised)
                 const DocuVerseBadge(
                   text: 'REVISED',
                   variant: DocuVerseBadgeVariant.revised,
@@ -167,7 +174,7 @@ class _BBoxInspectorState extends State<BBoxInspector> {
           const SizedBox(height: 12),
 
           // Block Kind & Coordinates
-          DocuVerseSectionHeader(title: 'Block Properties'),
+          const DocuVerseSectionHeader(title: 'Block Properties'),
           Row(
             children: [
               Expanded(
