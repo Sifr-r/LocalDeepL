@@ -27,9 +27,12 @@ _LOGGER = logging.getLogger("omniscribe.plugins.providers")
 class SetActiveProviderRequest(BaseModel):
     """Payload for ``POST /api/providers/active``.
 
-    Fields are aliases of the camelCase keys the Flutter client sends so
-    we keep the on-the-wire contract while still being ergonomic in
-    Python (snake_case internally).
+    ``populate_by_name=True`` accepts both the snake_case field names
+    (the Flutter client's actual payload shape — see
+    ``client/lib/data/models/provider_preset.dart`` ``SetActiveProviderRequest.toJson``)
+    and the camelCase aliases (used by the curl smoke test and any
+    non-Flutter client). The response is always snake_case because the
+    response model has no aliases.
     """
 
     model_config = ConfigDict(populate_by_name=True)
@@ -40,7 +43,11 @@ class SetActiveProviderRequest(BaseModel):
 
 
 class SetActiveProviderResponse(BaseModel):
-    """Ack for ``POST /api/providers/active`` — echoes the persisted state."""
+    """Ack for ``POST /api/providers/active`` — echoes the persisted state.
+
+    snake_case output (no aliases); the Flutter client parses
+    ``provider_id`` / ``api_base`` / ``model`` directly.
+    """
 
     status: Literal["ok"]
     provider_id: str
