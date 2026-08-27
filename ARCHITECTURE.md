@@ -910,6 +910,35 @@ Conducted an exhaustive 5-domain audit (66 findings across Core Pipeline, API & 
 | `client/lib/presentation/workstation/controls/page_strip.dart` | Scaled thumbnail caption container preventing overflow during multi-page navigation |
 | `client/build/windows/x64/runner/Debug/omniscribe_client.exe` | Verified native Windows x64 desktop executable build artifact |
 
+### 2026-08-27: Flutter Architecture Unification & Feature Parity (Phases 1 - 7)
+
+| File | Responsibility |
+| --- | --- |
+| `client/lib/main.dart` | Migrated application entrypoint to canonical `AppTheme.lightTheme` / `AppTheme.darkTheme` |
+| `client/lib/presentation/shell/app_shell.dart` | Unified shell with top `TabRibbon`, `activeTabProvider` tab routing, and global desktop keyboard shortcuts (`Ctrl+1..7`, `Ctrl+S`) |
+| `client/lib/presentation/shell/tab_ribbon.dart` | Navigation ribbon with canonical `App*` components, active indicator, provider modal trigger, and theme toggle |
+| `client/lib/presentation/shell/server_health_badge.dart` | Discrete latency badge with controlled status animations that avoid blocking test harnesses |
+| `client/lib/presentation/shell/workspace_view.dart` | Split workspace manager view utilizing canonical design system tokens |
+| `client/lib/presentation/features/translation_screen.dart` | Dual-pane translation interface with target selector, NLLB mode toggle, and decoupled async job polling |
+| `client/lib/presentation/features/transcription_screen.dart` | Speech-to-text transcription studio with interactive audio timeline scrubbing and pure notifier playback management |
+| `client/lib/presentation/features/extraction_screen.dart` | Structured JSON entity extractor with preset templates, custom prompts, and live schema validation |
+| `client/lib/presentation/features/glossary_screen.dart` | Dual-view terminology management supporting file imports (TBX, CSV, JSON), URL feeds, and real-time term search |
+| `client/lib/presentation/settings/settings_screen.dart` | Global settings view with runtime configuration forms, provider catalog, and health probe dashboard |
+| `client/lib/presentation/workstation/workstation_screen.dart` | Central OCR workstation integrating document dropzone, GPU canvas, controls, and multi-format export triggers |
+| `client/lib/presentation/workstation/canvas/bbox_inspector.dart` | Selected bounding box editor with text correction, Platt calibrated confidence gauge, and normalized coordinate display |
+| `client/lib/presentation/workstation/canvas/bbox_painter.dart` | CustomPainter rendering normalized bounding boxes, confidence badges, heatmap tinting, and selection handles |
+| `client/lib/presentation/workstation/canvas/document_viewport.dart` | GPU-accelerated canvas viewport with smooth pan/zoom, drag/drop handling, and floating zoom controls |
+| `client/lib/presentation/workstation/controls/page_strip.dart` | Multi-page thumbnail navigation strip with responsive bounding box density indicators |
+| `client/lib/presentation/workstation/controls/quality_repair_dock.dart` | Real-time OCR quality metrics, confidence threshold slider, retry limits, and self-healing repair statistics |
+| `client/lib/presentation/workstation/controls/right_control_dock.dart` | OCR pipeline parameters, spellcheck, layout enrichment, quality repair dock, and trust breakdown panel |
+| `client/lib/presentation/workstation/controls/upload_dropzone.dart` | Drag-and-drop document upload target supporting PDF and image formats |
+| `client/lib/presentation/workstation/controls/trust_breakdown_panel.dart` | Surfaces Platt calibrated trust scores, OCR confidence distribution, anomaly flag counts, and self-healing repair metrics |
+| `client/lib/presentation/workstation/modals/export_modal.dart` | Multi-format document export dialog supporting Searchable PDF, DOCX, DOCX Tree, HTML, Tree JSON, Markdown, and Text |
+| `client/lib/presentation/workstation/progress/bottom_progress_dock.dart` | Multi-stage pipeline progress indicator with live stage percentage and cancel triggers |
+| `client/lib/presentation/common/section_header.dart` | Responsive section header primitive with flexible truncation preventing `RenderFlex` overflow in narrow docks |
+| `client/lib/data/providers/features_notifier.dart` | Feature view-models encapsulating polling timers and audio playback timers with automatic lifecycle disposal |
+| `client/build/windows/x64/runner/Debug/omniscribe_client.exe` | Verified native Windows x64 desktop executable build artifact (0 errors, 0 warnings, 175/175 tests passing) |
+
 ## See Also
 
 - [README.md](README.md) — feature overview, install, web workspace
@@ -920,5 +949,6 @@ Conducted an exhaustive 5-domain audit (66 findings across Core Pipeline, API & 
 - `audits/` — historical and comprehensive domain audit logs
 
 _Last updated: 2026-08-27_
+
 
 

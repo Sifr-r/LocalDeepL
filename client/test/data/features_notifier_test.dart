@@ -320,6 +320,31 @@ void main() {
       expect(state.currentPlaybackTime, 0.0);
       expect(state.activeSegmentId, 1);
       expect(state.isPlaying, isTrue);
+
+      notifier.pausePlayback();
+      expect(container.read(transcriptionProvider).isPlaying, isFalse);
+
+      notifier.togglePlayback();
+      expect(container.read(transcriptionProvider).isPlaying, isTrue);
+
+      notifier.stopPlayback();
+      expect(container.read(transcriptionProvider).isPlaying, isFalse);
+    });
+
+    test('startPlayback advances currentPlaybackTime until totalDuration', () async {
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(transcriptionProvider.notifier);
+
+      notifier.setAudio(Uint8List.fromList([1, 2]), 'audio.wav', duration: 0.2);
+      notifier.startPlayback();
+      expect(container.read(transcriptionProvider).isPlaying, isTrue);
+
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+
+      final state = container.read(transcriptionProvider);
+      expect(state.isPlaying, isFalse);
+      expect(state.currentPlaybackTime, 0.0);
     });
   });
 

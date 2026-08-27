@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:omniscribe_client/core/theme/app_theme.dart';
 import 'package:omniscribe_client/presentation/features/extraction_screen.dart';
 import 'package:omniscribe_client/presentation/features/glossary_screen.dart';
 import 'package:omniscribe_client/presentation/features/transcription_screen.dart';
@@ -9,13 +10,12 @@ import 'package:omniscribe_client/presentation/jobs/job_history_screen.dart';
 import 'package:omniscribe_client/presentation/settings/settings_screen.dart';
 import 'package:omniscribe_client/presentation/shell/app_shell.dart';
 import 'package:omniscribe_client/presentation/workstation/workstation_screen.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
 
 void main() {
   Widget buildAppShell() {
     return ProviderScope(
       child: MaterialApp(
-        theme: DocuVerseTheme.darkTheme,
+        theme: AppTheme.darkTheme,
         home: const Scaffold(
           body: AppShell(),
         ),
@@ -33,7 +33,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
-            theme: DocuVerseTheme.darkTheme,
+            theme: AppTheme.darkTheme,
             home: const Scaffold(body: WorkstationScreen()),
           ),
         ),
@@ -51,7 +51,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
-            theme: DocuVerseTheme.darkTheme,
+            theme: AppTheme.darkTheme,
             home: const Scaffold(body: TranslationScreen()),
           ),
         ),
@@ -69,7 +69,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
-            theme: DocuVerseTheme.darkTheme,
+            theme: AppTheme.darkTheme,
             home: const Scaffold(body: TranscriptionScreen()),
           ),
         ),
@@ -87,7 +87,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
-            theme: DocuVerseTheme.darkTheme,
+            theme: AppTheme.darkTheme,
             home: const Scaffold(body: GlossaryScreen()),
           ),
         ),
@@ -105,7 +105,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
-            theme: DocuVerseTheme.darkTheme,
+            theme: AppTheme.darkTheme,
             home: const Scaffold(body: ExtractionScreen()),
           ),
         ),
@@ -123,7 +123,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
-            theme: DocuVerseTheme.darkTheme,
+            theme: AppTheme.darkTheme,
             home: const Scaffold(body: JobHistoryScreen()),
           ),
         ),
@@ -141,7 +141,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
-            theme: DocuVerseTheme.darkTheme,
+            theme: AppTheme.darkTheme,
             home: const Scaffold(body: SettingsScreen()),
           ),
         ),

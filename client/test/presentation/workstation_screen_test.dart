@@ -9,12 +9,12 @@ import 'package:omniscribe_client/data/models/process_settings.dart';
 import 'package:omniscribe_client/data/providers/repository_providers.dart';
 import 'package:omniscribe_client/data/providers/workstation_notifier.dart';
 import 'package:omniscribe_client/data/repositories/ocr_repository.dart';
+import 'package:omniscribe_client/core/theme/app_theme.dart';
 import 'package:omniscribe_client/presentation/workstation/canvas/bbox_inspector.dart';
 import 'package:omniscribe_client/presentation/workstation/controls/page_strip.dart';
 import 'package:omniscribe_client/presentation/workstation/controls/right_control_dock.dart';
 import 'package:omniscribe_client/presentation/workstation/progress/bottom_progress_dock.dart';
 import 'package:omniscribe_client/presentation/workstation/workstation_screen.dart';
-import 'package:omniscribe_client/theme/docuverse_theme.dart';
 
 class _MockOcrRepository extends Mock implements OcrRepository {}
 
@@ -43,7 +43,7 @@ void main() {
     return ProviderScope(
       overrides: overrides,
       child: MaterialApp(
-        theme: DocuVerseTheme.darkTheme,
+        theme: AppTheme.darkTheme,
         home: const Scaffold(
           body: WorkstationScreen(),
         ),
