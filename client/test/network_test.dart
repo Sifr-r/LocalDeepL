@@ -3,6 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscribe_client/core/network/api_client.dart';
 import 'package:omniscribe_client/core/network/api_exceptions.dart';
 
+// Top-level counter so the onUnauthorized callback can record invocations
+// from inside ApiClient catch blocks where the per-test `fired` capture
+// isn't directly observable.
+int unauthInvocations = 0;
+
 void main() {
   group('ApiClient Error Translation Tests', () {
     late ApiClient apiClient;
@@ -128,6 +133,76 @@ void main() {
               .having((e) => e.isTimeout, 'isTimeout', isTrue),
         ),
       );
+    });
+
+    test('onUnauthorized callback fires on 401 (flag UI without suppressing exception)',
+        () async {
+      unauthInvocations = 0;
+      final flagged = ApiClient(onUnauthorized: () {
+        unauthInvocations++;
+      });
+      final dio = flagged.rawDio;
+      dio.interceptors.clear();
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            handler.reject(
+              DioException(
+                requestOptions: options,
+                response: Response(
+                  requestOptions: options,
+                  statusCode: 401,
+                  data: {'error': 'unauthorized', 'detail': 'Invalid API Key'},
+                ),
+              ),
+            );
+          },
+        ),
+      );
+
+      // The exception must still propagate (callback is for UI flagging only).
+      // Use explicit try/catch + await so the catch block runs BEFORE we
+      // check the counter — `expect(throwsA)` returns before the Dio
+      // catch-block future has settled.
+      try {
+        await flagged.get<dynamic>('/test');
+        fail('expected UnauthorizedException');
+      } on UnauthorizedException {
+        // Expected.
+      }
+      expect(unauthInvocations, equals(1),
+          reason: 'onUnauthorized must fire on 401');
+    });
+
+    test('onUnauthorized callback does NOT fire on non-401 errors', () async {
+      unauthInvocations = 0;
+      final flagged = ApiClient(onUnauthorized: () {
+        unauthInvocations++;
+      });
+      final dio = flagged.rawDio;
+      dio.interceptors.clear();
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            handler.reject(
+              DioException(
+                requestOptions: options,
+                type: DioExceptionType.connectionTimeout,
+                message: 'Connection timed out',
+              ),
+            );
+          },
+        ),
+      );
+
+      try {
+        await flagged.get<dynamic>('/test');
+        fail('expected NetworkException');
+      } on NetworkException {
+        // Expected.
+      }
+      expect(unauthInvocations, equals(0),
+          reason: 'onUnauthorized must NOT fire on non-401');
     });
   });
 }
