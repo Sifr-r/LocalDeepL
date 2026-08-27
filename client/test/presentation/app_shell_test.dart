@@ -1,8 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:omniscribe_client/core/enums/app_tab.dart';
 import 'package:omniscribe_client/core/theme/app_theme.dart';
+import 'package:omniscribe_client/data/models/document_result.dart';
+import 'package:omniscribe_client/data/models/process_settings.dart';
 import 'package:omniscribe_client/data/providers/repository_providers.dart';
+import 'package:omniscribe_client/data/providers/workstation_notifier.dart';
+import 'package:omniscribe_client/data/repositories/ocr_repository.dart';
+import 'package:omniscribe_client/core/websocket/ws_client.dart';
 import 'package:omniscribe_client/presentation/features/extraction_screen.dart';
 import 'package:omniscribe_client/presentation/features/glossary_screen.dart';
 import 'package:omniscribe_client/presentation/features/transcription_screen.dart';
@@ -10,9 +18,41 @@ import 'package:omniscribe_client/presentation/features/translation_screen.dart'
 import 'package:omniscribe_client/presentation/jobs/job_history_screen.dart';
 import 'package:omniscribe_client/presentation/settings/settings_screen.dart';
 import 'package:omniscribe_client/presentation/shell/app_shell.dart';
+import 'package:omniscribe_client/presentation/shell/shell_state.dart';
 import 'package:omniscribe_client/presentation/workstation/workstation_screen.dart';
 
+class _MockOcrRepository extends Mock implements OcrRepository {}
+
+/// No-op WebSocket client for tests. The real [WsClient] tries to open a
+/// socket against the configured base URL, which never resolves in the
+/// widget-test harness (no real server). The workstation notifier awaits
+/// [WsClient.connect] before calling `processOcrSync`, so a hanging real
+/// client would block the OCR pipeline behind the Ctrl+Enter shortcut.
+class _FakeWsClient extends WsClient {
+  _FakeWsClient() : super(defaultWsBaseUrl: 'ws://test.invalid');
+
+  @override
+  Future<void> connect({
+    required String channelId,
+    required String sessionToken,
+    String? wsUrl,
+  }) async {
+    // No-op: skip the real socket handshake so the workstation notifier can
+    // move past the WebSocket attach step and reach processOcrSync.
+  }
+
+  @override
+  Future<void> disconnect() async {
+    // No-op.
+  }
+}
+
 void main() {
+  setUpAll(() {
+    registerFallbackValue(const ProcessSettings());
+    registerFallbackValue(Uint8List(0));
+  });
+
   Widget buildAppShell() {
     return ProviderScope(
       child: MaterialApp(
@@ -285,6 +325,116 @@ void main() {
       );
       await tester.pump();
       expect(find.text('Authentication required'), findsOneWidget);
+    });
+  });
+
+  group('AppShell Keyboard Shortcut Tests', () {
+    testWidgets('Ctrl+O on workstation increments filePickSignal',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1920, 1080);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(buildAppShell());
+      await tester.pumpAndSettle();
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(AppShell)),
+      );
+
+      // Default tab is workstation, filePickSignal starts at 0.
+      expect(container.read(activeTabProvider), AppTab.workstation);
+      expect(container.read(workstationProvider).filePickSignal, 0);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.keyO);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.keyO);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+
+      expect(
+        container.read(workstationProvider).filePickSignal,
+        greaterThan(0),
+        reason: 'Ctrl+O on workstation should bump the file pick signal',
+      );
+    });
+
+    testWidgets('Ctrl+Enter on workstation with loaded doc invokes OCR',
+        (WidgetTester tester) async {
+      final ocrRepo = _MockOcrRepository();
+      when(() => ocrRepo.openProgressSession(
+            clientId: any(named: 'clientId'),
+          )).thenAnswer(
+        (_) async => const ProgressSessionHandle(
+          channelId: 'test-channel',
+          sessionToken: 'test-token',
+        ),
+      );
+      when(() => ocrRepo.processOcrSync(
+            fileBytes: any(named: 'fileBytes'),
+            filename: any(named: 'filename'),
+            settings: any(named: 'settings'),
+            progressChannel: any(named: 'progressChannel'),
+            progressToken: any(named: 'progressToken'),
+            onSendProgress: any(named: 'onSendProgress'),
+          )).thenAnswer(
+        (_) async => ProcessOcrResult(
+          pdfBytes: Uint8List.fromList([1, 2, 3]),
+          headers: const {},
+        ),
+      );
+      when(() => ocrRepo.cancelProgressChannel(any()))
+          .thenAnswer((_) async => true);
+
+      tester.view.physicalSize = const Size(1920, 1080);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            ocrRepositoryProvider.overrideWithValue(ocrRepo),
+            wsClientProvider.overrideWithValue(_FakeWsClient()),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: const Scaffold(body: AppShell()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(AppShell)),
+      );
+
+      // Default tab is workstation; seed a document so hasDocument flips true.
+      container.read(workstationProvider.notifier).loadDocument(
+            Uint8List.fromList([1, 2, 3, 4]),
+            'invoice.pdf',
+            pageCount: 1,
+          );
+      await tester.pump();
+      expect(container.read(workstationProvider).hasDocument, true);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      // Allow async processOcrSync to run.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      verify(() => ocrRepo.processOcrSync(
+            fileBytes: any(named: 'fileBytes'),
+            filename: 'invoice.pdf',
+            settings: any(named: 'settings'),
+            progressChannel: any(named: 'progressChannel'),
+            progressToken: any(named: 'progressToken'),
+            onSendProgress: any(named: 'onSendProgress'),
+          )).called(1);
     });
   });
 }

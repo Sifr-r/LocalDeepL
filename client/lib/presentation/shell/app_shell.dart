@@ -78,6 +78,28 @@ class AppShell extends ConsumerWidget {
             ExportModal.show(context);
           }
         },
+        // Phase A: Ctrl+O bumps the workstation's filePickSignal so the
+        // mounted UploadDropzone (the only widget that owns the native
+        // file picker) opens it. Guarded on workstation tab so other tabs
+        // don't trigger a picker dialog.
+        const SingleActivator(LogicalKeyboardKey.keyO, control: true): () {
+          final activeTab = ref.read(activeTabProvider);
+          if (activeTab == AppTab.workstation) {
+            ref.read(workstationProvider.notifier).incrementFilePick();
+          }
+        },
+        // Phase A: Ctrl+Enter kicks off OCR with default settings, but only
+        // on the workstation tab AND when a document is already loaded. The
+        // dock's tweaked ProcessSettings are intentionally ignored here —
+        // AppShell shortcuts are a coarse shortcut layer.
+        const SingleActivator(LogicalKeyboardKey.enter, control: true): () {
+          final activeTab = ref.read(activeTabProvider);
+          final wsState = ref.read(workstationProvider);
+          if (activeTab == AppTab.workstation && wsState.hasDocument) {
+            // ignore: unawaited_futures
+            ref.read(workstationProvider.notifier).processCurrentDocument();
+          }
+        },
       },
       child: Focus(
         autofocus: true,
