@@ -21,8 +21,11 @@ class SettingsNotifier extends Notifier<SettingsState> {
     state = state.copyWith(isLoading: true, clearError: true);
     try {
       final config = await _repo.getConfig();
-      final ocrModels =
-          await _repo.getModelsForProvider(state.activeProviderId);
+      // Resolve the active provider from the freshly-fetched config BEFORE
+      // the model call so the first load() doesn't use the previous
+      // (initial-default) activeProviderId.
+      final activeProviderId = config.ocrProvider ?? state.activeProviderId;
+      final ocrModels = await _repo.getModelsForProvider(activeProviderId);
       // Translation and transcription routes are deferred per the harness
       // rebuild spec; we deliberately do not call the server for them.
       final translationModels = <String>[];
@@ -31,7 +34,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
       state = state.copyWith(
         isLoading: false,
         runtimeConfig: config,
-        activeProviderId: config.ocrProvider ?? state.activeProviderId,
+        activeProviderId: activeProviderId,
         ocrModels: ocrModels,
         translationModels: translationModels,
         transcriptionModels: transcriptionModels,
