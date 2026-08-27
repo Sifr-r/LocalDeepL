@@ -163,6 +163,59 @@ async def test_discover_models_without_base_url_reports_error() -> None:
     assert http.calls == []
 
 
+# -- validate (direct unit tests, no route) ----------------------------------
+
+
+async def test_validate_ollama_probes_api_tags_endpoint() -> None:
+    """The ollama provider must hit /api/tags, not the OpenAI-style /models."""
+    manager, http = _manager(
+        FakeHttpClient({"models": [{"name": "llama3"}, {"name": "qwen2.5vl"}]})
+    )
+    result = await manager.validate("ollama", api_base="")
+    assert result.valid is True
+    assert result.model_count == 2
+    assert result.error is None
+    assert len(http.calls) == 1
+    url, headers = http.calls[0]
+    assert url == "http://localhost:11434/api/tags"
+    assert headers == {}
+
+
+async def test_validate_openai_compatible_probes_models_endpoint() -> None:
+    manager, http = _manager(
+        FakeHttpClient({"data": [{"id": "gpt-4o"}, {"id": "gpt-4o-mini"}]})
+    )
+    result = await manager.validate(
+        "openai", api_base="https://api.openai.com/v1", api_key="sk-test"
+    )
+    assert result.valid is True
+    assert result.model_count == 2
+    assert result.error is None
+    url, headers = http.calls[0]
+    assert url == "https://api.openai.com/v1/models"
+    assert headers == {"Authorization": "Bearer sk-test"}
+
+
+async def test_validate_unknown_provider_short_circuits() -> None:
+    manager, http = _manager()
+    result = await manager.validate("bogus", api_base="http://does.not.matter")
+    assert result.valid is False
+    assert result.model_count == 0
+    assert result.error == "unknown provider"
+    assert http.calls == []
+
+
+async def test_validate_connection_error_returns_classified_failure() -> None:
+    manager, _ = _manager(
+        FakeHttpClient(fail=httpx.ConnectError("connection refused"))
+    )
+    result = await manager.validate("lmstudio", api_base="http://127.0.0.1:1/v1")
+    assert result.valid is False
+    assert result.model_count == 0
+    assert result.error is not None
+    assert "connection" in result.error.lower()
+
+
 # -- routes ------------------------------------------------------------------
 
 
