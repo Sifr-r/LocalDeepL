@@ -9,7 +9,18 @@ abstract class ConfigRepository {
   /// Update server runtime configuration options.
   Future<RuntimeConfig> updateConfig(ConfigUpdate updates);
 
-  /// Fetch list of supported models under the given namespace (general, ocr, translation, transcription).
+  /// Fetch the supported models exposed by a specific provider.
+  ///
+  /// Hits `/api/providers/{providerId}/models` and parses the `models` array.
+  /// Returns an empty list when the response shape is unexpected (matches the
+  /// resilient Svelte fallback).
+  Future<List<String>> getModelsForProvider(String providerId);
+
+  /// Fetch list of supported models under the given namespace.
+  ///
+  /// Kept for back-compat with existing call sites; delegates to
+  /// [getModelsForProvider] for `general` / `ocr` and returns an empty list
+  /// for namespaces whose routes are deferred per the harness rebuild spec.
   Future<List<String>> getModels({String namespace = 'general'});
 }
 
@@ -36,12 +47,10 @@ class ConfigRepositoryImpl implements ConfigRepository {
   }
 
   @override
-  Future<List<String>> getModels({String namespace = 'general'}) async {
-    final endpoint = namespace.isNotEmpty && namespace != 'general'
-        ? '${ApiConstants.models}/$namespace'
-        : ApiConstants.models;
-
-    final json = await _apiClient.get<Map<String, dynamic>>(endpoint);
+  Future<List<String>> getModelsForProvider(String providerId) async {
+    final json = await _apiClient.get<Map<String, dynamic>>(
+      '/api/providers/$providerId/models',
+    );
     final list = <String>[];
     if (json['models'] is List) {
       for (final item in json['models'] as List) {
@@ -49,5 +58,21 @@ class ConfigRepositoryImpl implements ConfigRepository {
       }
     }
     return list;
+  }
+
+  @override
+  Future<List<String>> getModels({String namespace = 'general'}) async {
+    switch (namespace) {
+      case 'translation':
+      case 'transcription':
+        // Deferred per harness rebuild spec.
+        return const <String>[];
+      case 'general':
+      case 'ocr':
+      default:
+        // Phase A: hardcode 'lmstudio' as the default OCR/general provider
+        // until the SettingsNotifier-driven override is wired.
+        return getModelsForProvider('lmstudio');
+    }
   }
 }
