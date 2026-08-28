@@ -64,7 +64,40 @@ class ApiClient {
   String get baseUrl => _dio.options.baseUrl;
 
   set baseUrl(String newBaseUrl) {
+    // Sprint 3 / C-2 audit fix: refuse non-loopback plaintext HTTP.
+    // Loopback (127.0.0.1, ::1, localhost) is the documented
+    // local-trusted mode and remains allowed in plaintext. Any other
+    // host must use HTTPS — otherwise the bearer token is sent
+    // over the wire unencrypted. The check is a runtime guard, not
+    // a build-time flag, so a user pasting a public IP into the
+    // settings screen gets a clear error.
+    _assertBaseUrlIsTransportSafe(newBaseUrl);
     _dio.options.baseUrl = newBaseUrl;
+  }
+
+  /// True for loopback hosts where plaintext HTTP/WS is documented safe.
+  static bool _isLoopbackHost(String host) {
+    final lower = host.toLowerCase();
+    return lower == "127.0.0.1"
+        || lower == "::1"
+        || lower == "localhost"
+        || lower == "[::1]";
+  }
+
+  static void _assertBaseUrlIsTransportSafe(String url) {
+    final parsed = Uri.tryParse(url);
+    if (parsed == null || (parsed.scheme != "http" && parsed.scheme != "https")) {
+      throw ArgumentError(
+        "api_base must be http(s); got $url",
+      );
+    }
+    final host = parsed.host;
+    if (parsed.scheme == "http" && !_isLoopbackHost(host)) {
+      throw ArgumentError(
+        "Refusing plaintext HTTP for non-loopback host '$host'. "
+        "Use https:// for any server reachable from a network.",
+      );
+    }
   }
 
   void setAuthToken(String? token) {
