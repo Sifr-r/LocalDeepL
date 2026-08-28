@@ -38,6 +38,29 @@ uv run pytest tests/core/test_aligner.py -v
   - `slow_dataset` — exercises the full OCR-Quality / KIE-HVQA regression fixtures (`tests/fixtures/datasets/ocr_quality_full.json`, `kie_hvqa_full.json`); only meaningful once `scripts/fetch_datasets.py` has the upstream license review cleared and downloads the real datasets. Today the marker is a no-op skip (the fixtures don't ship); the marker exists so the next test author can land tests that need the full data without remembering the right `xfail` shape.
 - Pre-commit hooks run ruff (check + format) and mypy automatically on every commit. Install with `uv tool run pre-commit install`.
 
+### Sprint 5 / C-3 audit fix: required CI checks for merge
+
+The fast-tier workflow (`.github/workflows/test.yml`) runs on every
+PR and push to main. The matrix jobs that **must** be green before
+merge (per audit C-3):
+
+| Job | Runner | Python | Purpose |
+| --- | --- | --- | --- |
+| `fast (ubuntu, 3.11)` | ubuntu-latest | 3.11 | Fast tier — lint + mypy + fast tests + coverage ≥ 85 % |
+| `fast (ubuntu, 3.13)` | ubuntu-latest | 3.13 | Fast tier on the Python version the Dockerfile builds |
+| `fast (windows, 3.11)` | windows-latest | 3.11 | Windows path (install.bat, start_app.vbs) |
+| `container scan (trivy)` | ubuntu-latest | n/a | High/critical CVE scan of the production image |
+
+The nightly workflow (`.github/workflows/nightly.yml`) is **not** a
+merge gate — it adds 3.12 to the slow tier and runs the OCR-Quality
+calibration regression. The drift is intentional and documented in
+the workflow comments; the fast tier is 3.11 + 3.13 to keep the
+PR matrix from quadrupling in size.
+
+A `Codecov` and `Trivy SARIF` upload are informational; the inline
+`--cov-fail-under=85` (Sprint 4 / C-1) is the authoritative coverage
+gate.
+
 ## Core Paths
 
 Source directories are split into **core** (OCR pipeline and API surface) and **peripheral** (tooling, utilities). Changes to core paths require the full fast gate; peripheral-only changes can skip some checks.
