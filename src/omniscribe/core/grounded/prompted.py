@@ -221,14 +221,22 @@ class PromptedGroundedOCR:
         max_tokens: int = 8192,
         concurrency: int = 1,
     ):
+        # H2/H4 audit fix: read LLM coordinates from load_settings()
+        # rather than os.getenv so the centralised configuration is the
+        # single source of truth. The retry/breaker knobs below still
+        # use os.getenv for now (the audit flagged only the api_base /
+        # api_key / model fields as a residual gap from the F1.9 fix).
+        from omniscribe.config import load_settings
+
+        settings = load_settings()
         # Honor .env / environment overrides the same way OCRProcessor does,
         # so a user with `LLM_API_BASE` set in .env doesn't have to also pass
         # `--api-base` when switching to --grounded.
         self.api_base: str = (
-            api_base or os.getenv("LLM_API_BASE") or "http://localhost:1234/v1"
+            api_base or settings.llm_api_base or "http://localhost:1234/v1"
         )
-        self.model: str = model or os.getenv("LLM_MODEL") or "qwen/qwen3-vl-8b"
-        self.api_key: str = api_key
+        self.model: str = model or settings.llm_model or "qwen/qwen3-vl-8b"
+        self.api_key: str = api_key or settings.llm_api_key or "lm-studio"
         self.max_image_dim = max_image_dim
         self.dpi = dpi
         self.prompt = prompt or DEFAULT_GROUNDING_PROMPT

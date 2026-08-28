@@ -155,11 +155,15 @@ class OCRProcessor:
         self.page_max_tokens: int = self.PAGE_MAX_TOKENS
         self.crop_max_tokens: int = self.CROP_MAX_TOKENS
 
+        # H2/H4 audit fix: read LLM coordinates from load_settings()
+        # rather than os.getenv so the centralised configuration is the
+        # single source of truth. F1.9 already moved the timeout/retry
+        # knobs to load_settings; this closes the residual gap.
         self.api_base: str = (
-            api_base or os.getenv("LLM_API_BASE") or "http://localhost:1234/v1"
+            api_base or settings.llm_api_base or "http://localhost:1234/v1"
         )
-        self.api_key: str = api_key or os.getenv("LLM_API_KEY") or "lm-studio"
-        self.model: str = model or os.getenv("LLM_MODEL") or "allenai/olmocr-2-7b"
+        self.api_key: str = api_key or settings.llm_api_key or "lm-studio"
+        self.model: str = model or settings.llm_model or "allenai/olmocr-2-7b"
         self.client = AsyncOpenAI(base_url=self.api_base, api_key=self.api_key)
         # Optional TrOCR specialist (lazy-loaded). When set, low-confidence
         # crops are re-OCR'd with TrOCR and the higher-confidence candidate wins.
