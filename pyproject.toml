@@ -260,14 +260,10 @@ ignore = [
 # Pre-existing violations surfaced when SIM/RUF/G were enabled. Each entry
 # defers the cleanup to a follow-up PR so the new rules stay active for new
 # code without bundling unrelated fixes into this commit.
-"src/omniscribe/api/routers/config.py" = ["RUF003"]
-"src/omniscribe/api/routers/extraction.py" = ["SIM105"]
 # SIM105 in server.py: ``except asyncio.CancelledError: pass`` reads more
 # naturally than ``contextlib.suppress(...)`` when the only consumer of
 # the suppressed exception is the cleanup task itself.
 "src/omniscribe/server.py" = ["SIM105"]
-"src/omniscribe/api/routers/ocr.py" = ["RUF003"]
-"src/omniscribe/api/services/uploads.py" = ["SIM115"]
 # RUF022 in core/{ocr,grounded}/__init__.py: the public/private grouping in
 # __all__ is intentional and more scannable than strict alphabetical.
 "src/omniscribe/core/grounded/__init__.py" = ["RUF022"]
@@ -293,6 +289,29 @@ ignore = [
     "E402", # module level import not at top of file (after setup_sys_path())
 ]
 
+[tool.coverage.run]
+source = ["src/omniscribe"]
+branch = true
+omit = [
+    "src/omniscribe/resources/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "def __repr__",
+    "@overload",
+]
+# Sprint 4 / C-1 audit fix: local config now matches the CI threshold
+# (`.github/workflows/test.yml` uses `--cov-fail-under=85`). Before this
+# change, `pytest` ran locally with ``fail_under = 80`` and CI rejected
+# the same diff at 85, producing green local runs that turned red in
+# CI. Pick a single source of truth: 85.
+fail_under = 85
+show_missing = true
+
 [tool.mypy]
 python_version = "3.11"
 warn_unused_configs = true
@@ -316,6 +335,8 @@ check_untyped_defs = true
 
 [[tool.mypy.overrides]]
 module = "tests.*"
-ignore_errors = true
+check_untyped_defs = true
+disallow_untyped_defs = false
+ignore_errors = false
 
 
