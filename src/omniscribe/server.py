@@ -339,6 +339,21 @@ def main(argv: Sequence[str] | None = None) -> None:
             "(32+ chars) or bind to 127.0.0.1 / ::1 / localhost. See "
             "SECURITY.md."
         )
+    # C-2 audit fix: when ``ALLOW_SSRF_LOCAL=true`` AND the bind host is
+    # non-loopback, log a loud WARNING that any LAN caller can reach the
+    # SSRF-disabled private-network endpoints via ``/api/providers/*``.
+    # The default is preserved for local dev; operators who expose the
+    # server to a LAN should set ``ALLOW_SSRF_LOCAL=false``.
+    if (
+        not is_loopback
+        and getattr(_settings_for_guard, "allow_ssrf_local", False)
+    ):
+        _log.warning(
+            "ALLOW_SSRF_LOCAL=true with non-loopback bind %s: SSRF guard "
+            "permits private / loopback URLs from any LAN caller. "
+            "Set ALLOW_SSRF_LOCAL=false on public / LAN deployments.",
+            args.host,
+        )
 
     try:
         uvicorn = _load_optional_module("uvicorn")

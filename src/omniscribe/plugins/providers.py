@@ -376,6 +376,29 @@ class ProviderManagerImpl:
         model: str,
         api_key: str | None = None,
     ) -> dict[str, str]:
+        # C-4 / H-4 audit fix: refuse to write an api_base that fails
+        # the SSRF guard. Combined with the (deferred) auth middleware,
+        # an unauthenticated caller could otherwise point the OCR pipeline
+        # at an attacker-controlled VLM. The deferred-capability story in
+        # AGENTS.md documents this; until the per-route provider catalog
+        # gate lands, every api_base write is SSRF-validated.
+        import asyncio
+
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = None
+        # set_active is sync; run the SSRF check synchronously via
+        # is_blocked_host (no DNS, just URL/host parsing). For full DNS
+        # pinning, callers should use the validate() round-trip.
+        from omniscribe.utils.security import is_blocked_host
+
+        if api_base and is_blocked_host(api_base.split("//", 1)[-1].split("/")[0].split(":")[0]):
+            raise ValueError(
+                f"api_base {api_base!r} is blocked by the SSRF guard "
+                "(private / loopback / metadata range). Use a public URL."
+            )
+
         self._settings.llm_api_base = api_base
         self._settings.llm_model = model
         if api_key:
