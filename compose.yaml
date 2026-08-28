@@ -99,12 +99,14 @@ services:
     # on curl in the container. Interval/timeout/retries/start_period
     # follow the audit's recommended defaults.
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
     restart: unless-stopped
+    networks:
+      - omniscribe
 
   worker:
     build:
@@ -141,6 +143,8 @@ services:
       retries: 3
       start_period: 20s
     restart: unless-stopped
+    networks:
+      - omniscribe
     profiles: ["async"]
 
   redis:
@@ -157,7 +161,7 @@ services:
     # — Compose's ``:?`` substitution aborts startup with a clear error
     # when it's missing, so a misconfigured stack can never silently
     # come up with the old ``omniscribe-local-dev`` known password.
-    command: ["redis-server", "--appendonly", "no", "--save", "", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env (see .env.example)}"]
+    command: ["redis-server", "--appendonly", "no", "--save", "", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env (see .env.example)}"]
     # Loopback-only publish: api/worker reach redis over the compose
     # network, so the host port is only for local inspection tools.
     ports:
@@ -173,10 +177,22 @@ services:
       timeout: 3s
       retries: 5
     restart: unless-stopped
+    networks:
+      - omniscribe
 
 volumes:
   redis-data:
     name: omniscribe-redis-data
   app-data:
     name: omniscribe-app-data
+
+# Sprint 5 / M-3 audit fix: declare an explicit bridge network so
+# the stack is portable to Swarm / K8s / Nomad without rewriting
+# ``networks:`` clauses. Compose v2 would create a default ``<project>_default``
+# network automatically; declaring it explicitly here also documents
+# the intent for the operator.
+networks:
+  omniscribe:
+    driver: bridge
+    name: omniscribe
 
