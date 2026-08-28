@@ -32,7 +32,6 @@ def _settings() -> MagicMock:
     return s
 
 
-@pytest.mark.asyncio
 async def test_H1_discover_models_pins_resolved_ip_in_request_url() -> None:
     """discover_models must rewrite the URL host to the SSRF-validated IP."""
     manager = ProviderManagerImpl(_settings(), discovery_timeout_seconds=1.0)
@@ -78,7 +77,6 @@ async def test_H1_discover_models_pins_resolved_ip_in_request_url() -> None:
     assert url_str.startswith(("http://", "https://"))
 
 
-@pytest.mark.asyncio
 async def test_H1_validate_pins_resolved_ip() -> None:
     """validate must also rewrite the URL host to the SSRF-validated IP."""
     manager = ProviderManagerImpl(_settings(), discovery_timeout_seconds=1.0)

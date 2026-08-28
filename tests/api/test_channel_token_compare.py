@@ -24,7 +24,6 @@ def test_H3_memory_consume_channel_uses_compare_digest() -> None:
     )
 
 
-@pytest.mark.asyncio
 async def test_H3_memory_consume_channel_rejects_wrong_token() -> None:
     """Wrong tokens still return None (functional correctness preserved)."""
     backend = MemoryStateBackend()
