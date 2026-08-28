@@ -133,8 +133,15 @@ async def test_discover_models_openai_compatible_parses_data_ids() -> None:
     result = await manager.discover_models("openai", api_key="sk-test")
     assert result == {"models": ["model-a", "model-b"], "error": None}
     url, headers = http.calls[0]
-    assert url == "https://api.openai.com/v1/models"
-    assert headers == {"Authorization": "Bearer sk-test"}
+    # H-1 audit fix: the URL host is rewritten to the SSRF-validated IP
+    # so a DNS-rebinding attacker cannot bypass the guard. The original
+    # hostname is preserved in the ``Host`` header.
+    from urllib.parse import urlsplit
+
+    assert urlsplit(url).hostname == "172.66.0.243"
+    assert urlsplit(url).path == "/v1/models"
+    assert "api.openai.com" in headers.get("Host", "")
+    assert "Bearer sk-test" in headers["Authorization"]
 
 
 async def test_discover_models_ollama_uses_api_tags() -> None:
@@ -144,8 +151,21 @@ async def test_discover_models_ollama_uses_api_tags() -> None:
     result = await manager.discover_models("ollama")
     assert result == {"models": ["llama3", "qwen2.5vl"], "error": None}
     url, headers = http.calls[0]
-    assert url == "http://localhost:11434/api/tags"
-    assert headers == {}
+    # H-1 audit fix: URL host rewritten to the SSRF-resolved IP.
+    # On this test host, ``localhost`` resolves to ``::1`` (IPv6) but
+    # could resolve to ``127.0.0.1`` on others; we accept either, and
+    # assert the path + Host header are preserved.
+    from urllib.parse import urlsplit
+
+    host = urlsplit(url).hostname or ""
+    assert host in {"127.0.0.1", "::1"}, (
+        f"expected loopback IP, got {host!r}"
+    )
+    assert urlsplit(url).port == 11434
+    assert urlsplit(url).path == "/api/tags"
+    # The Host header preserves the original hostname so virtual
+    # hosting / HTTPS SNI still match.
+    assert headers.get("Host") == "localhost"
 
 
 async def test_discover_models_failure_falls_back_to_presets() -> None:
@@ -177,8 +197,16 @@ async def test_validate_ollama_probes_api_tags_endpoint() -> None:
     assert result.error is None
     assert len(http.calls) == 1
     url, headers = http.calls[0]
-    assert url == "http://localhost:11434/api/tags"
-    assert headers == {}
+    # H-1 audit fix: URL host rewritten to SSRF-resolved IP.
+    from urllib.parse import urlsplit
+
+    host = urlsplit(url).hostname or ""
+    assert host in {"127.0.0.1", "::1"}, (
+        f"expected loopback IP, got {host!r}"
+    )
+    assert urlsplit(url).port == 11434
+    assert urlsplit(url).path == "/api/tags"
+    assert headers.get("Host") == "localhost"
 
 
 async def test_validate_openai_compatible_probes_models_endpoint() -> None:
@@ -192,8 +220,17 @@ async def test_validate_openai_compatible_probes_models_endpoint() -> None:
     assert result.model_count == 2
     assert result.error is None
     url, headers = http.calls[0]
-    assert url == "https://api.openai.com/v1/models"
-    assert headers == {"Authorization": "Bearer sk-test"}
+    # H-1 audit fix: URL host rewritten to SSRF-resolved IP.
+    from urllib.parse import urlsplit
+
+    assert urlsplit(url).path == "/v1/models"
+    assert headers.get("Host") == "api.openai.com"
+    assert headers["Authorization"] == "Bearer sk-test"
+    host = urlsplit(url).hostname or ""
+    # Hostname should now be an IP literal.
+    assert all(c in "0123456789." for c in host) or ":" in host, (
+        f"expected IP literal, got {host!r}"
+    )
 
 
 async def test_validate_unknown_provider_short_circuits() -> None:
@@ -206,9 +243,7 @@ async def test_validate_unknown_provider_short_circuits() -> None:
 
 
 async def test_validate_connection_error_returns_classified_failure() -> None:
-    manager, _ = _manager(
-        FakeHttpClient(fail=httpx.ConnectError("connection refused"))
-    )
+    manager, _ = _manager(FakeHttpClient(fail=httpx.ConnectError("connection refused")))
     result = await manager.validate("lmstudio", api_base="http://127.0.0.1:1/v1")
     assert result.valid is False
     assert result.model_count == 0

@@ -20,8 +20,52 @@ from omniscribe.config import RuntimeSettings, load_settings
 from omniscribe.core.llm.providers import ProviderConfig, ProviderFormatEnum
 from omniscribe.harness.context import Context
 from omniscribe.harness.plugin import Plugin
+from omniscribe.utils.security import is_ssrf_target
 
 _LOGGER = logging.getLogger("omniscribe.plugins.providers")
+
+
+def _rewrite_url_with_resolved_ip(url: str, resolved_ip: str) -> str:
+    """Rewrite ``url`` so the connection goes to ``resolved_ip``.
+
+    H-1 audit fix: ``httpx`` re-resolves DNS on connect, opening a
+    DNS-rebinding TOCTOU window after ``is_ssrf_target`` validated the
+    original hostname. We rewrite the URL to use the validated IP
+    directly; callers should also preserve the original ``Host``
+    header so HTTPS SNI / virtual hosting still match.
+
+    The port is preserved (the validated IP replaces only the
+    hostname slot). When ``url`` has no port we drop the port slot
+    entirely so the rewritten URL is well-formed. IPv6 literals are
+    wrapped in ``[ ]`` so urlsplit / httpx parse them correctly.
+    """
+    import ipaddress
+    from urllib.parse import urlsplit, urlunsplit
+
+    parts = urlsplit(url)
+    port = parts.port
+    try:
+        ip = ipaddress.ip_address(resolved_ip)
+        host_literal = (
+            f"[{resolved_ip}]" if isinstance(ip, ipaddress.IPv6Address) else resolved_ip
+        )
+    except ValueError:
+        host_literal = resolved_ip
+    if port is None:
+        netloc = host_literal
+    else:
+        netloc = f"{host_literal}:{port}"
+    return urlunsplit(parts._replace(netloc=netloc))
+
+
+def _base_hostname(base: str) -> str:
+    """Return the hostname component of a base URL string, or empty."""
+    from urllib.parse import urlsplit
+
+    try:
+        return (urlsplit(base).hostname or "").strip().lower()
+    except ValueError:
+        return ""
 
 
 class SetActiveProviderRequest(BaseModel):
@@ -279,8 +323,27 @@ class ProviderManagerImpl:
         base = (api_base or (config.api_url if config else "")).rstrip("/")
         if not base:
             return {"models": fallback, "error": "no base URL for provider"}
+        ssrf_check = await is_ssrf_target(base)
+        if not ssrf_check.allowed:
+            return {
+                "models": fallback,
+                "error": f"Invalid provider URL (SSRF blocked: {ssrf_check.reason})",
+            }
         url = f"{base}/api/tags" if provider_id == "ollama" else f"{base}/models"
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        # H-1 audit fix: pin the TCP connection to the validated IP so
+        # a DNS-rebinding attacker cannot bypass the SSRF check by
+        # returning a different IP at connect time. The original
+        # hostname is preserved in the ``Host`` header so HTTPS SNI /
+        # virtual hosting still work. We rewrite only when the URL
+        # hostname and the resolved IP differ (a no-op for IP-literal
+        # URLs and for hosts that already resolved to themselves).
+        if ssrf_check.resolved_ip and _base_hostname(base) != ssrf_check.resolved_ip:
+            original_host = _base_hostname(base)
+            url = _rewrite_url_with_resolved_ip(url, ssrf_check.resolved_ip)
+            # Preserve the original Host header so virtual-hosted servers
+            # and HTTPS SNI / cert verification still match.
+            headers = {**headers, "Host": original_host}
         try:
             client = self._client or httpx.AsyncClient(timeout=self._timeout)
             try:
@@ -341,8 +404,20 @@ class ProviderManagerImpl:
             return ValidateProviderResponse(
                 valid=False, model_count=0, error="no base URL for provider"
             )
+        ssrf_check = await is_ssrf_target(base)
+        if not ssrf_check.allowed:
+            return ValidateProviderResponse(
+                valid=False,
+                model_count=0,
+                error=f"Invalid provider URL (SSRF blocked: {ssrf_check.reason})",
+            )
         url = f"{base}/api/tags" if provider_id == "ollama" else f"{base}/models"
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        # H-1 audit fix: pin TCP to validated IP (see discover_models).
+        if ssrf_check.resolved_ip and _base_hostname(base) != ssrf_check.resolved_ip:
+            original_host = _base_hostname(base)
+            url = _rewrite_url_with_resolved_ip(url, ssrf_check.resolved_ip)
+            headers = {**headers, "Host": original_host}
         try:
             client = self._client or httpx.AsyncClient(timeout=self._timeout)
             try:
