@@ -88,6 +88,7 @@ class WsClient {
   }
 
   Future<void> _performConnect(Uri uri, String sessionToken) async {
+    _stopKeepAlive();
     _cleanupChannel();
     _setState(
       _reconnectAttempts > 0
@@ -116,9 +117,66 @@ class WsClient {
         onDone: _onDone,
         cancelOnError: false,
       );
+
+      // 3. Sprint 3 / H-4 audit fix: start an application-level
+      // keep-alive. WebSocket's TCP layer surfaces half-open
+      // connections only when the OS gives up on the keep-alive
+      // (often 2 hours). A 20-second application ping + 5-second
+      // pong timeout means dead sockets are detected in <30 s.
+      _startKeepAlive();
     } catch (e) {
       _onError(e);
     }
+  }
+
+  /// Sprint 3 / H-4 audit fix: keep the WS connection alive behind
+  /// NAT / proxy idle timeouts. Emits a JSON ``{"type": "ping"}``
+  /// every 20 s; if no frame arrives within 5 s the connection is
+  /// considered half-open and we tear it down so the auto-reconnect
+  /// path takes over.
+  Timer? _keepAliveTimer;
+  Timer? _pongWatchdog;
+  int _keepAliveIntervalMs = 20000;
+  int _keepAliveTimeoutMs = 5000;
+
+  void _startKeepAlive() {
+    _keepAliveTimer?.cancel();
+    _pongWatchdog?.cancel();
+    _keepAliveTimer = Timer.periodic(
+      Duration(milliseconds: _keepAliveIntervalMs),
+      (_) => _sendKeepAlivePing(),
+    );
+  }
+
+  void _sendKeepAlivePing() {
+    if (_channel == null || _state != WsConnectionState.connected) {
+      return;
+    }
+    try {
+      _channel!.sink.add(jsonEncode(<String, dynamic>{'type': 'ping'}));
+    } catch (_) {
+      // sink.add can fail if the socket just closed; let _onError
+      // drive the reconnect path.
+      return;
+    }
+    _pongWatchdog?.cancel();
+    _pongWatchdog = Timer(
+      Duration(milliseconds: _keepAliveTimeoutMs),
+      () {
+        if (_state == WsConnectionState.connected) {
+          // No pong / frame within the watchdog window — the
+          // socket is half-open. Force a reconnect.
+          _onError('keep-alive timeout');
+        }
+      },
+    );
+  }
+
+  void _stopKeepAlive() {
+    _keepAliveTimer?.cancel();
+    _keepAliveTimer = null;
+    _pongWatchdog?.cancel();
+    _pongWatchdog = null;
   }
 
   void _onMessage(dynamic rawMessage) {
@@ -234,6 +292,7 @@ class WsClient {
   void dispose() {
     _manualDisconnect = true;
     _reconnectTimer?.cancel();
+    _stopKeepAlive();
     _cleanupChannel();
     _envelopeController.close();
     _stateController.close();
