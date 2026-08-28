@@ -223,10 +223,9 @@ async def complete_vlm_prompt(
         else:
             anthropic_content = [{"type": "text", "text": prompt}]
 
-        anthropic_messages: list[dict[str, Any]] = []
-        if system_prompt:
-            anthropic_messages.append({"role": "system", "content": system_prompt})
-        anthropic_messages.append({"role": "user", "content": anthropic_content})
+        anthropic_messages: list[dict[str, Any]] = [
+            {"role": "user", "content": anthropic_content}
+        ]
 
         payload = {
             "model": target_model,
@@ -234,6 +233,8 @@ async def complete_vlm_prompt(
             "max_tokens": max_tokens,
             "temperature": temperature,
         }
+        if system_prompt:
+            payload["system"] = system_prompt
 
     elif fmt == ProviderFormatEnum.OLLAMA_COMPATIBLE.value:
         endpoint = api_url if api_url.endswith("/api/chat") else f"{api_url}/api/chat"
@@ -284,7 +285,25 @@ async def complete_vlm_prompt(
                         msg = choices[0].get("message", {})
                         if isinstance(msg, dict):
                             val = msg.get("content", "")
-                            return val if isinstance(val, str) else str(val or "")
+                            if isinstance(val, str):
+                                return val
+                            logger.warning(
+                                "Provider '%s' (%s): choices[0].message.content "
+                                "is not a string (got %s); returning empty result.",
+                                provider_config.id,
+                                fmt,
+                                type(val).__name__,
+                            )
+                            return ""
+                    logger.warning(
+                        "Provider '%s' (%s): response missing or malformed "
+                        "'choices[0].message.content'; got keys=%s; returning empty.",
+                        provider_config.id,
+                        fmt,
+                        sorted(data.keys())
+                        if isinstance(data, dict)
+                        else type(data).__name__,
+                    )
                     return ""
 
                 elif fmt == ProviderFormatEnum.ANTHROPIC_COMPATIBLE.value:
@@ -293,14 +312,50 @@ async def complete_vlm_prompt(
                         first_item = content_list[0]
                         if isinstance(first_item, dict):
                             val = first_item.get("text", "")
-                            return val if isinstance(val, str) else str(val or "")
+                            if isinstance(val, str):
+                                return val
+                            logger.warning(
+                                "Provider '%s' (%s): content[0].text is not a "
+                                "string (got %s); returning empty result.",
+                                provider_config.id,
+                                fmt,
+                                type(val).__name__,
+                            )
+                            return ""
+                    logger.warning(
+                        "Provider '%s' (%s): response missing or malformed "
+                        "'content[0].text'; got keys=%s; returning empty.",
+                        provider_config.id,
+                        fmt,
+                        sorted(data.keys())
+                        if isinstance(data, dict)
+                        else type(data).__name__,
+                    )
                     return ""
 
                 elif fmt == ProviderFormatEnum.OLLAMA_COMPATIBLE.value:
                     msg_obj = data.get("message", {})
                     if isinstance(msg_obj, dict):
                         val = msg_obj.get("content", "")
-                        return val if isinstance(val, str) else str(val or "")
+                        if isinstance(val, str):
+                            return val
+                        logger.warning(
+                            "Provider '%s' (%s): message.content is not a "
+                            "string (got %s); returning empty result.",
+                            provider_config.id,
+                            fmt,
+                            type(val).__name__,
+                        )
+                        return ""
+                    logger.warning(
+                        "Provider '%s' (%s): response missing or malformed "
+                        "'message.content'; got keys=%s; returning empty.",
+                        provider_config.id,
+                        fmt,
+                        sorted(data.keys())
+                        if isinstance(data, dict)
+                        else type(data).__name__,
+                    )
                     return ""
 
             # Non-200 response handling
