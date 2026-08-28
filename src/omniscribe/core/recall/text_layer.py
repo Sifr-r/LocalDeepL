@@ -140,6 +140,28 @@ class PdfTextLayerRecall:
         """
         if not self.options.enabled or self._doc is None:
             return []
+        # H3 audit fix: wrap per-page extraction in try/except so a single
+        # corrupted PDF page degrades to "no extra boxes" instead of
+        # aborting the per-page supplement loop. Mirrors the
+        # whitespace.py booster's fail-open contract.
+        try:
+            return self._supplement_inner(page_num, existing_boxes)
+        except Exception as exc:
+            logger.warning(
+                "Text-layer recall failed on page %d: %s: %s; degrading to empty.",
+                page_num,
+                type(exc).__name__,
+                exc,
+            )
+            self.candidates_dropped += 1
+            return []
+
+    def _supplement_inner(
+        self, page_num: int, existing_boxes: list[BBox]
+    ) -> list[BBox]:
+        """Inner body of :meth:`supplement`; isolated so the H3 audit
+        fail-open wrapper can catch all exceptions without swallowing
+        legitimate ``return []`` for normal conditions."""
         if page_num < 0 or page_num >= len(self._doc):
             return []
         page = self._doc[page_num]

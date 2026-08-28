@@ -53,5 +53,14 @@ def evaluate_document(
 
 
 def _valid_bbox(bbox: tuple[float, float, float, float]) -> bool:
+    """Return True iff bbox is normalized to ``[0..1]`` with non-negative area.
+
+    M10 audit fix: matches the IoU semantics in :func:`confidence_eval.iou`
+    so degenerate single-point boxes (area = 0, valid by IoU) are
+    accepted. The previous ``< x1`` rejected these.
+    """
     x0, y0, x1, y1 = bbox
-    return 0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1
+    return (
+        0.0 <= x0 <= x1 <= 1.0
+        and 0.0 <= y0 <= y1 <= 1.0
+    )

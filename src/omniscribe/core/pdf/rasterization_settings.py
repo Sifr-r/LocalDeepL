@@ -53,10 +53,11 @@ DEFAULT_RASTERIZER_VLM_JPEG_QUALITY_GROUNDED = 80
 DEFAULT_RASTERIZER_EMBED_JPEG_QUALITY_PDF = 80
 DEFAULT_RASTERIZER_EMBED_JPEG_QUALITY_IMAGE = 85
 
-# Sanity bound for MAX_SAFE_PIXELS. ~40 GPixels is well past any realistic
-# memory budget; reject values above this to catch typos like an extra zero
-# (``2500000000`` would silently 10x the cap).
-_MAX_SAFE_PIXELS_CEILING = 10_000_000_000  # 10 GPixels
+# M5 audit fix: 500 MPixels is ~20x the default budget (25 MPixels)
+# while rejecting accidental 10x typos that would allocate ~100 GB.
+# The previous 10 GPixels ceiling let a typo like ``25000000000``
+# slip through.
+_MAX_SAFE_PIXELS_CEILING = 500_000_000
 
 
 @dataclass(frozen=True, slots=True)
