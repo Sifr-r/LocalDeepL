@@ -172,6 +172,24 @@ def create_app() -> ASGIApplication:
             content={"error": "bad_request", "detail": str(exc)},
         )
 
+    # M-3 audit fix: catch-all handler logs the traceback (so genuine
+    # bugs surface in the operator's structured log) but does NOT
+    # leak the traceback to the client. A 500 with a stable error
+    # code (``internal_error``) is the documented contract — clients
+    # can display a generic failure message and operators can grep
+    # the log for ``omniscribe.server unhandled``.
+    import logging as _logging
+
+    @web_app.exception_handler(Exception)
+    async def _unhandled_exception_handler(request: Any, exc: Exception) -> Any:
+        _logging.getLogger("omniscribe.server").exception(
+            "unhandled exception in %s %s", request.method, request.url.path
+        )
+        return responses.JSONResponse(
+            status_code=500,
+            content={"error": "internal_error", "detail": "see server log"},
+        )
+
     return cast(ASGIApplication, web_app)
 
 

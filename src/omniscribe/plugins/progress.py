@@ -171,11 +171,52 @@ class ProgressServiceImpl:
                     )
                     self.detach(channel_id, connection)
             else:
-                asyncio.run_coroutine_threadsafe(
+                # H-2 audit fix: marshal the foreign-loop send and
+                # detach on failure. ``asyncio.run_coroutine_threadsafe``
+                # returns a ``concurrent.futures.Future`` whose
+                # ``add_done_callback`` fires when the coroutine settles.
+                # If the coroutine raises (the socket was closed between
+                # the loop's accept phase and our send attempt), the
+                # future's exception is surfaced and we detach the
+                # connection so the next broadcast doesn't try to write
+                # to a dead socket. Previously the future's exception
+                # was silently swallowed — the same-loop branch already
+                # detaches, this brings the foreign-loop branch to parity.
+                future = asyncio.run_coroutine_threadsafe(
                     connection.send(frame), connection.loop
+                )
+                future.add_done_callback(
+                    lambda fut, _cid=channel_id, _c=connection: self._on_foreign_send_done(
+                        _cid, _c, fut
+                    )
                 )
                 sent += 1
         return sent
+
+    def _on_foreign_send_done(
+        self, channel_id: str, connection: Any, future: Any
+    ) -> None:
+        """Callback fired when a foreign-loop ``connection.send`` settles.
+
+        Sprint 2 / H-2 audit fix: detach the connection on exception
+        so the next broadcast does not try to write to a socket that
+        already errored. ``asyncio.run_coroutine_threadsafe`` returns
+        a ``concurrent.futures.Future`` (not an awaitable), so we
+        inspect the exception via ``future.exception()``.
+        """
+        exc = future.exception()
+        if exc is not None:
+            _LOGGER.warning(
+                "foreign-loop progress send failed on channel %s (%s); detaching",
+                channel_id,
+                exc,
+            )
+            try:
+                self.detach(channel_id, connection)
+            except Exception:  # noqa: BLE001 — best-effort cleanup
+                _LOGGER.exception(
+                    "detach after foreign-loop send failure also failed"
+                )
 
     async def emit_progress(
         self, job_id: str, channel_id: str | None, frame: Mapping[str, Any]

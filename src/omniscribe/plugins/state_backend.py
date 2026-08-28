@@ -664,11 +664,31 @@ class StateBackendPlugin(Plugin):
             backend: StateBackend = MemoryStateBackend()
         else:
             sqlite_path = str(self.config.get("sqlite_path") or "").strip()
-            db_path = (
-                Path(sqlite_path)
-                if sqlite_path
-                else settings.artifact_base_dir / "omniscribe-state.db"
-            )
+            # C-3 audit fix: validate sqlite_path so a misconfigured
+            # operator (or a malicious patch file) cannot point the
+            # database at an arbitrary filesystem location. The
+            # default path under ``settings.artifact_base_dir`` is
+            # always allowed; an operator-supplied override must be
+            # an absolute path whose parent directory is the same as
+            # ``artifact_base_dir`` (no path-traversal escape). A bare
+            # file at the artifact base is also accepted; a file
+            # *outside* is rejected.
+            db_path: Path
+            if sqlite_path:
+                candidate = Path(sqlite_path).expanduser().resolve(strict=False)
+                base = settings.artifact_base_dir.expanduser().resolve(strict=False)
+                try:
+                    candidate.relative_to(base)
+                except ValueError:
+                    raise RuntimeError(
+                        f"OMNISCRIBE_STATE_BACKEND sqlite_path={sqlite_path!r} "
+                        f"resolves outside the artifact base {base}. "
+                        "Pin the file under the artifact directory or "
+                        "set sqlite_path to a path inside it."
+                    )
+                db_path = candidate
+            else:
+                db_path = settings.artifact_base_dir / "omniscribe-state.db"
             sqlite_backend = SQLiteStateBackend(
                 db_path=db_path, blob_dir=settings.artifact_base_dir
             )

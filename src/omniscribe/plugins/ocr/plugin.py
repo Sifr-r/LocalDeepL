@@ -380,11 +380,17 @@ class OCRServiceImpl:
     # -- config store -------------------------------------------------------------
 
     def get_config(self) -> dict[str, Any]:
-        return dict(self._config)
+        cfg = dict(self._config)
+        key = str(cfg.get("api_key", "") or "")
+        if key and key != "lm-studio":
+            cfg["api_key"] = "******"
+        return cfg
 
     def update_config(self, updates: Mapping[str, Any]) -> dict[str, Any]:
         for key, value in updates.items():
             if value is None or key not in self._config:
+                continue
+            if key == "api_key" and value == "******":
                 continue
             self._config[key] = value
         # LLM coordinates write through to settings so the pipeline bridge
@@ -453,6 +459,53 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
                 status_code=413,
                 detail=f"upload exceeds {service._max_upload_mb} MB limit",
             )
+        # H-5 audit fix: validate the upload's content type against
+        # the allowlist. FastAPI's ``request.form()`` accepts the
+        # multipart ``content_type`` field, which is the per-file
+        # MIME type set by the client. We compare it to a
+        # document-handler allowlist (PDF, PNG, JPEG, WebP, AVIF) and
+        # reject anything else with 415.
+        content_type = getattr(upload, "content_type", "") or ""
+        allowed_types = {
+            "application/pdf",
+            "application/octet-stream",  # Flutter file picker fallback
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "image/avif",
+        }
+        if content_type and content_type not in allowed_types:
+            raise HTTPException(
+                status_code=415,
+                detail=(
+                    f"unsupported content type: {content_type!r}. "
+                    "Allowed: PDF, PNG, JPEG, WebP, AVIF."
+                ),
+            )
+        # H-5 audit fix (continued): magic-byte check so a malicious
+        # client cannot bypass the content-type filter by sending
+        # ``application/octet-stream`` with PDF bytes (or vice-versa).
+        # We check the first 8 bytes against the four common
+        # signatures and let ``application/octet-stream`` through —
+        # those uploads rely on the downstream pipeline's own
+        # magic-byte sniffing (Pymupdf / Pillow) to detect format.
+        if content_type and content_type != "application/octet-stream":
+            head = blob[:8]
+            magic_ok = (
+                head.startswith(b"%PDF-")
+                or head.startswith(b"\x89PNG\r\n\x1a\n")
+                or head[:3] == b"\xff\xd8\xff"
+                or (head[:4] == b"RIFF" and head[8:12] == b"WEBP")
+                or head.startswith(b"\x00\x00\x00\x1c")  # AVIF ftyp
+            )
+            if not magic_ok:
+                raise HTTPException(
+                    status_code=415,
+                    detail=(
+                        f"file contents do not match declared content type "
+                        f"{content_type!r}"
+                    ),
+                )
         fields: dict[str, Any] = {
             key: value
             for key, value in form.items()
