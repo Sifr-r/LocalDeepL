@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import secrets
 import sqlite3
 import time
 from dataclasses import dataclass, field, replace
@@ -242,7 +243,7 @@ class MemoryStateBackend:
             if (
                 record is None
                 or record.consumed
-                or record.session_token != session_token
+                or not secrets.compare_digest(record.session_token, session_token)
             ):
                 return None
             self._channels[channel_id] = replace(record, consumed=True)
@@ -564,7 +565,11 @@ class SQLiteStateBackend:
                     "WHERE channel_id = ?",
                     (channel_id,),
                 ).fetchone()
-                if row is None or row[5] or row[1] != session_token:
+                if (
+                    row is None
+                    or row[5]
+                    or not secrets.compare_digest(row[1], session_token)
+                ):
                     return None
                 conn.execute(
                     "UPDATE progress_channels SET consumed = 1 WHERE channel_id = ?",
