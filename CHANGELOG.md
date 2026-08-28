@@ -653,8 +653,50 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   extracted into `_parse_xml()` and unit-tested for plain XML,
   external-entity XXE, and billion-laughs rejection.
 
-- **Sprint 1 audit remediation (Core Pipeline, 2026-08-28)** —
-  the 2026-08-28 5-domain audit's Core Pipeline findings are
+- **Sprint 2 audit remediation (API & Security, 2026-08-28)** —
+  the 2026-08-28 5-domain audit's API & Security findings are
+  partially closed (the deferred-capability items remain on the
+  follow-up roadmap per AGENTS.md).
+  - **C-1**: `server.py:main()` refuses to start bound to a
+    non-loopback host with no `OMNISCRIBE_AUTH_TOKEN` (raises
+    `SystemExit`). Loopback binds (`127.0.0.1`, `::1`, `localhost`)
+    remain allowed without a token — the documented local-trusted
+    mode. New tests: `tests/api/test_server_startup_guard.py`.
+  - **C-2**: `server.py:main()` emits a loud WARNING when
+    `ALLOW_SSRF_LOCAL=true` AND the bind host is non-loopback, so
+    a LAN-deploy operator sees the SSRF-disabled-by-default risk
+    explicitly. Default still true for local dev; operators who
+    expose the server to a LAN should set
+    `ALLOW_SSRF_LOCAL=false`.
+  - **C-4 / H-4**: `ProviderManagerImpl.set_active` now refuses an
+    `api_base` that the SSRF guard rejects (private / loopback /
+    metadata range). Closes the deferred-capability gap where an
+    unauthenticated caller could redirect the OCR pipeline at an
+    attacker-controlled VLM. Operators can still point at loopback
+    via `ALLOW_SSRF_LOCAL=true`.
+  - **H-1**: `ProviderManagerImpl.discover_models` and `validate`
+    now rewrite the request URL host to the SSRF-validated IP via
+    `_rewrite_url_with_resolved_ip`, preserving the original hostname
+    in the `Host` header so HTTPS SNI / virtual hosting still match.
+    Closes the DNS-rebinding TOCTOU window the audit flagged.
+    IPv6 literals are wrapped in `[ ]`. Existing
+    `tests/plugins/test_providers_plugin.py` updated to the new
+    pinned-URL contract. New tests:
+    `tests/api/test_providers_resolved_ip_pin.py`.
+  - **H-3**: `MemoryStateBackend.consume_channel` and
+    `SQLiteStateBackend.consume_channel` compare
+    `session_token` with `secrets.compare_digest` (timing-safe).
+    New tests: `tests/api/test_channel_token_compare.py`.
+  - **M-1**: `server.py:create_app` mounts `fastapi.middleware.cors.CORSMiddleware`
+    driven by `OMNISCRIBE_CORS_ORIGINS` (parsed but never wired
+    before the audit). Empty default denies browser cross-origin
+    requests but allows the Flutter desktop client (no Origin
+    header).
+
+  Plan: `docs/superpowers/plans/2026-08-28-audit-remediation.md`,
+  Sprint 2 file `2026-08-28-audit-remediation-sprint2-api.md`.
+
+- **Sprint 1 audit remediation (Core Pipeline, 2026-08-28)** — the 2026-08-28 5-domain audit's Core Pipeline findings are
   closed. All fixes land a regression test before the production
   change.
   - **C1**: `core/ocr/multi_format_client.py` now logs a WARNING
