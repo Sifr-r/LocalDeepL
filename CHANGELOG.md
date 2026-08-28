@@ -653,6 +653,58 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   extracted into `_parse_xml()` and unit-tested for plain XML,
   external-entity XXE, and billion-laughs rejection.
 
+- **Sprint 1 audit remediation (Core Pipeline, 2026-08-28)** —
+  the 2026-08-28 5-domain audit's Core Pipeline findings are
+  closed. All fixes land a regression test before the production
+  change.
+  - **C1**: `core/ocr/multi_format_client.py` now logs a WARNING
+    with provider id + missing key on every malformed upstream
+    response (was a silent `return ""` in all three branches).
+  - **C2**: `core/lexicon/lancedb_store.toggle_glossary` fallback
+    now performs `add`-before-`delete` (via `pa.Table.from_pylist`)
+    so a write failure preserves the original rows.
+  - **H1**: PIL `Image.open` calls in
+    `core/imaging/utils.py`, `core/ocr/processor.py:549,635`,
+    `core/aligner.py:166`, and `core/ocr/trocr.py` now use
+    `with` blocks so the underlying buffer is closed before the
+    helper returns.
+  - **H2/H4**: `OCRProcessor.__init__` and
+    `PromptedGroundedOCR.__init__` now read LLM coordinates
+    (`api_base`, `api_key`, `model`) from `load_settings()`
+    rather than `os.getenv`. The F1.9 fix already covered the
+    timeout/retry knobs; this closes the residual gap.
+  - **H3**: `core/recall/text_layer.PdfTextLayerRecall.supplement`
+    now wraps per-page extraction in try/except so a single
+    corrupted PDF page degrades to "no extra boxes" instead of
+    aborting the per-page loop. Mirrors `whitespace.py`.
+  - **M3**: removed the redundant unconditional pre-loop
+    `await self.circuit_breaker.check()` in
+    `OCRProcessor._chat`; the in-loop check now runs on every
+    attempt (not just `attempt > 0`) so the first attempt also
+    consults the breaker and an already-OPEN breaker fails fast.
+  - **M5**: `_MAX_SAFE_PIXELS_CEILING` in
+    `core/pdf/rasterization_settings.py` tightened from 10 GPixels
+    to 500 MPixels (~20x the default). Accidental 10x typos that
+    would allocate ~100 GB are now rejected.
+  - **M6/M7**: extracted `_FULL_PAGE_FALLBACK_EPSILON`,
+    `_MIN_FONT_SIZE`, `_MAX_FONT_SIZE`, and `_FALLBACK_BOX_INSET`
+    module-level constants in `core/pdf/embedder.py`; the literal
+    `0.001 / 0.999 / 10` thresholds in `_handle_fullpage_fallback`
+    are gone.
+  - **M9**: `core/workflows/grounded.py` repair loop now uses
+    `dataclasses.replace(obj, text=text)` instead of in-place
+    mutation; the new object is written back into both the local
+    per-page list and `response.blocks` so downstream stages see
+    the repaired text. The block can be made `frozen=True` later
+    without rewriting this site.
+  - **M10**: `core/evaluation._valid_bbox` now accepts degenerate
+    single-point boxes (area = 0), aligning with
+    `confidence_eval.iou()` semantics. The previous `< x1`
+    rejected them, creating metric divergence between the two
+    modules.
+
+  Plan: `docs/superpowers/plans/2026-08-28-audit-remediation.md`.
+
 - **Redis password is now CSPRNG-generated** — `start_app.vbs`
   generates the password via a PowerShell one-liner using
   `[System.Security.Cryptography.RandomNumberGenerator]` instead of
