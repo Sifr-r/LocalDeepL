@@ -34,8 +34,21 @@ class BottomProgressDock extends ConsumerWidget {
     final repaired = wsState.repairedCount;
     final avgConf = wsState.avgConfidence;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    // Sprint 3 / H-1 audit fix: wrap the dock in a Semantics node
+    // with `liveRegion: true` so screen readers announce progress
+    // changes (stage / percent / status message) without forcing the
+    // user to focus the dock. The label summarises the current
+    // state on every announcement.
+    final a11yLabel = isProcessing
+        ? 'OCR in progress, stage $stage, $percentInt percent'
+        : 'OCR $stage';
+
+    return Semantics(
+      liveRegion: true,
+      label: a11yLabel,
+      container: true,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: colors.cardRaised,
         border: Border(top: BorderSide(color: colors.border, width: 1.0)),
@@ -200,6 +213,7 @@ class BottomProgressDock extends ConsumerWidget {
           ),
         ],
       ),
+    ),
     );
   }
 
