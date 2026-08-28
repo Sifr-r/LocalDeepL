@@ -653,6 +653,23 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   extracted into `_parse_xml()` and unit-tested for plain XML,
   external-entity XXE, and billion-laughs rejection.
 
+- **Sprint 4 audit remediation (Testing & QA, 2026-08-28)** — the
+  2026-08-28 5-domain audit's Testing & QA findings are partially
+  closed (the `QualityRepairLoop` integration test and the WS
+  end-to-end progress test remain follow-ups).
+  - **C-1 / C-2**: reconciled coverage threshold. Local
+    `pyproject.toml` now sets `fail_under = 85` to match the CI
+    `test.yml` threshold (`--cov-fail-under=85`). Before this
+    change, `pytest` ran locally at 80 % and CI rejected the same
+    diff at 85 %, producing green local runs that turned red in
+    CI. Stale `.coverage` artifacts are now also gitignored.
+  - **M-4**: the fast-tier CI workflow now runs
+    `coverage html -d htmlcov` and uploads the report as a
+    30-day artifact so developers can drill into uncovered
+    branches without running coverage locally.
+
+  Plan: `docs/superpowers/plans/2026-08-28-audit-remediation.md`.
+
 - **Sprint 3 audit remediation (Frontend, 2026-08-28)** — the
   2026-08-28 5-domain audit's Frontend findings are partially
   closed (a11y test coverage remains a follow-up; the Flutter
