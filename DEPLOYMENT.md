@@ -44,9 +44,9 @@ export OMNISCRIBE_RATE_LIMIT_PER_MIN=30
 uv run omniscribe-server --host 0.0.0.0 --port 8000
 ```
 
-Add the bearer token to the Settings tab's "API Token" field on each
-client machine. The frontend stores it in `localStorage` so it
-persists across reloads (per-origin only).
+Add the bearer token on each Flutter client. The token is held in
+process memory for the duration of the session; restarting the client
+requires re-entering it.
 
 **What changed from profile 1:**
 

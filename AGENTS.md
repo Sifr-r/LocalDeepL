@@ -28,7 +28,6 @@ uv run pytest
 uv run pytest -m slow
 uv run pytest -m live_llm
 uv run pytest tests/core/test_aligner.py -v
-cd frontend && npm run check && npm test && npm run build
 ```
 
 - `pytest-asyncio` uses auto mode. Write `async def test_...` without decorators.
@@ -41,7 +40,7 @@ cd frontend && npm run check && npm test && npm run build
 
 ## Core Paths
 
-Source directories are split into **core** (OCR pipeline and API surface) and **peripheral** (tooling, frontend, utilities). Changes to core paths require the full fast gate; peripheral-only changes can skip some checks.
+Source directories are split into **core** (OCR pipeline and API surface) and **peripheral** (tooling, utilities). Changes to core paths require the full fast gate; peripheral-only changes can skip some checks.
 
 ### Core — full fast gate required
 
@@ -70,7 +69,6 @@ If the change touches `core/aligner.py`, `core/workflows/`, or `core/ocr/`, also
 | --- | --- | --- |
 | `src/omniscribe/utils/` | Shared helpers, SSRF guard | `ruff check src` + `mypy src` |
 | `scripts/` | Developer CLI utilities | `ruff check scripts` + relevant `pytest tests/scripts/test_scripts_smoke.py` |
-| `frontend/src/` | Svelte UI | `cd frontend && npm run check && npm test && npm run build` |
 | `tests/` (new tests only) | Test additions | `ruff check tests` + `pytest <new_test_file> -v` |
 | `AGENTS.md`, `README.md`, `CHANGELOG.md` | Documentation | No code validation required |
 
@@ -153,12 +151,12 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/plugins/progress.py` | `ProgressService` — one-shot session tokens, WebSocket attach with cross-loop send marshaling, cancel mirror |
 | `src/omniscribe/plugins/providers.py` | Provider catalog + model discovery (`GET /api/providers`, `/{id}`, `/{id}/models`) over the active LLM coordinates |
 | `src/omniscribe/plugins/health.py` | Liveness (`/api/health`, `/api/healthz`) and readiness (`/ready`, `/readyz`) probes |
-| `src/omniscribe/plugins/ocr/` | OCR plugin package: `plugin.py` (sync/async process routes, job surface, `/api/config` store), `schemas.py` (`OCRRequest` form parsing, frontend response contracts), `pipeline_bridge.py` (HTTP→`OCRPipeline` assembly), `events.py` |
+| `src/omniscribe/plugins/ocr/` | OCR plugin package: `plugin.py` (sync/async process routes, job surface, `/api/config` store), `schemas.py` (`OCRRequest` form parsing, client response contracts), `pipeline_bridge.py` (HTTP→`OCRPipeline` assembly), `events.py` |
 | `src/omniscribe/utils/security.py` | SSRF target validation |
 | `src/omniscribe/core/imaging/handwriting.py` | Local handwriting image preprocessor |
 | `scripts/` | Developer utilities: confidence eval, fixture builder, debug/inspection scripts, bbox visualizers |
-| `examples/` | Sample PDFs and images for `tests/`, `e2e/test_ui.py`, and the confidence scripts |
-| `install.bat` / `install.ps1` / `start_app.vbs` / `e2e/test_ui.py` | Windows one-click install, terminal launcher, and Playwright smoke test |
+| `examples/` | Sample PDFs and images for `tests/` and the confidence scripts |
+| `install.bat` / `install.ps1` / `start_app.vbs` | Windows one-click install and terminal launcher |
 
 ## Extension Points
 
@@ -218,7 +216,7 @@ contract tests live in `tests/routers/`, plugin unit tests in
 - **Model pre-flight**: deferred in the harness rebuild. The historical `GET /v1/models` check that guarded against LM Studio's silent model fallback (issue #7) is not yet re-implemented; the OCR plugin only seeds the `verify_model` config key.
 - **Quality repair loop**: `/api/process` re-OCRs blocks whose estimated confidence is below the target (crop-scoped, sequential, accept-only-while-improving) after block emission and before embedding. Defaults ON at the API layer (up to 2 extra VLM passes per low-confidence block); in-process `OCRPipeline.run` callers stay off unless they pass `repair_options=`. Per-request form fields `quality_loop_enabled` / `quality_target` (0.5–1.0) / `quality_max_retries` (0–5); the boot defaults are seeded by the `ocr` plugin's `cordis.yml` config, which expands the env seeds `OMNISCRIBE_QUALITY_LOOP`, `OMNISCRIBE_QUALITY_TARGET`, `OMNISCRIBE_QUALITY_MAX_RETRIES`. WebSocket frames: `block_retry`, `block_revised`, `quality_summary`.
 - Web runtime settings live in the OCR plugin's in-memory `/api/config` store, seeded from `RuntimeSettings` at plugin apply time; LLM coordinate updates write through to the shared settings.
-- **Windows quick-start**: run `install.bat` to install `uv`, sync the web extra, and create Desktop / Start-Menu shortcuts. `start_app.vbs` boots Redis (via Docker) + Celery + uvicorn in visible terminal windows and opens the browser; it writes a timestamped append log to `start_app.log` next to itself. Closing the terminal windows terminates the processes. `e2e/test_ui.py` is the headless Playwright smoke test against `examples/dense.pdf`.
+- **Windows quick-start**: run `install.bat` to install `uv`, sync the web extra, and create Desktop / Start-Menu shortcuts. `start_app.vbs` boots Redis (via Docker) + Celery + uvicorn in visible terminal windows and opens the browser; it writes a timestamped append log to `start_app.log` next to itself. Closing the terminal windows terminates the processes.
 - **Developer scripts** live in `scripts/`. The most useful for OCR quality work are `scripts/confidence_eval.py` (hybrid + grounded vs the `examples/*.pdf` fixtures) and `scripts/confidence_image.py` (single-image confidence). The rest are debug/inspection/visualization tools.
 - **Docker**: `Dockerfile` builds a `python:3.14-slim` runtime with the `web`, `async-translation`, and `preprocessing` extras. `compose.yaml` runs `api` + `redis` by default; add `--profile async` to also start a Celery worker. Image exposes port 8000; bind `LLM_API_BASE` to `http://host.docker.internal:1234/v1` to talk to a host-side LM Studio.
 - **Pre-commit**: `.pre-commit-config.yaml` runs ruff (check + format), mypy, and `uv-lock` on every commit. Enable with `uv tool run pre-commit install` after cloning.
@@ -233,7 +231,7 @@ contract tests live in `tests/routers/`, plugin unit tests in
 - `pages_structured` legacy dict is still the working format inside `HybridEngine`; `DocumentResult` is built at finalize. The output boundary now supports the lossless rich path (`DocumentResultWriter`), but intermediate stages still convert.
 - `dense.pdf` and `notes.pdf` ground-truth fixtures are bootstrapped from hybrid output (regression baseline, not absolute quality).
 - `surya-ocr 0.17.x` used to import `requests` in `surya/common/s3.py` without declaring it; `pyproject.toml` shipped a `requests>=2.31` workaround dep. **Closed in audit-secondary Phase 5 (2026-08-19):** `surya-ocr ≥ 0.22` now declares `requests<3,>=2.28.0` in its own metadata, so the workaround is no longer required. `requests` has been removed from the base deps and moved to `[dependency-groups] dev` (it is only directly imported by `scripts/ingest_lexicon.py`, a dev-only ingestion helper).
-- **Frontend accessibility (a11y) test infrastructure is in CI.** Unit-level a11y on the key Svelte 5 components (`Toggle`, `SettingsView`, `ExtractionView`, `TranslationView`, `TranscriptionView`, `ExportModal`) is covered by `vitest-axe` in `frontend/src/__tests__/a11y.test.ts` — 10 axe scans run as part of `npm test`; manual `role=`/`aria-*` structural checks remain alongside as defense-in-depth. End-to-end a11y on the rendered workstation DOM is covered by `axe-playwright-python` in `e2e/test_ui.py` (the Python port of `@axe-core/playwright`), which runs an axe-core WCAG 2.1 AA scan after the OCR roundtrip completes; the dep is e2e-only and pulled via `uv run --with axe-playwright-python` in `.github/workflows/test.yml::e2e`. Both gates were closed by Phase F (2026-08-22, commits `826c553` + `ab94649`); a button losing its accessible name now fails one of the two gates depending on whether the regression is at the component layer or at the hydration/render stage.
+- **A11y regression coverage (F4.9, closed by Phase B).** The historical Playwright a11y spec covered the Svelte web workspace that Phase B deleted, so the F4.9 audit gap is effectively closed. **Forward guard:** any future web client (see `docs/superpowers/specs/2026-08-28-flutter-takeover-phase-b-design.md` for the current Flutter path) must ship a11y regression tests on day one — `axe-playwright` (or the equivalent on the chosen stack) wired into the CI fast tier. The Phase 5d test `tests/scripts/test_tier_discipline.py::test_agents_md_documents_a11y_testing_gap` pins that this forward guard stays discoverable in AGENTS.md.
 
 ## Product-Planning Notes (scout plans, not code)
 
@@ -261,7 +259,7 @@ survive into the post-scout roadmap) live in
 
 ## See Also
 
-- [README.md](README.md) — feature overview, install, web workspace
+- [README.md](README.md) — feature overview, install, scripts
 - [CHANGELOG.md](CHANGELOG.md) — version history and breaking changes
 - [ARCHITECTURE.md](ARCHITECTURE.md) — pipeline, component map, and full API surface
 - [DEPLOYMENT.md](DEPLOYMENT.md) — local / LAN / public-internet deployment profiles

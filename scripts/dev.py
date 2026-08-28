@@ -23,7 +23,6 @@ CACHE_DIRS: Final = (
     "build",
     "dist",
     "htmlcov",
-    "frontend/dist",
 )
 SOURCE_DIRS: Final = ("src", "tests", "scripts")
 

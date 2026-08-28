@@ -176,13 +176,6 @@ dev = [
     # Direct `requests` import — only `scripts/ingest_lexicon.py` needs it
     # in this repo. Runtime deps get it transitively via surya-ocr.
     "requests>=2.34.2",
-    # `@axe-core/playwright` (Python port: `axe-playwright-python`) is
-    # e2e-only and only exercised by `e2e/test_ui.py`, which is invoked with
-    # `uv run --with playwright` (see .github/workflows/test.yml:296,383).
-    # Adding it here would force every fast-tier CI matrix slot to fetch
-    # it for no gain; the e2e/test_ui.py invocation already pulls it via the
-    # same `--with` flag pattern.
-    # "axe-playwright-python>=0.1.0",  # installed via `uv run --with axe-playwright-python`
 ]
 
 [tool.uv]

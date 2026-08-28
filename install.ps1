@@ -92,31 +92,6 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# 2a. Build frontend static assets (if npm is available)
-#
-# `npm ci` installs exactly what package-lock.json pins (reproducible,
-# and picks up security updates the way Dependabot intends). Every
-# npm step is exit-code checked: a silent frontend build failure
-# used to leave the installer reporting success with stale assets
-# (audit backlog).
-if (Get-Command "npm" -ErrorAction SilentlyContinue) {
-    Write-Host "`nBuilding Svelte 5 + Tailwind v4 frontend..."
-    Set-Location -Path (Join-Path -Path $ScriptDir -ChildPath "frontend")
-    npm ci
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "ERROR: npm ci failed. See the output above for details." -ForegroundColor Red
-        exit 1
-    }
-    npm run build
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "ERROR: npm run build failed. See the output above for details." -ForegroundColor Red
-        exit 1
-    }
-    Set-Location -Path $ScriptDir
-} else {
-    Write-Host "`nNote: npm not found in PATH; skipping frontend build (pre-built static assets will be used)." -ForegroundColor Yellow
-}
-
 # 2b. Verify the install actually completed (a venv exists and python runs).
 Write-Host "`nVerifying the install..."
 & uv run python --version

@@ -21,7 +21,7 @@ client from being the canonical UI surface:
   `/api/providers/active` and `/api/providers/validate`, none of which are
   mounted (the `ProviderManager.set_active` method exists but is unbound to a
   route).
-- The `AuthRequiredBanner` widget from the Svelte reference UI is missing; the
+- The `AuthRequiredBanner` widget from the Svelte previous UI is missing; the
   settings screen's "Security & Auth" tab still labels it as
   `"Auth token UI deferred to slice 5"`.
 - Two keyboard shortcuts called out in the unification plan are unbound:

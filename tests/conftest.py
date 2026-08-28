@@ -10,9 +10,8 @@ Shared fixtures.
   fixtures: a temp nine-row ``cordis.yml`` (memory backend, small TTLs),
   a loaded harness Context, and a TestClient over ``create_app()``.
 - `EXAMPLE_PDF_NAMES` — the canonical list of on-disk example PDF filenames
-  (and the few images), imported by ``e2e/test_ui.py`` so the
-  parametrize/IO surface stays in lock step with the fixtures in this
-  module.
+  (and the few images) so every parametrized test surface stays in
+  lock step with the fixtures in this module.
 """
 
 from __future__ import annotations

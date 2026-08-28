@@ -127,16 +127,14 @@ Protocol (`ctx.inject(JobQueue)`), never by module singleton.
 | `src/omniscribe/utils/image.py` | Image crop, blank-region detection, and crop encoding helpers |
 | `src/omniscribe/utils/security.py` | SSRF target validation |
 | `src/omniscribe/utils/tqdm_patch.py` | Surya progress-bar suppression |
-| `src/omniscribe/static/` | Built Svelte 5 workstation assets served by FastAPI |
-| `frontend/` | Svelte 5 + Tailwind CSS v4 source, Vite configuration, and production build pipeline |
+| `src/omniscribe/static/` | Static asset directory served by FastAPI |
 | `scripts/` | Repo-root developer utilities: confidence eval, fixture builder, debug/inspection scripts, bbox visualizers |
-| `examples/` | Sample PDFs and images used by `tests/`, `e2e/test_ui.py`, and the confidence scripts |
+| `examples/` | Sample PDFs and images used by `tests/` and the confidence scripts |
 | `tests/` | Unit, integration, security, and slow-path validation |
 | `client/lib/data/providers/features_state.dart` | Immutable state models (`TranslationState`, `TranscriptionState`, `GlossaryState`, `ExtractionState`) with copyWith, equality, and clearError support |
 | `client/lib/data/providers/features_notifier.dart` | Riverpod 2.x `Notifier` controllers (`translationProvider`, `transcriptionProvider`, `glossaryProvider`, `extractionProvider`) for feature operations |
 | `install.bat` / `install.ps1` | Windows one-click install: `uv` bootstrap, `uv sync --extra web --extra preprocessing`, Docker check, Desktop/Start-Menu shortcuts, post-install verification |
 | `start_app.vbs` | Windows terminal launcher for Redis + Celery + uvicorn; writes a timestamped append log to `start_app.log` |
-| `e2e/test_ui.py` | Headless Playwright smoke test against the running web UI |
 
 ## Extension Points
 
@@ -236,19 +234,15 @@ Introduced `extract_model_ids_from_response` supporting OpenAI standard, Ollama 
 (`/api/tags`), Anthropic, OpenRouter, Together, top-level arrays, and custom formats.
 Added candidate URL fallbacks (`/v1/models`, `/models`, `/api/tags`) for robust
 compatibility with local servers (LM Studio, Ollama, vLLM, LocalAI) and remote endpoints.
-Updated frontend `loadAppConfig` and `refreshModels` in `appStore.ts` to automatically
-pull and populate all model namespaces (`general`, `ocr`, `translation`, `transcription`)
-in parallel on application load and upon provider/namespace configuration updates.
 Resolved HTTP 422 validation errors by:
 - Allowing empty `api_key` in `ConfigUpdate` and defaulting empty `api_key` to `"lm-studio"` in `ProcessSettings` for local model backends.
 - Accepting `document_processors` in `OcrConfigUpdate` (`POST /api/config/ocr`).
 - Expanding `TranscriptionEngineType` to support `"faster-whisper"` and `"faster_whisper"`.
 - Accepting nested namespace update objects in `ConfigUpdate` (`POST /api/config`).
-- Aligning frontend namespace update calls in `appStore.ts` and `SettingsView.svelte` with dedicated API routes.
+- Aligning legacy web UI namespace update calls with dedicated `/api/providers/*` routes.
 Added bidirectional `.env` preset synchronization:
 - Implemented `update_dotenv` in `src/omniscribe/utils/env.py` to atomically update or insert `.env` variables while preserving comments and structure.
 - Connected `ProviderManager.set_active_provider` and `_persist_config` to automatically sync `LLM_API_BASE`, `LLM_MODEL`, `LLM_API_KEY`, and OCR/translation settings to `.env`, `os.environ`, and `_config`.
-- Updated `ProviderModal.svelte` so selecting catalog presets persists to backend active provider and `.env`.
 
 ### 2026-08-13: Quality repair loop (automatic low-confidence block retry)
 
@@ -269,7 +263,7 @@ progress accounting reuses the `refine` stage band.
 
 ### 2026-08-02: Canonical `/api` aliases and background OCR reliability
 
-The Svelte workstation uses `/api/...` as its canonical HTTP contract. Legacy
+The web UI uses `/api/...` as its canonical HTTP contract. Legacy
 prefix-less OCR and artifact paths remain registered against the same handler
 objects so existing integrations continue to work without maintaining duplicate
 implementations. The obsolete `api/routers/ai.py` module is removed; translation
@@ -312,17 +306,16 @@ Extracted stand-alone helper functions (`parse_page_range`, `_estimate_confidenc
 | `src/omniscribe/core/workflows/hybrid.py` | Imports and uses `omniscribe.core.workflows.utils` while re-exporting helpers |
 | `src/omniscribe/core/workflows/__init__.py` | Re-exports public workflow helpers (`parse_page_range`, constants) |
 
-### 2026-07-25: LiteLLM Cleanup, Handwriting Preprocessing, and DocuVerse CSS UI System
+### 2026-07-25: LiteLLM Cleanup and Handwriting Preprocessing
 
-Streamlined provider selection by replacing `litellm_provider.py` with direct OpenAI-compatible client integration in `llm/client.py` and `ocr/processor.py`. Added dedicated `handwriting_preprocessor.py` module. Fully overhauled the frontend interface with the DocuVerse CSS Design System featuring dual theme options (dark/light), glassmorphism, responsive control sidebars, interactive modals, and dynamic notification toasts.
+Streamlined provider selection by replacing `litellm_provider.py` with direct OpenAI-compatible client integration in `llm/client.py` and `ocr/processor.py`. Added dedicated `handwriting_preprocessor.py` module.
 
 | File | Responsibility |
 | --- | --- |
 | `src/omniscribe/core/imaging/handwriting.py` | Local handwriting image preprocessor |
 | `src/omniscribe/core/llm/client.py` | Direct OpenAI-compatible VLM client integration and resilience handlers |
-| `src/omniscribe/static/css/` | DocuVerse CSS system (`variables.css`, `layout.css`, `components.css`, `workspace.css`, `modals.css`) |
-| `src/omniscribe/static/index.html` | Restructured workstation layout with theme toggle, floating control dock, and modal system |
-### 2026-07-13: God-module decomposition — `core/ocr/`, `core/grounded/`, `api/services/ocr_*.py`
+
+### 2026-07-13: God-module decomposition
 
 A four-phase decomposition targeted the two largest god-modules in the
 codebase (`core/ocr.py` and `core/grounded.py`) and the
@@ -506,8 +499,6 @@ the three services.
 | `src/omniscribe/core/grounded/prompted.py` | Offload grounded PIL crop and PNG buffer generation to thread pool via `asyncio.to_thread` |
 | `src/omniscribe/api/routers/ocr.py` | Handle `asyncio.CancelledError` on client disconnect without logging 500 stack traces, and wrap file cleanup calls in `asyncio.to_thread` |
 | `src/omniscribe/api/services/uploads.py` | Add parent directory confinement check in `cleanup_files` to ensure deleted paths reside in temporary storage |
-| `frontend/src/lib/components/workstation/RightControlDock.svelte` | Add `role="button"`, `tabindex="0"`, and `onkeydown` keyboard trigger to target document drop zone for accessibility compliance |
-| `frontend/src/lib/components/workstation/BottomProgressDock.svelte` | Rename outer container ID to `workstation-progress-dock` to eliminate duplicate DOM ID conflicts |
 
 ### 2026-08-11: Industry-Standards Audit Implementation (P1 & Quick Wins)
 
@@ -534,39 +525,12 @@ the three services.
 | `tests/api/routers/test_provider_api_routes.py` | Unit tests for provider REST management API routes |
 
 
-### 2026-08-12: Full Svelte 5 + TailwindCSS v4 Frontend Migration & Legacy Cleanup
-
-| File | Responsibility |
-| --- | --- |
-| `frontend/vite.config.ts` | Configured Svelte 5 + Tailwind v4 build pipeline outputting directly to `src/omniscribe/static` and setting `conditions: ['browser']` for Vitest browser mode testing |
-| `frontend/package.json` | Updated project package name to `omniscribe-frontend` |
-| `frontend/src/lib/components/ui/Badge.svelte` | Exported `BadgeVariant` type in module context, added `title` prop binding, and supported `class` / `className` props |
-| `frontend/src/lib/components/ui/Card.svelte` | Supported standard `class` and legacy `className` props seamlessly |
-| `frontend/src/lib/components/ui/Input.svelte` | Fixed HTML `autocomplete` property type casting |
-| `frontend/src/lib/components/workstation/MetadataPanel.svelte` | Fixed `BadgeVariant` type assertion and updated component property bindings |
-| `frontend/src/lib/components/views/GlossaryView.svelte` | Fixed string casting on dictionary term target properties |
-| `frontend/src/lib/components/views/SettingsView.svelte` | Converted component property bindings to standard `class` props |
-| `frontend/src/lib/components/views/ExtractionView.svelte` | Converted component property bindings to standard `class` props |
-| `frontend/src/lib/components/views/JobHistoryView.svelte` | Updated `BadgeVariant` import and converted component property bindings to standard `class` props |
-| `frontend/src/lib/components/views/TranscriptionView.svelte` | Converted component property bindings to standard `class` props |
-| `frontend/src/lib/components/modals/ExportModal.svelte` | Fixed `tagVariant` type annotations and converted property bindings to standard `class` props |
-| `src/omniscribe/static/` | Compiled production Svelte 5 + Tailwind v4 single-page application assets served by FastAPI |
-
 ### 2026-08-14: Multi-Domain Architecture, Security & Quality Audit
 
-Conducted a comprehensive 4-domain audit (Core Pipeline, Backend API/Security, Frontend Workstation, and QA/DevOps):
+Conducted a comprehensive 3-domain audit (Core Pipeline, Backend API/Security, and QA/DevOps):
 1. **Core Pipeline**: Confirmed normalized `[0..1]` bounding box invariant, monotonic DP alignment, cooperative cancellation via `OCRCancelled` (`BaseException`), bounded 16-entry image LRU cache, and quality repair loop stall guards. Identified `complete_vlm_prompt` export omission in `core/ocr/__init__.py` and `DocumentTree` child index desync on reading order sort.
 2. **API & Security**: Identified and cataloged readiness probe fix (`OCRJobQueue.running` property), third-party provider API key response masking, artifact token separation from server bearer authentication, and uniform SSRF validation on tree translation and transcription endpoints.
-3. **Frontend Workstation**: Verified Svelte 5 + TypeScript build and Vitest suite (17/17 passed). Identified unmounted navigation views (`JobHistoryView`, `TranscriptionView`, `ExtractionView`) in `App.svelte` and modal focus trapping requirements.
-4. **QA & DevOps**: Executed full test and lint suites (1,230 fast tests passing in 37.9s, 0 Ruff errors, 0 format issues, 144 source files clean in Mypy strict mode). Cataloged missing dev CI dependencies in `pyproject.toml` (`pytest-cov`, `pip-audit`, `cyclonedx-python-lib`, `rich`) and frontend CI job integration.
-
-### 2026-08-14: CI Frontend Build & Test Wiring Hardening
-
-| File | Responsibility |
-| --- | --- |
-| `.github/workflows/test.yml` | Integrated Node.js v20 setup, frontend dependency installation, checks/tests (`svelte-check` + `vitest`), and frontend production build prior to Python test execution |
-| `.github/workflows/release.yml` | Added frontend build step before `uv build` packaging so release wheels contain compiled frontend assets |
-| `tests/api/routers/test_static_wiring.py` | Added graceful skip guards for when frontend static assets have not yet been built locally |
+3. **QA & DevOps**: Executed full test and lint suites (1,230 fast tests passing in 37.9s, 0 Ruff errors, 0 format issues, 144 source files clean in Mypy strict mode). Cataloged missing dev CI dependencies in `pyproject.toml` (`pytest-cov`, `pip-audit`, `cyclonedx-python-lib`, `rich`) and CI integration gaps.
 
 ### 2026-08-14: Core Dependencies Update (Redis & ChromaDB)
 
@@ -701,8 +665,6 @@ Conducted a comprehensive 4-domain audit (Core Pipeline, Backend API/Security, F
 | `src/omniscribe/core/grounded/prompted.py` | Offload grounded PIL crop and PNG buffer generation to thread pool via `asyncio.to_thread` |
 | `src/omniscribe/api/routers/ocr.py` | Handle `asyncio.CancelledError` on client disconnect without logging 500 stack traces, and wrap file cleanup calls in `asyncio.to_thread` |
 | `src/omniscribe/api/services/uploads.py` | Add parent directory confinement check in `cleanup_files` to ensure deleted paths reside in temporary storage |
-| `frontend/src/lib/components/workstation/RightControlDock.svelte` | Add `role="button"`, `tabindex="0"`, and `onkeydown` keyboard trigger to target document drop zone for accessibility compliance |
-| `frontend/src/lib/components/workstation/BottomProgressDock.svelte` | Rename outer container ID to `workstation-progress-dock` to eliminate duplicate DOM ID conflicts |
 
 ### 2026-08-11: Industry-Standards Audit Implementation (P1 & Quick Wins)
 
@@ -729,39 +691,12 @@ Conducted a comprehensive 4-domain audit (Core Pipeline, Backend API/Security, F
 | `tests/api/routers/test_provider_api_routes.py` | Unit tests for provider REST management API routes |
 
 
-### 2026-08-12: Full Svelte 5 + TailwindCSS v4 Frontend Migration & Legacy Cleanup
-
-| File | Responsibility |
-| --- | --- |
-| `frontend/vite.config.ts` | Configured Svelte 5 + Tailwind v4 build pipeline outputting directly to `src/omniscribe/static` and setting `conditions: ['browser']` for Vitest browser mode testing |
-| `frontend/package.json` | Updated project package name to `omniscribe-frontend` |
-| `frontend/src/lib/components/ui/Badge.svelte` | Exported `BadgeVariant` type in module context, added `title` prop binding, and supported `class` / `className` props |
-| `frontend/src/lib/components/ui/Card.svelte` | Supported standard `class` and legacy `className` props seamlessly |
-| `frontend/src/lib/components/ui/Input.svelte` | Fixed HTML `autocomplete` property type casting |
-| `frontend/src/lib/components/workstation/MetadataPanel.svelte` | Fixed `BadgeVariant` type assertion and updated component property bindings |
-| `frontend/src/lib/components/views/GlossaryView.svelte` | Fixed string casting on dictionary term target properties |
-| `frontend/src/lib/components/views/SettingsView.svelte` | Converted component property bindings to standard `class` props |
-| `frontend/src/lib/components/views/ExtractionView.svelte` | Converted component property bindings to standard `class` props |
-| `frontend/src/lib/components/views/JobHistoryView.svelte` | Updated `BadgeVariant` import and converted component property bindings to standard `class` props |
-| `frontend/src/lib/components/views/TranscriptionView.svelte` | Converted component property bindings to standard `class` props |
-| `frontend/src/lib/components/modals/ExportModal.svelte` | Fixed `tagVariant` type annotations and converted property bindings to standard `class` props |
-| `src/omniscribe/static/` | Compiled production Svelte 5 + Tailwind v4 single-page application assets served by FastAPI |
-
 ### 2026-08-14: Multi-Domain Architecture, Security & Quality Audit
 
-Conducted a comprehensive 4-domain audit (Core Pipeline, Backend API/Security, Frontend Workstation, and QA/DevOps):
+Conducted a comprehensive 3-domain audit (Core Pipeline, Backend API/Security, and QA/DevOps):
 1. **Core Pipeline**: Confirmed normalized `[0..1]` bounding box invariant, monotonic DP alignment, cooperative cancellation via `OCRCancelled` (`BaseException`), bounded 16-entry image LRU cache, and quality repair loop stall guards. Identified `complete_vlm_prompt` export omission in `core/ocr/__init__.py` and `DocumentTree` child index desync on reading order sort.
 2. **API & Security**: Identified and cataloged readiness probe fix (`OCRJobQueue.running` property), third-party provider API key response masking, artifact token separation from server bearer authentication, and uniform SSRF validation on tree translation and transcription endpoints.
-3. **Frontend Workstation**: Verified Svelte 5 + TypeScript build and Vitest suite (17/17 passed). Identified unmounted navigation views (`JobHistoryView`, `TranscriptionView`, `ExtractionView`) in `App.svelte` and modal focus trapping requirements.
-4. **QA & DevOps**: Executed full test and lint suites (1,230 fast tests passing in 37.9s, 0 Ruff errors, 0 format issues, 144 source files clean in Mypy strict mode). Cataloged missing dev CI dependencies in `pyproject.toml` (`pytest-cov`, `pip-audit`, `cyclonedx-python-lib`, `rich`) and frontend CI job integration.
-
-### 2026-08-14: CI Frontend Build & Test Wiring Hardening
-
-| File | Responsibility |
-| --- | --- |
-| `.github/workflows/test.yml` | Integrated Node.js v20 setup, frontend dependency installation, checks/tests (`svelte-check` + `vitest`), and frontend production build prior to Python test execution |
-| `.github/workflows/release.yml` | Added frontend build step before `uv build` packaging so release wheels contain compiled frontend assets |
-| `tests/api/routers/test_static_wiring.py` | Added graceful skip guards for when frontend static assets have not yet been built locally |
+3. **QA & DevOps**: Executed full test and lint suites (1,230 fast tests passing in 37.9s, 0 Ruff errors, 0 format issues, 144 source files clean in Mypy strict mode). Cataloged missing dev CI dependencies in `pyproject.toml` (`pytest-cov`, `pip-audit`, `cyclonedx-python-lib`, `rich`) and CI integration gaps.
 
 ### 2026-08-14: Core Dependencies Update (Redis & ChromaDB)
 
@@ -777,14 +712,13 @@ Conducted a comprehensive 4-domain audit (Core Pipeline, Backend API/Security, F
 | `uv.lock` | Updated 220 resolved packages across runtime, upgrading `transformers` (v4.57.6 -> v5.15.0), `protobuf` (v4.25.9 -> v7.35.1), `huggingface-hub` (v0.36.2 -> v1.27.0), `pypdfium2` (v4.30.0 -> v5.13.0), resolving 45 of 46 known `pip-audit` security advisories |
 | `src/omniscribe/core/translate/nllb.py` | Adapted HuggingFace pipeline and tokenizer typing for `transformers` 5.x |
 
-### 2026-08-18: Comprehensive 5-Domain Multi-Agent Codebase Audit
+### 2026-08-18: Comprehensive 4-Domain Multi-Agent Codebase Audit
 
-Conducted an exhaustive 5-domain audit (66 findings across Core Pipeline, API & Security, Frontend, Testing & QA, and DevOps & Configuration):
+Conducted an exhaustive 4-domain audit (49 findings across Core Pipeline, API & Security, Testing & QA, and DevOps & Configuration; the original 5-domain UI tier was retired alongside the legacy web UI in Phase B):
 1. **Core Pipeline (10 findings)**: Identified `run_document_processors` strict aggregate assertion bug rejecting valid `MAY_DELETE` contract processors (`D1-01`); `convert_tree_to_docx` crash on `BlockNode(TABLE)` and duplicate table emissions (`D1-02`); unmanaged background task leak on `CircuitOpenError` in `PromptedGroundedOCR` (`D1-03`); `translate_tree` bypassing `TableNode` instances in page children (`D1-04`); and `_Chunker.add` delimiter overwrite formatting bug (`D1-05`).
 2. **API & Security (13 findings)**: Identified management route auth bypass when global token is unset but subsystem tokens exist (`D2-01`); `JobHistory.record()` signature mismatch crashing OCR pipeline completion on SQLite or Redis backends (`D2-02`); plaintext token exposure via URL query parameters (`D2-03`); unbounded memory leak and $O(N)$ event loop blocking in `RateLimitMiddleware` (`D2-04`); missing SSRF check on `sql_dsn` in SQL glossary importer (`D2-05`); and flawed chunked/gzip byte parsing in `_PinnedIPTransport` (`D2-06`).
-3. **Frontend (17 findings)**: Identified `ExtractionView.svelte` failing to extract text from bound document artifacts (`D3-15`); broken WAI-ARIA tabpanel hierarchy in `SettingsView.svelte` (`D3-01`); unlabeled form controls in Extraction, Translation, and Transcription views (`D3-02`); detached anchor downloads and premature `URL.revokeObjectURL` causing 0-byte downloads in Firefox (`D3-08`); PDF.js document proxy memory leaks (`D3-11`); and synchronous translation returning empty string on bound artifacts (`D3-16`).
-4. **Testing & QA (14 findings)**: Identified silent `pytest.skip` calls on empty pipeline outputs hiding regressions in recall and integration gates (`D4-01`); untested Redis/SQLite connection outage handling (`D4-02`); absence of mypy typechecking on `tests/` in CI and pre-commit (`D4-11`); missing `--cov-fail-under` coverage floor in CI (`D4-12`); and vacuous assertions in live VLM tests (`D4-05`).
-5. **DevOps & Config (12 findings)**: Identified Celery worker inheriting Dockerfile HTTP healthcheck causing container restart loops (`D5-01`); `RUN chown` duplicating `.venv` layer by 1.5–2.0 GB in Docker image (`D5-02`); CLI flag password exposure in `compose.yaml` and `start_app.vbs` (`D5-03`); release workflow README sed regex typo (`D5-04`); and unverified curl execution in `install.sh` (`D5-05`).
+3. **Testing & QA (14 findings)**: Identified silent `pytest.skip` calls on empty pipeline outputs hiding regressions in recall and integration gates (`D4-01`); untested Redis/SQLite connection outage handling (`D4-02`); absence of mypy typechecking on `tests/` in CI and pre-commit (`D4-11`); missing `--cov-fail-under` coverage floor in CI (`D4-12`); and vacuous assertions in live VLM tests (`D4-05`).
+4. **DevOps & Config (12 findings)**: Identified Celery worker inheriting Dockerfile HTTP healthcheck causing container restart loops (`D5-01`); `RUN chown` duplicating `.venv` layer by 1.5–2.0 GB in Docker image (`D5-02`); CLI flag password exposure in `compose.yaml` and `start_app.vbs` (`D5-03`); release workflow README sed regex typo (`D5-04`); and unverified curl execution in `install.sh` (`D5-05`).
 
 ### 2026-08-18: Phase 0 Critical Blocker Fixes Implementation
 
@@ -793,7 +727,6 @@ Conducted an exhaustive 5-domain audit (66 findings across Core Pipeline, API & 
 | `src/omniscribe/api/services/state/sqlite.py` | Added `text_artifact_id: str | None = None` to `SQLiteJobHistory.record()` to match `JobHistory` protocol and persist artifact linkage |
 | `src/omniscribe/api/services/state/redis.py` | Added `text_artifact_id: str | None = None` to `RedisJobHistory.record()` to match `JobHistory` protocol and persist artifact linkage |
 | `src/omniscribe/api/middleware/auth.py` | Hardened `BearerAuthMiddleware` to protect management routes (`/api/config`, `/api/providers`, `/api/jobs`) with active subsystem tokens when global token is unset |
-| `frontend/src/lib/components/views/ExtractionView.svelte` | Fixed extraction on bound documents to read text from `$documentStore.pages` or `/api/text/{id}` before dispatching |
 | `tests/core/test_pipeline_recall.py` | Replaced `pytest.skip` on empty pipeline results with strict `assert doc_result is not None` and `assert len(captured) > 0` |
 | `tests/api/test_integration.py` | Replaced `pytest.skip` on empty boxes with strict `assert len(boxes) > 0` and `assert len(boxes) >= 3` |
 | `compose.yaml` | Overrode container healthcheck for Celery `worker` service with native `celery inspect ping` |
@@ -809,14 +742,6 @@ Conducted an exhaustive 5-domain audit (66 findings across Core Pipeline, API & 
 | `src/omniscribe/api/middleware/rate_limit.py` | Bound `RateLimitMiddleware` memory footprint with `MAX_TRACKED_IPS = 10_000` ceiling and clean eviction |
 | `src/omniscribe/utils/security.py` | Provide synchronous `is_blocked_host()` check for SSRF validation |
 | `src/omniscribe/core/glossary_sources/sql_table.py` | Block private / local host connections in `parse_sql_table()` with SSRF validation |
-| `frontend/src/lib/components/views/SettingsView.svelte` | Add WAI-ARIA tabpanel markup (`role="tabpanel"`, `aria-labelledby`, `tabindex="0"`) for WCAG compliance |
-| `frontend/src/lib/components/views/ExtractionView.svelte` | Add explicit `id` and `aria-label` to extraction input textarea |
-| `frontend/src/lib/components/views/TranslationView.svelte` | Add explicit `id` and `aria-label` to translation source input textarea |
-| `frontend/src/lib/components/views/TranscriptionView.svelte` | Add explicit `aria-label` to file upload input |
-| `frontend/src/lib/components/modals/ExportModal.svelte` | Delay `URL.revokeObjectURL()` via `setTimeout(..., 1000)` in `downloadBlob()` to prevent 0-byte download aborts in Firefox |
-| `frontend/src/lib/components/views/ExtractionView.svelte` | Delay `URL.revokeObjectURL()` via `setTimeout(..., 1000)` in `downloadBlob()` |
-| `frontend/src/lib/components/views/TranscriptionView.svelte` | Delay `URL.revokeObjectURL()` in `downloadAsText()` and `downloadAsSrt()` |
-| `frontend/src/lib/stores/pdfPreview.ts` | Explicitly call `pdfDoc.destroy()` in `resetTransient()` and `page.cleanup()` in `renderPage()` to prevent PDF.js canvas/worker memory leaks |
 | `pyproject.toml` | Set `mypy_path = "src"` for consistent import resolution |
 | `Dockerfile` | Use `COPY --chown=app:app` and remove redundant `RUN chown -R` layer, reducing image size by ~1.5 GB |
 | `tests/core/glossary_sources/test_glossary_sources_sql_git.py` | Added regression test `test_ssrf_blocked_dsn_rejected` |
@@ -836,22 +761,6 @@ Conducted an exhaustive 5-domain audit (66 findings across Core Pipeline, API & 
 | `src/omniscribe/api/services/ai.py` | Resolve source text from token-bound artifact store in `translate_text()` when `request.text` is empty |
 | `.github/workflows/release.yml` | Correct repository sed substitution regex to match `(OmniScribe\.git\|local-deepl\.git)` |
 | `Dockerfile`, `install.ps1`, `install.sh`, `AGENTS.md` | Include `--extra lexicon` in standard `uv sync` commands to provide LanceDB vectorized glossary out-of-the-box |
-### 2026-08-19: Frontend, A11y & Workstation Hardening
-
-| File | Responsibility |
-| --- | --- |
-| `frontend/src/lib/utils/download.ts` | Centralized utility for filename path traversal sanitization and DOM-attached Blob/URL downloads with deferred `URL.revokeObjectURL()` |
-| `frontend/src/lib/utils/__tests__/download.test.ts` | Unit test suite verifying filename sanitization, DOM anchor attachment, and delayed revocation |
-| `frontend/src/lib/stores/pdfPreview.ts` | Deterministic `pdfDoc.destroy()`, `pdfDoc.cleanup()`, and `page.cleanup()` execution on stale load version transitions, document resets, and render errors |
-| `frontend/src/lib/components/workstation/PdfMiniViewer.svelte` | Deterministic `doc.destroy()`, `doc.cleanup()`, and `page.cleanup()` lifecycle invocations on canvas paints, document switches, and viewer destruction |
-| `frontend/src/lib/components/modals/ExportModal.svelte` | Switched file exports (TXT, MD, JSON, DOCX, PDF) to robust `downloadBlob()` and `downloadUrl()` with filename sanitization |
-| `frontend/src/lib/components/views/ExtractionView.svelte` | Automatically auto-populates input text from `$documentStore.pages` / resolves text from token-bound artifact store, adds explicit `<label>`, `role="status"` live region, and uses `downloadBlob()` |
-| `frontend/src/lib/components/views/TranslationView.svelte` | Automatically auto-populates source text from `$documentStore.pages` / resolves text from token-bound artifact store, adds explicit accessible IDs/labels, and `role="status"` live regions |
-| `frontend/src/lib/components/views/TranscriptionView.svelte` | Replaced inline blob downloads with `downloadBlob()`, added explicit sr-only file input label, accessible engine select ID, and `role="status"` live region |
-| `frontend/src/lib/components/views/SettingsView.svelte` | Fixed WAI-ARIA tabpanel semantics (`role="tabpanel"`, matching `aria-controls` / `id` / `aria-labelledby`) and added keying to processor chip loop |
-| `frontend/src/lib/components/ui/Toggle.svelte` | Fixed native checkbox focus outline styling to keep checkbox visually hidden (`opacity-0`) while driving focus rings onto the styled switch track via `peer-focus-visible` |
-| `frontend/src/__tests__/a11y.test.ts` | Automated accessibility test suite verifying WAI-ARIA tablist/tabpanel wiring, toggle semantics, form control labels, and live region statuses |
-
 ### 2026-08-19: Distributed Tasks, Real-Time Progress Fanout, Security Hardening & State Parity
 
 | File | Responsibility |
@@ -941,12 +850,12 @@ Conducted an exhaustive 5-domain audit (66 findings across Core Pipeline, API & 
 
 ### 2026-08-27: Flutter Takeover — Phase A (Provider-Config Routes + Auth Banner + Shortcuts + Web Build)
 
-The Flutter client is the canonical UI surface; the Svelte reference UI is on a deprecation path (Phase B = deletion). Provider-config routes (`POST /api/providers/active`, `POST /api/providers/validate`) were added in Phase A; the deferred translation/transcription/extraction/export/glossary endpoints remain unimplemented (mock fallback notifiers only).
+The Flutter client is the canonical UI surface; Phase B has since retired the previous web UI. Provider-config routes (`POST /api/providers/active`, `POST /api/providers/validate`) were added in Phase A; the deferred translation/transcription/extraction/export/glossary endpoints remain unimplemented (mock fallback notifiers only).
 
 | File | Responsibility |
 | --- | --- |
 | `src/omniscribe/plugins/providers.py` | New `SetActiveProviderRequest` / `SetActiveProviderResponse` / `ValidateProviderRequest` / `ValidateProviderResponse` Pydantic models; `ProviderManager.set_active(api_key=…)` extension; new `ProviderManager.validate(...)` async probe method; new `POST /api/providers/active` and `POST /api/providers/validate` routes |
-| `client/lib/presentation/common/auth_required_banner.dart` | Svelte-parity `AuthRequiredBanner` widget with Semantics wrapper; dismissible; matches Svelte `role="status"` + `aria-live="polite"` |
+| `client/lib/presentation/common/auth_required_banner.dart` | Dismissible `AuthRequiredBanner` widget wrapped in `Semantics` with `role="status"` + `aria-live="polite"` for screen-reader announcement on auth failures |
 | `client/lib/data/providers/repository_providers.dart` | `authRequiredProvider = StateProvider<bool>`; `apiClientProvider` factory wires `onUnauthorized` callback that flips the banner flag |
 | `client/lib/core/network/api_client.dart` | New `onUnauthorized` constructor param; called from every Dio 401 catch block (10 methods) for UI flagging (does not suppress exception propagation) |
 | `client/lib/data/repositories/config_repository.dart` | Split `getModels(namespace:)` into `getModelsForProvider(providerId)` + back-compat delegator; namespaces `translation` / `transcription` return `const []` (deferred) |

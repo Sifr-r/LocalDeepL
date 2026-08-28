@@ -12,7 +12,7 @@
 # Windows path uses PowerShell + VBScript for the desktop-installer
 # bits, this script uses POSIX shell + the project Makefile. The
 # hard requirement is the same: bring up a working Python venv with
-# the ``web`` + ``preprocessing`` extras, build the frontend, and
+# the ``web`` + ``preprocessing`` extras, and
 # leave a ``start_app`` shim next to the project.
 #
 # The script is intentionally minimal — it does NOT install Docker
@@ -75,25 +75,6 @@ fi
 # 2. Sync Python dependencies.
 echo
 uv sync --extra web --extra preprocessing --extra async-translation --extra lexicon
-
-# 3. Build the frontend static assets.
-#
-# ``npm ci`` is the reproducible install (``package-lock.json`` is
-# the source of truth). Building the static bundle is required for
-# the FastAPI app to serve the SPA — without this step the UI
-# would 404 on every route.
-if command -v npm >/dev/null 2>&1; then
-    echo
-    echo "Building Svelte 5 + Tailwind v4 frontend..."
-    (
-        cd frontend
-        npm ci
-        npm run build
-    )
-else
-    echo
-    echo "Note: npm not found in PATH; skipping frontend build (pre-built static assets will be used)." >&2
-fi
 
 # 4. Sanity check.
 echo

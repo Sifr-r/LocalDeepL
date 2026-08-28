@@ -12,9 +12,11 @@ Phase 5d.
 
 Pins:
 
-* **F4.9** — the a11y gap is documented in ``AGENTS.md`` Known Tech
-  Debt (the gap itself is not closed; the regression here is on
-  the documentation).
+* **F4.9** — closed by Phase B (the Svelte UI that the Playwright
+  a11y spec covered was removed); the regression pin below is
+  now a forward guard that ``AGENTS.md``'s Known Tech Debt
+  documents the a11y-testing requirement for any future web
+  client.
 * **F4.10** — no active test file (other than the documented
   ``test_live_llm.py`` exceptions) carries a redundant
   ``@pytest.mark.asyncio`` decorator.
@@ -64,25 +66,38 @@ _ASYNCIO_MARK_EXCEPTIONS: frozenset[str] = frozenset()
 
 
 # ---------------------------------------------------------------------------
-# F4.9 — a11y gap documented in AGENTS.md
+# F4.9 — a11y gap closed by Phase B; forward guard in AGENTS.md
 # ---------------------------------------------------------------------------
 
 
 def test_agents_md_documents_a11y_testing_gap() -> None:
-    """The Known Tech Debt section now mentions the a11y testing gap.
+    """The F4.9 a11y testing gap is closed by Phase B, and the forward
+    guard (a11y regression tests required for any future web client)
+    is documented in AGENTS.md's Known Tech Debt.
 
-    The gap itself is not closed in Phase 5d — adding a Playwright
-    a11y spec is a separate track. The contract here is that
-    a developer reading AGENTS.md cannot miss the gap.
+    Phase B cleanup removed the Playwright a11y spec dependency by
+    removing the Svelte UI that the spec covered, so the F4.9 audit
+    gap is effectively closed. The contract here is twofold:
+
+    1. ``AGENTS.md``'s Known Tech Debt section must record that any
+       future web client must implement a11y regression tests (a
+       forward guard against silently regressing into an unmonitored
+       gap).
+    2. The audit history reference (F4.9 / ``a11y`` / ``axe``) must
+       stay discoverable so a reader knows the gap existed and was
+       closed for that specific reason.
     """
     text = AGENTS_MD.read_text(encoding="utf-8")
     # Locate the Known Tech Debt section.
     assert "## Known Tech Debt" in text
-    # The a11y paragraph must reference both the audit ID and the
-    # missing test infrastructure so a search for "a11y" or "axe"
-    # surfaces it.
+    # Forward guard: any future web client must implement a11y
+    # regression tests.
+    assert "a11y" in text.lower() or "axe" in text.lower(), (
+        "Known Tech Debt must mention that any future web client "
+        "must implement a11y regression tests"
+    )
+    # F4.9 audit history must stay discoverable.
     assert "F4.9" in text or "audit" in text.lower()
-    assert "a11y" in text.lower() or "axe" in text.lower()
 
 
 # ---------------------------------------------------------------------------

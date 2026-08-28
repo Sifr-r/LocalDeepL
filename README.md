@@ -4,7 +4,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-Web_UI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![License](https://img.shields.io/badge/License-MIT-purple?style=for-the-badge)](LICENSE)
 
-OmniScribe turns scanned PDFs and images into searchable, selectable PDFs using local vision language models. The supported product workflow is the FastAPI Web UI and API; the previous user-facing command-line OCR entrypoint has been deprecated, and advanced document intelligence stays centered on the browser experience. The `OCRPipeline` class is still importable for in-process programmatic use, but no `omniscribe` script entry is shipped.
+OmniScribe turns scanned PDFs and images into searchable, selectable PDFs using local vision language models. The supported product workflow is the Flutter Client + FastAPI API; the previous in-browser workstation has been deprecated, and advanced document intelligence is delivered through the Flutter client. The `OCRPipeline` class is still importable for in-process programmatic use, but no `omniscribe` script entry is shipped.
 
 ## Features
 
@@ -15,7 +15,7 @@ OmniScribe turns scanned PDFs and images into searchable, selectable PDFs using 
 - **Local Document Intelligence**: Optional web/API processors for preprocessing (including page cleanup and handwriting preprocessing), reading order, quality analysis, structure, sections, layout enrichment, table extraction, quality routing, metadata reports, and structured exports.
 - **Provider Management**: Multi-format provider configuration (OpenAI, Anthropic, Ollama compatible), automatic env-var discovery, and runtime switching.
 - **Voice Transcription**: Local and API-based speech-to-text audio transcription via `/api/transcribe`.
-- **Web Workstation**: Single-page workstation UI built with Svelte 5 + Tailwind CSS v4 (dark/light themes, glassmorphism, floating dock), page selection, WebSocket progress, preview, translation, extraction, export artifacts, and job history.
+- **Flutter Client**: Cross-platform desktop / mobile client built with Flutter + Riverpod (light/dark themes, Material 3, animated transitions), page selection, WebSocket progress, preview, translation, extraction, transcription, glossary browsing, and export to the OmniScribe FastAPI server.
 
 ## Installation
 
@@ -59,17 +59,27 @@ uv sync --extra web --extra preprocessing --extra async-translation --extra memo
 
 Real OCR requires an OpenAI-compatible VLM endpoint. The local-development default is LM Studio at `http://localhost:1234/v1`.
 
-## Web Workspace
+## Flutter Client
+
+Start the backend (it serves the FastAPI surface that the Flutter client talks to):
 
 ```bash
 uv run omniscribe-server --port 8000
 ```
 
-Open `http://localhost:8000`. The browser interface is the supported user workflow. Advanced document intelligence is exposed through Web UI controls and FastAPI request fields; the user-facing CLI script has been deprecated.
+Then, in another terminal, run the Flutter client:
+
+```bash
+cd client
+flutter pub get
+flutter run
+```
+
+The Flutter Client is the supported user workflow. Advanced document intelligence is exposed through the client's Advanced Configuration panel and FastAPI request fields; the user-facing CLI script has been deprecated.
 
 ### Windows quick-start
 
-If you are on Windows, double-click `install.bat` (elevates and runs `install.ps1`) to install `uv`, sync the web extra, and create Desktop / Start-Menu shortcuts. `start_app.vbs` starts Redis (via Docker) + Celery + uvicorn in visible terminal windows and opens the browser; it appends a timestamped log to `start_app.log` next to itself. Closing the terminal windows terminates the processes. If `start_app.vbs` cannot find `uv` (e.g. you launched the shortcut right after install), log out of Windows and back in so the `uv` installer's PATH update takes effect, then re-run the shortcut. `e2e/test_ui.py` runs a headless Playwright smoke test against `examples/dense.pdf`.
+If you are on Windows, double-click `install.bat` (elevates and runs `install.ps1`) to install `uv`, sync the web extra, and create Desktop / Start-Menu shortcuts. `start_app.vbs` starts Redis (via Docker) + Celery + uvicorn in visible terminal windows and opens the browser; it appends a timestamped log to `start_app.log` next to itself. Closing the terminal windows terminates the processes. If `start_app.vbs` cannot find `uv` (e.g. you launched the shortcut right after install), log out of Windows and back in so the `uv` installer's PATH update takes effect, then re-run the shortcut.
 
 The Advanced Configuration panel includes:
 
@@ -128,7 +138,7 @@ uv run pytest -m slow
 uv run ruff check src tests
 uv run ruff format src tests --check
 uv run mypy src
-cd frontend && npm run check && npm test && npm run build
+cd client && flutter pub get && flutter analyze && flutter test && flutter build web --release
 ```
 
 Slow tests load Surya and may download its model on the first run.

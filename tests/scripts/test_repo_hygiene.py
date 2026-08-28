@@ -170,8 +170,11 @@ def test_install_scripts_avoid_elevation_and_blind_remote_execution():
     - The ps1 must never pipe a remote script straight into the
       interpreter (``| iex``); the uv bootstrap downloads to a file
       (or uses winget) instead.
-    - Frontend deps install from the lockfile (``npm ci``) and every
-      npm step is exit-code checked.
+    - Python deps install from ``uv sync`` (the locked extras) and the
+      critical install steps (uv installer script, uv sync,
+      post-sync verify) are all exit-code checked. Phase B removed
+      the Svelte frontend, so the historical ``npm ci`` /
+      ``npm run build`` steps no longer apply.
     """
     bat = _read(ROOT / "install.bat")
     assert "RunAs" not in bat and "NET SESSION" not in bat, (
@@ -181,13 +184,17 @@ def test_install_scripts_avoid_elevation_and_blind_remote_execution():
     assert "| iex" not in ps1 and "| Invoke-Expression" not in ps1, (
         "install.ps1 must not execute a remote script sight-unseen"
     )
-    assert "npm ci" in ps1, "frontend deps must install from package-lock.json"
-    assert "npm install" not in ps1.replace("npm ci", ""), (
-        "install.ps1 should use `npm ci`, not `npm install`"
+    assert "uv sync" in ps1, "Python deps must install via `uv sync`"
+    assert "uv run python --version" in ps1, (
+        "install.ps1 must verify the install with `uv run python --version`"
     )
-    npm_calls = ps1.count("$LASTEXITCODE -ne 0")
-    assert npm_calls >= 4, (
-        "uv sync, npm ci, npm run build, and the uv-run verification "
+    # Critical install steps (uv installer script, uv sync, post-sync
+    # verify) must each carry an explicit ``$LASTEXITCODE -ne 0``
+    # guard so a failing step aborts the script instead of leaving a
+    # half-broken venv behind.
+    exit_checks = ps1.count("$LASTEXITCODE -ne 0")
+    assert exit_checks >= 3, (
+        "uv installer, uv sync, and the uv-run verification "
         "must all be exit-code checked"
     )
 

@@ -82,7 +82,7 @@ responsibility.
 
 We do not consider the following vulnerabilities:
 
-- Clickjacking on the Svelte UI when the operator has not configured
+- Clickjacking on the bundled web UI when the operator has not configured
   `X-Frame-Options` / `Content-Security-Policy` at their reverse proxy.
 - Local file disclosure via XSS in the operator's reverse-proxy error
   page (we ship no error UI).
