@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import logging
 from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING
@@ -306,9 +307,21 @@ class GroundedEngine(EngineBase):
                 on_block_retry=cb.on_block_retry,
                 on_block_revised=cb.on_block_revised,
             )
-            # Persist accepted revisions onto the GroundedBlock objects.
-            for obj, (_, text) in zip(page_blocks_objs, page_blocks, strict=True):
-                obj.text = text
+            # M9 audit fix: persist accepted revisions onto GroundedBlock
+            # objects without in-place mutation. Use dataclasses.replace
+            # so the block can be made ``frozen=True`` later without
+            # rewriting this site. The new object is written back into
+            # both the local per-page list and the canonical
+            # ``response.blocks`` so downstream stages see the repair.
+            for i, (obj, (_, text)) in enumerate(
+                zip(page_blocks_objs, page_blocks, strict=True)
+            ):
+                new_obj = dataclasses.replace(obj, text=text)
+                page_blocks_objs[i] = new_obj
+                for j, b in enumerate(response.blocks):
+                    if b is obj:
+                        response.blocks[j] = new_obj
+                        break
             summaries.append(summary)
             if cb.on_quality_summary is not None:
                 await cb.on_quality_summary(

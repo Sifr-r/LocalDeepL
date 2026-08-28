@@ -463,15 +463,19 @@ class OCRProcessor:
         message. The OLMOCR-2 page path leaves this ``None`` to keep
         the model's RL-trained distribution intact.
         """
-        await self.circuit_breaker.check()
-
+        # M3 audit fix: removed the redundant unconditional pre-loop
+        # ``await self.circuit_breaker.check()``. The in-loop call is
+        # now invoked on EVERY attempt (not just attempt > 0) so the
+        # first attempt also consults the breaker — a previously OPEN
+        # breaker fails fast without consuming an LLM call.
         last_exc: Exception | None = None
         for attempt in range(self.max_retries + 1):
-            if attempt > 0:
-                # Re-check: a prior attempt may have tripped the breaker.
-                # CircuitOpenError propagates directly (not an LLMCallError)
-                # so the engine's per-page handler sees "endpoint down".
-                await self.circuit_breaker.check()
+            # Re-check on every attempt: a prior attempt may have
+            # tripped the breaker, or the breaker may already be open
+            # when this call started. CircuitOpenError propagates
+            # directly (not an LLMCallError) so the engine's per-page
+            # handler sees "endpoint down".
+            await self.circuit_breaker.check()
             try:
                 content = await call_llm(
                     model=self.model,

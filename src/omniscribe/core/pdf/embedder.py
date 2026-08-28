@@ -274,6 +274,16 @@ _EMBED_RASTER_WORKERS = max(
 )
 
 
+# M6/M7 audit fix: extract magic numbers to module-level constants so
+# they are documented and tunable in one place. The full-page fallback
+# heuristic triggers when the bbox is within EPSILON of every page
+# edge AND the text contains a newline.
+_FULL_PAGE_FALLBACK_EPSILON = 0.001
+_MIN_FONT_SIZE = 3.0
+_MAX_FONT_SIZE = 72.0
+_FALLBACK_BOX_INSET = 10  # px margin from page edge
+
+
 def _handle_fullpage_fallback(
     page: fitz.Page,
     rect_coords: Sequence[float],
@@ -283,7 +293,11 @@ def _handle_fullpage_fallback(
 ) -> bool:
     nx0, ny0, nx1, ny1 = rect_coords
     is_full_page_fallback = (
-        nx0 <= 0.001 and ny0 <= 0.001 and nx1 >= 0.999 and ny1 >= 0.999 and "\n" in text
+        nx0 <= _FULL_PAGE_FALLBACK_EPSILON
+        and ny0 <= _FULL_PAGE_FALLBACK_EPSILON
+        and nx1 >= 1.0 - _FULL_PAGE_FALLBACK_EPSILON
+        and ny1 >= 1.0 - _FULL_PAGE_FALLBACK_EPSILON
+        and "\n" in text
     )
     if is_full_page_fallback:
         fontname, font = _pick_embed_font(text)
@@ -291,7 +305,12 @@ def _handle_fullpage_fallback(
         if not text.strip():
             return True
         _ensure_font_registered(page, fontname, font)
-        fallback_rect = fitz.Rect(10, 10, page_width - 10, page_height - 10)
+        fallback_rect = fitz.Rect(
+            _FALLBACK_BOX_INSET,
+            _FALLBACK_BOX_INSET,
+            page_width - _FALLBACK_BOX_INSET,
+            page_height - _FALLBACK_BOX_INSET,
+        )
         page.insert_textbox(
             fallback_rect,
             text,
