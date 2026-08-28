@@ -37,11 +37,22 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # (audit P1-7): without it the build fetches whatever ``latest`` is,
 # a moving supply-chain target. Bump deliberately, in lockstep with
 # the developer toolchain.
+#
+# Sprint 5 / H-1 audit fix: download the installer to disk and run it
+# from disk so the build fails loud on a partial download (vs.
+# ``curl | sh`` which would silently pipe a half-fetched payload to
+# ``sh``). ``test -s`` guards against an empty file; a non-2xx would
+# also fail because the installer script exits 1.
 ARG UV_VERSION=0.11.16
 RUN apt-get update \
  && apt-get install -y --no-install-recommends curl ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
- && curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin UV_VERSION=${UV_VERSION} sh \
+ && curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz" -o /tmp/uv.tar.gz \
+ && test -s /tmp/uv.tar.gz \
+ && tar -xzf /tmp/uv.tar.gz -C /tmp \
+ && install -m 0755 /tmp/uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv \
+ && install -m 0755 /tmp/uv-x86_64-unknown-linux-gnu/uvx /usr/local/bin/uvx \
+ && rm -rf /tmp/uv.tar.gz /tmp/uv-x86_64-unknown-linux-gnu \
  && rm -rf /root/.cache
 
 WORKDIR /app
@@ -86,6 +97,16 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 USER app
 
+# Sprint 5 / H-2 audit fix: install tini as PID 1 so SIGTERM reaches
+# the Python process group. Without tini, uvicorn is PID 1 inside
+# the container and its default SIGTERM handler exits abruptly
+# without draining WebSocket clients / running the FastAPI lifespan
+# shutdown. tini is ~30 KB and well-trusted; the official Debian
+# package is the simplest source.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tini \
+ && rm -rf /var/lib/apt/lists/*
+
 EXPOSE 8000
 
 # F5-03 / F5-04 audit fix: ``HEALTHCHECK`` is set at the Dockerfile
@@ -100,9 +121,11 @@ EXPOSE 8000
 # to a cold container pays the model-load + import-graph setup
 # cost on the synchronous OCR path.
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=30s \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')" || exit 1
 
 # Default: bind on all interfaces so the container is reachable from
 # the host on non-loopback adapters. Use ``--host 127.0.0.1`` when
 # running behind a reverse proxy that does not need LAN exposure.
+# ``tini`` forwards SIGTERM to the web server for a clean shutdown.
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["omniscribe-server", "--host", "0.0.0.0", "--port", "8000"]
