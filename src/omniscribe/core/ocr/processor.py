@@ -63,6 +63,7 @@ from omniscribe.core.ocr.prompts import (
 )
 from omniscribe.core.ocr.resilience import (
     CircuitBreakerRegistry,
+    get_default_circuit_breaker_registry,
     is_transient_error,
 )
 from omniscribe.utils.env import env_int
@@ -169,7 +170,7 @@ class OCRProcessor:
         # registry each OCRProcessor gets a private breaker; with one,
         # processors targeting the same endpoint share one breaker so a
         # tripped breaker is visible to every concurrent caller.
-        registry = circuit_breaker_registry or CircuitBreakerRegistry()
+        registry = circuit_breaker_registry or get_default_circuit_breaker_registry()
         self.circuit_breaker = registry.get_or_create(
             api_base=self.api_base, model=self.model
         )
@@ -545,10 +546,11 @@ class OCRProcessor:
             from PIL import Image
 
             image_bytes = base64.b64decode(image_base64)
-            img = Image.open(io.BytesIO(image_bytes))
-            # Fallback to multiple common languages (or just Arabic/English for this workload)
-            draft: str = pytesseract.image_to_string(img, lang="ara+eng")
-            return draft.strip()
+            # H1 audit fix: ``with`` block guarantees buffer close.
+            with Image.open(io.BytesIO(image_bytes)) as img:
+                # Fallback to multiple common languages (or just Arabic/English for this workload)
+                draft: str = pytesseract.image_to_string(img, lang="ara+eng")
+                return draft.strip()
         except (ImportError, OSError, RuntimeError, ValueError) as exc:
             # ``ImportError`` covers the soft-dep case where pytesseract or
             # PIL is not installed in this environment; ``RuntimeError``

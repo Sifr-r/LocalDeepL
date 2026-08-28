@@ -163,7 +163,16 @@ class HybridAligner:
         if not images_bytes_list:
             return []
 
-        images = [Image.open(io.BytesIO(b)).convert("RGB") for b in images_bytes_list]
+        # H1 audit fix: ``with`` block guarantees buffer close for every
+        # image in the batch list. We load each image inside its own
+        # context manager so the underlying BytesIO is closed even though
+        # we copy the loaded pixel data into a new RGB image.
+        images: list[Image.Image] = []
+        for b in images_bytes_list:
+            with Image.open(io.BytesIO(b)) as src:
+                src.load()
+                images.append(src.copy())
+        images = [img.convert("RGB") if img.mode != "RGB" else img for img in images]
         sizes = [img.size for img in images]
 
         def run_detection() -> list[list[BBox]] | None:

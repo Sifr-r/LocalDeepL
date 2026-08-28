@@ -88,7 +88,9 @@ class TrOCREngine:
 
         def _run() -> TrOCRResult:
             assert self._pipeline is not None
-            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+            # H1 audit fix: ``with`` block guarantees buffer close.
+            with Image.open(io.BytesIO(image_bytes)) as raw:
+                image = raw.convert("RGB")
             out = self._pipeline(image)
             text = ""
             confidence = 0.0
