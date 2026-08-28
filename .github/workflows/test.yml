@@ -80,6 +80,22 @@ jobs:
       - name: Run fast tests
         run: uv run pytest -m "not slow and not slow_dataset" --cov=src/omniscribe --cov-fail-under=85 --cov-report=term-missing --cov-report=xml -v
 
+      - name: Render HTML coverage report
+        # Sprint 4 / M-4 audit fix: publish an HTML coverage report
+        # so developers can drill into "which line in core/pipeline.py
+        # is uncovered?" without running coverage locally. The XML
+        # report above is for Codecov; the HTML one is human-facing.
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'
+        run: uv run coverage html -d htmlcov
+
+      - name: Upload HTML coverage artifact
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-html-${{ matrix.python }}
+          path: htmlcov
+          retention-days: 30
+
       - name: Run pip-audit vulnerability check
         # Keep in sync with `make audit` (Makefile): PYSEC-2026-311 /
         # CVE-2026-45829 (chromadb server RCE) is risk-accepted — no
@@ -185,3 +201,23 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
           category: trivy
+
+  client-tests:
+    name: flutter (analyze + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: subosito/flutter-action@f2c4f66bbda70cf87885ea0c6f16d8d40b5250c0 # v2.18.0
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install client dependencies
+        run: cd client && flutter pub get
+
+      - name: Analyze client code
+        run: cd client && flutter analyze --fatal-infos
+
+      - name: Run client tests
+        run: cd client && flutter test
