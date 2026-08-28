@@ -30,6 +30,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import pyarrow as pa
+
 from .embedding import EmbeddingModel, get_default_embedding_model
 from .schema import LEXICON_SCHEMA, VECTOR_INDEX_SPEC
 from .store import (
@@ -482,8 +484,25 @@ class LanceDBLexiconStore:
                     found = True
             if not found:
                 raise GlossaryNotFoundError(target) from exc
+            # C2 audit fix: build a fresh Arrow table from the updated
+            # records and ``add`` it BEFORE deleting the originals so a
+            # write failure leaves the original rows intact. If ``add``
+            # raises, the original table is unchanged and no glossary
+            # rows are lost.
+            updated_arrow = pa.Table.from_pylist(records)
+            try:
+                self._table.add(updated_arrow)
+            except Exception as add_exc:
+                logger.error(
+                    "toggle_glossary fallback failed to add updated rows for "
+                    "glossary '%s': %s. Original rows preserved.",
+                    target,
+                    add_exc,
+                )
+                raise
+            # Only delete the original partition after the new rows are
+            # durably appended.
             self._table.delete(where=f"glossary_id = '{escaped_target}'")
-            self._table.add(records)
         meta = self.get_glossary(target)
         if meta is None:
             raise GlossaryNotFoundError(target)
