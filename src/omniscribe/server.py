@@ -303,6 +303,22 @@ def main(argv: Sequence[str] | None = None) -> None:
             f"(got --workers {args.workers})"
         )
 
+    # C-1 audit fix: refuse to start bound to a non-loopback host
+    # without ``OMNISCRIBE_AUTH_TOKEN``. The rebuilt route surface is
+    # currently unauthenticated (deferred per AGENTS.md); exposing
+    # that surface to any network is unsafe. Loopback binds are the
+    # documented local-trusted mode and remain allowed without a
+    # token.
+    _settings_for_guard = load_settings()
+    is_loopback = args.host in {"127.0.0.1", "::1", "localhost"}
+    if not is_loopback and not _settings_for_guard.auth_token:
+        raise SystemExit(
+            f"Refusing to start: --host {args.host} is non-loopback and "
+            "OMNISCRIBE_AUTH_TOKEN is unset. Set OMNISCRIBE_AUTH_TOKEN "
+            "(32+ chars) or bind to 127.0.0.1 / ::1 / localhost. See "
+            "SECURITY.md."
+        )
+
     try:
         uvicorn = _load_optional_module("uvicorn")
         app._load()
