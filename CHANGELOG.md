@@ -653,6 +653,39 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   extracted into `_parse_xml()` and unit-tested for plain XML,
   external-entity XXE, and billion-laughs rejection.
 
+- **Sprint 5 audit remediation (DevOps & Config, 2026-08-28)** — the
+  2026-08-28 5-domain audit's DevOps & Config findings are
+  partially closed (license posture in `pyproject.toml`, the
+  `Dockerfile curl | sh` switch to download-to-disk, the
+  `start_app.vbs` shell-injection analysis, and the per-service
+  `.env.example` annotations are addressed).
+  - **C-1**: workspace `.env` no longer has the
+    `OCR_API_BASE=http://192.168.1.75:1234/ v1` URL typo (stray
+    space inside the URL). The value is now well-formed. The
+    audit's pre-existing `my-real-secret-key-xyz123` and
+    `translate-key-1234` placeholders were left as documented
+    test fixtures; operators on a public deploy must rotate
+    them at the provider before the first request.
+  - **C-3**: `AGENTS.md` now lists the exact CI jobs that must
+    be green before merge (fast tier on 3.11 / 3.13 / windows +
+    Trivy container scan) and the nightly tier that is
+    intentionally **not** a merge gate.
+  - **H-1**: `Dockerfile` now downloads the `uv` release tarball
+    to disk and installs from disk instead of piping
+    `curl | sh`. A `test -s` guard rejects an empty payload, and
+    a non-2xx response (where the redirect chain fails) propagates
+    as a non-zero exit. Same supply-chain provenance as
+    `install.sh`, but no half-fetched payload can reach `sh`.
+  - **H-2**: `Dockerfile` installs `tini` and uses it as
+    `ENTRYPOINT`. Without tini, the Python process is PID 1
+    inside the container and `SIGTERM` exits abruptly without
+    draining the FastAPI lifespan / WebSocket clients.
+    `compose.yaml` adds `--maxmemory 256mb --maxmemory-policy
+    allkeys-lru` to the Redis service so a chatty broker cannot
+    OOM the host.
+
+  Plan: `docs/superpowers/plans/2026-08-28-audit-remediation.md`.
+
 - **Sprint 4 audit remediation (Testing & QA, 2026-08-28)** — the
   2026-08-28 5-domain audit's Testing & QA findings are partially
   closed (the `QualityRepairLoop` integration test and the WS
