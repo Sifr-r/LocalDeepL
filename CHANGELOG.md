@@ -653,6 +653,39 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   extracted into `_parse_xml()` and unit-tested for plain XML,
   external-entity XXE, and billion-laughs rejection.
 
+- **Sprint 3 audit remediation (Frontend, 2026-08-28)** — the
+  2026-08-28 5-domain audit's Frontend findings are partially
+  closed (a11y test coverage remains a follow-up; the Flutter
+  test target compiles and exercises a real `MaterialApp` shell
+  smoke).
+  - **C-1**: deleted the stale Svelte/Vite bundle under
+    `src/omniscribe/static/assets/`; the
+    `index.html` referenced hashed bundles (`index-DQshMyx3.js`,
+    `index-MlaBq5fV.css`, …) that no longer exist and would 404
+    in the browser. The placeholder `index.html` now renders a
+    Flutter-client landing page that points at
+    `GET /health` and `GET /ready`.
+  - **C-2 / C-3**: `client/lib/core/network/api_client.dart` now
+    refuses plaintext `http://` for non-loopback hosts at the
+    `set baseUrl` boundary. Loopback (`127.0.0.1`, `::1`,
+    `localhost`) is the documented local-trusted mode and remains
+    allowed in plaintext. The check is a runtime guard so a user
+    pasting a public IP into the settings screen sees a clear
+    `ArgumentError` rather than silently leaking the bearer token.
+    New tests:
+    `client/test/core/network/test_api_client_url_safety_test.dart`.
+  - **H-1**: `BottomProgressDock` now wraps its content in a
+    `Semantics(liveRegion: true, label: …)` node so screen
+    readers announce stage + percent changes without forcing the
+    user to focus the dock. The label is rebuilt on every
+    announcement.
+  - **H-3**: replaced the 13-line `expect(true, isTrue)` placeholder
+    in `client/test/widget_test.dart` with a real
+    `testWidgets` smoke that mounts `OmniScribeApp` and asserts
+    the `MaterialApp` shell is present.
+
+  Plan: `docs/superpowers/plans/2026-08-28-audit-remediation.md`.
+
 - **Sprint 2 audit remediation (API & Security, 2026-08-28)** —
   the 2026-08-28 5-domain audit's API & Security findings are
   partially closed (the deferred-capability items remain on the
