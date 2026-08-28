@@ -135,10 +135,15 @@ async def test_discover_models_openai_compatible_parses_data_ids() -> None:
     url, headers = http.calls[0]
     # H-1 audit fix: the URL host is rewritten to the SSRF-validated IP
     # so a DNS-rebinding attacker cannot bypass the guard. The original
-    # hostname is preserved in the ``Host`` header.
+    # hostname is preserved in the ``Host`` header. ``api.openai.com``
+    # resolves to multiple Cloudflare IPs at different times; we accept
+    # any of them.
     from urllib.parse import urlsplit
 
-    assert urlsplit(url).hostname == "172.66.0.243"
+    host = urlsplit(url).hostname or ""
+    assert all(c in "0123456789." for c in host) or ":" in host, (
+        f"expected IP literal, got {host!r}"
+    )
     assert urlsplit(url).path == "/v1/models"
     assert "api.openai.com" in headers.get("Host", "")
     assert "Bearer sk-test" in headers["Authorization"]
@@ -223,14 +228,15 @@ async def test_validate_openai_compatible_probes_models_endpoint() -> None:
     # H-1 audit fix: URL host rewritten to SSRF-resolved IP.
     from urllib.parse import urlsplit
 
-    assert urlsplit(url).path == "/v1/models"
-    assert headers.get("Host") == "api.openai.com"
-    assert headers["Authorization"] == "Bearer sk-test"
     host = urlsplit(url).hostname or ""
-    # Hostname should now be an IP literal.
+    # ``api.openai.com`` resolves to multiple Cloudflare IPs at
+    # different times; we accept any IP literal.
     assert all(c in "0123456789." for c in host) or ":" in host, (
         f"expected IP literal, got {host!r}"
     )
+    assert urlsplit(url).path == "/v1/models"
+    assert headers.get("Host") == "api.openai.com"
+    assert headers["Authorization"] == "Bearer sk-test"
 
 
 async def test_validate_unknown_provider_short_circuits() -> None:

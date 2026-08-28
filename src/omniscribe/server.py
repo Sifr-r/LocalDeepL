@@ -128,6 +128,27 @@ def create_app() -> ASGIApplication:
         lifespan=lifespan,
     )
 
+    # M-1 audit fix: wire CORS middleware. ``OMNISCRIBE_CORS_ORIGINS`` is
+    # a comma-separated allowlist (e.g. ``https://app.example.com``);
+    # the empty default denies cross-origin requests from a browser
+    # but still allows the Flutter desktop client (no Origin header)
+    # to call the API. A bare ``*`` opens the open wildcard.
+    cors_origins = load_settings().cors_origins
+    cors_module = _load_optional_module("fastapi.middleware.cors")
+    web_app.add_middleware(
+        cors_module.CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=bool(cors_origins),
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
+        expose_headers=[
+            "Content-Disposition",
+            "X-Document-Trust",
+            "X-Artifact-Token",
+        ],
+        max_age=600,
+    )
+
     if _STATIC_DIR.is_dir():
         web_app.mount(
             "/static",
