@@ -31,6 +31,20 @@ from omniscribe.utils.structured_logging import _resolve_log_format
 _LOGGER = logging.getLogger(__name__)
 _log = logging.getLogger("omniscribe.server")
 
+# Sprint 5 / M-10 audit fix: placeholder auth tokens that the operator
+# might paste from the documentation without replacing. Compared in
+# lowercase so ``Change-Me-In-Prod`` (capitalised by accident) is also
+# caught. Add new entries here ONLY after updating SECURITY.md and
+# the operator-facing ``.env.example`` to point at the same string.
+_PLACEHOLDER_AUTH_TOKENS: frozenset[str] = frozenset(
+    {
+        "change-me-in-prod",
+        "placeholder",
+        "example-token-replace-me",
+        "replace-this-with-a-real-secret",
+    }
+)
+
 ASGIReceive = Callable[[], Awaitable[dict[str, Any]]]
 ASGISend = Callable[[dict[str, Any]], Awaitable[None]]
 ASGIScope = dict[str, Any]
@@ -331,6 +345,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument(
         "--reload", action="store_true", help="Enable auto-reload (development)"
     )
+    parser.add_argument(
+        "--allow-placeholder-token",
+        action="store_true",
+        help="Allow startup with a placeholder OMNISCRIBE_AUTH_TOKEN "
+        "(M-10 audit opt-out; default is to refuse).",
+    )
     args = parser.parse_args(argv)
 
     # ``--reload`` is a single-process development aid; combining it with
@@ -356,6 +376,28 @@ def main(argv: Sequence[str] | None = None) -> None:
             "OMNISCRIBE_AUTH_TOKEN is unset. Set OMNISCRIBE_AUTH_TOKEN "
             "(32+ chars) or bind to 127.0.0.1 / ::1 / localhost. See "
             "SECURITY.md."
+        )
+    # M-10 audit fix: refuse placeholder tokens on non-loopback binds.
+    # A common operator mistake is to copy ``.env.example`` and forget
+    # to replace the placeholder. The check is opt-out via the same
+    # ``--allow-placeholder-token`` flag, defaulting to refusal, so
+    # the surface-area of accepting a placeholder is one CLI flag
+    # rather than a config-file knob. ``change-me-in-prod`` is the
+    # documented placeholder per ``.env.example``; the lowercase
+    # comparison catches accidental case swaps.
+    if (
+        not is_loopback
+        and _settings_for_guard.auth_token
+        and _settings_for_guard.auth_token.lower()
+        in _PLACEHOLDER_AUTH_TOKENS
+        and not getattr(args, "allow_placeholder_token", False)
+    ):
+        raise SystemExit(
+            "Refusing to start: OMNISCRIBE_AUTH_TOKEN is a known "
+            "placeholder value. Replace it with a random secret "
+            "(e.g. `python -c 'import secrets; print(secrets.token_urlsafe(32))'`) "
+            "or pass --allow-placeholder-token if you understand the risk. "
+            "See SECURITY.md."
         )
     # C-2 audit fix: when ``ALLOW_SSRF_LOCAL=true`` AND the bind host is
     # non-loopback, log a loud WARNING that any LAN caller can reach the

@@ -208,7 +208,7 @@ for the protocol.
 
 1. `uv sync` (or `docker compose pull`)
 2. `uv run omniscribe-server` (or `docker compose up -d`)
-3. Visit `/health` to confirm the new version
+3. Visit `http://localhost:8000/api/health` (or `/api/healthz`) to confirm the new version
 4. Review the [CHANGELOG](CHANGELOG.md) for breaking changes
 
 The settings tab persists user preferences via `localStorage`, not
