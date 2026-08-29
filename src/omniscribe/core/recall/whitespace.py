@@ -67,7 +67,8 @@ _MAX_AREA_FRACTION = 0.25
 # pixel floor rejects rules that survive the density check. T7 measured
 # that form-blank underscore segments render at ~6 px and cannot be
 # separated from hairline rules on pixel statistics alone; they stay
-# excluded (documented limitation, see TODOS.md).
+# excluded (documented limitation; re-measure impact via
+# ``scripts/measure_recall_delta.py`` before changing this constant).
 _MIN_COMPONENT_HEIGHT_PX = 10
 # Otsu-invert models whitespace as background. When the foreground fraction
 # is this large the model has inverted (dark-mode / inverted scan page) and

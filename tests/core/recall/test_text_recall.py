@@ -386,10 +386,11 @@ def test_photo_edge_passes_filters_as_known_limitation(
     photo edge or figure border that survives every filter. This test pins
     the current behavior: exactly 1 box is emitted for each parameter case.
 
-    Do not change the asserted box count without (1) revising the T9 spec
-    at ``docs/superpowers/specs/2026-08-16-t9-limitation-pin-photo-edge-design.md``
-    and (2) re-measuring the junk-box impact on ``examples/*.pdf`` (see
-    TODOS.md T9 and the T7 harness in ``scripts/``).
+    Do not change the asserted box count without re-measuring the
+    junk-box impact on ``examples/*.pdf`` via the T7 harness at
+    ``scripts/measure_recall_delta.py`` (T7 was the T9 photo-edge
+    limitation pin; the T9 spec was archived in 2026-08 — the test
+    still pins current behavior, so the box count is the contract).
     """
     img = _photo_edge_page(
         line_height_px=post_dilate_height_px,
