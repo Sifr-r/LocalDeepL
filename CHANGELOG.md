@@ -661,6 +661,37 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   `tests/core/ocr_quality/test_ocr_quality_orchestrator.py`
   still passes (the per-block loop now reads the cache instead
   of re-running the classifier).
+- **Resume session (2026-08-29)** — closed the remaining audit
+  follow-ups after the prior 5-sprint sweep.
+  - **Sprint 3 / H-2**: `client/lib/presentation/shell/tab_ribbon.dart`
+    now wraps the tab buttons and the theme toggle in explicit
+    `Semantics(button: true, selected: ..., toggled: ...)` nodes so
+    screen readers announce both the role and the selection state. New
+    regression test:
+    `client/test/presentation/shell/tab_ribbon_a11y_test.dart`.
+  - **Sprint 4 / H-2**: `tests/routers/test_progress_ws_e2e.py` drives
+    a full `POST /api/progress/session` → WS auth → `POST
+    /api/process/async?progress_channel=...` → WS progress frame →
+    status=complete lifecycle. Catches regressions where
+    `OCRService._progress_adapter` drops the channel arg.
+  - **Sprint 5 / M-10**: `src/omniscribe/server.py` refuses to start
+    bound to a non-loopback host when `OMNISCRIBE_AUTH_TOKEN` is one
+    of the documented placeholder values (`change-me-in-prod`,
+    `placeholder`, `example-token-replace-me`,
+    `replace-this-with-a-real-secret`). The guard is opt-out via
+    `--allow-placeholder-token`. New regression test:
+    `tests/test_server_placeholder_token.py` (4 cases).
+  - **DEPLOYMENT.md**: the post-upgrade "Visit `/health`" instruction
+    is now `http://localhost:8000/api/health` (the actual endpoint).
+  - **Pre-batch (already in main)**: `src/omniscribe/utils/security.py`
+    adds the AWS EC2 IPv6 metadata network (`fd00:ec2::/64`) and the
+    empty `getaddrinfo` guard; `core/pdf/rasterizer.py` uses PIL
+    `seek`/`n_frames` instead of `ImageSequence.Iterator`; the
+    `client/` package is now in `.dockerignore`; `auth_required_banner`
+    navigates to Settings on click; the export modal HTML-escapes
+    user-controlled filenames and bbox text (XSS hardening).
+  - Plan: `docs/superpowers/plans/2026-08-28-audit-remediation.md`.
+
 - **Sprint 2 + Sprint 3 + Sprint 4 follow-ups (2026-08-28)** —
   closes the most material remaining items from the 5-domain audit
   beyond the initial sprint close.
