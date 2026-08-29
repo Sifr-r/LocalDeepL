@@ -95,6 +95,9 @@ def test_response_shapes_match_frontend_contracts() -> None:
         "status_url": "/api/process/status/j1",
     }
 
+    # 2026-08-29 audit C-3 / H-3: the result token is intentionally
+    # not a field on JobStatusResponse. The async client receives it
+    # out-of-band via the ``job_completed`` SSE event payload.
     status = JobStatusResponse(
         job_id="j1",
         filename="a.pdf",
@@ -104,8 +107,6 @@ def test_response_shapes_match_frontend_contracts() -> None:
         completed_at=3.0,
         duration_s=2.0,
         text_artifact_id="art",
-        text_artifact_token="tok",
-        text_artifact_url="/api/jobs/j1/result?token=tok",
         failed_pages=[2],
     )
     payload = status.model_dump()
@@ -120,8 +121,6 @@ def test_response_shapes_match_frontend_contracts() -> None:
         "duration_s",
         "error",
         "text_artifact_id",
-        "text_artifact_token",
-        "text_artifact_url",
         "failed_pages",
     }
 

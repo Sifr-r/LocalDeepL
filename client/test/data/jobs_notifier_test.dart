@@ -170,14 +170,14 @@ void main() {
   group('JobsNotifier.downloadResult', () {
     test('returns repo bytes on success', () async {
       final bytes = Uint8List.fromList([0x25, 0x50, 0x44, 0x46]); // %PDF
-      when(() => repo.downloadResult('job-1', 'tok-1'))
+      when(() => repo.downloadResult('job-1'))
           .thenAnswer((_) async => bytes);
 
       final container = makeContainer();
       addTearDown(container.dispose);
       final notifier = container.read(jobsProvider.notifier);
 
-      final result = await notifier.downloadResult('job-1', 'tok-1');
+      final result = await notifier.downloadResult('job-1');
 
       expect(result, bytes);
       final state = container.read(jobsProvider);
@@ -185,7 +185,7 @@ void main() {
     });
 
     test('sets state.error and rethrows on failure', () async {
-      when(() => repo.downloadResult('job-1', 'tok-1'))
+      when(() => repo.downloadResult('job-1'))
           .thenThrow(Exception('download failed'));
 
       final container = makeContainer();
@@ -193,7 +193,7 @@ void main() {
       final notifier = container.read(jobsProvider.notifier);
 
       await expectLater(
-        notifier.downloadResult('job-1', 'tok-1'),
+        notifier.downloadResult('job-1'),
         throwsA(isA<Exception>()),
       );
 

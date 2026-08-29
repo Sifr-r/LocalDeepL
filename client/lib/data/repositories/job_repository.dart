@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:omniscribe_client/core/constants/api_constants.dart';
 import 'package:omniscribe_client/core/network/api_client.dart';
 import 'package:omniscribe_client/data/models/job_record.dart';
+import 'package:omniscribe_client/data/repositories/ocr_repository.dart';
 
 abstract class JobRepository {
   /// Retrieve list of all past and current OCR jobs.
@@ -14,15 +15,19 @@ abstract class JobRepository {
   /// Cancel a running or queued job by ID.
   Future<bool> cancelJob(String jobId);
 
-  /// Download the per-job result PDF bytes, authenticated with [token].
-  /// Pass an empty [token] for unauthenticated downloads.
-  Future<Uint8List> downloadResult(String jobId, String token);
+  /// Download the per-job result PDF bytes. The result token is
+  /// fetched out-of-band via the ``job_completed`` SSE event (parallel
+  /// to the sync path's ``X-Text-Artifact-Token`` response header);
+  /// the unauthenticated ``/api/process/status/{jobId}`` route no
+  /// longer returns it (2026-08-29 audit C-3 / H-3).
+  Future<Uint8List> downloadResult(String jobId);
 }
 
 class JobRepositoryImpl implements JobRepository {
-  const JobRepositoryImpl(this._apiClient);
+  const JobRepositoryImpl(this._apiClient, this._ocrRepository);
 
   final ApiClient _apiClient;
+  final OcrRepository _ocrRepository;
 
   @override
   Future<List<JobRecord>> listJobs() async {
@@ -58,15 +63,12 @@ class JobRepositoryImpl implements JobRepository {
   }
 
   @override
-  Future<Uint8List> downloadResult(String jobId, String token) async {
-    final headers = <String, String>{};
-    if (token.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $token';
-    }
+  Future<Uint8List> downloadResult(String jobId) async {
+    final token = await _ocrRepository.getJobArtifactToken(jobId);
     return _apiClient.getBytes(
       ApiConstants.jobResult(jobId),
       queryParameters: {'token': token},
-      headers: headers,
+      headers: {'Authorization': 'Bearer $token'},
     );
   }
 }

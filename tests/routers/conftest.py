@@ -75,3 +75,43 @@ def wait_status(
             return body
         time.sleep(0.01)
     raise AssertionError(f"job {job_id} never reached {status!r}; last={body}")
+
+
+def artifact_token_from_events(
+    client: TestClient, job_id: str, *, timeout: float = 5.0
+) -> str:
+    """Read the ``job_completed`` SSE event and return its ``artifact_token``.
+
+    The async client obtains the result token out-of-band (the SSE
+    ``job_completed`` event payload), not from the unauthenticated status
+    response (2026-08-29 audit C-3 / H-3). This helper replays the event
+    stream for tests that need the token to download the result.
+    """
+    import json
+
+    deadline = time.time() + timeout
+    with client.stream("GET", f"/api/process/{job_id}/events") as response:
+        assert response.status_code == 200
+        # Parse the SSE stream in a single iter_lines() pass — httpx
+        # raises ``StreamConsumed`` if you try to iterate twice.
+        current_event: str | None = None
+        for raw in response.iter_lines():
+            if time.time() > deadline:
+                raise AssertionError(
+                    f"job {job_id} never emitted job_completed within {timeout}s"
+                )
+            if raw is None or raw == "" or raw.startswith(":"):
+                # blank line / keep-alive comment ends the current event
+                current_event = None
+                continue
+            if raw.startswith("event:"):
+                current_event = raw.removeprefix("event:").strip()
+            elif raw.startswith("data:") and current_event == "job_completed":
+                body = json.loads(raw.removeprefix("data:").strip())
+                token = body.get("artifact_token")
+                if token:
+                    return str(token)
+                raise AssertionError(
+                    f"job_completed for {job_id} had no artifact_token"
+                )
+    raise AssertionError(f"job {job_id} never emitted job_completed")

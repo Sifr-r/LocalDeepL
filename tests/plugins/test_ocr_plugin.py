@@ -97,6 +97,46 @@ async def _wait_status(
     raise AssertionError(f"job {job_id} never reached {status!r}; last={body}")
 
 
+async def _artifact_token_from_events(
+    client: httpx.AsyncClient, job_id: str, *, timeout: float = 5.0
+) -> str:
+    """Read the ``job_completed`` SSE event and return its ``artifact_token``.
+
+    2026-08-29 audit C-3 / H-3: the async result token is delivered
+    out-of-band via the ``job_completed`` SSE event (not the status
+    response). This helper replays the event stream for tests that
+    need the token to download the result.
+    """
+    import json
+
+    deadline = time.time() + timeout
+    async with client.stream("GET", f"/api/process/{job_id}/events") as stream:
+        assert stream.status_code == 200
+        # Single aiter_lines() pass — httpx raises ``StreamConsumed`` on
+        # the second iteration. Track the current SSE event name as we
+        # walk the stream.
+        current_event: str | None = None
+        async for raw in stream.aiter_lines():
+            if time.time() > deadline:
+                raise AssertionError(
+                    f"job {job_id} never emitted job_completed within {timeout}s"
+                )
+            if raw is None or raw == "" or raw.startswith(":"):
+                current_event = None
+                continue
+            if raw.startswith("event:"):
+                current_event = raw.removeprefix("event:").strip()
+            elif raw.startswith("data:") and current_event == "job_completed":
+                body = json.loads(raw.removeprefix("data:").strip())
+                token = body.get("artifact_token")
+                if token:
+                    return str(token)
+                raise AssertionError(
+                    f"job_completed for {job_id} had no artifact_token"
+                )
+    raise AssertionError(f"job {job_id} never emitted job_completed")
+
+
 # -- sync /api/process -----------------------------------------------------------
 
 
@@ -158,14 +198,18 @@ async def test_async_submit_status_result_and_job_list(fake_pipeline) -> None:
             done = await _wait_status(client, job_id, "complete")
             assert done["filename"] == "a.pdf"
             assert done["text_artifact_id"]
-            assert done["text_artifact_token"]
-            assert done["text_artifact_url"] == (
-                f"/api/jobs/{job_id}/result?token={done['text_artifact_token']}"
-            )
+            # 2026-08-29 audit C-3 / H-3: status no longer leaks the
+            # artifact token; the async client receives it from the
+            # ``job_completed`` SSE event payload.
+            assert "text_artifact_token" not in done
+            assert "text_artifact_url" not in done
+
+            token = await _artifact_token_from_events(client, job_id)
+            assert token
 
             result = await client.get(
                 f"/api/jobs/{job_id}/result",
-                params={"token": done["text_artifact_token"]},
+                params={"token": token},
             )
             assert result.status_code == 200
             assert result.content == PDF_BYTES

@@ -121,7 +121,18 @@ class AsyncSubmitResponse(BaseModel):
 
 
 class JobStatusResponse(BaseModel):
-    """Mirrors the frontend ``OcrJobStatusResponse`` contract."""
+    """Mirrors the frontend ``OcrJobStatusResponse`` contract.
+
+    Security note (2026-08-29 audit C-3 / H-3): the result ``token`` is
+    intentionally **not** in this response. The unauthenticated
+    ``GET /api/process/status/{job_id}`` + ``GET /api/jobs`` chain would
+    otherwise let any caller fetch another user's OCR'd PDF without the
+    constant-time gate at ``fetch_result``. The async client obtains the
+    token from the ``job_completed`` SSE event payload (the out-of-band
+    channel, parallel to the sync path's ``X-Text-Artifact-Token``
+    response header). Only ``text_artifact_id`` is safe to expose — it's
+    the opaque handle, not the secret.
+    """
 
     job_id: str
     filename: str = ""
@@ -132,8 +143,6 @@ class JobStatusResponse(BaseModel):
     duration_s: float | None = None
     error: str | None = None
     text_artifact_id: str | None = None
-    text_artifact_token: str | None = None
-    text_artifact_url: str | None = None
     failed_pages: list[int] = Field(default_factory=list)
 
 

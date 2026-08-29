@@ -43,8 +43,20 @@ class JobStarted(AgentEvent):
 
 @dataclass(frozen=True)
 class JobCompleted(SessionEvent):
+    """Fired once a job's result blob has been written to the artifact store.
+
+    The ``artifact_token`` is the out-of-band delivery channel for the
+    async path — the same role the sync path's ``X-Text-Artifact-Token``
+    response header plays. The unauthenticated status polling endpoint
+    (``GET /api/process/status/{job_id}``) deliberately does **not**
+    return the token; the client consumes it from this event payload
+    (SSE stream at ``/api/process/{job_id}/events``) instead. The
+    artifact id alone is safe to expose everywhere.
+    """
+
     job_id: str
     artifact_id: str
+    artifact_token: str
 
 
 @dataclass(frozen=True)
@@ -259,7 +271,13 @@ class InMemoryJobQueue:
                     updated_at=time.time(),
                 )
             )
-        await self._ctx.emit(JobCompleted(job_id=job_id, artifact_id=handle.id))
+        await self._ctx.emit(
+            JobCompleted(
+                job_id=job_id,
+                artifact_id=handle.id,
+                artifact_token=handle.token,
+            )
+        )
 
     async def _mark_cancelled(self, job_id: str, *, emit: bool) -> None:
         self._cancelled.discard(job_id)

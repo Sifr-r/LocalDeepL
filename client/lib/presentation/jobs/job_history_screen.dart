@@ -59,9 +59,11 @@ class _JobHistoryScreenState extends ConsumerState<JobHistoryScreen> {
     });
 
     try {
-      final token = job.textArtifactToken ?? '';
+      // 2026-08-29 audit C-3 / H-3: the result token is delivered via
+      // the ``job_completed`` SSE event (out-of-band), not the status
+      // response body. ``downloadResult`` resolves the token itself.
       final Uint8List bytes =
-          await ref.read(jobsProvider.notifier).downloadResult(job.id, token);
+          await ref.read(jobsProvider.notifier).downloadResult(job.id);
       if (mounted) {
         setState(() {
           _statusBanner =

@@ -101,7 +101,7 @@
         "type": "object"
       },
       "JobStatusResponse": {
-        "description": "Mirrors the frontend ``OcrJobStatusResponse`` contract.",
+        "description": "Mirrors the frontend ``OcrJobStatusResponse`` contract.\n\nSecurity note (2026-08-29 audit C-3 / H-3): the result ``token`` is\nintentionally **not** in this response. The unauthenticated\n``GET /api/process/status/{job_id}`` + ``GET /api/jobs`` chain would\notherwise let any caller fetch another user's OCR'd PDF without the\nconstant-time gate at ``fetch_result``. The async client obtains the\ntoken from the ``job_completed`` SSE event payload (the out-of-band\nchannel, parallel to the sync path's ``X-Text-Artifact-Token``\nresponse header). Only ``text_artifact_id`` is safe to expose \u2014 it's\nthe opaque handle, not the secret.",
         "properties": {
           "completed_at": {
             "anyOf": [
@@ -187,28 +187,6 @@
               }
             ],
             "title": "Text Artifact Id"
-          },
-          "text_artifact_token": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text Artifact Token"
-          },
-          "text_artifact_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text Artifact Url"
           }
         },
         "required": [

@@ -58,9 +58,9 @@ class JobsNotifier extends Notifier<JobsState> {
     }
   }
 
-  Future<Uint8List> downloadResult(String jobId, String token) async {
+  Future<Uint8List> downloadResult(String jobId) async {
     try {
-      return await _repo.downloadResult(jobId, token);
+      return await _repo.downloadResult(jobId);
     } catch (e) {
       state = state.copyWith(error: e.toString());
       rethrow;

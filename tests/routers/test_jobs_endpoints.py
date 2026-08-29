@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from .conftest import PDF_BYTES, upload, wait_status
+from .conftest import PDF_BYTES, artifact_token_from_events, upload, wait_status
 
 
 def test_jobs_list_is_bare_array_and_clear_works(
@@ -35,11 +35,15 @@ def test_result_download_requires_valid_token(
 ) -> None:
     submit = api_client.post("/api/process/async", **upload())
     job_id = submit.json()["job_id"]
-    done = wait_status(api_client, job_id, "complete")
+    wait_status(api_client, job_id, "complete")
 
-    result = api_client.get(
-        f"/api/jobs/{job_id}/result", params={"token": done["text_artifact_token"]}
-    )
+    # 2026-08-29 audit C-3 / H-3: the status endpoint no longer
+    # returns the token. The async client pulls it from the
+    # ``job_completed`` SSE event payload (out-of-band channel).
+    token = artifact_token_from_events(api_client, job_id)
+    assert token
+
+    result = api_client.get(f"/api/jobs/{job_id}/result", params={"token": token})
     assert result.status_code == 200
     assert result.content == PDF_BYTES
 

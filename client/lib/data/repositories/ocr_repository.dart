@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -58,6 +59,15 @@ abstract class OcrRepository {
 
   /// Fetch text artifact content by ID with artifact bearer token.
   Future<String> getTextArtifact(String artifactId, String token);
+
+  /// Resolve the result download token for a completed async job by
+  /// replaying the ``/api/process/{jobId}/events`` SSE stream until
+  /// the ``job_completed`` event fires. This is the out-of-band
+  /// channel that pairs with the sync path's ``X-Text-Artifact-Token``
+  /// response header — the unauthenticated
+  /// ``/api/process/status/{jobId}`` + ``/api/jobs`` chain no longer
+  /// returns the token (2026-08-29 audit C-3 / H-3).
+  Future<String> getJobArtifactToken(String jobId, {Duration? timeout});
 }
 
 class OcrRepositoryImpl implements OcrRepository {
@@ -229,5 +239,100 @@ class OcrRepositoryImpl implements OcrRepository {
       headers: {'Authorization': 'Bearer $token'},
     );
     return utf8.decode(bytes);
+  }
+
+  @override
+  Future<String> getJobArtifactToken(
+    String jobId, {
+    Duration? timeout,
+  }) async {
+    // Open the SSE event stream for the job. Per-byte receive timeout
+    // is zero (long-lived stream); an overall deadline is enforced
+    // via the optional ``timeout`` so the 15s keep-alive does not
+    // accidentally cause dio to abort early.
+    final response = await _apiClient.rawDio.get<ResponseBody>(
+      ApiConstants.processEvents(jobId),
+      options: Options(
+        responseType: ResponseType.stream,
+        headers: const {'Accept': 'text/event-stream'},
+        receiveTimeout: Duration.zero,
+      ),
+    );
+    final body = response.data;
+    if (body == null) {
+      throw const FormatException(
+        'Empty SSE body when reading job_completed event',
+      );
+    }
+    final stream = body.stream;
+    final completer = Completer<String>();
+    StreamSubscription<String>? subscription;
+    Timer? deadlineTimer;
+    var currentEvent = '';
+    subscription = stream
+        .cast<List<int>>()
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen(
+      (line) {
+        // SSE block format:
+        //   event: <name>\n
+        //   data: <json>\n
+        //   \n
+        // A blank line terminates the current event block and resets
+        // the current-event cursor. Lines starting with ``:`` are
+        // keep-alive comments and are ignored.
+        if (line.isEmpty) {
+          currentEvent = '';
+          return;
+        }
+        if (line.startsWith(':')) {
+          return;
+        }
+        if (line.startsWith('event:')) {
+          currentEvent = line.substring(6).trim();
+          return;
+        }
+        if (line.startsWith('data:') && currentEvent == 'job_completed') {
+          try {
+            final payload = jsonDecode(line.substring(5).trim()) as Object?;
+            if (payload is Map && payload['artifact_token'] is String) {
+              completer.complete(payload['artifact_token'] as String);
+            }
+          } on FormatException {
+            // Malformed data line; the server never sends these.
+          }
+        }
+      },
+      onError: completer.completeError,
+      onDone: () {
+        if (!completer.isCompleted) {
+          completer.completeError(
+            StateError(
+              'SSE stream for job $jobId closed before job_completed event',
+            ),
+          );
+        }
+      },
+      cancelOnError: true,
+    );
+    if (timeout != null) {
+      deadlineTimer = Timer(timeout, () {
+        if (!completer.isCompleted) {
+          completer.completeError(
+            TimeoutException(
+              'Timed out waiting for job_completed event for $jobId',
+              timeout,
+            ),
+          );
+        }
+      });
+    }
+    try {
+      return await completer.future;
+    } finally {
+      deadlineTimer?.cancel();
+      await subscription.cancel();
+    }
   }
 }

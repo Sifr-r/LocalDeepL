@@ -13,6 +13,23 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   image-index digest rather than the floating tag, matching the
   Dockerfile `python:3.14-slim` pin (F2-1 hardening). Refresh with
   `docker buildx imagetools inspect redis:7-alpine` when bumping.
+- **2026-08-29 audit remediation — C-3 / H-3: result token no longer leaks
+  from the unauthenticated status endpoint** `JobStatusResponse` no longer
+  carries `text_artifact_token` or `text_artifact_url`. The unauthenticated
+  `GET /api/process/status/{job_id}` + `GET /api/jobs` chain previously let
+  any caller fetch another user's OCR'd PDF by walking
+  `list → id → token → /api/jobs/{id}/result`, defeating the constant-time
+  gate at `fetch_result`. The async client now obtains the token
+  out-of-band via the `job_completed` SSE event payload
+  (`/api/process/{job_id}/events`), parallel to the sync path's
+  `X-Text-Artifact-Token` response header. The Flutter client now
+  resolves the token via `OcrRepository.getJobArtifactToken(jobId)`
+  (Dio stream consumer that parses the `job_completed` SSE block) and
+  `JobRepository.downloadResult(jobId)` performs the fetch — the
+  `token` parameter is gone. New regression test:
+  `test_status_response_never_returns_artifact_token` (server) +
+  updated `client/test/data/job_record_test.dart` (asserts the model
+  no longer surfaces `text_artifact_token` / `text_artifact_url`).
 
 ### Added
 

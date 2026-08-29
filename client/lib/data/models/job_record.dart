@@ -13,7 +13,6 @@ class JobRecord {
     this.pages,
     this.failedPages = const <int>[],
     this.textArtifactId,
-    this.textArtifactToken,
   });
 
   final String id;
@@ -26,7 +25,6 @@ class JobRecord {
   final String status;
   final List<int> failedPages;
   final String? textArtifactId;
-  final String? textArtifactToken;
 
   factory JobRecord.fromJson(Map<String, dynamic> json) {
     final failed = <int>[];
@@ -47,7 +45,6 @@ class JobRecord {
       status: json['status']?.toString() ?? 'unknown',
       failedPages: failed,
       textArtifactId: json['text_artifact_id']?.toString(),
-      textArtifactToken: json['text_artifact_token']?.toString(),
     );
   }
 
@@ -63,12 +60,25 @@ class JobRecord {
       'status': status,
       'failed_pages': failedPages,
       if (textArtifactId != null) 'text_artifact_id': textArtifactId,
-      if (textArtifactToken != null) 'text_artifact_token': textArtifactToken,
     };
   }
 }
 
-/// Response returned from GET /api/process/status/{job_id}
+/// Response returned from GET /api/process/status/{job_id}.
+///
+/// Security note (2026-08-29 audit C-3 / H-3): the result ``token`` and
+/// the pre-built ``/api/jobs/{id}/result?token=...`` URL are
+/// intentionally NOT fields here. The unauthenticated
+/// ``/api/process/status/{job_id}`` + ``/api/jobs`` chain would
+/// otherwise let any caller fetch another user's OCR'd PDF by walking
+/// ``list → id → token → /api/jobs/{id}/result``, defeating the
+/// constant-time gate at the server's ``fetch_result`` route. The
+/// async client obtains the token out-of-band via the
+/// ``job_completed`` SSE event payload
+/// (see ``OcrRepository.getJobArtifactToken``), parallel to the sync
+/// path's ``X-Text-Artifact-Token`` response header. Only
+/// ``textArtifactId`` is safe to expose — it's the opaque handle, not
+/// the secret.
 class OcrJobStatusResponse {
   const OcrJobStatusResponse({
     required this.jobId,
@@ -80,8 +90,6 @@ class OcrJobStatusResponse {
     this.durationS,
     this.error,
     this.textArtifactId,
-    this.textArtifactToken,
-    this.textArtifactUrl,
     this.failedPages = const [],
   });
 
@@ -94,8 +102,6 @@ class OcrJobStatusResponse {
   final double? durationS;
   final String? error;
   final String? textArtifactId;
-  final String? textArtifactToken;
-  final String? textArtifactUrl;
   final List<int> failedPages;
 
   bool get isPending => status == 'pending' || status == 'queued';
@@ -121,8 +127,6 @@ class OcrJobStatusResponse {
       durationS: (json['duration_s'] as num?)?.toDouble(),
       error: json['error']?.toString(),
       textArtifactId: json['text_artifact_id']?.toString(),
-      textArtifactToken: json['text_artifact_token']?.toString(),
-      textArtifactUrl: json['text_artifact_url']?.toString(),
       failedPages: failed,
     );
   }
@@ -138,8 +142,6 @@ class OcrJobStatusResponse {
       if (durationS != null) 'duration_s': durationS,
       if (error != null) 'error': error,
       if (textArtifactId != null) 'text_artifact_id': textArtifactId,
-      if (textArtifactToken != null) 'text_artifact_token': textArtifactToken,
-      if (textArtifactUrl != null) 'text_artifact_url': textArtifactUrl,
       'failed_pages': failedPages,
     };
   }

@@ -82,7 +82,11 @@ final configRepositoryProvider = Provider<ConfigRepository>((ref) {
 /// Job History & Queue Repository provider.
 final jobRepositoryProvider = Provider<JobRepository>((ref) {
   final apiClient = ref.watch(apiClientProvider);
-  return JobRepositoryImpl(apiClient);
+  // 2026-08-29 audit C-3 / H-3: downloadResult now resolves the
+  // result token via the ``job_completed`` SSE event (out-of-band
+  // channel), so the job repo depends on the OCR repo's SSE helper.
+  final ocrRepo = ref.watch(ocrRepositoryProvider);
+  return JobRepositoryImpl(apiClient, ocrRepo);
 });
 
 /// Feature Repository provider (translation, transcription, extraction, glossary, export).

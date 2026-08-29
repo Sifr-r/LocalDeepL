@@ -5,32 +5,40 @@ import 'package:mocktail/mocktail.dart';
 import 'package:omniscribe_client/core/constants/api_constants.dart';
 import 'package:omniscribe_client/core/network/api_client.dart';
 import 'package:omniscribe_client/data/repositories/job_repository.dart';
+import 'package:omniscribe_client/data/repositories/ocr_repository.dart';
 
 class _MockApiClient extends Mock implements ApiClient {}
+
+class _MockOcrRepository extends Mock implements OcrRepository {}
 
 void main() {
   group('JobRepositoryImpl.downloadResult', () {
     late _MockApiClient apiClient;
+    late _MockOcrRepository ocrRepo;
     late JobRepositoryImpl repo;
 
     setUp(() {
       apiClient = _MockApiClient();
-      repo = JobRepositoryImpl(apiClient);
+      ocrRepo = _MockOcrRepository();
+      repo = JobRepositoryImpl(apiClient, ocrRepo);
     });
 
     test(
-        'hits /api/jobs/{jobId}/result with token query param and Bearer header',
-        () async {
+        'resolves the token via the SSE channel (out-of-band) and downloads '
+        'with Bearer auth (2026-08-29 audit C-3 / H-3)', () async {
       final expectedBytes = Uint8List.fromList([1, 2, 3, 4]);
+      when(() => ocrRepo.getJobArtifactToken('job-42'))
+          .thenAnswer((_) async => 'tok-99');
       when(() => apiClient.getBytes(
             ApiConstants.jobResult('job-42'),
             queryParameters: {'token': 'tok-99'},
             headers: {'Authorization': 'Bearer tok-99'},
           )).thenAnswer((_) async => expectedBytes);
 
-      final result = await repo.downloadResult('job-42', 'tok-99');
+      final result = await repo.downloadResult('job-42');
 
       expect(result, expectedBytes);
+      verify(() => ocrRepo.getJobArtifactToken('job-42')).called(1);
       verify(() => apiClient.getBytes(
             ApiConstants.jobResult('job-42'),
             queryParameters: {'token': 'tok-99'},
@@ -38,22 +46,17 @@ void main() {
           )).called(1);
     });
 
-    test('omits Authorization header when token is empty', () async {
-      final expectedBytes = Uint8List.fromList([9, 8, 7]);
-      when(() => apiClient.getBytes(
-            ApiConstants.jobResult('job-7'),
-            queryParameters: {'token': ''},
-            headers: <String, String>{},
-          )).thenAnswer((_) async => expectedBytes);
+    test('propagates the SSE token-resolution error', () async {
+      when(() => ocrRepo.getJobArtifactToken('job-7'))
+          .thenThrow(StateError('SSE closed before job_completed'));
 
-      final result = await repo.downloadResult('job-7', '');
-
-      expect(result, expectedBytes);
-      verify(() => apiClient.getBytes(
-            ApiConstants.jobResult('job-7'),
-            queryParameters: {'token': ''},
-            headers: <String, String>{},
-          )).called(1);
+      await expectLater(
+        repo.downloadResult('job-7'),
+        throwsA(isA<StateError>()),
+      );
+      verifyNever(() => apiClient.getBytes(any(),
+          queryParameters: any(named: 'queryParameters'),
+          headers: any(named: 'headers')));
     });
   });
 }

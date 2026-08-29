@@ -311,10 +311,14 @@ class OCRServiceImpl:
 
     def _status_response(self, record: JobRecord) -> JobStatusResponse:
         terminal = record.status in _TERMINAL_QUEUE_STATUSES
-        token = record.result_artifact_token
         error = record.error
         if record.status == "cancelled":
             error = error or "Job cancelled."
+        # Security (2026-08-29 audit C-3 / H-3): the result token is NOT
+        # returned here. The unauthenticated /api/process/status + /api/jobs
+        # chain would otherwise bypass the constant-time gate at
+        # fetch_result. The async client receives the token via the
+        # ``job_completed`` SSE event payload (see _event_entry).
         return JobStatusResponse(
             job_id=record.job_id,
             filename=str(record.request_meta.get("filename", "")),
@@ -325,12 +329,6 @@ class OCRServiceImpl:
             duration_s=(record.updated_at - record.created_at) if terminal else None,
             error=error,
             text_artifact_id=record.result_artifact_id,
-            text_artifact_token=token,
-            text_artifact_url=(
-                f"/api/jobs/{record.job_id}/result?token={token}"
-                if record.status == "complete" and token
-                else None
-            ),
             failed_pages=[],
         )
 
@@ -427,7 +425,11 @@ class OCRServiceImpl:
 def _event_entry(event: Event) -> dict[str, Any]:
     data: dict[str, Any] = {"job_id": getattr(event, "job_id", "")}
     if isinstance(event, JobCompleted):
+        # The async client uses ``artifact_token`` to authorize the
+        # result download (this is the out-of-band channel that pairs
+        # with the sync path's ``X-Text-Artifact-Token`` response header).
         data["artifact_id"] = event.artifact_id
+        data["artifact_token"] = event.artifact_token
     elif isinstance(event, JobFailed):
         data["error"] = event.error
     elif isinstance(event, ProgressFrame):
