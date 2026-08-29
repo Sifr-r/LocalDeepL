@@ -18,9 +18,9 @@ import json
 import logging
 import secrets
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Callable, NamedTuple, Protocol, runtime_checkable
+from typing import Any, NamedTuple, Protocol, runtime_checkable
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
@@ -88,8 +88,8 @@ class _Connection:
 
 
 def _build_foreign_send_done_callback(
-    service: "ProgressServiceImpl", channel_id: str, connection: Any
-) -> "Callable[[concurrent.futures.Future[Any]], None]":
+    service: ProgressServiceImpl, channel_id: str, connection: Any
+) -> Callable[[concurrent.futures.Future[Any]], None]:
     """Return a ``Future.add_done_callback`` callable for the foreign-loop branch.
 
     Extracted as a top-level helper so mypy can infer the closure
