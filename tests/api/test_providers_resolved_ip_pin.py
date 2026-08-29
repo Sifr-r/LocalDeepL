@@ -52,7 +52,7 @@ async def test_H1_discover_models_pins_resolved_ip_in_request_url() -> None:
 
     with (
         patch(
-            "omniscribe.plugins.providers.is_ssrf_target",
+            "omniscribe.plugins.providers_service.is_ssrf_target",
             new=AsyncMock(
                 return_value=MagicMock(
                     allowed=True, resolved_ip="127.0.0.1", reason=None
@@ -96,7 +96,7 @@ async def test_H1_validate_pins_resolved_ip() -> None:
 
     with (
         patch(
-            "omniscribe.plugins.providers.is_ssrf_target",
+            "omniscribe.plugins.providers_service.is_ssrf_target",
             new=AsyncMock(
                 return_value=MagicMock(
                     allowed=True, resolved_ip="127.0.0.1", reason=None
