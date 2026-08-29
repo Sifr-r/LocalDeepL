@@ -153,3 +153,26 @@ Write-Host ""
 Write-Host "After logging back in, double-click the OmniScribe shortcut on your Desktop to start the app." -ForegroundColor Cyan
 Write-Host "If something does not come up, check start_app.log next to this installer." -ForegroundColor Cyan
 Write-Host ""
+
+# Audit P2-XX / Sprint 5 follow-up: Microsoft Defender on a small
+# fraction of Windows hosts flags Apache Arrow's
+# ``arrow_substrait.dll`` (pulled in transitively by the optional
+# ``[lexicon]`` extra via lancedb) as ``Trojan:Win32/Wacatac.B!ml``.
+# This is a known false positive (same DLL ships in the official
+# Arrow PyPI wheel; signature verifies against the Arrow maintainers'
+# cert). We offer an opt-in Defender exclusion scoped to the venv
+# site-packages directory so the exclusion does NOT cover the rest of
+# the host. See ``SECURITY.md`` §"Platform Notes" for the rationale.
+$venvSitePackages = Join-Path -Path (Join-Path -Path $ScriptDir -ChildPath ".venv") -ChildPath "Lib\site-packages"
+if (Test-Path $venvSitePackages) {
+    $addExclusion = Read-Host "Add a Microsoft Defender exclusion for $venvSitePackages (arrow_substrait.dll false positive)? [y/N]"
+    if ($addExclusion -match "^[Yy]$") {
+        try {
+            Add-MpPreference -ExclusionPath $venvSitePackages -ErrorAction Stop
+            Write-Host "Added Defender exclusion for $venvSitePackages." -ForegroundColor Green
+        } catch {
+            Write-Host "Could not add Defender exclusion: $_" -ForegroundColor Yellow
+            Write-Host "  (Run this script as Administrator, or add the path manually.)" -ForegroundColor Yellow
+        }
+    }
+}

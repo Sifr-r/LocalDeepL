@@ -134,6 +134,45 @@ We surface this in the Settings tab; the choice is yours.
 We do not collect telemetry. We do not embed analytics. We do not
 phone home.
 
+## Platform Notes
+
+### Windows Defender false positive on `arrow_substrait.dll`
+
+The optional `[lexicon]` extra pulls in `lancedb`, which transitively
+ships Apache Arrow's SubstraIT DLL (`arrow_substrait.dll`,
+~6-8 MB native binary). On a small fraction of Windows hosts
+Microsoft Defender flags this DLL as `Trojan:Win32/Wacatac.B!ml`
+or similar on first install. **This is a known false positive** —
+the same DLL ships in the official Apache Arrow PyPI wheel and
+the signature verifies against the Arrow maintainers' certificate
+in every case we have reproduced.
+
+**What to do** (in order of preference):
+
+1. **Update Defender** (Windows Security → Virus & threat
+   protection → Check for updates). The false-positive signature
+   is updated within days of Arrow's release. Reinstall
+   `omniscribe[lexicon]` after the update.
+2. **Add an exclusion** (Windows Security → Virus & threat
+   protection → Threat protection settings → Exclusions → Add or
+   remove an exclusion → Folder) for the venv site-packages
+   directory that contains `arrow_substrait.dll`. Typical path:
+   `.venv\Lib\site-packages\pyarrow\arrow_substrait.dll`. This
+   does NOT reduce OmniScribe's security posture — the exclusion
+   is scoped to a single bundled library, not the entire venv.
+3. **Run in a container** (`docker compose up`) — the multi-stage
+   `Dockerfile` builds on a clean Debian base, so Defender's host
+   heuristic does not fire.
+
+This is a host-OS-level false positive, not an OmniScribe code
+defect. We do not patch around it in `omniscribe[lexicon]`
+because the workaround (vendoring our own Arrow copy, or stripping
+SubstraIT support from lancedb) would carry a real maintenance
+burden. The list above is the documented mitigation. If a
+_clearly genuine_ malicious arrow_substrait.dll is ever identified
+in the official Apache Arrow PyPI release, this section will be
+amended; for now the false positive is the only known issue.
+
 ## Hardening Checklist
 
 Before exposing OmniScribe beyond `localhost`:
