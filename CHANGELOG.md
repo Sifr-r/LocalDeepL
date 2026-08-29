@@ -31,6 +31,83 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   updated `client/test/data/job_record_test.dart` (asserts the model
   no longer surfaces `text_artifact_token` / `text_artifact_url`).
 
+### Removed
+
+- **2026-08-29 audit remediation — Sprint 6 / dead code cleanup**
+  Two dead-code items from the audit-residual catalog (each was
+  verified live-by-absence in the working tree before deletion).
+  Two more catalog items that *looked* dead turned out to be live
+  (`get_default_store` / `reset_default_store` in
+  `core/lexicon/__init__.py` are called by
+  `core/translate/workflow.py:104,109` and four test sites;
+  `run_trust_scored_blocks` in `core/ocr_quality/__init__.py` is
+  called by
+  `tests/core/ocr_quality/test_ocr_quality_integration.py:15,36,57`)
+  and stay.
+  - `HybridEngine._collect_batched_images` wrapper
+    (`core/workflows/hybrid.py`, 17 LOC) — no internal callers;
+    tests go through `converter.collect_batched_images` directly.
+  - `RuntimeSettings.chroma_db` field + `OMNISCRIBE_CHROMA_DB`
+    validation alias + `chroma_db_path` property (`config.py`) —
+    post-LanceDB migration; nothing in `src/` reads them. The
+    migration-time `chroma_db/` detection in
+    `core/lexicon/migration.py` is unrelated and stays.
+
+### Refactor
+
+- **2026-08-29 audit remediation — Sprint 6 / god-function splits**
+  Four long functions (94–177 LOC) split into per-phase helpers.
+  Each refactor is its own commit and reviewable; behavior is
+  byte-identical (all existing tests pass without modification).
+  - `core/ocr_quality/orchestrator.run` 177 LOC → 5 helpers
+    (`_watermark_bbox`, `_script_detect_hints`,
+    `_hallucination_risks`, `_calibrated_confidences`,
+    `_compose_blocks`). The per-block script-hint cache is now
+    closure-scoped to `_script_detect_hints`; default-arg binding
+    for the per-block `_eval_block` / `_calibrate` closures is
+    preserved.
+  - `core/workflows/HybridEngine.execute` 122 LOC: the two
+    between-phase cancel gates (post-`_convert_pages`,
+    post-`_ocr_pages`) relocated into the next-phase helper
+    (`_detect_layout`, `_finalize`). `execute()` is now a clean
+    phase driver; the 122-LOC framing was misleading (most of the
+    body is kwarg pass-through to the 5 phase helpers; the real
+    orchestration is ~25 LOC).
+  - `core/workflows/GroundedEngine.execute` 112 LOC: the
+    overlay-build + `_build_document_result` + `_apply_trust` +
+    `_emit` tail extracted into a single `_finalize()` helper.
+  - `core/workflows/HybridEngine._repair_pages` 94 LOC → 2
+    helpers (`_count_repair_targets`, `_repair_single_page`). The
+    third catalog-suggested helper (`_emit_repair_summary`) was
+    not extracted — it's a single-call site and the grounded path
+    has the same inline block, so the dedup would require a
+    cross-class helper (out of scope). The shared `completed`
+    counter is carried via a single-element list (same pattern
+    the orchestrator uses for `fallback_used_box`).
+
+### Fixed
+
+- **2026-08-29 audit remediation — Sprint 6 / audit residuals**
+  Four long-flagged items from the 2026-08-29 audit catalog that
+  the original Sprint 1–5 plan didn't close.
+  - `core/ocr/resilience.py` `CircuitBreaker.__init__` now
+    resolves `failure_threshold` / `cooldown_seconds` via
+    `load_settings()` instead of raw `os.getenv` for
+    `OMNISCRIBE_CB_FAILURE_THRESHOLD` / `OMNISCRIBE_CB_COOLDOWN`
+    (audit L-1).
+  - `utils/security.py` `_local_ssrf_allowed()` now reads
+    `RuntimeSettings.allow_ssrf_local` instead of raw
+    `os.getenv("ALLOW_SSRF_LOCAL", ...)` (audit L-1).
+  - `core/translate/nllb.py` `NLLBEngine.translate` replaces
+    `asyncio.get_event_loop()` (deprecated inside a coroutine)
+    with `asyncio.get_running_loop()` (audit M-domain 4).
+  - `core/grounded/prompted.py`
+    `PromptedGroundedOCR.ocr_document` now awaits
+    `asyncio.gather(*tasks, return_exceptions=True)` in the
+    `finally` block instead of a bare `cancel()` loop. Closes the
+    "Task was destroyed but it is pending" warning on shutdown
+    (audit M-domain 5).
+
 ### Added
 
 - **2026-08-29 audit remediation — Sprint 3/H-4: AppButton keyboard accessibility**
