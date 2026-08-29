@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
-from omniscribe.core.translate import workflow as translation
+from omniscribe.core.translate import nodes as translation
 from omniscribe.core.translate.config import (
     DEFAULT_TRANSLATION_ACCEPTANCE_SCORE,
     DEFAULT_TRANSLATION_MAX_ATTEMPTS,

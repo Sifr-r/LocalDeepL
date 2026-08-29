@@ -61,7 +61,7 @@ async def test_translate_node_uses_injected_settings(monkeypatch):
     fifth call path. After the fix it must go through ``call_llm`` like
     ``evaluate_node`` / ``api.services.ai._complete_text`` already do.
     """
-    import omniscribe.core.translate.workflow as translation
+    import omniscribe.core.translate.nodes as translation
 
     captured: dict[str, object] = {}
 
@@ -105,7 +105,7 @@ async def test_translate_node_preserves_error_prefix_on_call_llm_failure(monkeyp
     (line 237 of ``core/translate/workflow.py``), so a switch from ``AsyncOpenAI`` to
     ``call_llm`` must keep producing that prefix when the LLM raises.
     """
-    import omniscribe.core.translate.workflow as translation
+    import omniscribe.core.translate.nodes as translation
 
     async def boom(**_kwargs):
         raise RuntimeError("upstream gone")
@@ -135,7 +135,7 @@ async def test_translate_node_preserves_error_prefix_on_call_llm_failure(monkeyp
 
 async def test_translate_node_includes_glossary_and_memory(monkeypatch):
     """When the new optional state fields are populated, they must end up in the prompt."""
-    from omniscribe.core.translate import workflow as translation_mod
+    from omniscribe.core.translate import nodes as translation_mod
 
     captured: dict[str, object] = {}
 
