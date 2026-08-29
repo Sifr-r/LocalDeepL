@@ -62,6 +62,20 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   event loop instead of spawning a fresh loop per test. Net
   effect: 22 sync `asyncio.run` calls removed; all 1378 tests
   still pass.
+- **2026-08-29 audit remediation — Sprint 4/M-6: full async test refactor**
+  Sprint 4 / M-6 audit fix: converted `asyncio.run(...)` to
+  `await` across `tests/core/ocr/test_ocr_resilience.py` (8
+  tests), `tests/core/ocr/test_ocr.py` (11 tests),
+  `tests/core/grounded/test_grounded.py` (5 tests),
+  `tests/core/translate/test_translation_tree.py` (4 tests),
+  `tests/core/translate/test_dual_translator.py` (2 tests),
+  `tests/core/processors/test_reading_order.py` (1 test).
+  All 31 conversion sites use `pytest-asyncio` auto mode (no
+  per-test decorator) so they share the suite's event loop. Two
+  remaining `asyncio.run` sites are intentional: the subprocess
+  script literal in `test_translation_boundary.py` exercises
+  import isolation, and the slow-marked recall test is
+  deselected by the fast gate.
 
 ### Rebuilt API on Cordis-style plugin harness
   `src/omniscribe/api/` package is replaced by a plugin-harness
