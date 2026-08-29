@@ -20,8 +20,6 @@ These tests cover three layers:
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import pytest
 
 from omniscribe.core.workflows.base import OCRCancelled
@@ -376,123 +374,14 @@ class TestProcessRouteCancel:
             b"%%EOF\n"
         )
 
-    async def test_route_returns_503_when_engine_raises_ocrcancelled(
-        self, tmp_path, tiny_pdf
-    ) -> None:
-        pytest.importorskip("fastapi")
-        pytest.importorskip("omniscribe.api")
-        from fastapi import FastAPI
-        from fastapi.testclient import TestClient
-        from omniscribe.api.routers import (
-            artifacts,
-            config,
-            extraction,
-            jobs,
-            ocr,
-            translation,
-            websocket,
-        )
-
-        app = FastAPI()
-        for r in (
-            config.router,
-            translation.router,
-            extraction.router,
-            ocr.router,
-            websocket.router,
-            jobs.router,
-            artifacts.router,
-        ):
-            app.include_router(r)
-        client = TestClient(app)
-
-        with (
-            patch(
-                "omniscribe.api.routers.ocr._execute_ocr_pipeline",
-                side_effect=OCRCancelled("cancelled from test"),
-            ) as mock_execute,
-            patch(
-                "omniscribe.api.routers.ocr.cleanup_files_dispatcher"
-            ) as mock_cleanup,
-        ):
-            response = client.post(
-                "/api/process",
-                files={"file": ("doc.pdf", tiny_pdf, "application/pdf")},
-                data=_process_form(),
-            )
-
-        # The engine was actually invoked (sanity check on the patch).
-        assert mock_execute.await_count == 1
-        # The route caught the OCRCancelled and returned 503, NOT 500.
-        assert response.status_code == 503, response.text
-        body = response.json()
-        assert body.get("cancelled") is True
-        # The body must be distinguishable from a 500 error.
-        assert "error" in body
-        # Temp files were cleaned up before returning.
-        assert mock_cleanup.called
-
-    async def test_route_builds_cancel_check_from_websocket_manager(self) -> None:
-        """The sync route wires ``manager.is_cancelled(progress_target)``
-        into ``pipeline.run`` via ``_run_ocr_pipeline``. We verify that
-        the cancel callback built inside ``_run_ocr_pipeline`` is a
-        zero-arg callable that consults the live WebSocket manager state
-        — that's the entire wiring contract.
-        """
-        pytest.importorskip("fastapi")
-        pytest.importorskip("omniscribe.api")
-        from unittest.mock import AsyncMock, MagicMock, patch
-
-        from omniscribe.api.routers import ocr as ocr_router
-        from omniscribe.api.routers.websocket import manager
-        from omniscribe.api.services.ocr import execution as ocr_execution
-
-        channel = "test-channel-cancel-" + "x" * 16
-
-        # Manually seed the manager's cancel flag for this channel so
-        # ``is_cancelled`` returns True. (The real WebSocket connect
-        # path is exercised in tests/api/routers/test_websocket_auth.py; here we
-        # only verify the cancel callback is wired to the manager.) The
-        # flag is a synchronous ``.is_set()`` call, so use a regular
-        # MagicMock — not an AsyncMock.
-        flag = MagicMock()
-        flag.is_set.return_value = True
-        manager._cancel_flags[channel] = flag
-        try:
-            assert manager.is_cancelled(channel) is True
-
-            observed_kwargs: dict = {}
-
-            async def _fake_pipeline_run(*args, **kwargs):
-                observed_kwargs.update(kwargs)
-                raise OCRCancelled("cancelled from stubbed pipeline.run")
-
-            pipeline_stub = MagicMock()
-            pipeline_stub.run = _fake_pipeline_run
-
-            with (
-                patch.object(
-                    ocr_execution,
-                    "build_pipeline",
-                    return_value=(pipeline_stub, MagicMock()),
-                ),
-                patch.object(ocr_execution, "verify_backend_model", new=AsyncMock()),
-            ):
-                with pytest.raises(OCRCancelled):
-                    await ocr_router._run_ocr_pipeline(
-                        settings=MagicMock(),
-                        input_path="ignored",
-                        output_path="ignored",
-                        progress_target=channel,
-                    )
-
-            # The route layer built a cancel callback and threaded it into
-            # ``pipeline.run`` as the ``cancel_check`` kwarg.
-            assert "cancel_check" in observed_kwargs
-            cancel_check = observed_kwargs["cancel_check"]
-            assert callable(cancel_check)
-            # The callback must consult the live WebSocket manager state.
-            # It should return True because we seeded the cancel flag above.
-            assert cancel_check() is True
-        finally:
-            manager._cancel_flags.pop(channel, None)
+    # ---------------------------------------------------------------------------
+    # The two tests below were removed in Sprint 6 P3 cleanup (audit catalog
+    # P3 dead-code item). They used the deleted ``omniscribe.api.routers.ocr``
+    # module — replaced by the Cordis harness + ``plugins/ocr/service.py`` in
+    # the API rebuild. The new plugin tests in ``tests/routers/`` and
+    # ``tests/plugins/test_ocr_plugin.py`` cover the same contract (cancel
+    # → 409 / 503 propagation; websocket cancel callback wiring). The imports
+    # were guarded by ``pytest.importorskip("omniscribe.api")`` so the tests
+    # silently skipped at collection; the catalog called this out as
+    # silently-inflating test counts without running.
+    # ---------------------------------------------------------------------------

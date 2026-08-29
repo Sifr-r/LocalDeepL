@@ -169,11 +169,13 @@ def test_resource_subclasses_share_resource_base() -> None:
 
 
 def test_artifact_subclasses_inherit_valueerror_for_router_compat() -> None:
-    """The artifact router catches ``ValueError`` for 400-style errors.
-
-    Lock the contract that the artifact subclasses remain ``ValueError``
-    subclasses so the existing ``except (ValueError,)`` block in
-    :mod:`omniscribe.api.routers.artifacts` keeps working.
+    """Lock the contract that the artifact subclasses remain
+    ``ValueError`` subclasses so any router-style ``except (ValueError,)``
+    block keeps working (the historical reference was the
+    pre-rebuild ``omniscribe.api.routers.artifacts`` catch-block;
+    that module was removed in the API rebuild but the
+    inheritance contract is still useful for any future router
+    that wants the same shape).
     """
     assert issubclass(ArtifactNotFoundError, ValueError)
     assert issubclass(InvalidArtifactReferenceError, ValueError)

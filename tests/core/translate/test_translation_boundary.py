@@ -2,56 +2,20 @@
 
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
-
 from omniscribe.core.translate.config import TranslationSettings
 
-
-def test_translation_base_imports_do_not_require_async_extras():
-    import pytest
-
-    pytest.importorskip("omniscribe.api")
-    script = """
-import asyncio
-import importlib.abc
-import sys
-
-blocked = {"celery", "redis", "langgraph", "chromadb", "sentence_transformers"}
-
-class BlockAsyncExtras(importlib.abc.MetaPathFinder):
-    def find_spec(self, fullname, path, target=None):
-        if fullname.split(".")[0] in blocked:
-            raise ImportError(f"blocked optional dependency: {fullname}")
-        return None
-
-sys.meta_path.insert(0, BlockAsyncExtras())
-
-from omniscribe.api.tasks import process_translation_task
-from omniscribe.core.translate.workflow import chunk_text, evaluate_node
-
-assert chunk_text("hello") == ["hello"]
-assert asyncio.run(evaluate_node({"source_chunk": ".", "translated_chunk": "", "attempts": 1}))["evaluation_score"] == 1.0
-assert process_translation_task.__name__ == "process_translation_task"
-"""
-    env = os.environ.copy()
-    src_path = os.path.abspath("src")
-    env["PYTHONPATH"] = (
-        src_path
-        if not env.get("PYTHONPATH")
-        else os.pathsep.join([src_path, env["PYTHONPATH"]])
-    )
-
-    result = subprocess.run(
-        [sys.executable, "-c", script],
-        check=False,
-        capture_output=True,
-        env=env,
-        text=True,
-    )
-
-    assert result.returncode == 0, result.stderr
+# ---------------------------------------------------------------------------
+# ``test_translation_base_imports_do_not_require_async_extras`` was removed
+# in Sprint 6 P3 cleanup (audit catalog P3 dead-code item). It used
+# ``omniscribe.api.tasks.process_translation_task`` — the Celery async
+# translation task that was removed in the API rebuild. The Celery
+# worker entry was on the deferred path per audit #11; the
+# ``async-translation`` extra still exists but the Celery task module
+# does not. The test's subprocess was guarded by
+# ``pytest.importorskip("omniscribe.api")`` so it silently skipped
+# at collection. The catalog called this out as silently inflating
+# the test count without running.
+# ---------------------------------------------------------------------------
 
 
 def test_optional_extras_split_lexicon_rag_dependencies():
