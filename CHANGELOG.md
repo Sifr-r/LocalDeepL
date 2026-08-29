@@ -158,6 +158,46 @@ the project adheres to [Semantic Versioning](https://semver.org/).
     bridge call sites (`build_pipeline`, `run_pipeline`) moved
     to `service.py`, so the two `fake_pipeline` test fixtures
     now also patch the new module.
+  - `core/lexicon/lancedb_store.py` (770+ LOC after the Phase 3.3/3.4
+    push-downs) — 80 LOC of stateless helpers (`_to_utc_datetime`,
+    `_opt_str`, `_entry_from_row`, `_sql_escape`) extracted to a
+    new `lancedb_helpers.py`. Pure leaf split: the helpers depend
+    only on `datetime` and `.store.LexiconEntry`, no cycle. The
+    remaining 705 LOC is the class definition; further splits
+    (search methods as a mixin, admin/CRUD extraction) are
+    flagged for a follow-up — the audit catalog overstated the
+    refactor's reach, and the original `save_glossary` body has
+    a non-trivial normalize-and-validate pipeline that's hard to
+    reproduce by hand without the original test fixtures as the
+    oracle.
+- **2026-08-29 audit remediation — Sprint 6 / P3 cleanup**
+  The four P3 catalog items (all S effort) closed in this batch.
+  - Dropped the `_decode_chunk_bytes = decode_chunk_bytes` alias
+    shim in `core/workflows/hybrid.py`. The two test sites that
+    imported the alias now import the real function from
+    `omniscribe.core.workflows.stages` (where it has always
+    lived). The unused `decode_chunk_bytes` import in
+    `hybrid.py` is also dropped.
+  - Removed 3 import-guarded tests that silently inflated the
+    test count (they used `pytest.importorskip("omniscribe.api")`
+    so every test collected but did not run, since the
+    `omniscribe.api` namespace was removed in the API rebuild):
+    - `test_ocr_cancellation.py::test_route_returns_503_when_engine_raises_ocrcancelled`
+    - `test_ocr_cancellation.py::test_route_builds_cancel_check_from_websocket_manager`
+    - `test_translation_boundary.py::test_translation_base_imports_do_not_require_async_extras`
+    Kept the positive guard
+    `test_workflows_callback_decoupling.py::test_core_file_does_not_import_from_api`
+    (it scans the tree for any future `from omniscribe.api` /
+    `import omniscribe.api` regression). Net effect on the
+    fast gate: skipped count drops from 26 → 23.
+  - Dropped the `live_llm` pytest marker (`pyproject.toml:201`)
+    which was declared but applied to zero tests
+    (`pytest -m live_llm` was a no-op). AGENTS.md updated to
+    remove the `pytest -m live_llm` line from the full-gate
+    example block and the `live_llm —` bullet from the marker
+    legend. `pytest --strict-markers` now passes (any future
+    use of `@pytest.mark.live_llm` would error rather than
+    silently no-op).
 
 ### Added
 
