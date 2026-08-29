@@ -102,18 +102,19 @@ def test_embedder_font_probe_logs_warning(
 ) -> None:
     """When the embedder font probe raises, it logs a warning instead of swallowing."""
     from omniscribe.core.pdf import embedder
+    from omniscribe.core.pdf import embedder_helpers
 
     class _StubFont:
         buffer = b"fake-font-buffer"
 
         def has_glyph(self, cp: int) -> bool:
-            return cp in embedder._PROBE_CODEPOINTS
+            return cp in embedder_helpers._PROBE_CODEPOINTS
 
     with caplog.at_level(logging.WARNING, logger=embedder.logger.name):
         with patch.object(
             embedder.fitz, "open", side_effect=RuntimeError("simulated probe failure")
         ):
-            result = embedder._font_preserves_codepoints(_StubFont())
+            result = embedder_helpers._font_preserves_codepoints(_StubFont())
 
     assert result is True, "font probe fallback should return True on probe failure"
     assert any(

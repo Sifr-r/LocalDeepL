@@ -312,7 +312,7 @@ class TestEmbedUnicodeFontChain:
     def test_cjk_text_survives_embed_round_trip(
         self, pdf_handler: PDFHandler, tmp_path: Path, monkeypatch
     ):
-        from omniscribe.core.pdf import embedder
+        from omniscribe.core.pdf import embedder_helpers as embedder
 
         monkeypatch.setattr(embedder, "_UNICODE_CHAIN", (fitz.Font("cjk"),))
         text, doc = self._embed_and_extract(pdf_handler, tmp_path, "中文测试")
@@ -328,7 +328,7 @@ class TestEmbedUnicodeFontChain:
         # The built-in cjk font has no Arabic glyphs; characters it
         # cannot encode must be omitted — writing them anyway extracts
         # as U+0000 and pollutes copy/paste.
-        from omniscribe.core.pdf import embedder
+        from omniscribe.core.pdf import embedder_helpers as embedder
 
         monkeypatch.setattr(embedder, "_UNICODE_CHAIN", (fitz.Font("cjk"),))
         text, doc = self._embed_and_extract(pdf_handler, tmp_path, "مرحبا")
@@ -339,7 +339,7 @@ class TestEmbedUnicodeFontChain:
             doc.close()
 
     def test_pick_embed_font_prefers_helv_for_latin(self, monkeypatch):
-        from omniscribe.core.pdf import embedder
+        from omniscribe.core.pdf import embedder_helpers as embedder
 
         cjk = fitz.Font("cjk")
         monkeypatch.setattr(embedder, "_UNICODE_CHAIN", (cjk,))

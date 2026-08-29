@@ -14,7 +14,7 @@ import io
 import pymupdf as fitz
 import pytest
 
-from omniscribe.core.pdf.embedder import (
+from omniscribe.core.pdf.embedder_helpers import (
     _get_embed_font,
 )
 from omniscribe.core.pdf.rasterizer import (

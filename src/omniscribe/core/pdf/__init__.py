@@ -3,12 +3,14 @@ PDF subpackage re-exporting PDFHandler and PDF processing utilities.
 """
 
 from omniscribe.core.pdf.embedder import (
+    embed_structured_text,
+)
+from omniscribe.core.pdf.embedder_helpers import (
     _draw_invisible_text,
     _draw_single_line_text,
     _embed_from_image_input,
     _handle_fullpage_fallback,
     _split_and_draw_lines,
-    embed_structured_text,
 )
 from omniscribe.core.pdf.handler import PDFHandler
 from omniscribe.core.pdf.rasterizer import (
