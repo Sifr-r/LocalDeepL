@@ -25,7 +25,7 @@ from ..document import DocumentBlock
 from . import calibration, hallucination, script_detector, trust_scorer, watermark
 from .config import OCrQualitySettings
 from .events import emit
-from .types import HallucinationRisk
+from .types import HallucinationRisk, ScriptHint
 
 if TYPE_CHECKING:
     from PIL.Image import Image as PILImage
@@ -191,6 +191,23 @@ def run(
     # Sub-module: script_detect — derive page-level script from all blocks'
     # text, then per-block mismatch flag.
     page_script: str | None = None
+    # M-2 audit fix: per-block script detection is memoized so adjacent
+    # blocks with identical text (common in OCR output) share a single
+    # classification pass. The cache lives for the duration of this
+    # ``run()`` call (one page) and is keyed on hash(text).
+    _block_detect_cache: dict[int, ScriptHint | None] = {}
+
+    def _block_hint(text: str) -> ScriptHint | None:
+        key = hash(text)
+        if key not in _block_detect_cache:
+            _block_detect_cache[key] = script_detector.detect(text)
+        return _block_detect_cache[key]
+
+    # Pre-compute per-block hints so the per-block loop below does not
+    # re-run the per-character classifier on the same text.
+    per_block_hints: list[ScriptHint | None] = [
+        _block_hint(b.text) if b.text else None for b in blocks
+    ]
     if settings.script_detect_enabled:
         page_text = " ".join(b.text for b in blocks if b.text)
         hint = _safe(
@@ -271,7 +288,7 @@ def run(
         )
         per_block_script_mismatch = False
         if settings.script_detect_enabled and page_script is not None:
-            block_hint = script_detector.detect(block.text)
+            block_hint = per_block_hints[i]
             if block_hint is not None and block_hint.script != page_script:
                 # Only count as mismatch when the per-block hint has
                 # reasonable confidence.
