@@ -208,7 +208,16 @@ class PdfTextLayerRecall:
 
 
 def _overlaps_existing(candidate: BBox, existing_boxes: list[BBox]) -> bool:
-    """True when the candidate is already explained by a merged box."""
+    """True when the candidate is already explained by a merged box.
+
+    M-1 audit fix: short-circuit as soon as a single existing box
+    meets the containment / IoU threshold. The full loop still runs
+    in the common case where no existing box overlaps; the change
+    is a microoptimisation for the corner case where the FIRST box
+    is the only one that explains the candidate. The previous code
+    always walked the full list, which is fine for small pages but
+    wasteful at the 100+-existing-boxes scale.
+    """
     cx0, cy0, cx1, cy1 = candidate
     c_area = max(1e-9, (cx1 - cx0) * (cy1 - cy0))
     for bx0, by0, bx1, by1 in existing_boxes:
