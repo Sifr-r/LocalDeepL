@@ -84,6 +84,68 @@ class GroundedEngine(EngineBase):
         for page_index in sorted(pages_data):
             await self._emit_page_callbacks(page_index, pages_data[page_index])
 
+    async def _finalize(
+        self,
+        *,
+        input_path: str,
+        output_path: str,
+        response: GroundedResponse,
+        pages_data: PagesData,
+        page_nums: list[int],
+        spellcheck: SpellcheckMode,
+        cross_page: bool,
+        dpi: int,
+        progress: ProgressCallback | None,
+        trust_model_id: str,
+    ) -> dict[int, list[str]]:
+        """Build the DocumentResult, apply trust, and emit.
+
+        Folds the inline ``block_metadata_overlays`` build +
+        ``_build_document_result`` + ``_apply_trust`` + ``_emit`` tail
+        of :meth:`execute` into a single helper (audit catalog) so
+        ``execute()`` is a phase driver rather than a bookkeeping
+        owner.
+
+        The grounded path produces ``block_metadata_overlays`` directly
+        from the backend response instead of going through the
+        ``_build_document_result`` indirection; the annotation here is
+        the only place the overlay shape is documented in the
+        codebase.
+        """
+        block_metadata_overlays: dict[int, list[dict[str, object]]] = {}
+        for block in response.blocks:
+            page_overlays = block_metadata_overlays.setdefault(block.page_index, [])
+            page_overlays.append(
+                {"label": block.label, "image_bytes": block.image_bytes}
+            )
+
+        document_result = await self._build_document_result(
+            pages_data=pages_data,
+            page_nums=page_nums,
+            source_path=input_path,
+            source_processor="grounded",
+            spellcheck=spellcheck,
+            cross_page=cross_page,
+            page_metadata_overlays=None,
+            block_metadata_overlays=block_metadata_overlays,
+        )
+
+        # The grounded path doesn't have ``trust_images_dict`` (the
+        # backend never renders page images), so the orchestrator
+        # receives ``page_image=None``; watermark / length-plausibility
+        # sub-modules fall back to their non-pixel defaults.
+        document_result = await self._apply_trust(
+            document_result, model_id=trust_model_id
+        )
+
+        return await self._emit(
+            input_path=input_path,
+            output_path=output_path,
+            document_result=document_result,
+            dpi=dpi,
+            progress=progress,
+        )
+
     async def execute(
         self,
         input_path: str,
@@ -153,48 +215,17 @@ class GroundedEngine(EngineBase):
             # repaired text (blocks were mutated in place).
             pages_data = self._accumulate_pages(response.blocks)
 
-        # Phase E (review E.5) — `block_metadata_overlays` is the
-        # shape `EngineBase._build_document_result` expects for its
-        # `block_metadata_overlays` kwarg: a dict keyed by
-        # `page_index`, each value a list of per-block overlay dicts
-        # in the same order as the page's blocks. The grounded path
-        # produces this directly from the backend response instead of
-        # through the `_build_document_result` indirection; the
-        # annotation here is the only place the overlay shape is
-        # documented in the codebase.
-        block_metadata_overlays: dict[int, list[dict[str, object]]] = {}
-        for block in response.blocks:
-            page_overlays = block_metadata_overlays.setdefault(block.page_index, [])
-            page_overlays.append(
-                {"label": block.label, "image_bytes": block.image_bytes}
-            )
-
-        document_result = await self._build_document_result(
-            pages_data=pages_data,
-            page_nums=page_nums,
-            source_path=input_path,
-            source_processor="grounded",
-            spellcheck=spellcheck,
-            cross_page=cross_page,
-            page_metadata_overlays=None,
-            block_metadata_overlays=block_metadata_overlays,
-        )
-
-        # Phase 2 — apply the OCR quality trust layer. The grounded
-        # path doesn't have ``trust_images_dict`` (the backend never
-        # renders page images), so the orchestrator receives
-        # ``page_image=None``; watermark / length-plausibility
-        # sub-modules fall back to their non-pixel defaults.
-        document_result = await self._apply_trust(
-            document_result, model_id=trust_model_id
-        )
-
-        return await self._emit(
+        return await self._finalize(
             input_path=input_path,
             output_path=output_path,
-            document_result=document_result,
+            response=response,
+            pages_data=pages_data,
+            page_nums=page_nums,
+            spellcheck=spellcheck,
+            cross_page=cross_page,
             dpi=dpi,
             progress=progress,
+            trust_model_id=trust_model_id,
         )
 
     @staticmethod
