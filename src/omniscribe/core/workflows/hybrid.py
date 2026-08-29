@@ -47,7 +47,6 @@ from omniscribe.core.workflows.stages import (
     HybridLayoutDetector,
     HybridOcrRunner,
     HybridRefiner,
-    decode_chunk_bytes,
 )
 from omniscribe.core.workflows.utils import (
     DETECT_CHUNK_SIZE,
@@ -70,14 +69,10 @@ logger = logging.getLogger(__name__)
 # Invariant (CQ-4): must stay >= DETECT_CHUNK_SIZE (workflows.utils).
 _DECODED_CACHE_MAX_ENTRIES = 16
 
-# Alias for backward-compatibility with existing tests and imports
-_decode_chunk_bytes = decode_chunk_bytes
-
 __all__ = [
     "DETECT_CHUNK_SIZE",
     "_DECODED_CACHE_MAX_ENTRIES",
     "HybridEngine",
-    "_decode_chunk_bytes",
     "_decode_page_image",
     "_drop_refined_duplicates",
     "_estimate_confidence",

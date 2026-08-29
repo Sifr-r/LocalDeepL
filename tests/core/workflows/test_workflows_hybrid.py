@@ -184,7 +184,7 @@ class TestHybridDetectLayout:
 class TestHybridDecodedCache:
     """Tests for the refactor §1.2 per-page decode cache.
 
-    The cache is populated by ``_detect_layout`` (via ``_decode_chunk_bytes``)
+    The cache is populated by ``_detect_layout`` (via ``decode_chunk_bytes``)
     and consumed by ``_ocr_per_box`` (the existing ``page_image`` parameter) and
     ``_refine_uncertain``. Goal: per-page decodes drop from max 3 to max 1.
     """
@@ -352,7 +352,7 @@ class TestHybridDecodedCache:
         every page in ``chunk_pages`` triggers a callback with its image."""
         from PIL import Image
 
-        from omniscribe.core.workflows.hybrid import _decode_chunk_bytes
+        from omniscribe.core.workflows.stages import decode_chunk_bytes
 
         b64_0 = _make_tiny_b64_image()
         b64_1 = _make_tiny_b64_image()
@@ -361,18 +361,18 @@ class TestHybridDecodedCache:
         def _on_decoded(p: int, img: Image.Image) -> None:
             seen[p] = img
 
-        result = _decode_chunk_bytes({0: b64_0, 1: b64_1}, [0, 1], _on_decoded)
+        result = decode_chunk_bytes({0: b64_0, 1: b64_1}, [0, 1], _on_decoded)
         assert len(result) == 2  # raw bytes returned
         assert set(seen.keys()) == {0, 1}
         assert all(isinstance(img, Image.Image) for img in seen.values())
 
     def test_decode_chunk_bytes_skips_cache_when_none(self) -> None:
         """Backward-compat: omitting ``on_decoded`` keeps the original behavior."""
-        from omniscribe.core.workflows.hybrid import _decode_chunk_bytes
+        from omniscribe.core.workflows.stages import decode_chunk_bytes
 
         b64 = _make_tiny_b64_image()
         # Should not raise when on_decoded is omitted.
-        result = _decode_chunk_bytes({0: b64}, [0])
+        result = decode_chunk_bytes({0: b64}, [0])
         assert len(result) == 1
 
     def test_decoded_cache_is_bounded_to_max_entries(self) -> None:
