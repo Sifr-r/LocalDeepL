@@ -223,11 +223,49 @@ class DictionaryPostProcessor:
             dictionaries_dir = os.path.join(resources_dir, "dictionaries")
             packaged_dict = None
         else:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            project_root = os.path.abspath(os.path.join(current_dir, "..", "..", ".."))
-            resources_dir = os.path.join(project_root, "resources")
-            langdata_dir = os.path.join(resources_dir, "langdata")
-            dictionaries_dir = os.path.join(resources_dir, "dictionaries")
+            # L-5 audit fix: prefer ``importlib.resources.files`` to derive
+            # the resources root, so the post-processing pipeline works
+            # the same way whether OmniScribe is run from a source
+            # checkout OR installed as a wheel (where ``__file__`` would
+            # point inside site-packages, not the project root). The
+            # ``as_file`` context manager materialises the resource into
+            # a real Path on disk so ``os.path.join`` /
+            # ``open(..., 'rb')`` / ``os.makedirs`` work unchanged.
+            #
+            # Fall back to the ``__file__``-derived project root when
+            # the resources package is not present (e.g. a test fixture
+            # creates a fake package without a ``resources`` subpackage
+            # and uses ``is_file() -> False`` as the "not present" signal).
+            # We probe with ``is_file()`` rather than catching the
+            # ``as_file`` exception because Python's importlib does not
+            # subclass ``FileNotFoundError`` for missing resources until
+            # 3.12+ — earlier versions raise ``AttributeError`` or
+            # ``ModuleNotFoundError`` depending on the entry point, and
+            # the internal helper calls ``is_dir()`` on the resource
+            # which a sentinel mock may not implement.
+            try:
+                packaged_resources_root = resources.files("omniscribe").joinpath(
+                    "resources"
+                )
+            except (ModuleNotFoundError, AttributeError):
+                packaged_resources_root = None
+            resource_is_real_file = bool(
+                packaged_resources_root is not None
+                and getattr(packaged_resources_root, "is_file", lambda: False)()
+            )
+            if resource_is_real_file:
+                with resources.as_file(packaged_resources_root) as packaged_path:
+                    resources_dir = str(packaged_path)
+                    langdata_dir = os.path.join(resources_dir, "langdata")
+                    dictionaries_dir = os.path.join(resources_dir, "dictionaries")
+            else:
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+                project_root = os.path.abspath(
+                    os.path.join(current_dir, "..", "..", "..")
+                )
+                resources_dir = os.path.join(project_root, "resources")
+                langdata_dir = os.path.join(resources_dir, "langdata")
+                dictionaries_dir = os.path.join(resources_dir, "dictionaries")
 
         fallback_resources_dir = os.path.join(os.path.expanduser("~"), ".omniscribe")
         fallback_dictionaries_dir = os.path.join(fallback_resources_dir, "dictionaries")
