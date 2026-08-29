@@ -142,6 +142,192 @@ def _bbox_intersects(
     return ax0 < bx1 and ax1 > bx0 and ay0 < by1 and ay1 > by0
 
 
+def _watermark_bbox(
+    page_image: PILImage | None,
+    settings: OCrQualitySettings,
+    fallback_used_box: list[bool],
+) -> tuple[float, float, float, float] | None:
+    """Page-level watermark sub-module. Returns the watermark bbox, or None."""
+    if not (settings.watermark_enabled and page_image is not None):
+        return None
+    hit = _safe(
+        lambda: watermark.detect(
+            page_image,
+            aggressiveness=settings.watermark_aggressiveness,
+        )[1],
+        default=None,
+        sub_module="watermark",
+        fallback_used_box=fallback_used_box,
+    )
+    return hit.bbox if hit is not None else None
+
+
+def _script_detect_hints(
+    blocks: list[DocumentBlock],
+    settings: OCrQualitySettings,
+    fallback_used_box: list[bool],
+) -> tuple[str | None, list[ScriptHint | None]]:
+    """Per-block + page-level script detection.
+
+    M-2 audit fix: per-block detection is memoized so adjacent blocks
+    with identical text (common in OCR output) share a single
+    classification pass. The cache lives for the duration of one
+    :func:`run` call and is keyed on ``hash(text)``.
+
+    Returns ``(page_script, per_block_hints)``. ``page_script`` is
+    ``None`` when the sub-module is disabled or detection failed.
+    ``per_block_hints`` is always populated (used downstream for the
+    per-block mismatch flag, which is gated on
+    ``script_detect_enabled``).
+    """
+    cache: dict[int, ScriptHint | None] = {}
+
+    def _hint(text: str) -> ScriptHint | None:
+        key = hash(text)
+        if key not in cache:
+            cache[key] = script_detector.detect(text)
+        return cache[key]
+
+    per_block_hints: list[ScriptHint | None] = [
+        _hint(b.text) if b.text else None for b in blocks
+    ]
+    if not settings.script_detect_enabled:
+        return None, per_block_hints
+
+    page_text = " ".join(b.text for b in blocks if b.text)
+    hint = _safe(
+        lambda: script_detector.detect(page_text),
+        default=None,
+        sub_module="script_detect",
+        fallback_used_box=fallback_used_box,
+    )
+    return (hint.script if hint is not None else None), per_block_hints
+
+
+def _hallucination_risks(
+    blocks: list[DocumentBlock],
+    settings: OCrQualitySettings,
+    page_size: tuple[int, int] | None,
+    cross_check_fn: Callable[[str, tuple[float, float, float, float]], str]
+    | None,
+    fallback_used_box: list[bool],
+) -> list[HallucinationRisk]:
+    """Per-block hallucination sub-module. Returns one risk per block."""
+    risks: list[HallucinationRisk] = [HallucinationRisk.NONE] * len(blocks)
+    if not settings.hallucination_enabled:
+        return risks
+
+    for i, block in enumerate(blocks):
+
+        def _eval_block(b: DocumentBlock = block) -> HallucinationRisk:
+            bbox_tuple: tuple[float, float, float, float] | None
+            if b.bbox is None or len(b.bbox) != 4:
+                bbox_tuple = None
+            else:
+                bbox_tuple = (
+                    float(b.bbox[0]),
+                    float(b.bbox[1]),
+                    float(b.bbox[2]),
+                    float(b.bbox[3]),
+                )
+            return hallucination.evaluate(
+                b.text,
+                bbox_tuple,
+                page_size=page_size,
+                repetition_window=settings.hallucination_repetition_window,
+                length_plausibility_min=settings.hallucination_length_plausibility_min,
+                cross_check=settings.hallucination_cross_check,
+                cross_check_fn=cross_check_fn,
+                cross_check_threshold=settings.hallucination_cross_check_threshold,
+            )
+
+        risk = _safe(
+            _eval_block,
+            default=HallucinationRisk.LOW,
+            sub_module="hallucination",
+            fallback_used_box=fallback_used_box,
+        )
+        assert isinstance(risk, HallucinationRisk)
+        risks[i] = risk
+    return risks
+
+
+def _calibrated_confidences(
+    blocks: list[DocumentBlock],
+    model_id: str,
+    settings: OCrQualitySettings,
+    fallback_used_box: list[bool],
+) -> list[float]:
+    """Per-block confidence calibration sub-module. Returns one float per block."""
+    raw: list[float] = [
+        b.confidence if b.confidence is not None else 0.0 for b in blocks
+    ]
+    if not settings.calibration_enabled:
+        return raw
+
+    out: list[float] = list(raw)
+    for i, r in enumerate(raw):
+
+        def _calibrate(rr: float = r, m: str = model_id) -> float:
+            return calibration.calibrate(rr, m)
+
+        out[i] = float(
+            _safe(
+                _calibrate,
+                default=r,
+                sub_module="calibration",
+                fallback_used_box=fallback_used_box,
+            )
+        )
+    return out
+
+
+def _compose_blocks(
+    blocks: list[DocumentBlock],
+    calibrated: list[float],
+    hallucination_risks: list[HallucinationRisk],
+    watermark_bbox: tuple[float, float, float, float] | None,
+    page_script: str | None,
+    per_block_hints: list[ScriptHint | None],
+    settings: OCrQualitySettings,
+) -> list[DocumentBlock]:
+    """Score each block via :func:`trust_scorer.score` and emit a new list.
+
+    Input blocks are never mutated. ``per_block_hints`` is consulted only
+    when ``script_detect_enabled`` is True and ``page_script`` was
+    resolved; otherwise the per-block mismatch flag is False.
+    """
+    new_blocks: list[DocumentBlock] = []
+    for i, block in enumerate(blocks):
+        watermark_in_block = (
+            watermark_bbox is not None
+            and block.bbox is not None
+            and _bbox_intersects(block.bbox, watermark_bbox)
+        )
+        per_block_script_mismatch = False
+        if settings.script_detect_enabled and page_script is not None:
+            block_hint = per_block_hints[i]
+            if block_hint is not None and block_hint.script != page_script:
+                # Only count as mismatch when the per-block hint has
+                # reasonable confidence.
+                per_block_script_mismatch = block_hint.confidence >= 0.5
+
+        verdict = trust_scorer.score(
+            calibrated[i],
+            hallucination=hallucination_risks[i],
+            watermark_in_block=watermark_in_block,
+            script_mismatch=per_block_script_mismatch,
+        )
+        new_blocks.append(
+            dataclasses.replace(
+                block,
+                trust_score=verdict.score,
+                trust_flags=tuple(f.value for f in verdict.flags) if verdict.flags else None,
+            )
+        )
+    return new_blocks
+
+
 def run(
     blocks: list[DocumentBlock],
     page_image: Image.Image | None,
@@ -153,6 +339,14 @@ def run(
     | None = None,
 ) -> list[DocumentBlock]:
     """Score ``blocks`` with the trust layer.
+
+    Thin driver that wires the five sub-modules in order: watermark →
+    script_detect → hallucination → calibration → composition. Each
+    sub-module lives in its own private helper so this function stays
+    at the spec'd "one orchestrator" surface and per-block loops are
+    testable in isolation. Failures in any sub-module degrade to
+    passthrough for the affected signal (audit H-4 / spec §4) — the
+    orchestrator never raises out of :func:`run`.
 
     Returns a new list — input blocks are never mutated. When every
     sub-module is off, the returned blocks are byte-identical to the
@@ -175,140 +369,29 @@ def run(
     if resolved_page_size is None and page_image is not None:
         resolved_page_size = page_image.size
 
-    # Sub-module: watermark (page-level — pre-OCR or no-op on block list).
-    hit = None
-    if settings.watermark_enabled and page_image is not None:
-        hit = _safe(
-            lambda: watermark.detect(
-                page_image,
-                aggressiveness=settings.watermark_aggressiveness,
-            )[1],
-            default=None,
-            sub_module="watermark",
-            fallback_used_box=fallback_used_box,
-        )
-
-    # Sub-module: script_detect — derive page-level script from all blocks'
-    # text, then per-block mismatch flag.
-    page_script: str | None = None
-    # M-2 audit fix: per-block script detection is memoized so adjacent
-    # blocks with identical text (common in OCR output) share a single
-    # classification pass. The cache lives for the duration of this
-    # ``run()`` call (one page) and is keyed on hash(text).
-    _block_detect_cache: dict[int, ScriptHint | None] = {}
-
-    def _block_hint(text: str) -> ScriptHint | None:
-        key = hash(text)
-        if key not in _block_detect_cache:
-            _block_detect_cache[key] = script_detector.detect(text)
-        return _block_detect_cache[key]
-
-    # Pre-compute per-block hints so the per-block loop below does not
-    # re-run the per-character classifier on the same text.
-    per_block_hints: list[ScriptHint | None] = [
-        _block_hint(b.text) if b.text else None for b in blocks
-    ]
-    if settings.script_detect_enabled:
-        page_text = " ".join(b.text for b in blocks if b.text)
-        hint = _safe(
-            lambda: script_detector.detect(page_text),
-            default=None,
-            sub_module="script_detect",
-            fallback_used_box=fallback_used_box,
-        )
-        if hint is not None:
-            page_script = hint.script
-
-    # Sub-module: hallucination — per block.
-    hallucination_risks: list[HallucinationRisk] = [HallucinationRisk.NONE] * len(
-        blocks
+    watermark_bbox = _watermark_bbox(page_image, settings, fallback_used_box)
+    page_script, per_block_hints = _script_detect_hints(
+        blocks, settings, fallback_used_box
     )
-    if settings.hallucination_enabled:
-        for i, block in enumerate(blocks):
-
-            def _eval_block(b: DocumentBlock = block) -> HallucinationRisk:
-                bbox_tuple: tuple[float, float, float, float] | None
-                if b.bbox is None or len(b.bbox) != 4:
-                    bbox_tuple = None
-                else:
-                    bbox_tuple = (
-                        float(b.bbox[0]),
-                        float(b.bbox[1]),
-                        float(b.bbox[2]),
-                        float(b.bbox[3]),
-                    )
-                return hallucination.evaluate(
-                    b.text,
-                    bbox_tuple,
-                    page_size=resolved_page_size,
-                    repetition_window=settings.hallucination_repetition_window,
-                    length_plausibility_min=settings.hallucination_length_plausibility_min,
-                    cross_check=settings.hallucination_cross_check,
-                    cross_check_fn=cross_check_fn,
-                    cross_check_threshold=settings.hallucination_cross_check_threshold,
-                )
-
-            risk = _safe(
-                _eval_block,
-                default=HallucinationRisk.LOW,
-                sub_module="hallucination",
-                fallback_used_box=fallback_used_box,
-            )
-            assert isinstance(risk, HallucinationRisk)
-            hallucination_risks[i] = risk
-
-    # Sub-module: calibration — per block.
-    calibrated: list[float] = [
-        b.confidence if b.confidence is not None else 0.0 for b in blocks
-    ]
-    if settings.calibration_enabled:
-        for i, block in enumerate(blocks):
-            raw = block.confidence if block.confidence is not None else 0.0
-
-            def _calibrate_block(r: float = raw, m: str = model_id) -> float:
-                return calibration.calibrate(r, m)
-
-            calibrated[i] = float(
-                _safe(
-                    _calibrate_block,
-                    default=raw,
-                    sub_module="calibration",
-                    fallback_used_box=fallback_used_box,
-                )
-            )
-
-    # Compose BlockTrust per block.
-    new_blocks: list[DocumentBlock] = []
-    watermark_bbox = hit.bbox if hit is not None else None
-    for i, block in enumerate(blocks):
-        watermark_in_block = (
-            watermark_bbox is not None
-            and block.bbox is not None
-            and _bbox_intersects(block.bbox, watermark_bbox)
-        )
-        per_block_script_mismatch = False
-        if settings.script_detect_enabled and page_script is not None:
-            block_hint = per_block_hints[i]
-            if block_hint is not None and block_hint.script != page_script:
-                # Only count as mismatch when the per-block hint has
-                # reasonable confidence.
-                per_block_script_mismatch = block_hint.confidence >= 0.5
-
-        verdict = trust_scorer.score(
-            calibrated[i],
-            hallucination=hallucination_risks[i],
-            watermark_in_block=watermark_in_block,
-            script_mismatch=per_block_script_mismatch,
-        )
-        trust_score = verdict.score
-        trust_flags = tuple(f.value for f in verdict.flags) if verdict.flags else None
-        new_blocks.append(
-            dataclasses.replace(
-                block,
-                trust_score=trust_score,
-                trust_flags=trust_flags,
-            )
-        )
+    hallucination_risks = _hallucination_risks(
+        blocks,
+        settings,
+        resolved_page_size,
+        cross_check_fn,
+        fallback_used_box,
+    )
+    calibrated = _calibrated_confidences(
+        blocks, model_id, settings, fallback_used_box
+    )
+    new_blocks = _compose_blocks(
+        blocks,
+        calibrated,
+        hallucination_risks,
+        watermark_bbox,
+        page_script,
+        per_block_hints,
+        settings,
+    )
 
     emit(
         "orchestrator",
