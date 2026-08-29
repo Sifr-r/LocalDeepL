@@ -653,6 +653,47 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   extracted into `_parse_xml()` and unit-tested for plain XML,
   external-entity XXE, and billion-laughs rejection.
 
+- **Sprint 2 + Sprint 3 + Sprint 4 follow-ups (2026-08-28)** —
+  closes the most material remaining items from the 5-domain audit
+  beyond the initial sprint close.
+  - **Sprint 2 / C-3**: `StateBackendPlugin.apply` now rejects
+    `sqlite_path` values that resolve outside the artifact base
+    directory (path-traversal guard for operator-supplied SQLite
+    overrides).
+  - **Sprint 2 / H-2**: `ProgressServiceImpl` foreign-loop sends
+    now register a `Future.add_done_callback` that detaches the
+    connection on exception. The previous code's
+    `asyncio.run_coroutine_threadsafe` future was silently
+    swallowed on failure.
+  - **Sprint 2 / M-3**: `create_app` registers a catch-all
+    `Exception` handler that logs the traceback but returns a
+    stable 500 envelope to the client. The previous default
+    leaked internal stack traces.
+  - **Sprint 2 / H-5**: `OCRPlugin._parse_upload` now validates
+    `content_type` against an allowlist (PDF, PNG, JPEG, WebP, AVIF)
+    AND a magic-byte header check, rejecting mismatches with 415.
+  - **Sprint 3 / H-4**: `client/lib/core/websocket/ws_client.dart`
+    now runs an application-level keep-alive (20s ping + 5s
+    pong watchdog). Half-open sockets are detected in <30 s
+    instead of relying on the OS's 2-hour TCP keep-alive.
+  - **Sprint 4 / H-1**: `tests/core/workflows/test_pipeline_repair_integration.py`
+    wires `OCRPipeline -> HybridEngine -> _repair_blocks -> QualityRepairLoop`
+    end-to-end and asserts the repair loop fires for low-confidence
+    blocks and skips when `repair_options=None`. The existing
+    unit tests covered the loop in isolation; a regression
+    that drops the call site would have passed them silently.
+  - **Windows Defender false positive on
+    `arrow_substrait.dll`** (lancedb transitive dep, optional
+    `[lexicon]` extra): documented in `SECURITY.md` §"Platform
+    Notes" with three mitigations (update Defender, folder
+    exclusion via `install.ps1`, or run in a container).
+    `install.ps1` now offers an opt-in Defender exclusion
+    scoped to the venv site-packages dir. New regression test
+    `tests/ops/test_arrow_substrait_present.py` asserts the
+    DLL is shipped as a real file when the extra is installed.
+
+  Plan: `docs/superpowers/plans/2026-08-28-audit-remediation.md`.
+
 - **Sprint 5 audit remediation (DevOps & Config, 2026-08-28)** — the
   2026-08-28 5-domain audit's DevOps & Config findings are
   partially closed (license posture in `pyproject.toml`, the
