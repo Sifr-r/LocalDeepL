@@ -26,13 +26,19 @@ import logging
 import threading
 import uuid
 from collections.abc import Callable, Iterable, Sequence
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import pyarrow as pa
 
 from .embedding import EmbeddingModel, get_default_embedding_model
+from .lancedb_helpers import (
+    _entry_from_row,
+    _opt_str,
+    _sql_escape,
+    _to_utc_datetime,
+)
 from .schema import LEXICON_SCHEMA, VECTOR_INDEX_SPEC
 from .store import (
     GlossaryMeta,
@@ -49,81 +55,6 @@ def _new_id() -> str:
     """Generate a new entry/glossary ID. UUID4 hex — matches the legacy format."""
     return uuid.uuid4().hex
 
-
-# ---------------------------------------------------------------------------
-# Row <-> LexiconEntry conversion
-# ---------------------------------------------------------------------------
-
-
-def _to_utc_datetime(value: object) -> datetime:
-    """Coerce a LanceDB/pandas timestamp value to a timezone-aware datetime.
-
-    LanceDB returns ``pa.timestamp("ms")`` values as ``datetime`` objects
-    (UTC) when read via ``to_pandas()``/``to_pydatetime()``, or as raw
-    ``int`` epoch-ms when read via ``to_list()``. This helper handles both.
-    """
-    if isinstance(value, datetime):
-        if value.tzinfo is None:
-            return value.replace(tzinfo=UTC)
-        return value
-    if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(float(value) / 1000.0, tz=UTC)
-    pandas_value = getattr(value, "to_pydatetime", None)
-    if callable(pandas_value):
-        raw_dt = pandas_value()
-        if isinstance(raw_dt, datetime):
-            if raw_dt.tzinfo is None:
-                return raw_dt.replace(tzinfo=UTC)
-            return raw_dt
-    return datetime.fromisoformat(str(value))
-
-
-def _opt_str(value: object) -> str | None:
-    """Coerce a possibly-null cell to ``str | None``."""
-    if value is None:
-        return None
-    try:
-        import pandas as pd
-
-        if isinstance(value, float) and pd.isna(value):
-            return None
-    except ImportError:
-        pass
-    if isinstance(value, str):
-        return value or None
-    return str(value)
-
-
-def _entry_from_row(row: Any) -> LexiconEntry:
-    """Build a :class:`LexiconEntry` from a LanceDB/pandas row.
-
-    Accepts both dict-like rows (from ``.to_list()``) and pandas Series
-    (from ``.to_pandas().iloc[...]``).
-    """
-
-    def _get(key: str) -> object:
-        if isinstance(row, dict):
-            return row.get(key)
-        return row[key]  # pandas Series
-
-    return LexiconEntry(
-        id=str(_get("id")),
-        glossary_id=str(_get("glossary_id")),
-        source_text=str(_get("source_text")),
-        target_text=str(_get("target_text")),
-        source_lang=str(_get("source_lang")),
-        target_lang=str(_get("target_lang")),
-        domain=_opt_str(_get("domain")),
-        register=_opt_str(_get("register")),
-        pos=_opt_str(_get("pos")),
-        case_sensitive=bool(_get("case_sensitive")),
-        notes=str(_get("notes") or ""),
-        source_uri=_opt_str(_get("source_uri")),
-        source_format=str(_get("source_format")),
-        usage_count=int(str(_get("usage_count") or 0)),
-        created_at=_to_utc_datetime(_get("created_at")),
-        updated_at=_to_utc_datetime(_get("updated_at")),
-    )
 
 
 def _row_from_entry(
@@ -763,16 +694,6 @@ class LanceDBLexiconStore:
         return " AND ".join(clauses) if clauses else None
 
 
-def _sql_escape(value: str) -> str:
-    """Escape a string literal for inclusion in a LanceDB WHERE clause.
-
-    Doubles single quotes per the SQL standard. Sufficient for the values
-    we filter on (language codes, domain names, group names); not a
-    general-purpose SQL escaper.
-    """
-    return value.replace("'", "''")
-
-
 class GlossaryNotFoundError(KeyError):
     """Raised when a requested glossary id does not exist in the store."""
 
@@ -780,7 +701,5 @@ class GlossaryNotFoundError(KeyError):
 __all__ = [
     "GlossaryNotFoundError",
     "LanceDBLexiconStore",
-    "_entry_from_row",
     "_row_from_entry",
-    "_sql_escape",
 ]
