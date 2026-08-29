@@ -33,7 +33,29 @@ final apiClientProvider = Provider<ApiClient>((ref) {
 /// WebSocket Client provider.
 final wsClientProvider = Provider<WsClient>((ref) {
   final baseUrl = ref.watch(apiBaseUrlProvider);
-  final wsUrl = baseUrl.replaceFirst(RegExp(r'^http'), 'ws');
+  // Sprint 3 / H-6 audit fix: derive the WebSocket scheme from the
+  // API scheme. The previous ``baseUrl.replaceFirst(RegExp(r'^http'),
+  // 'ws')`` only handled ``http://`` (mapping to ``ws://``); a public
+  // ``https://`` server produced a ``https://...`` WS URL that the
+  // server's WebSocket router would reject. Build the WS URL via
+  // ``Uri.parse`` so the scheme mapping is exact and we don't
+  // accidentally rewrite ``http``-like substrings inside the
+  // host or path.
+  final parsed = Uri.tryParse(baseUrl);
+  String wsUrl;
+  if (parsed == null) {
+    // Best-effort fallback: leave the legacy ``http->ws`` rewrite in
+    // place so an unparseable URL still produces something WsClient
+    // can try. ``Uri.parse`` would have raised.
+    wsUrl = baseUrl.replaceFirst(RegExp(r'^http'), 'ws');
+  } else {
+    final wsScheme = switch (parsed.scheme) {
+      'https' => 'wss',
+      'http' => 'ws',
+      _ => 'ws',
+    };
+    wsUrl = parsed.replace(scheme: wsScheme).toString();
+  }
   final ws = WsClient(defaultWsBaseUrl: wsUrl);
   ref.onDispose(ws.dispose);
   return ws;
