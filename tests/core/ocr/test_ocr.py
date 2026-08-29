@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -92,14 +91,15 @@ class TestStripRunawayRepetition:
 
 
 class TestHallucinationFilter:
-    def test_pangram_response_treated_as_blank(self):
+    async def test_pangram_response_treated_as_blank(self):
         """OlmOCR-2 falls back to 'The quick brown fox...' on blank/unreadable
         crops. perform_ocr_on_crop must drop those instead of placing them
         in the searchable text layer."""
-        import asyncio
-
-        from omniscribe.core.ocr import OCRProcessor
-
+        # Sprint 4 / M-6 audit fix: convert this test to ``async def``
+        # so the OCRProcessor runs on the suite's event loop instead of
+        # spawning a fresh loop via ``asyncio.run``. pytest-asyncio's
+        # auto mode (configured in pyproject.toml) drives the
+        # coroutine without an explicit marker.
         ocr = OCRProcessor.__new__(OCRProcessor)  # skip real init
         ocr.client = None  # type: ignore[assignment]  # never used; we override _chat below
         ocr.model = "qwen/qwen3-vl-8b"  # non-OlmOCR — exercise the system message path
@@ -110,14 +110,10 @@ class TestHallucinationFilter:
         ocr._chat = _fake_pangram  # type: ignore[method-assign]
         ocr.CROP_TIMEOUT_S = 60.0
         ocr.CROP_MAX_TOKENS = 256
-        result = asyncio.run(ocr.perform_ocr_on_crop("ignored"))
+        result = await ocr.perform_ocr_on_crop("ignored")
         assert result == ""
 
-    def test_normal_crop_response_passes_through(self):
-        import asyncio
-
-        from omniscribe.core.ocr import OCRProcessor
-
+    async def test_normal_crop_response_passes_through(self):
         ocr = OCRProcessor.__new__(OCRProcessor)
         ocr.client = None  # type: ignore[assignment]
         ocr.model = "qwen/qwen3-vl-8b"
@@ -128,19 +124,12 @@ class TestHallucinationFilter:
         ocr._chat = _fake  # type: ignore[method-assign]
         ocr.CROP_TIMEOUT_S = 60.0
         ocr.CROP_MAX_TOKENS = 256
-        assert (
-            asyncio.run(ocr.perform_ocr_on_crop("ignored"))
-            == "real handwritten content"
-        )
+        assert await ocr.perform_ocr_on_crop("ignored") == "real handwritten content"
 
-    def test_real_text_containing_pangram_is_preserved(self):
+    async def test_real_text_containing_pangram_is_preserved(self):
         # A document that legitimately contains the pangram (e.g. a typing
         # exercise) must NOT be silently dropped. The filter only fires
         # when the response IS the pangram, not when it merely contains it.
-        import asyncio
-
-        from omniscribe.core.ocr import OCRProcessor
-
         ocr = OCRProcessor.__new__(OCRProcessor)
         ocr.client = None  # type: ignore[assignment]
         ocr.model = "qwen/qwen3-vl-8b"
@@ -156,14 +145,14 @@ class TestHallucinationFilter:
         ocr._chat = _fake  # type: ignore[method-assign]
         ocr.CROP_TIMEOUT_S = 60.0
         ocr.CROP_MAX_TOKENS = 256
-        assert asyncio.run(ocr.perform_ocr_on_crop("ignored")) == sentence
+        assert await ocr.perform_ocr_on_crop("ignored") == sentence
 
-    def test_pangram_with_quotes_or_trailing_punct_still_dropped(self):
+    async def test_pangram_with_quotes_or_trailing_punct_still_dropped(self):
         # OlmOCR sometimes wraps the pangram in quotes or appends ! / ? —
         # normalization must still recognise it as the fallback.
-        import asyncio
-
-        from omniscribe.core.ocr import OCRProcessor
+        ocr = OCRProcessor.__new__(OCRProcessor)
+        ocr.client = None  # type: ignore[assignment]
+        ocr.model = "qwen/qwen3-vl-8b"
 
         def _make_fake(response: str):
             async def _fake(*a, **kw):
@@ -182,7 +171,7 @@ class TestHallucinationFilter:
             ocr._chat = _make_fake(variant)  # type: ignore[method-assign]
             ocr.CROP_TIMEOUT_S = 60.0
             ocr.CROP_MAX_TOKENS = 256
-            assert asyncio.run(ocr.perform_ocr_on_crop("ignored")) == "", (
+            assert await ocr.perform_ocr_on_crop("ignored") == "", (
                 f"variant {variant!r} should be dropped"
             )
 
@@ -219,39 +208,43 @@ class TestEnsureModelLoaded:
     mismatch, so without this check users get bad OCR with no error
     (issue #7)."""
 
-    def test_passes_when_model_in_loaded_list(self):
+    # Sprint 4 / M-6 audit fix: the model-load pre-flight is async at
+    # heart; rewriting the tests as ``async def`` lets them share the
+    # suite's event loop and removes the per-test ``asyncio.run`` hop.
+
+    async def test_passes_when_model_in_loaded_list(self):
         ocr = _make_ocr_with_fake_client(
             "qwen/qwen3-vl-8b",
             _fake_models_client(["qwen/qwen3-vl-8b", "allenai/olmocr-2-7b"]),
         )
         # No raise — exact match found.
-        asyncio.run(ocr.ensure_model_loaded())
+        await ocr.ensure_model_loaded()
 
-    def test_passes_case_insensitive(self):
+    async def test_passes_case_insensitive(self):
         # User passes "Qwen/Qwen3-VL-8B" but server returns "qwen/qwen3-vl-8b"
         # — same model file, just shifted case. Don't make the user fight casing.
         ocr = _make_ocr_with_fake_client(
             "Qwen/Qwen3-VL-8B",
             _fake_models_client(["qwen/qwen3-vl-8b"]),
         )
-        asyncio.run(ocr.ensure_model_loaded())
+        await ocr.ensure_model_loaded()
 
-    def test_passes_repo_prefix_and_tag_tolerant(self):
+    async def test_passes_repo_prefix_and_tag_tolerant(self):
         # User passes "olmocr-2-7b" but LM Studio loaded "allenai/olmocr-2-7b"
         ocr = _make_ocr_with_fake_client(
             "olmocr-2-7b",
             _fake_models_client(["allenai/olmocr-2-7b"]),
         )
-        asyncio.run(ocr.ensure_model_loaded())
+        await ocr.ensure_model_loaded()
 
         # User passes "allenai/olmocr-2-7b:latest"
         ocr_tagged = _make_ocr_with_fake_client(
             "allenai/olmocr-2-7b:latest",
             _fake_models_client(["allenai/olmocr-2-7b"]),
         )
-        asyncio.run(ocr_tagged.ensure_model_loaded())
+        await ocr_tagged.ensure_model_loaded()
 
-    def test_raises_with_helpful_message_on_mismatch(self):
+    async def test_raises_with_helpful_message_on_mismatch(self):
         # The exact scenario from the issue: user passed qwen3-vl-8b but
         # LM Studio has olmocr loaded. Must surface this loudly.
         ocr = _make_ocr_with_fake_client(
@@ -259,7 +252,7 @@ class TestEnsureModelLoaded:
             _fake_models_client(["allenai_olmocr-2-7b-1025"]),
         )
         with pytest.raises(ModelNotLoadedError) as exc_info:
-            asyncio.run(ocr.ensure_model_loaded())
+            await ocr.ensure_model_loaded()
 
         msg = str(exc_info.value)
         # Must name the requested model (so the user knows what they asked for)…
@@ -273,7 +266,7 @@ class TestEnsureModelLoaded:
         # treat the check as a bug to disable and forget.
         assert "silently" in msg.lower() or "fallback" in msg.lower()
 
-    def test_raises_with_none_listing_when_no_models_loaded(self):
+    async def test_raises_with_none_listing_when_no_models_loaded(self):
         # LM Studio with no model loaded at all. The error message
         # should still be informative, not say "Loaded models: " followed
         # by nothing (which reads like a parse error).
@@ -282,7 +275,7 @@ class TestEnsureModelLoaded:
             _fake_models_client([]),
         )
         with pytest.raises(ModelNotLoadedError) as exc_info:
-            asyncio.run(ocr.ensure_model_loaded())
+            await ocr.ensure_model_loaded()
         assert "(none)" in str(exc_info.value)
 
     def test_subclass_of_llm_call_error(self):
@@ -291,7 +284,7 @@ class TestEnsureModelLoaded:
         # special-casing.
         assert issubclass(ModelNotLoadedError, LLMCallError)
 
-    def test_server_failure_wrapped_as_llm_call_error(self):
+    async def test_server_failure_wrapped_as_llm_call_error(self):
         # If /v1/models fails (server down, wrong endpoint, auth error)
         # surface a single-paragraph LLMCallError rather than the bare
         # ConnectionError stack — match the diagnostic style of _chat.
@@ -300,7 +293,7 @@ class TestEnsureModelLoaded:
             _fake_models_client(raise_exc=ConnectionError("connection refused")),
         )
         with pytest.raises(LLMCallError) as exc_info:
-            asyncio.run(ocr.ensure_model_loaded())
+            await ocr.ensure_model_loaded()
         # Must point the user at the server (where to look) and at the
         # opt-out flag (how to bypass for non-conforming servers).
         assert "http://localhost:1234/v1" in str(exc_info.value)
