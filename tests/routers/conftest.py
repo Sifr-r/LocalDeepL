@@ -21,6 +21,10 @@ PDF_BYTES = b"%PDF-1.4 fake"
 # The package __init__ re-exports the ``plugin`` instance, which shadows the
 # submodule attribute — import the module itself for monkeypatching.
 ocr_plugin_mod = importlib.import_module("omniscribe.plugins.ocr.plugin")
+# Sprint 6 split (audit catalog): the pipeline bridge call sites moved
+# to ``service.py``. The fake has to be patched on the new module too,
+# otherwise the test would hit the real VLM/Surya code path.
+ocr_service_mod = importlib.import_module("omniscribe.plugins.ocr.service")
 
 
 @pytest.fixture()
@@ -49,8 +53,8 @@ def fake_pipeline(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         Path(output_path).write_bytes(PDF_BYTES)
         return {0: ["hello world"]}
 
-    monkeypatch.setattr(ocr_plugin_mod, "build_pipeline", fake_build)
-    monkeypatch.setattr(ocr_plugin_mod, "run_pipeline", fake_run)
+    monkeypatch.setattr(ocr_service_mod, "build_pipeline", fake_build)
+    monkeypatch.setattr(ocr_service_mod, "run_pipeline", fake_run)
     return state
 
 

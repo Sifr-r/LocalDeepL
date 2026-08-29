@@ -60,7 +60,9 @@ async def test_artifact_prune_only_expired(backend: MemoryStateBackend) -> None:
 async def test_artifact_blob_cap(
     backend: MemoryStateBackend, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("omniscribe.plugins.state_backend_memory._MEMORY_BLOB_CAP_BYTES", 10)
+    monkeypatch.setattr(
+        "omniscribe.plugins.state_backend_memory._MEMORY_BLOB_CAP_BYTES", 10
+    )
     with pytest.raises(ValueError):
         await backend.put_artifact(
             id="huge",
