@@ -198,6 +198,82 @@ the project adheres to [Semantic Versioning](https://semver.org/).
     legend. `pytest --strict-markers` now passes (any future
     use of `@pytest.mark.live_llm` would error rather than
     silently no-op).
+- **2026-08-29 audit remediation — Sprint 6 / Phase 4 long-file splits**
+  Closed the remaining five 500+ LOC files flagged in the P2
+  long-file split entry. Each is its own commit; all behavior
+  preserved (1379 passed / 23 skipped / 6 deselected on the
+  fast gate, identical to pre-Phase-1 baseline).
+  - `core/pdf/embedder.py` (578 LOC) → 105 LOC public entry
+    (header + `embed_structured_text` + worker pool) +
+    `embedder_helpers.py` (470 LOC: the 15 underscored helpers
+    for font chain, drawing, image-input branch, and page
+    rasterization + module-level state like `_UNICODE_CHAIN` /
+    `_EMBED_FONT` / `_PROBE_CODEPOINTS`). Pure leaf split; tests
+    that monkeypatched the moved module-level state
+    (`test_pdf.py` 3 sites) or called the helpers directly
+    (`test_ocr_processor.py` 1 site) now import
+    `omniscribe.core.pdf.embedder_helpers`. Pre-commit ruff
+    format swept up 2 pre-existing drifts in
+    `lancedb_store.py` and `ocr_quality/orchestrator.py`.
+  - `plugins/providers.py` (535 LOC) → `providers.py` (120 LOC:
+    routes + plugin + module-level `plugin =` + public-surface
+    re-exports) + `providers_service.py` (430 LOC: catalog,
+    request/response Pydantic models, SSRF helpers, Protocol,
+    `ProviderManagerImpl`, `ProvidersSchema`). The tests that
+    patched `omniscribe.plugins.providers.is_ssrf_target` (2
+    sites in `test_providers_resolved_ip_pin.py`) now patch
+    `omniscribe.plugins.providers_service.is_ssrf_target` (the
+    call site moved with the impl).
+  - `core/translate/workflow.py` (603 LOC) → `workflow.py` (225
+    LOC: `TranslationState` schema + `get_translation_app` +
+    `_LazyTranslationApp` + `chunk_text` + `run_translation` +
+    node re-exports) + `nodes.py` (430 LOC: the 3 node
+    functions, `should_refine`, `_state_settings`, prompt
+    builder, JSON parser, system message constants). Tests
+    patching `omniscribe.core.translate.workflow.call_llm` (3
+    sites in `test_translation_boundary.py`) and
+    `_llm_evaluate_translation` (11 sites in
+    `test_translation_evaluator.py`) now patch
+    `omniscribe.core.translate.nodes.*` (the call sites moved).
+  - `core/ocr/processor.py` (672 LOC) → `processor.py` (~590
+    LOC: `OCRProcessor` orchestrator with the prompt / tesseract
+    / adaptive-threshold helpers) + `chat_client.py` (~150 LOC:
+    `ChatClient` class owning the per-call retry loop, the
+    circuit-breaker integration, the transient-vs-permanent
+    error classification, and the context-length error
+    translation). `OCRProcessor.__init__` now instantiates a
+    `ChatClient` alongside the existing circuit breaker; the 4
+    call sites in `perform_ocr` / `perform_ocr_on_crop` /
+    `_run_trocr_arbitration` still call `self._chat(...)` but
+    the method is a 1-line delegate to
+    `self._chat_client.chat(...)` that also re-syncs the client
+    breaker from `self.circuit_breaker` (so tests that swap the
+    breaker on the processor take effect without rebuilding
+    the client). The `OCRProcessor.__new__` legacy test path
+    still works: tests that do `ocr._chat = fake_chat` override
+    the wrapper method on the instance, which is what those
+    tests were always trying to do. Tests patching
+    `omniscribe.core.ocr.processor.call_llm` (8 sites across
+    `test_ocr_resilience.py` + `test_ocr_trocr_integration.py`)
+    now patch `omniscribe.core.ocr.chat_client.call_llm`.
+  - `core/workflows/hybrid.py` (633 LOC) → `hybrid.py` (~510
+    LOC: `HybridEngine` with the 4 stage delegators
+    `_convert_pages` / `_detect_layout` / `_ocr_pages` /
+    `_refine_pages` / `_finalize` + `__init__` + the LRU
+    decoded-image cache) + `hybrid_repair.py` (165 LOC: the
+    Phase 4b repair logic — `run_repair_phase` driver +
+    `repair_single_page` + `_count_repair_targets` helper). The
+    repair phase is the only phase with substantial bespoke
+    logic (loop orchestration, per-page re-OCR, progress
+    emission, shared completed-box counter) so it's the only
+    phase that moved. The other 4 phases are pure pass-throughs
+    to the stage classes and had to stay on `HybridEngine`
+    (tests call `engine._convert_pages`, `_detect_layout`,
+    `_ocr_pages`, `_finalize` directly). The engine surface
+    the repair module depends on (`ocr_processor`,
+    `block_callbacks`) is typed as a Protocol
+    (`_RepairEngineHost`) so the contract is explicit without
+    coupling the module to `HybridEngine`.
 
 ### Added
 
