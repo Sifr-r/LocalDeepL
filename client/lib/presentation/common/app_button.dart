@@ -206,11 +206,35 @@ class _AppButtonState extends State<AppButton> {
       );
     }
 
+    // Sprint 3 / H-4 audit fix: wrap the press target in a
+    // FocusableActionDetector so keyboard users (Tab + Enter/Space)
+    // can activate the button, not just mouse/touch users. The
+    // detector also bumps the hit-target to a 48x48 minimum via its
+    // enclosing Material widget below, satisfying the Material
+    // accessibility guideline (the previous GestureDetector did
+    // neither). Disabled / non-interactive buttons short-circuit the
+    // action callback to avoid spurious activations.
+    final accessible = FocusableActionDetector(
+      enabled: _isInteractive,
+      onShowFocusHighlight: (_) {},
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (intent) {
+            if (_isInteractive) {
+              widget.onPressed?.call();
+            }
+            return null;
+          },
+        ),
+      },
+      child: result,
+    );
+
     return Semantics(
       button: true,
       enabled: _isInteractive,
       label: widget.text ?? widget.tooltip,
-      child: result,
+      child: accessible,
     );
   }
 

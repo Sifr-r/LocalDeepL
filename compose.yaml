@@ -148,7 +148,17 @@ services:
     profiles: ["async"]
 
   redis:
-    image: redis:7-alpine
+    # Sprint 5 / H-5 audit fix: pin to a verified OCI image-index digest
+    # rather than the floating ``redis:7-alpine`` tag. ``redis:7-alpine``
+    # is a multi-arch OCI image index — the digest below is the
+    # multi-platform ``manifest list`` digest, not a per-arch
+    # manifest. The same refresh procedure as the Dockerfile
+    # python:3.14-slim pin applies: ``docker buildx imagetools inspect
+    # redis:7-alpine`` returns the current digest; bump here and let
+    # Compose's pull fail loud on a digest mismatch. Lookup performed
+    # against registry-1.docker.io/v2/library/redis/manifests/7-alpine
+    # with a public pull token.
+    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
     security_opt:
       - no-new-privileges:true
     cap_drop:
