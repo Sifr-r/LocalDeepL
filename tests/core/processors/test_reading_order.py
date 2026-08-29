@@ -14,8 +14,6 @@ sentinel) instead of raising.
 
 from __future__ import annotations
 
-import asyncio
-
 from omniscribe.core.document import (
     DocumentBlock,
     DocumentPage,
@@ -52,7 +50,7 @@ def test_sort_key_handles_none_bbox() -> None:
     assert key == (0, 0.0, 0.0)
 
 
-def test_process_succeeds_with_none_bbox_block() -> None:
+async def test_process_succeeds_with_none_bbox_block() -> None:
     """``process()`` does not raise when a page has a None-bbox block.
 
     End-to-end version of the regression: a page containing a
@@ -72,7 +70,7 @@ def test_process_succeeds_with_none_bbox_block() -> None:
     page.blocks = [high_row, none_block, low_row]
     document = DocumentResult(pages=[page])
     # The previous implementation raised TypeError here.
-    asyncio.run(proc.process(document))
+    await proc.process(document)
 
     # ``process`` sorts in place; look up by identity. The
     # None-bbox sentinel sorts to the *start* of the row-major
