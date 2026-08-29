@@ -6,9 +6,38 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **2026-08-29 audit remediation — Sprint 5/H-5: compose.yaml redis digest pin**
+  `compose.yaml` now pins `redis:7-alpine` to a verified OCI
+  image-index digest rather than the floating tag, matching the
+  Dockerfile `python:3.14-slim` pin (F2-1 hardening). Refresh with
+  `docker buildx imagetools inspect redis:7-alpine` when bumping.
+
 ### Added
 
-- **Rebuilt API on Cordis-style plugin harness** — the deleted
+- **2026-08-29 audit remediation — Sprint 3/H-4: AppButton keyboard accessibility**
+  `client/lib/presentation/common/app_button.dart` now wraps the
+  press target in a `FocusableActionDetector` with an
+  `ActivateIntent` handler so keyboard users can Tab + Enter/Space to
+  activate, not just mouse/touch. Disabled / non-interactive buttons
+  short-circuit the callback.
+
+### Fixed
+
+- **2026-08-29 audit remediation — cumulative audit status**
+  Sprint 1 (Core Pipeline), Sprint 2 (API & Security), Sprint 4
+  (Testing & QA), and Sprint 5 (DevOps & Config) audit findings are
+  all closed at the Critical and High severity levels. Sprint 3
+  (Frontend) audit items are closed at Critical and High severity
+  levels, with the remaining medium and low items tracked in the
+  deferred Flutter-client backlog (axe-playwright coverage, full
+  48 dp touch-target sweep, all keyboard shortcut bindings). The
+  `ruff check src tests` + `ruff format --check` + `mypy src` +
+  `pytest -m "not slow"` gates all pass (1378 passed, 26 skipped,
+  6 deselected).
+
+### Rebuilt API on Cordis-style plugin harness
   `src/omniscribe/api/` package is replaced by a plugin-harness
   architecture: `src/omniscribe/harness/` (Context, Loader, Plugin
   base, LIFO effect disposal) plus nine boot plugins under
