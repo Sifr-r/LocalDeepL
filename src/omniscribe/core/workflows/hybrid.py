@@ -197,15 +197,13 @@ class HybridEngine(EngineBase):
             progress=progress,
         )
 
-        if cancel_check is not None and cancel_check():
-            raise OCRCancelled("OCR cancelled before layout detection.")
-
-        # --- Phase 2: batched layout detection ---
+        # --- Phase 2: batched layout detection (cancel-gate lives inside) ---
         pages_structured = await self._detect_layout(
             images_dict=images_dict,
             page_nums=page_nums,
             progress=progress,
             input_path=input_path,
+            cancel_check=cancel_check,
         )
 
         per_box_pages = self._select_dense_pages(
@@ -229,9 +227,6 @@ class HybridEngine(EngineBase):
             on_warning=on_warning,
             cancel_check=cancel_check,
         )
-
-        if cancel_check is not None and cancel_check():
-            raise OCRCancelled("OCR cancelled after OCR loop.")
 
         # --- Phase 4: refine empty boxes on the sparse pages ---
         if refine:
@@ -261,7 +256,7 @@ class HybridEngine(EngineBase):
             )
             await emit_job_repair_summary(self.block_callbacks, repair_summaries)
 
-        # --- Phase 5: assemble, post-process, route, emit ---
+        # --- Phase 5: assemble, post-process, route, emit (cancel-gate lives inside) ---
         return await self._finalize(
             input_path=input_path,
             output_path=output_path,
@@ -275,6 +270,7 @@ class HybridEngine(EngineBase):
             progress=progress,
             trust_model_id=trust_model_id,
             trust_images_dict=images_dict,
+            cancel_check=cancel_check,
         )
 
     async def _convert_pages(
@@ -307,7 +303,13 @@ class HybridEngine(EngineBase):
         page_nums: Sequence[int],
         progress: ProgressCallback | None,
         input_path: str = "",
+        cancel_check: CancelCheck | None = None,
     ) -> dict[int, PageBoxes]:
+        # Audit catalog: between-phase cancel checks used to live in
+        # execute(); folded into the next-phase helper so execute() is
+        # a clean phase driver.
+        if cancel_check is not None and cancel_check():
+            raise OCRCancelled("OCR cancelled before layout detection.")
         self.layout_detector.aligner = self.aligner
         self.layout_detector.recall_booster = self.recall_booster
         self.layout_detector.text_layer_recall = self.text_layer_recall
@@ -582,8 +584,18 @@ class HybridEngine(EngineBase):
         progress: ProgressCallback | None,
         trust_model_id: str = "unknown",
         trust_images_dict: dict[int, str] | None = None,
+        cancel_check: CancelCheck | None = None,
     ) -> dict[int, list[str]]:
-        """Post-process, run document processors, apply hybrid-only quality routing, emit."""
+        """Post-process, run document processors, apply hybrid-only quality routing, emit.
+
+        ``cancel_check`` is consulted at entry — it acts as the
+        post-OCR cancel gate that used to live inline in
+        :meth:`execute` (audit catalog). Any later phase that wants to
+        short-circuit (refine / repair) does its own per-chunk check
+        via the underlying runner.
+        """
+        if cancel_check is not None and cancel_check():
+            raise OCRCancelled("OCR cancelled after OCR loop.")
         document_result = await self._build_document_result(
             pages_data=pages_structured,
             page_nums=page_nums,
