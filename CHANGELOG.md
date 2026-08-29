@@ -107,6 +107,57 @@ the project adheres to [Semantic Versioning](https://semver.org/).
     `finally` block instead of a bare `cancel()` loop. Closes the
     "Task was destroyed but it is pending" warning on shutdown
     (audit M-domain 5).
+- **2026-08-29 audit remediation — Sprint 6 / P2 cleanup**
+  Six P2 items from the catalog: dead `DocumentSpan` class,
+  TODOS.md doc-drift references, two LanceDB push-downs
+  (column-projection + WHERE), and two long-file splits
+  (state_backend, ocr plugin). All behavior-preserving; the
+  state_backend and ocr-plugin splits were each its own commit
+  with conftest updates where the test monkeypatch targets
+  moved.
+  - Removed `DocumentSpan` class + `DocumentBlock.spans` field
+    (`core/document.py`); `block_tree.Span` (the live
+    rich-text inline-run class) stays. The one test that
+    round-tripped the field was updated to drop the no-op
+    passthrough. (The catalog's "or wire
+    `pages_structured → DocumentBlock.spans`" alternative is a
+    feature, not tech debt; out of scope for this sweep.)
+  - Fixed two stale `TODOS.md` references (the file doesn't
+    exist; the T9 spec and the 2026-08-14 design doc are also
+    gone) in `core/recall/whitespace.py:70` and
+    `tests/core/recall/test_text_recall.py:392`. The T7 harness
+    at `scripts/measure_recall_delta.py` is a real script and
+    stays referenced.
+  - `core/lexicon/lancedb_store.py` `list_glossaries` now uses
+    `self._table.to_pandas(columns=...)` so the storage layer
+    reads only the 10 metadata columns it needs; the
+    `embedding` column (the largest in the table) is not loaded
+    into memory. Older `lancedb` versions fall back to the
+    legacy `to_arrow() + select` path via a `TypeError` guard.
+  - `core/lexicon/lancedb_store.py` `_hybrid_via_arrow` (the
+    NumPy-fallback path) now tries
+    `self._table.search().where(_build_where(query))` before
+    materialising the full table; the remaining predicates
+    (`enabled_only`, `glossary_ids`, anything `_build_where`
+    rejected) still apply in Python via `_matches_query`.
+- **2026-08-29 audit remediation — Sprint 6 / long-file splits**
+  Two of the eight 500+ LOC files were split; the remaining
+  six are flagged for a follow-up sweep (the splits are
+  mechanical, but each needs its own conftest/touch-up pass).
+  - `plugins/state_backend.py` (703 LOC) → frontend (Protocol +
+    dataclasses + plugin) + `state_backend_memory.py`
+    (140 LOC) + `state_backend_sqlite.py` (300 LOC). The
+    `_MEMORY_BLOB_CAP_BYTES` constant moved into
+    `state_backend_memory.py` (impl-specific). Public surface
+    preserved; one test that patched the constant via the old
+    import path was updated to the new module.
+  - `plugins/ocr/plugin.py` (679 LOC) → frontend (Protocol +
+    routes + plugin, 370 LOC) + `plugins/ocr/service.py`
+    (340 LOC: `OCRServiceImpl` + the SSE event-formatting
+    helper + the queue/event-name lookup tables). The pipeline
+    bridge call sites (`build_pipeline`, `run_pipeline`) moved
+    to `service.py`, so the two `fake_pipeline` test fixtures
+    now also patch the new module.
 
 ### Added
 
