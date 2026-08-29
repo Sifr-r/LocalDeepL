@@ -44,6 +44,24 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   timing/loop issues that the sync wrapper could mask (e.g. a
   half-closed ``socket.getaddrinfo`` thread-pool task between
   successive ``asyncio.run`` boundaries).
+- **2026-08-29 audit remediation — Sprint 3/M-2: AppButton 48 dp minimum tap target**
+  `client/lib/presentation/common/app_button.dart` now wraps the
+  visual button in a `_MinimumTapTarget` (private widget) that
+  constrains the hit area to at least 48 dp via `BoxConstraints`.
+  The visible button keeps its design height (32/36/44 dp for
+  sm/md/lg); the touch area extends invisibly. Regression test:
+  `client/test/presentation/common/app_button_tap_target_test.dart`
+  (3 sizes).
+- **2026-08-29 audit remediation — Sprint 4/M-6: OCR test async/await**
+  `tests/core/ocr/test_ocr.py` and
+  `tests/core/grounded/test_grounded.py` convert the
+  `asyncio.run(...)` call sites in `TestHallucinationFilter`,
+  `TestEnsureModelLoaded`, and `TestPromptedGroundedEnsureModelLoaded`
+  to `async def test_*` so the OCR processor and the
+  `PromptedGroundedOCR.ensure_model_loaded` runs on the suite's
+  event loop instead of spawning a fresh loop per test. Net
+  effect: 22 sync `asyncio.run` calls removed; all 1378 tests
+  still pass.
 
 ### Rebuilt API on Cordis-style plugin harness
   `src/omniscribe/api/` package is replaced by a plugin-harness
