@@ -24,8 +24,9 @@ __pycache__/
 dist/
 *.egg-info/
 
-# Frontend (not part of the Python image)
+# Frontend / Client (not part of the Python image)
 frontend/
+client/
 
 # Local secrets and runtime state
 .env

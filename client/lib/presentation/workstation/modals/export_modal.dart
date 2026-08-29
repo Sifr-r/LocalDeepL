@@ -89,17 +89,20 @@ class _ExportModalState extends ConsumerState<ExportModal> {
         case ExportFormat.docxTree:
         case ExportFormat.html:
           // Build self-contained HTML representation of recognized pages and bboxes
+          final rawTitle = wsState.filename ?? 'OmniScribe Export';
+          final escapedTitle = htmlEscape.convert(rawTitle);
           final htmlBuffer = StringBuffer()
             ..writeln('<!DOCTYPE html>')
-            ..writeln('<html><head><meta charset="utf-8"><title>${wsState.filename ?? "OmniScribe Export"}</title>')
+            ..writeln('<html><head><meta charset="utf-8"><title>$escapedTitle</title>')
             ..writeln('<style>body{font-family:sans-serif;margin:2rem;} .page{margin-bottom:2rem;padding:1rem;border:1px solid #ccc;} .block{margin-bottom:0.5rem;}</style>')
             ..writeln('</head><body>')
-            ..writeln('<h1>${wsState.filename ?? "OmniScribe Document Export"}</h1>');
+            ..writeln('<h1>$escapedTitle</h1>');
 
           for (final page in wsState.pages) {
             htmlBuffer.writeln('<div class="page"><h2>Page ${page.page + 1}</h2>');
             for (final box in page.bboxes) {
-              htmlBuffer.writeln('<div class="block"><p>${box.text}</p></div>');
+              final escapedText = htmlEscape.convert(box.text);
+              htmlBuffer.writeln('<div class="block"><p>$escapedText</p></div>');
             }
             htmlBuffer.writeln('</div>');
           }

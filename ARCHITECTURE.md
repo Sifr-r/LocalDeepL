@@ -869,6 +869,18 @@ The Flutter client is the canonical UI surface; Phase B has since retired the pr
 | `client/scripts/build_web.sh` | Manual web bundle build helper |
 | `tests/openapi.json` | Regenerated snapshot for the two new routes + four new schemas |
 
+### 2026-08-28: Comprehensive 5-Domain Architecture & Code Quality Audit
+
+Conducted a full-repository parallel audit covering Core Pipeline, API & Security, Frontend (Flutter Client), Testing & QA, and DevOps & Configuration. Key architectural findings and prioritized tech debt logged:
+
+| Domain | Key Findings & Risks | Planned Action |
+| --- | --- | --- |
+| **Core Pipeline** | - Page-range subset filter bug in `HybridConverter` drops pages 4+ (`conversion.py`).<br>- Anthropic VLM payload inserts `role: system` inside `messages` instead of top-level key (`multi_format_client.py`).<br>- `OCRProcessor` instantiates isolated circuit breaker registries by default rather than process shared singleton (`processor.py`).<br>- Multi-frame TIFF/image rasterizer loop duplicates final frame across all pages (`rasterizer.py`).<br>- Geometry preprocessors (crop/deskew) misalign sandwich PDF text layer coordinates (`page_preprocess.py`). | Fix page-range filter, move Anthropic system prompt to top-level payload, unify circuit breaker registries, seek frames per iteration in rasterizer. |
+| **API & Security** | - `server.py` lacks active ASGI Auth Middleware while `SECURITY.md` documents enforcement.<br>- Unauthenticated blind SSRF in `providers.py` (`/api/providers/validate` and `discover_models`).<br>- `GET /api/config` leaks LLM `api_key` in plaintext.<br>- Unbounded `await upload.read()` memory buffering before upload size cap check (`ocr/plugin.py`).<br>- `is_blocked_host` fails open on DNS resolution exceptions (`security.py`).<br>- Multi-worker partitioning when using `MemoryStateBackend`. | Rebuild Auth Middleware plugin, mask secrets in config responses, validate `is_ssrf_target` on provider discovery, stream multipart uploads, fail-closed on DNS errors. |
+| **Frontend Client** | - Raw HTML injection in document export modal (`export_modal.dart`).<br>- Server base URL changes in Settings do not propagate to `ApiClient`/`WsClient` (`settings_notifier.dart`).<br>- Premature WebSocket teardown in `processOcrAsync` terminates progress channels.<br>- `AppButton` lacks keyboard Tab focus and fails 48x48 dp minimum touch targets. | Sanitize HTML export with `htmlEscape.convert`, bind `apiBaseUrlProvider` reactively, remove premature cleanup on 202` status, implement `FocusableActionDetector` on buttons. |
+| **Testing & QA** | - Zero Flutter CI in GitHub Actions workflows (`test.yml`).<br>- Mypy suppresses all type errors in `tests/` (`ignore_errors = true`).<br>- `core/transcription/` has 0% unit test coverage.<br>- `QualityRepairLoop` lacks standalone unit test suite and is untested on hybrid path.<br>- Synchronous tests calling `asyncio.run()` instead of `async def test_`. | Add Flutter CI job, remove Mypy test ignore flag, add transcription and repair loop test suites, migrate sync `asyncio.run` tests. |
+| **DevOps & Config** | - Docker/Compose healthchecks fail with 404 (probing `/health` instead of `/api/health`).<br>- Stale Celery worker command crashes on startup (`ModuleNotFoundError: No module named 'omniscribe.api'`).<br>- `.dockerignore` misses `client/` causing context bloat.<br>- `.env.example` lists unread `OCR_*` variables not parsed by server. | Point healthcheck to `/api/health`, disable deferred Celery worker in compose, add `client/` to `.dockerignore`, sync `.env.example`. |
+
 ## See Also
 
 - [README.md](README.md) — feature overview, install, web workspace
@@ -878,7 +890,8 @@ The Flutter client is the canonical UI surface; Phase B has since retired the pr
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var reference
 - `audits/` — historical and comprehensive domain audit logs
 
-_Last updated: 2026-08-27_
+_Last updated: 2026-08-28_
+
 
 
 

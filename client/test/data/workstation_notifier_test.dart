@@ -730,7 +730,7 @@ void main() {
       verify(() => ocrRepo.cancelProgressChannel('ch-async-fail')).called(1);
     });
 
-    test('processOcrAsync success sets isProcessing false and stage Complete',
+    test('processOcrAsync success sets isProcessing true and stage Queued',
         () async {
       final container = makeContainer();
       addTearDown(container.dispose);
@@ -759,13 +759,13 @@ void main() {
       await notifier.processOcrAsync();
 
       final state = container.read(workstationProvider);
-      expect(state.isProcessing, isFalse);
-      expect(state.stage, 'Complete');
+      expect(state.isProcessing, isTrue);
+      expect(state.stage, 'Queued');
       expect(state.activeJobId, 'job-async-ok');
     });
 
     test(
-        'processOcrAsync success cleans up WS + channel even when submission succeeds',
+        'processOcrAsync preserves WS + channel during active queuing',
         () async {
       final container = makeContainer();
       addTearDown(container.dispose);
@@ -793,9 +793,8 @@ void main() {
 
       await notifier.processOcrAsync();
 
-      verify(() => wsClient.disconnect()).called(1);
-      verify(() => ocrRepo.cancelProgressChannel('ch-async-success-cleanup'))
-          .called(1);
+      verifyNever(() => wsClient.disconnect());
+      verifyNever(() => ocrRepo.cancelProgressChannel('ch-async-success-cleanup'));
     });
 
     test('dispose triggers full cleanup', () async {

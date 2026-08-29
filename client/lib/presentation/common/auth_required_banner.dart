@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:omniscribe_client/core/enums/app_tab.dart';
 import 'package:omniscribe_client/core/theme/app_colors.dart';
 import 'package:omniscribe_client/data/providers/repository_providers.dart';
 import 'package:omniscribe_client/presentation/common/app_button.dart';
+import 'package:omniscribe_client/presentation/shell/shell_state.dart';
 
 /// Dismissible banner shown when the API client has observed a 401 response
 /// since the last dismiss. Matches the Svelte `AuthRequiredBanner.svelte`
@@ -20,6 +22,7 @@ class AuthRequiredBanner extends ConsumerWidget {
     final colors = context.colors;
     void openSettings() {
       ref.read(authRequiredProvider.notifier).state = false;
+      ref.read(activeTabProvider.notifier).state = AppTab.settings;
     }
 
     void dismiss() {

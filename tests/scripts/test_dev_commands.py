@@ -15,7 +15,7 @@ DEV_SCRIPT = ROOT / "scripts" / "dev.py"
 REQUIRED_TARGETS = {
     "help",
     "setup",
-    "build-frontend",
+    "build-client",
     "run",
     "test",
     "test-slow",

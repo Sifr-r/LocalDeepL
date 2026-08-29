@@ -93,7 +93,7 @@ services:
       OMNISCRIBE_RATE_LIMIT_PER_MIN: "30"
       LLM_API_BASE: "${OMNISCRIBE_LLM_API_BASE:-http://host.docker.internal:1234/v1}"
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3

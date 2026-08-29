@@ -200,8 +200,7 @@ def _generator_from_image_source(
         src_context = Image.open(io.BytesIO(source))
 
     with src_context as src:
-        frames = list(ImageSequence.Iterator(src))
-        total_pages = len(frames)
+        total_pages = getattr(src, "n_frames", 1)
         selected_pages: set[int] | None = None
         if pages:
             selected_pages = set(parse_page_range(pages, total_pages))
@@ -209,10 +208,11 @@ def _generator_from_image_source(
             len(selected_pages) if selected_pages is not None else total_pages
         )
 
-        for page_num, frame in enumerate(frames):
+        for page_num in range(total_pages):
             if selected_pages is not None and page_num not in selected_pages:
                 continue
-            img = frame.convert("RGB")
+            src.seek(page_num)
+            img = src.convert("RGB")
             img.thumbnail((max_image_dim, max_image_dim))
             buffer = io.BytesIO()
             img.save(buffer, format="JPEG", quality=VLM_JPEG_QUALITY_PDF_PATH)

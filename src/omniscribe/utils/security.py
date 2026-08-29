@@ -37,6 +37,7 @@ _UNCONDITIONAL_BLOCKED_NETWORKS: Final[
     ipaddress.ip_network("100.64.0.0/10"),
     ipaddress.ip_network("0.0.0.0/8"),
     ipaddress.ip_network("fe80::/10"),
+    ipaddress.ip_network("fd00:ec2::/64"),
 )
 
 
@@ -229,6 +230,8 @@ def is_blocked_host(host: str | None) -> bool:
         return True
     try:
         addr_info = socket.getaddrinfo(h, None)
+        if not addr_info:
+            return True
         for _fam, _st, _p, _cn, sockaddr in addr_info:
             raw_addr = sockaddr[0]
             if isinstance(raw_addr, bytes):
@@ -241,5 +244,5 @@ def is_blocked_host(host: str | None) -> bool:
             if _is_blocked_ip(resolved_ip) and not allow_local:
                 return True
     except Exception:
-        pass
+        return True
     return False

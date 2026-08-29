@@ -48,6 +48,10 @@ typecheck: ## Run mypy against production code
 # Drop the --ignore-vuln flag once chromadb ships a fixed release (>1.5.9)
 # and the [project.dependencies] / [memory] constraints are bumped to it.
 audit: ## Run pip-audit dependency vulnerability scan
+	# PYSEC-2026-311 / CVE-2026-45829 (chromadb server RCE) is risk-accepted.
+	# Review-by: 2026-12-31 — drop the --ignore-vuln flag once
+	# chromadb ships a fixed release (>1.5.9) and the [memory] constraint
+	# is bumped to it. See the comment block above for full context.
 	uv run pip-audit --ignore-vuln PYSEC-2026-311
 
 # F5-27 audit fix: `make security` runs the local Semgrep static

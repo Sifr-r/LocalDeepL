@@ -55,13 +55,6 @@ class HybridConverter:
         page_nums = sorted(images_dict.keys())
         total_pages = len(page_nums)
 
-        if pages:
-            selected = set(parse_page_range(pages, total_pages))
-            page_nums = [p for p in page_nums if p in selected]
-            images_dict = {
-                p: image for p, image in images_dict.items() if p in selected
-            }
-
         preprocessing_metadata: dict[int, dict[str, object]] = {}
         if (
             self.page_preprocessor is not None
@@ -108,6 +101,10 @@ class HybridConverter:
                 del batch
             return images_dict
 
-        return self.pdf_handler.convert_to_images(
+        all_images = self.pdf_handler.convert_to_images(
             input_path, dpi=dpi, max_image_dim=max_image_dim
         )
+        if pages:
+            selected = set(parse_page_range(pages, len(all_images)))
+            return {p: img for p, img in all_images.items() if p in selected}
+        return all_images

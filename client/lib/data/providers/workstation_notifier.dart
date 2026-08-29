@@ -512,12 +512,13 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
       );
 
       state = state.copyWith(
-        isProcessing: false,
-        stage: 'Complete',
+        isProcessing: true,
+        stage: 'Queued',
         activeJobId: submitResponse.jobId,
         statusMessage: 'Job queued: ${submitResponse.jobId}',
       );
     } catch (e) {
+      await _cleanup();
       state = state.copyWith(
         isProcessing: false,
         stage: 'Error',
@@ -525,8 +526,6 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
         error: e.toString(),
       );
       rethrow;
-    } finally {
-      await _cleanup();
     }
   }
 

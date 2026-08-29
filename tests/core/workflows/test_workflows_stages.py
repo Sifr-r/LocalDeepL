@@ -62,6 +62,20 @@ class TestHybridConverter:
         assert page_nums == [0, 1, 3]
         assert set(images.keys()) == {0, 1, 3}
 
+    async def test_convert_applies_subset_page_range_not_starting_at_one(self) -> None:
+        pdf = _StubPDF(n_pages=10)
+        converter = HybridConverter(pdf_handler=pdf)
+        images, page_nums, _ = await converter.convert(
+            input_path="test.pdf",
+            dpi=150,
+            max_image_dim=1024,
+            pages="8-10",
+            preprocessing_options=None,
+            progress=None,
+        )
+        assert page_nums == [7, 8, 9]
+        assert set(images.keys()) == {7, 8, 9}
+
     async def test_convert_with_preprocessing_enabled(self) -> None:
         pdf = _StubPDF(n_pages=2)
         preprocessor = _RecordingPreprocessor()
