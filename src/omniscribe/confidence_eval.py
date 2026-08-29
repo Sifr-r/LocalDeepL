@@ -228,20 +228,11 @@ def load_ground_truth(
 # --- text similarity -------------------------------------------------------
 
 
-_WS = re.compile(r"\s+")
-_MD_PUNCT = re.compile(r"[*_`#\-]+")
-
-
-def _normalize_text(s: str) -> str:
-    """Lowercase, strip markdown-ish punctuation, collapse whitespace."""
-    s = s.lower()
-    s = _MD_PUNCT.sub(" ", s)
-    s = _WS.sub(" ", s)
-    return s.strip()
+from omniscribe.utils.text import normalize_text  # noqa: F401  # L-7 audit: shared helper
 
 
 def text_similarity(a: str, b: str) -> float:
-    return SequenceMatcher(None, _normalize_text(a), _normalize_text(b)).ratio()
+    return SequenceMatcher(None, normalize_text(a), normalize_text(b)).ratio()
 
 
 # --- matching --------------------------------------------------------------
