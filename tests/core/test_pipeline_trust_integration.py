@@ -135,7 +135,6 @@ class _RecordingOrchestrator:
                     confidence=block.confidence,
                     source_processor=block.source_processor,
                     reading_order=block.reading_order,
-                    spans=list(block.spans),
                     metadata=dict(block.metadata),
                     trust_score=0.42,
                     trust_flags=("stub_flag",),

@@ -41,14 +41,6 @@ BBox = tuple[float, float, float, float]
 
 
 @dataclass(slots=True)
-class DocumentSpan:
-    text: str
-    bbox: BBox | None = None
-    confidence: float | None = None
-    source_processor: str = "unknown"
-
-
-@dataclass(slots=True)
 class DocumentBlock:
     bbox: BBox
     text: str
@@ -56,7 +48,6 @@ class DocumentBlock:
     confidence: float | None = None
     source_processor: str = "ocr"
     reading_order: int | None = None
-    spans: list[DocumentSpan] = field(default_factory=list)
     metadata: dict[str, object] = field(default_factory=dict)
     # OCR quality trust-layer outputs. ``None`` when the trust layer is
     # disabled (Phase 1 default). When populated, ``trust_score`` is in
