@@ -26,15 +26,13 @@ uv run pytest -m "not slow"
 # Full gate — run before merge / PR:
 uv run pytest
 uv run pytest -m slow
-uv run pytest -m live_llm
 uv run pytest tests/core/test_aligner.py -v
 ```
 
 - `pytest-asyncio` uses auto mode. Write `async def test_...` without decorators.
 - Slow tests load Surya and may download its model on the first run.
-- Markers are `slow`, `live_llm`, and `slow_dataset`:
+- Markers are `slow` and `slow_dataset`:
   - `slow` — loads the Surya detection predictor (~5s first run, ~500 MB model weight).
-  - `live_llm` — hits a real LLM endpoint; run manually with `uv run pytest -m live_llm` against a local LM Studio instance (`http://localhost:1234/v1`).
   - `slow_dataset` — exercises the full OCR-Quality / KIE-HVQA regression fixtures (`tests/fixtures/datasets/ocr_quality_full.json`, `kie_hvqa_full.json`); only meaningful once `scripts/fetch_datasets.py` has the upstream license review cleared and downloads the real datasets. Today the marker is a no-op skip (the fixtures don't ship); the marker exists so the next test author can land tests that need the full data without remembering the right `xfail` shape.
 - Pre-commit hooks run ruff (check + format) and mypy automatically on every commit. Install with `uv tool run pre-commit install`.
 
