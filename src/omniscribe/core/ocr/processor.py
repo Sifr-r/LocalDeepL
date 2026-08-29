@@ -1,25 +1,25 @@
-"""OCRProcessor — the main OCR class.
+"""OCRProcessor Ã¢â‚¬â€ the main OCR class.
 
 :class:`OCRProcessor` is the single class that performs OCR against a
 local vision LLM (OlmOCR via LM Studio by default; any OpenAI-compatible
-endpoint works, including GLM OCR via Ollama — set LLM_API_BASE/LLM_MODEL
+endpoint works, including GLM OCR via Ollama Ã¢â‚¬â€ set LLM_API_BASE/LLM_MODEL
 or pass ``api_base``/``model``).
 
 It composes four sibling modules:
 
-- :mod:`omniscribe.core.ocr.prompts` — OlmOCR/page/crop/dual-engine/
+- :mod:`omniscribe.core.ocr.prompts` Ã¢â‚¬â€ OlmOCR/page/crop/dual-engine/
   correction/handwriting prompt constants and selection helpers.
-- :mod:`omniscribe.core.ocr.filters` — output sanitization
+- :mod:`omniscribe.core.ocr.filters` Ã¢â‚¬â€ output sanitization
   (YAML front-matter strip, fallback-phrase suppression, runaway-
   repetition clip).
-- :mod:`omniscribe.core.ocr.client` — pre-flight model-loaded checks
+- :mod:`omniscribe.core.ocr.client` Ã¢â‚¬â€ pre-flight model-loaded checks
   (reused by :mod:`omniscribe.core.grounded.zai`).
-- :mod:`omniscribe.core.ocr.exceptions` — :class:`LLMCallError` and
+- :mod:`omniscribe.core.ocr.exceptions` Ã¢â‚¬â€ :class:`LLMCallError` and
   :class:`ModelNotLoadedError`.
 
 Call :meth:`ensure_model_loaded` once at pipeline startup before paying
 for image conversion or detection (LM Studio silently falls back to
-whatever model is currently loaded when the requested one is missing —
+whatever model is currently loaded when the requested one is missing Ã¢â‚¬â€
 see :class:`ModelNotLoadedError` for why this matters). Then use
 :meth:`perform_ocr` for full-page OCR or :meth:`perform_ocr_on_crop`
 for single-box OCR.
@@ -35,14 +35,13 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
 from omniscribe.config import load_settings
-from omniscribe.core.llm.client import call_llm
-from omniscribe.core.llm.temperatures import TEMPERATURE_OCR
+from omniscribe.core.ocr.chat_client import ChatClient
 from omniscribe.core.ocr.client import (
     _format_model_not_loaded,
     _list_loaded_model_ids,
     _model_in_loaded,
 )
-from omniscribe.core.ocr.exceptions import LLMCallError, ModelNotLoadedError
+from omniscribe.core.ocr.exceptions import ModelNotLoadedError
 from omniscribe.core.ocr.filters import (
     _is_fallback_response,
     _strip_runaway_repetition,
@@ -63,7 +62,6 @@ from omniscribe.core.ocr.prompts import (
 from omniscribe.core.ocr.resilience import (
     CircuitBreakerRegistry,
     get_default_circuit_breaker_registry,
-    is_transient_error,
 )
 from omniscribe.utils.env import env_int
 
@@ -79,7 +77,7 @@ class OCRProcessor:
     """LLM-based OCR processor over an OpenAI-compatible async client.
 
     Local VLMs occasionally fall into runaway-generation loops on dense
-    or unusual pages — we bound both the per-call timeout and the
+    or unusual pages Ã¢â‚¬â€ we bound both the per-call timeout and the
     response token budget so a single bad page can't hang the pipeline
     indefinitely. Tuned per-call (full-page vs single-line crop): a page
     can legitimately take longer than a crop, and warrants a higher token
@@ -90,7 +88,7 @@ class OCRProcessor:
     # retries, retry base delay) used to be class-level constants read
     # from ``_settings`` at module import. A long-running uvicorn worker
     # that picked up an env-var change after the first request would
-    # never see the new value — the module was already loaded and the
+    # never see the new value Ã¢â‚¬â€ the module was already loaded and the
     # class attribute was already bound. We now expose the resolved
     # values as **instance** attributes set in ``__init__`` (which runs
     # at pipeline construction, not at module import), so a fresh
@@ -109,7 +107,7 @@ class OCRProcessor:
     # override the token budget via ``OMNISCRIBE_VLM_PAGE_MAX_TOKENS``
     # for tail-latency tuning on dense pages (Phase 5). Both flow
     # through :mod:`omniscribe.config` / :mod:`omniscribe.utils.env`
-    # (audit H3) — no direct ``os.getenv`` in this module.
+    # (audit H3) Ã¢â‚¬â€ no direct ``os.getenv`` in this module.
     PAGE_TIMEOUT_S: float = load_settings().vlm_page_timeout
     PAGE_MAX_TOKENS: int = env_int("OMNISCRIBE_VLM_PAGE_MAX_TOKENS", 6144)
 
@@ -177,7 +175,19 @@ class OCRProcessor:
         self.circuit_breaker = registry.get_or_create(
             api_base=self.api_base, model=self.model
         )
-        # F1.13 audit fix (PARTIAL → FULL): track the number of Tesseract
+        # The actual VLM call (retry + breaker) lives in ChatClient. The
+        # processor just hands it a prompt + image and a per-call
+        # timeout / max-tokens budget; the client owns the loop.
+        self._chat_client = ChatClient(
+            model=self.model,
+            api_base=self.api_base,
+            api_key=self.api_key,
+            max_retries=self.max_retries,
+            retry_base_delay_s=self.retry_base_delay_s,
+            retry_max_delay_s=self.retry_max_delay_s,
+            circuit_breaker=self.circuit_breaker,
+        )
+        # F1.13 audit fix (PARTIAL Ã¢â€ â€™ FULL): track the number of Tesseract
         # fallback failures over the lifetime of this processor. The
         # previous code logged the failure (with ``exc_info=True`` after
         # the F1.4 fix) but had no per-run counter, so an operator
@@ -250,11 +260,11 @@ class OCRProcessor:
         YAML front matter emitted by OlmOCR (rotation/language/is_table flags)
         is stripped before returning. Runaway repetition (the model getting
         stuck emitting the same line over and over) is detected and clipped
-        — this happens occasionally on dense handwritten pages even with
+        Ã¢â‚¬â€ this happens occasionally on dense handwritten pages even with
         max_tokens set, and pollutes downstream alignment with junk lines.
 
         The OLMOCR-2 page prompt is sent as a plain user message with no
-        system role — the model was RL-trained on this exact distribution
+        system role Ã¢â‚¬â€ the model was RL-trained on this exact distribution
         and a system message would shift it. Dual-engine and correction
         paths wrap a system message around their user turns.
         """
@@ -271,7 +281,7 @@ class OCRProcessor:
                 prompt = fill_dual_engine_page(draft)
 
         # OlmOCR-2 page path: pure user message, no system role. Every
-        # other page path gets a system message — *unless* the active
+        # other page path gets a system message Ã¢â‚¬â€ *unless* the active
         # model is one of the system-role-excluded families
         # (e.g. allenai/olmocr-2-7b), in which case we drop the system
         # message entirely to keep the model's RL-trained distribution
@@ -427,7 +437,7 @@ class OCRProcessor:
         if _is_fallback_response(result):
             result = ""
 
-        # Phase A.2 (review M3) — TrOCR dual-engine arbitration.
+        # Phase A.2 (review M3) Ã¢â‚¬â€ TrOCR dual-engine arbitration.
         # See _run_trocr_arbitration() for details on the arbitration logic.
         if getattr(self, "handwriting_mode", False) and self.trocr_engine is not None:
             from omniscribe.core.ocr.trocr import _heuristic_confidence
@@ -449,100 +459,33 @@ class OCRProcessor:
         max_tokens: int,
         system_prompt: str | None = None,
     ) -> str:
-        """Call the VLM with retry-on-transient and circuit-breaker protection.
+        """Backward-compat thin wrapper around the :class:`ChatClient`.
 
-        Transient failures (429, 5xx, connection resets, timeouts) are
-        retried up to ``MAX_RETRIES`` times with exponential backoff.
-        Permanent failures (context-length exceeded, auth) raise
-        immediately. The circuit breaker counts consecutive failures
-        (across all attempts) and fails fast once the endpoint is deemed
-        down, so a dead server doesn't serialize N page-timeouts.
+        The retry / circuit-breaker / context-length-error-translation
+        logic lives in ``omniscribe.core.ocr.chat_client.ChatClient``;
+        OCRProcessor only owns the prompt construction + post-OCR
+        filtering pipeline. This thin method exists so that:
 
-        ``system_prompt``: when set, sent as a separate system-role
-        message. The OLMOCR-2 page path leaves this ``None`` to keep
-        the model's RL-trained distribution intact.
+        - legacy test suites that do ``ocr._chat = fake`` (the
+          ``OCRProcessor.__new__`` path) keep overriding a callable on
+          the instance.
+        - the per-call timeout / max_tokens / system_prompt parameters
+          that callers already pass continue to flow through unchanged.
+
+        The wrapper also re-syncs ``self._chat_client.circuit_breaker``
+        from ``self.circuit_breaker`` before each call so a test that
+        swaps the breaker on the processor (e.g.
+        ``p.circuit_breaker = CircuitBreaker(...)``) takes effect
+        without rebuilding the client.
         """
-        # M3 audit fix: removed the redundant unconditional pre-loop
-        # ``await self.circuit_breaker.check()``. The in-loop call is
-        # now invoked on EVERY attempt (not just attempt > 0) so the
-        # first attempt also consults the breaker — a previously OPEN
-        # breaker fails fast without consuming an LLM call.
-        last_exc: Exception | None = None
-        for attempt in range(self.max_retries + 1):
-            # Re-check on every attempt: a prior attempt may have
-            # tripped the breaker, or the breaker may already be open
-            # when this call started. CircuitOpenError propagates
-            # directly (not an LLMCallError) so the engine's per-page
-            # handler sees "endpoint down".
-            await self.circuit_breaker.check()
-            try:
-                content = await call_llm(
-                    model=self.model,
-                    api_base=self.api_base,
-                    api_key=self.api_key,
-                    temperature=TEMPERATURE_OCR,
-                    max_tokens=max_tokens,
-                    timeout=timeout,
-                    system_prompt=system_prompt,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": prompt},
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:image/png;base64,{image_base64}"
-                                    },
-                                },
-                            ],
-                        }
-                    ],
-                )
-                await self.circuit_breaker.record_success()
-                return content.strip()
-            except Exception as e:
-                last_exc = e
-                await self.circuit_breaker.record_failure()
-
-                if not is_transient_error(e):
-                    break  # permanent failure — do not retry
-                if attempt < self.max_retries:
-                    delay = min(
-                        self.retry_base_delay_s * (2**attempt),
-                        self.retry_max_delay_s,
-                    )
-                    logger.warning(
-                        "Transient LLM error (attempt %d/%d), retrying in "
-                        "%.1fs: %s: %s",
-                        attempt + 1,
-                        self.max_retries + 1,
-                        delay,
-                        type(e).__name__,
-                        e,
-                    )
-                    await asyncio.sleep(delay)
-
-        assert last_exc is not None
-        err_msg = str(last_exc)
-        if any(
-            term in err_msg.lower()
-            for term in (
-                "context size",
-                "context_length_exceeded",
-                "context length",
-            )
-        ):
-            raise LLMCallError(
-                f"LLM OCR call failed due to Context Size Limit. "
-                f"Please load the model in LM Studio and increase the 'Context Length' in the right-side panel "
-                f"to at least 8192 or 16384 tokens. "
-                f"Underlying error: {last_exc}"
-            ) from last_exc
-        raise LLMCallError(
-            f"LLM OCR call failed against {self.api_base} "
-            f"({type(last_exc).__name__}): {last_exc}"
-        ) from last_exc
+        self._chat_client.circuit_breaker = self.circuit_breaker
+        return await self._chat_client.chat(
+            prompt,
+            image_base64,
+            timeout=timeout,
+            max_tokens=max_tokens,
+            system_prompt=system_prompt,
+        )
 
     def _get_tesseract_draft(self, image_base64: str) -> str:
         try:
@@ -590,7 +533,7 @@ class OCRProcessor:
 
         Two reasons to return ``None``:
 
-        1. The canonical OLMOCR-2 page prompt is in use — the model
+        1. The canonical OLMOCR-2 page prompt is in use Ã¢â‚¬â€ the model
            was RL-trained on it as a pure user message; a system role
            would shift the distribution.
         2. The active model is one of the system-role-excluded
@@ -642,7 +585,7 @@ class OCRProcessor:
 
             img = Image.open(io.BytesIO(base64.b64decode(image_base64))).convert("L")
 
-            # Local mean via box blur (radius 10 ≈ block_size 21).
+            # Local mean via box blur (radius 10 Ã¢â€°Ë† block_size 21).
             local_mean = img.filter(ImageFilter.BoxBlur(radius=10))
 
             # Adaptive threshold: pixel is white (255) if src > local_mean - C.

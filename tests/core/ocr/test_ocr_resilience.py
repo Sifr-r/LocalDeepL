@@ -88,7 +88,7 @@ async def test_breaker_resets_on_success():
     await cb.record_failure()
     await cb.record_success()
     assert cb.consecutive_failures == 0
-    await cb.record_failure()  # only 1 consecutive failure — still closed
+    await cb.record_failure()  # only 1 consecutive failure â€” still closed
     await cb.check()
 
 
@@ -101,7 +101,7 @@ async def test_breaker_half_open_after_cooldown():
     await cb.record_failure()
     assert cb.is_open
 
-    # Advance past cooldown → half-open: check() passes a probe through.
+    # Advance past cooldown â†’ half-open: check() passes a probe through.
     now[0] = 31.0
     assert not cb.is_open
     await cb.check()  # probe allowed
@@ -165,7 +165,7 @@ async def test_breaker_state_transitions_open_to_half_open():
     await cb.record_failure()
     await cb.record_failure()
     assert cb.state is CircuitState.OPEN
-    # Cooldown elapsed → half-open: a probe is allowed.
+    # Cooldown elapsed â†’ half-open: a probe is allowed.
     now[0] = 31.0
     assert cb.state is CircuitState.HALF_OPEN
     # is_open is False during half-open (a probe is allowed through).
@@ -209,7 +209,7 @@ async def test_chat_retries_transient_error_and_succeeds():
             "  recovered text  ",
         ]
     )
-    with patch("omniscribe.core.ocr.processor.call_llm", mock_call):
+    with patch("omniscribe.core.ocr.chat_client.call_llm", mock_call):
         result = await p._chat("prompt", "aW1n", timeout=10, max_tokens=100)
 
     assert result == "recovered text"
@@ -219,7 +219,7 @@ async def test_chat_retries_transient_error_and_succeeds():
 async def test_chat_exhausts_retries_then_raises_llm_call_error():
     p = _make_processor()
     mock_call = AsyncMock(side_effect=_FakeHTTPError("Service Unavailable", 503))
-    with patch("omniscribe.core.ocr.processor.call_llm", mock_call):
+    with patch("omniscribe.core.ocr.chat_client.call_llm", mock_call):
         with pytest.raises(LLMCallError, match="Service Unavailable"):
             await p._chat("prompt", "aW1n", timeout=10, max_tokens=100)
 
@@ -231,7 +231,7 @@ async def test_chat_does_not_retry_permanent_context_size_error():
     mock_call = AsyncMock(
         side_effect=_FakeHTTPError("context_length_exceeded: 12000 > 8192")
     )
-    with patch("omniscribe.core.ocr.processor.call_llm", mock_call):
+    with patch("omniscribe.core.ocr.chat_client.call_llm", mock_call):
         with pytest.raises(LLMCallError, match="Context Size Limit"):
             await p._chat("prompt", "aW1n", timeout=10, max_tokens=100)
 
@@ -241,7 +241,7 @@ async def test_chat_does_not_retry_permanent_context_size_error():
 async def test_chat_does_not_retry_auth_error():
     p = _make_processor()
     mock_call = AsyncMock(side_effect=_FakeHTTPError("Invalid API key", 401))
-    with patch("omniscribe.core.ocr.processor.call_llm", mock_call):
+    with patch("omniscribe.core.ocr.chat_client.call_llm", mock_call):
         with pytest.raises(LLMCallError, match="Invalid API key"):
             await p._chat("prompt", "aW1n", timeout=10, max_tokens=100)
 
@@ -253,13 +253,13 @@ async def test_circuit_breaker_fails_fast_after_consecutive_failures():
     p.circuit_breaker = CircuitBreaker(failure_threshold=3, cooldown_seconds=60.0)
     mock_call = AsyncMock(side_effect=_FakeHTTPError("Connection refused"))
 
-    with patch("omniscribe.core.ocr.processor.call_llm", mock_call):
-        # First call: 3 attempts all fail → breaker at 3 → open.
+    with patch("omniscribe.core.ocr.chat_client.call_llm", mock_call):
+        # First call: 3 attempts all fail â†’ breaker at 3 â†’ open.
         with pytest.raises(LLMCallError):
             await p._chat("prompt", "aW1n", timeout=10, max_tokens=100)
         assert mock_call.call_count == 3
 
-        # Second call: circuit open → fails fast, zero LLM calls.
+        # Second call: circuit open â†’ fails fast, zero LLM calls.
         with pytest.raises(CircuitOpenError, match="circuit breaker open"):
             await p._chat("prompt", "aW1n", timeout=10, max_tokens=100)
         assert mock_call.call_count == 3  # unchanged
@@ -272,10 +272,10 @@ async def test_successful_call_resets_breaker_for_next_page():
     transient = _FakeHTTPError("Bad Gateway", 502)
     mock_call = AsyncMock(side_effect=[transient, transient, "ok", "ok"])
 
-    with patch("omniscribe.core.ocr.processor.call_llm", mock_call):
+    with patch("omniscribe.core.ocr.chat_client.call_llm", mock_call):
         result = await p._chat("prompt", "aW1n", timeout=10, max_tokens=100)
         assert result == "ok"
-        # 2 failures then success → breaker reset to 0.
+        # 2 failures then success â†’ breaker reset to 0.
         assert p.circuit_breaker.consecutive_failures == 0
 
         result = await p._chat("prompt", "aW1n", timeout=10, max_tokens=100)

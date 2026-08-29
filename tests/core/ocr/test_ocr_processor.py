@@ -101,8 +101,7 @@ def test_embedder_font_probe_logs_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """When the embedder font probe raises, it logs a warning instead of swallowing."""
-    from omniscribe.core.pdf import embedder
-    from omniscribe.core.pdf import embedder_helpers
+    from omniscribe.core.pdf import embedder, embedder_helpers
 
     class _StubFont:
         buffer = b"fake-font-buffer"

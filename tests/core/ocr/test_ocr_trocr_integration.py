@@ -34,7 +34,7 @@ class _FakeTrOCREngine:
 
 
 def _tiny_png_base64() -> str:
-    """A 1x1 white PNG encoded as base64 — enough to round-trip through
+    """A 1x1 white PNG encoded as base64 â€” enough to round-trip through
     b64decode and convince the OCRProcessor the crop is non-empty."""
     img = Image.new("RGB", (1, 1), "white")
     buf = io.BytesIO()
@@ -44,7 +44,7 @@ def _tiny_png_base64() -> str:
 
 async def test_trocr_fallback_uses_recognize_with_raw_bytes(monkeypatch):
     """When VLM confidence is low, OCRProcessor must call
-    `TrOCREngine.recognize(image_bytes)` — not the non-existent
+    `TrOCREngine.recognize(image_bytes)` â€” not the non-existent
     `ocr(image_base64)` from the pre-fix code path."""
 
     # Replace `call_llm` inside the processor's namespace (not llm_client.py)
@@ -57,7 +57,7 @@ async def test_trocr_fallback_uses_recognize_with_raw_bytes(monkeypatch):
     async def _fake_call_llm(**kwargs) -> str:
         return "x"
 
-    monkeypatch.setattr(processor_module, "call_llm", _fake_call_llm)
+    monkeypatch.setattr("omniscribe.core.ocr.chat_client.call_llm", _fake_call_llm)
 
     trocr = _FakeTrOCREngine(TrOCRResult(text="hello", confidence=0.9))
     processor = OCRProcessor(
@@ -93,7 +93,7 @@ async def test_trocr_fallback_swallows_engine_errors(monkeypatch):
     async def _fake_call_llm(**kwargs) -> str:
         return "x"
 
-    monkeypatch.setattr(processor_module, "call_llm", _fake_call_llm)
+    monkeypatch.setattr("omniscribe.core.ocr.chat_client.call_llm", _fake_call_llm)
 
     processor = OCRProcessor(
         api_base="http://localhost:0/v1",
