@@ -15,7 +15,6 @@ from omniscribe.core.imaging.page_preprocess import (
     PagePreprocessor,
 )
 from omniscribe.core.ocr import OCRProcessor
-from omniscribe.core.ocr.resilience import CircuitOpenError
 from omniscribe.core.ocr_quality import TrustOrchestrator
 from omniscribe.core.ocr_quality.routing import (
     QualityRoutingOptions,
@@ -34,11 +33,9 @@ from omniscribe.core.workflows.base import (
     PagesData,
     ProgressCallback,
     WarningCallback,
-    notify,
 )
+from omniscribe.core.workflows.hybrid_repair import run_repair_phase
 from omniscribe.core.workflows.repair import (
-    PageRepairSummary,
-    QualityRepairLoop,
     RepairOptions,
     emit_job_repair_summary,
 )
@@ -57,7 +54,6 @@ from omniscribe.core.workflows.utils import (
     parse_page_range,
     validate_bbox_coordinates,
 )
-from omniscribe.utils.image import crop_for_ocr_from_image
 
 if TYPE_CHECKING:
     from omniscribe.core.callbacks import BlockCallbackSet
@@ -240,7 +236,8 @@ class HybridEngine(EngineBase):
 
         # --- Phase 4b: quality repair of below-target blocks (spec §3.2) ---
         if repair_options is not None and repair_options.enabled:
-            repair_summaries = await self._repair_pages(
+            repair_summaries = await run_repair_phase(
+                engine=self,
                 pages_structured=pages_structured,
                 images_dict=images_dict,
                 page_nums=page_nums,
@@ -248,6 +245,7 @@ class HybridEngine(EngineBase):
                 concurrency=concurrency,
                 progress=progress,
                 on_warning=on_warning,
+                decoded_get=self._decoded_get,
             )
             await emit_job_repair_summary(self.block_callbacks, repair_summaries)
 
@@ -468,159 +466,6 @@ class HybridEngine(EngineBase):
             cancel_check=cancel_check,
             decoded_get=self._decoded_get,
         )
-
-    def _count_repair_targets(
-        self,
-        *,
-        page_nums: Sequence[int],
-        pages_structured: dict[int, PageBoxes],
-        target: float,
-    ) -> int:
-        """Count non-empty blocks whose estimated confidence is below ``target``.
-
-        Audit catalog: extracted from the inline ``sum(...)`` at the
-        top of ``_repair_pages`` so the parent function is a clean
-        phase driver.
-        """
-        return sum(
-            1
-            for p_num in page_nums
-            for _, text in pages_structured.get(p_num, [])
-            if text.strip() and _estimate_confidence(text) < target
-        )
-
-    async def _repair_single_page(
-        self,
-        *,
-        p_num: int,
-        aligned: list,
-        page_image: Image.Image,
-        loop: QualityRepairLoop,
-        cb: BlockCallbackSet,
-        completed_box: list[int],
-        targets: int,
-        on_warning: WarningCallback | None,
-        progress: ProgressCallback | None,
-    ) -> PageRepairSummary:
-        """Re-OCR one page's below-target blocks; emit per-page summary.
-
-        ``completed_box`` is a single-element mutable counter shared
-        across the per-page loop (audit catalog: nonlocal ``completed``
-        carried the global count for the progress emit; the list
-        pattern is the same one the OCR quality orchestrator uses
-        for ``fallback_used_box``).
-        """
-        async def re_ocr(
-            block_idx: int,
-            bbox: tuple[float, float, float, float],
-            *,
-            _img: Image.Image = page_image,
-            _page: int = p_num,
-        ) -> str:
-            crop_b64 = await asyncio.to_thread(
-                crop_for_ocr_from_image, _img, list(bbox)
-            )
-            if crop_b64 is None:
-                return ""
-            try:
-                text = await self.ocr_processor.perform_ocr_on_crop(crop_b64)
-            except CircuitOpenError:
-                raise
-            except Exception as exc:
-                if on_warning is not None:
-                    await on_warning(_page, exc)
-                raise
-            completed_box[0] += 1
-            await notify(
-                progress,
-                "refine",
-                min(completed_box[0], targets),
-                targets,
-                f"Repairing below-target blocks ({min(completed_box[0], targets)}/{targets})",
-            )
-            return text
-
-        summary = await loop.repair_page(
-            page_idx=p_num,
-            page_blocks=aligned,
-            re_ocr=re_ocr,
-            on_block_retry=cb.on_block_retry,
-            on_block_revised=cb.on_block_revised,
-        )
-        if cb.on_quality_summary is not None:
-            await cb.on_quality_summary(
-                "page",
-                p_num,
-                summary.target,
-                summary.avg_confidence,
-                summary.repaired_count,
-                summary.below_target_count,
-            )
-        return summary
-
-    async def _repair_pages(
-        self,
-        *,
-        pages_structured: dict[int, PageBoxes],
-        images_dict: dict[int, str],
-        page_nums: Sequence[int],
-        repair_options: RepairOptions,
-        concurrency: int,
-        progress: ProgressCallback | None,
-        on_warning: WarningCallback | None = None,
-    ) -> list[PageRepairSummary]:
-        """Phase 4b — re-OCR non-empty blocks below the quality target.
-
-        Audit catalog: split the 94-LOC body into
-        :meth:`_count_repair_targets` + :meth:`_repair_single_page` so
-        this function is a clean phase driver. The shared
-        ``completed`` counter is carried via a single-element list.
-        """
-        loop = QualityRepairLoop(repair_options)
-        cb = self.block_callbacks
-
-        targets = self._count_repair_targets(
-            page_nums=page_nums,
-            pages_structured=pages_structured,
-            target=repair_options.target,
-        )
-        if not targets:
-            return []
-        await notify(
-            progress,
-            "refine",
-            0,
-            targets,
-            f"Repairing {targets} below-target blocks...",
-        )
-
-        completed_box = [0]
-        summaries: list[PageRepairSummary] = []
-        for p_num in page_nums:
-            aligned = pages_structured.get(p_num)
-            if not aligned:
-                continue
-
-            cached = self._decoded_get(p_num)
-            page_image = (
-                cached
-                if cached is not None
-                else await asyncio.to_thread(_decode_page_image, images_dict[p_num])
-            )
-
-            summary = await self._repair_single_page(
-                p_num=p_num,
-                aligned=aligned,
-                page_image=page_image,
-                loop=loop,
-                cb=cb,
-                completed_box=completed_box,
-                targets=targets,
-                on_warning=on_warning,
-                progress=progress,
-            )
-            summaries.append(summary)
-        return summaries
 
     async def _finalize(
         self,

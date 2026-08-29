@@ -1,0 +1,228 @@
+"""Phase 4b — quality repair of below-target blocks for the hybrid engine.
+
+Audit catalog (Sprint 6 long-file split): the repair phase logic
+(``_count_repair_targets`` + ``_repair_single_page`` +
+``_repair_pages``) used to live inside ``HybridEngine`` in
+``core/workflows/hybrid.py``. It was 125 LOC of bespoke logic —
+unlike the other phases which are thin delegators over the
+stage classes (``HybridConverter``, ``HybridLayoutDetector``,
+``HybridOcrRunner``, ``HybridRefiner``) — and had no test
+coverage as methods of ``HybridEngine`` (it was only exercised
+through the top-level ``execute()``).
+
+This module is the repair phase half: a small driver function
+``run_repair_phase`` that the engine calls from ``execute()``,
+plus a ``repair_single_page`` helper that runs one page's
+below-target blocks through the ``QualityRepairLoop``. The
+non-public ``_count_repair_targets`` is folded into the driver
+because it has no other caller.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from collections.abc import Callable, Sequence
+from typing import Protocol
+
+from PIL import Image
+
+from omniscribe.core.callbacks import BlockCallbackSet
+from omniscribe.core.ocr import OCRProcessor
+from omniscribe.core.ocr.resilience import CircuitOpenError
+from omniscribe.core.workflows.base import (
+    OCRCancelled,
+    PageBoxes,
+    ProgressCallback,
+    WarningCallback,
+    notify,
+)
+from omniscribe.core.workflows.repair import (
+    PageRepairSummary,
+    QualityRepairLoop,
+    RepairOptions,
+)
+from omniscribe.core.workflows.utils import (
+    _decode_page_image,
+    _estimate_confidence,
+)
+from omniscribe.utils.image import crop_for_ocr_from_image
+
+logger = logging.getLogger(__name__)
+
+
+class _RepairEngineHost(Protocol):
+    """Duck-typed surface the repair phase needs from the host engine.
+
+    The repair phase is engine-agnostic in principle; the only
+    attributes it actually reads are ``ocr_processor`` and
+    ``block_callbacks`` (both public-ish on HybridEngine). Defining
+    them as a Protocol keeps the mypy contract honest while still
+    letting the host engine be any class that exposes these two
+    attributes.
+    """
+
+    ocr_processor: OCRProcessor
+    block_callbacks: BlockCallbackSet
+
+
+async def run_repair_phase(
+    *,
+    engine: _RepairEngineHost,
+    pages_structured: dict[int, PageBoxes],
+    images_dict: dict[int, str],
+    page_nums: Sequence[int],
+    repair_options: RepairOptions,
+    concurrency: int,
+    progress: ProgressCallback | None,
+    on_warning: WarningCallback | None = None,
+    decoded_get: Callable[[int], Image.Image | None],
+) -> list[PageRepairSummary]:
+    """Phase 4b — re-OCR non-empty blocks below the quality target.
+
+    Audit catalog: split out of ``HybridEngine._repair_pages`` so the
+    engine's ``execute()`` is a clean phase driver. The shared
+    ``completed`` counter is carried via a single-element list.
+
+    ``engine`` is duck-typed against ``HybridEngine`` for the
+    ``ocr_processor``, ``block_callbacks``, and ``_decoded_get`` /
+    ``_decoded_put`` access. ``concurrency`` is currently a no-op
+    (the per-page loop is sequential by design — repair re-OCR is
+    one box at a time per page, and the box-level parallelism lives
+    inside ``QualityRepairLoop``).
+    """
+    loop = QualityRepairLoop(repair_options)
+    cb = engine.block_callbacks
+
+    targets = _count_repair_targets(
+        page_nums=page_nums,
+        pages_structured=pages_structured,
+        target=repair_options.target,
+    )
+    if not targets:
+        return []
+    await notify(
+        progress,
+        "refine",
+        0,
+        targets,
+        f"Repairing {targets} below-target blocks...",
+    )
+
+    completed_box = [0]
+    summaries: list[PageRepairSummary] = []
+    for p_num in page_nums:
+        aligned = pages_structured.get(p_num)
+        if not aligned:
+            continue
+
+        cached = decoded_get(p_num)
+        page_image = (
+            cached
+            if cached is not None
+            else await asyncio.to_thread(_decode_page_image, images_dict[p_num])
+        )
+
+        summary = await repair_single_page(
+            engine=engine,
+            p_num=p_num,
+            aligned=aligned,
+            page_image=page_image,
+            loop=loop,
+            cb=cb,
+            completed_box=completed_box,
+            targets=targets,
+            on_warning=on_warning,
+            progress=progress,
+        )
+        summaries.append(summary)
+    return summaries
+
+
+def _count_repair_targets(
+    *,
+    page_nums: Sequence[int],
+    pages_structured: dict[int, PageBoxes],
+    target: float,
+) -> int:
+    """Count non-empty blocks whose estimated confidence is below ``target``."""
+    return sum(
+        1
+        for p_num in page_nums
+        for _, text in pages_structured.get(p_num, [])
+        if text.strip() and _estimate_confidence(text) < target
+    )
+
+
+async def repair_single_page(
+    *,
+    engine: _RepairEngineHost,
+    p_num: int,
+    aligned: list,
+    page_image: Image.Image,
+    loop: QualityRepairLoop,
+    cb: BlockCallbackSet,
+    completed_box: list[int],
+    targets: int,
+    on_warning: WarningCallback | None,
+    progress: ProgressCallback | None,
+) -> PageRepairSummary:
+    """Re-OCR one page's below-target blocks; emit per-page summary.
+
+    ``completed_box`` is a single-element mutable counter shared
+    across the per-page loop (audit catalog: nonlocal ``completed``
+    carried the global count for the progress emit; the list
+    pattern is the same one the OCR quality orchestrator uses
+    for ``fallback_used_box``).
+    """
+
+    async def re_ocr(
+        block_idx: int,
+        bbox: tuple[float, float, float, float],
+        *,
+        _img: Image.Image = page_image,
+        _page: int = p_num,
+    ) -> str:
+        crop_b64 = await asyncio.to_thread(
+            crop_for_ocr_from_image, _img, list(bbox)
+        )
+        if crop_b64 is None:
+            return ""
+        try:
+            text = await engine.ocr_processor.perform_ocr_on_crop(crop_b64)
+        except CircuitOpenError:
+            raise
+        except Exception as exc:
+            if on_warning is not None:
+                await on_warning(_page, exc)
+            raise
+        completed_box[0] += 1
+        await notify(
+            progress,
+            "refine",
+            min(completed_box[0], targets),
+            targets,
+            f"Repairing below-target blocks ({min(completed_box[0], targets)}/{targets})",
+        )
+        return text
+
+    summary = await loop.repair_page(
+        page_idx=p_num,
+        page_blocks=aligned,
+        re_ocr=re_ocr,
+        on_block_retry=cb.on_block_retry,
+        on_block_revised=cb.on_block_revised,
+    )
+    if cb.on_quality_summary is not None:
+        await cb.on_quality_summary(
+            "page",
+            p_num,
+            summary.target,
+            summary.avg_confidence,
+            summary.repaired_count,
+            summary.below_target_count,
+        )
+    return summary
+
+
+__all__ = ["run_repair_phase", "repair_single_page"]
