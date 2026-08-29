@@ -276,9 +276,16 @@ class LanceDBLexiconStore:
 
     def list_glossaries(self) -> list[GlossaryMeta]:
         self._ensure_open()
-        tbl = self._table.to_arrow()
-        if tbl.num_rows == 0:
-            return []
+        # Project at the storage layer so the ``embedding`` column
+        # (the largest in the table) is not loaded into memory —
+        # the only thing this listing needs is the per-glossary
+        # metadata columns plus the row count per glossary_id, both
+        # of which come from a non-embedding column scan.
+        # Audit catalog: push the column projection into the query
+        # instead of materialising the full table and selecting in
+        # pyarrow. Older ``lancedb`` versions don't accept
+        # ``columns=`` on ``to_pandas``; fall back to the legacy
+        # ``to_arrow() + select`` path on TypeError.
         columns = [
             "glossary_id",
             "glossary_name",
@@ -291,9 +298,17 @@ class LanceDBLexiconStore:
             "created_at",
             "updated_at",
         ]
-        available_cols = [c for c in columns if c in tbl.column_names]
-        selected_tbl = tbl.select(available_cols)
-        pylist = selected_tbl.to_pylist()
+        try:
+            df = self._table.to_pandas(columns=columns)
+            if df.empty:
+                return []
+            pylist = df.to_dict(orient="records")
+        except TypeError:
+            tbl = self._table.to_arrow()
+            if tbl.num_rows == 0:
+                return []
+            available_cols = [c for c in columns if c in tbl.column_names]
+            pylist = tbl.select(available_cols).to_pylist()
         groups: dict[str, dict[str, Any]] = {}
         for row in pylist:
             gid = str(row["glossary_id"])
@@ -674,13 +689,35 @@ class LanceDBLexiconStore:
         return hits
 
     def _hybrid_via_arrow(self, query: LexiconQuery) -> list[LexiconHit]:
-        """Fallback ranking using in-memory Arrow table + cosine similarity."""
+        """Fallback ranking when ``_hybrid_via_lancedb`` failed.
+
+        Audit catalog: push the supported subset of the WHERE clause
+        into LanceDB before materialising the full table; the
+        remaining predicates (``enabled_only``, ``glossary_ids``,
+        and any filter ``_build_where`` rejected) still apply
+        in-Python via :meth:`_matches_query`. This trims the row
+        set the cosine pass has to score for the common case
+        where the primary path's failure was unrelated to the
+        filter (e.g. vector column missing, search index disabled).
+        """
         import numpy as np
 
         try:
-            tbl = self._table.to_arrow()
+            where = self._build_where(query)
+            if where:
+                # Audit catalog: ``db_search().where(filter)`` instead
+                # of materialising the entire table and filtering in
+                # Python. Only used here when the primary path
+                # already failed; we still keep the in-Python pass
+                # for filter clauses ``_build_where`` does not cover.
+                tbl = self._table.search().where(where).to_arrow()
+            else:
+                tbl = self._table.to_arrow()
         except Exception:
-            return []
+            try:
+                tbl = self._table.to_arrow()
+            except Exception:
+                return []
         if tbl.num_rows == 0:
             return []
 
