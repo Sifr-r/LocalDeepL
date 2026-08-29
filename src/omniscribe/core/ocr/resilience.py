@@ -19,11 +19,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import threading
 import time
 from collections.abc import Callable
 from enum import StrEnum
+
+from omniscribe.config import RuntimeSettings, load_settings
 
 logger = logging.getLogger(__name__)
 
@@ -198,21 +199,18 @@ class CircuitBreaker:
         cooldown_seconds: float | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        env_threshold = os.getenv("OMNISCRIBE_CB_FAILURE_THRESHOLD")
-        env_cooldown = os.getenv("OMNISCRIBE_CB_COOLDOWN")
+        # Resolved via the validated RuntimeSettings (audit L-1) so the
+        # breaker honors the same env-var contract as the rest of the
+        # config surface (``OMNISCRIBE_CB_FAILURE_THRESHOLD`` /
+        # ``OMNISCRIBE_CB_COOLDOWN``) without re-parsing here.
+        settings: RuntimeSettings = load_settings()
         self.failure_threshold = (
             failure_threshold
             if failure_threshold is not None
-            else int(env_threshold)
-            if env_threshold
-            else 5
+            else settings.cb_failure_threshold
         )
         self.cooldown_seconds = (
-            cooldown_seconds
-            if cooldown_seconds is not None
-            else float(env_cooldown)
-            if env_cooldown
-            else 30.0
+            cooldown_seconds if cooldown_seconds is not None else settings.cb_cooldown
         )
         self._clock = clock
         self._consecutive_failures = 0

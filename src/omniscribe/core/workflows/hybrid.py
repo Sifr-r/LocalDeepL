@@ -300,23 +300,6 @@ class HybridEngine(EngineBase):
             rasterize_batch_size=rasterize_batch_size,
         )
 
-    def _collect_batched_images(
-        self,
-        input_path: str,
-        dpi: int,
-        max_image_dim: int,
-        pages: str | None,
-        batch_size: int,
-    ) -> dict[int, str]:
-        self.converter.pdf_handler = self.pdf_handler
-        return self.converter.collect_batched_images(
-            input_path=input_path,
-            dpi=dpi,
-            max_image_dim=max_image_dim,
-            pages=pages,
-            batch_size=batch_size,
-        )
-
     async def _detect_layout(
         self,
         *,

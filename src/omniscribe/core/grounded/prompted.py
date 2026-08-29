@@ -474,9 +474,12 @@ class PromptedGroundedOCR:
                     if on_warning is not None:
                         await on_warning(page_idx, page_error)
         finally:
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
+            # Audit M-domain 5: cancellation must be awaited. The
+            # previous loop only called ``task.cancel()``; the
+            # gather() now lets pending tasks actually wind down so
+            # the event loop doesn't log
+            # "Task was destroyed but it is pending" on shutdown.
+            await asyncio.gather(*tasks, return_exceptions=True)
 
         # Flatten in page order for a stable, deterministic output.
         flat_blocks: list[GroundedBlock] = []

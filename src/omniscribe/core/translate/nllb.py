@@ -106,7 +106,11 @@ class NLLBEngine:
         if not text or not text.strip():
             return NLLBResult(text="", source_lang="auto", target_lang=target_language)
         self._ensure_loaded()
-        loop = asyncio.get_event_loop()
+        # ``get_running_loop`` is the coroutine-safe replacement for the
+        # deprecated ``get_event_loop`` (audit M-domain 4): it returns
+        # the current running loop, with no fallback path that would
+        # spin a new loop on a worker thread.
+        loop = asyncio.get_running_loop()
         target_code = resolve_nllb_code(target_language)
         source_code = "eng_Latn"  # assume English source for NLLB fallback
 

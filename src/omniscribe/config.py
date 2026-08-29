@@ -83,7 +83,6 @@ class RuntimeSettings(BaseSettings):
     chunk_pages: int = Field(
         default=25, validation_alias="OMNISCRIBE_CHUNK_PAGES", ge=1
     )
-    chroma_db: str | None = Field(default=None, validation_alias="OMNISCRIBE_CHROMA_DB")
     redis_url: str = Field(
         default="redis://localhost:6379/0", validation_alias="REDIS_URL"
     )
@@ -296,13 +295,6 @@ class RuntimeSettings(BaseSettings):
         return [
             item.strip() for item in self.cors_origins_raw.split(",") if item.strip()
         ]
-
-    @property
-    def chroma_db_path(self) -> Path | None:
-        """Return the optional Chroma path, expanded and resolved."""
-        if not self.chroma_db:
-            return None
-        return Path(self.chroma_db).expanduser().resolve()
 
     @property
     def cordis_patch_paths(self) -> tuple[Path, ...]:

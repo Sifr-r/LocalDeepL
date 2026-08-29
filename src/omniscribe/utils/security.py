@@ -19,15 +19,19 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
-import os
 import socket
 from dataclasses import dataclass
 from typing import Final
 from urllib.parse import urlparse
 
+from omniscribe.config import load_settings
+
 
 def _local_ssrf_allowed() -> bool:
-    return os.getenv("ALLOW_SSRF_LOCAL", "").strip().lower() == "true"
+    # Resolved via the validated RuntimeSettings (audit L-1) so the SSRF
+    # guard honors the same env-var contract as the rest of the config
+    # surface (``ALLOW_SSRF_LOCAL``) without re-parsing here.
+    return load_settings().allow_ssrf_local
 
 
 _UNCONDITIONAL_BLOCKED_NETWORKS: Final[
