@@ -653,6 +653,14 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   extracted into `_parse_xml()` and unit-tested for plain XML,
   external-entity XXE, and billion-laughs rejection.
 
+- **Sprint 1 / M-2**: `core/ocr_quality/orchestrator.run` now
+  pre-computes per-block `script_detector.detect` results into a
+  single-pass cache (keyed on `hash(text)`). A 200-block page
+  with all-Latin text collapses from 200 per-character
+  classification passes to 1. The test file
+  `tests/core/ocr_quality/test_ocr_quality_orchestrator.py`
+  still passes (the per-block loop now reads the cache instead
+  of re-running the classifier).
 - **Sprint 2 + Sprint 3 + Sprint 4 follow-ups (2026-08-28)** —
   closes the most material remaining items from the 5-domain audit
   beyond the initial sprint close.
