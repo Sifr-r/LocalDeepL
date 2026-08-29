@@ -679,13 +679,13 @@ class StateBackendPlugin(Plugin):
                 base = settings.artifact_base_dir.expanduser().resolve(strict=False)
                 try:
                     candidate.relative_to(base)
-                except ValueError:
+                except ValueError as exc:
                     raise RuntimeError(
                         f"OMNISCRIBE_STATE_BACKEND sqlite_path={sqlite_path!r} "
                         f"resolves outside the artifact base {base}. "
                         "Pin the file under the artifact directory or "
                         "set sqlite_path to a path inside it."
-                    )
+                    ) from exc
                 db_path = candidate
             else:
                 db_path = settings.artifact_base_dir / "omniscribe-state.db"

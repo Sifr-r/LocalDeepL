@@ -60,7 +60,4 @@ def _valid_bbox(bbox: tuple[float, float, float, float]) -> bool:
     accepted. The previous ``< x1`` rejected these.
     """
     x0, y0, x1, y1 = bbox
-    return (
-        0.0 <= x0 <= x1 <= 1.0
-        and 0.0 <= y0 <= y1 <= 1.0
-    )
+    return 0.0 <= x0 <= x1 <= 1.0 and 0.0 <= y0 <= y1 <= 1.0

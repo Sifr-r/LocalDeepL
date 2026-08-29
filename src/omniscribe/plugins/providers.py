@@ -51,10 +51,7 @@ def _rewrite_url_with_resolved_ip(url: str, resolved_ip: str) -> str:
         )
     except ValueError:
         host_literal = resolved_ip
-    if port is None:
-        netloc = host_literal
-    else:
-        netloc = f"{host_literal}:{port}"
+    netloc = host_literal if port is None else f"{host_literal}:{port}"
     return urlunsplit(parts._replace(netloc=netloc))
 
 
@@ -382,18 +379,14 @@ class ProviderManagerImpl:
         # at an attacker-controlled VLM. The deferred-capability story in
         # AGENTS.md documents this; until the per-route provider catalog
         # gate lands, every api_base write is SSRF-validated.
-        import asyncio
-
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = None
         # set_active is sync; run the SSRF check synchronously via
         # is_blocked_host (no DNS, just URL/host parsing). For full DNS
         # pinning, callers should use the validate() round-trip.
         from omniscribe.utils.security import is_blocked_host
 
-        if api_base and is_blocked_host(api_base.split("//", 1)[-1].split("/")[0].split(":")[0]):
+        if api_base and is_blocked_host(
+            api_base.split("//", 1)[-1].split("/")[0].split(":")[0]
+        ):
             raise ValueError(
                 f"api_base {api_base!r} is blocked by the SSRF guard "
                 "(private / loopback / metadata range). Use a public URL."

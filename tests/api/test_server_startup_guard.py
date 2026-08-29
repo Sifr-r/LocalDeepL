@@ -5,6 +5,7 @@ the server bound to a non-loopback host with no ``OMNISCRIBE_AUTH_TOKEN``
 is unsafe — every ``/api/*`` route is reachable by any caller. The guard
 refuses to start in that configuration.
 """
+
 from __future__ import annotations
 
 from contextlib import contextmanager

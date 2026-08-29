@@ -14,16 +14,15 @@ tiny ``OCRPipeline`` with stubbed aligner / OCR / PDF and asserts
 that ``run(..., repair_options=enabled)`` actually drives the repair
 loop and the repaired text reaches the final document.
 """
+
 from __future__ import annotations
 
 import io
 
-import pytest
 from PIL import Image, ImageDraw
 
 from omniscribe.core.workflows.repair import RepairOptions
 from omniscribe.pipeline import OCRPipeline
-
 from tests.conftest import _StubOCR
 
 

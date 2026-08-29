@@ -5,12 +5,10 @@ The audit found that ``MemoryStateBackend.consume_channel`` and
 plain ``!=``, exposing a timing side-channel on a 32-byte token. The
 fix uses ``secrets.compare_digest`` in both backends.
 """
+
 from __future__ import annotations
 
 import inspect
-import secrets
-
-import pytest
 
 from omniscribe.plugins.state_backend import MemoryStateBackend
 

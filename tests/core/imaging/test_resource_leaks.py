@@ -12,6 +12,7 @@ This module verifies the canonical helper ``decode_base64_image`` uses a
 internal lifecycle masks the leak for some call patterns, which makes a
 behavioural test unreliable.
 """
+
 from __future__ import annotations
 
 import inspect

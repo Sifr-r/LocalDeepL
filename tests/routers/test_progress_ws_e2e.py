@@ -45,9 +45,7 @@ def test_ws_progress_frame_reaches_client_during_async_job(
     #    can emit frames (the server only sends frames to attached
     #    channels).
     with api_client.websocket_connect(f"/ws/{channel_id}") as ws:
-        ws.send_text(
-            json.dumps({"type": "auth", "session_token": session_token})
-        )
+        ws.send_text(json.dumps({"type": "auth", "session_token": session_token}))
         authed = json.loads(ws.receive_text())
         assert authed["type"] == "connected"
 

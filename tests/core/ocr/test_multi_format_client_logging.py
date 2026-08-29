@@ -5,6 +5,7 @@ returned ``""`` when an HTTP 200 came back with an unexpected JSON shape. This m
 locks down the fix: each branch must log a WARNING that names the provider and the
 missing key before returning empty.
 """
+
 from __future__ import annotations
 
 import logging

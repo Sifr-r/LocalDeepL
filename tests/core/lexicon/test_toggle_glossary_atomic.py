@@ -12,6 +12,7 @@ durably appended. A failed ``add`` leaves the original table untouched.
 These tests inject a fake ``_table`` mock so we can simulate the failure mode
 without spinning up a real LanceDB instance.
 """
+
 from __future__ import annotations
 
 from typing import Any

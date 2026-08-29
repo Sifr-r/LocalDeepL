@@ -25,12 +25,12 @@ and close enough for a confidence summary.
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
 
 from omniscribe.core.document import BBox
+from omniscribe.utils.text import normalize_text  # L-7 audit: shared helper
 
 # --- data classes ----------------------------------------------------------
 
@@ -226,9 +226,6 @@ def load_ground_truth(
 
 
 # --- text similarity -------------------------------------------------------
-
-
-from omniscribe.utils.text import normalize_text  # noqa: F401  # L-7 audit: shared helper
 
 
 def text_similarity(a: str, b: str) -> float:

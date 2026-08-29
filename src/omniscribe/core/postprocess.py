@@ -254,6 +254,7 @@ class DictionaryPostProcessor:
                 and getattr(packaged_resources_root, "is_file", lambda: False)()
             )
             if resource_is_real_file:
+                assert packaged_resources_root is not None
                 with resources.as_file(packaged_resources_root) as packaged_path:
                     resources_dir = str(packaged_path)
                     langdata_dir = os.path.join(resources_dir, "langdata")

@@ -6,6 +6,7 @@ read ``os.getenv("LLM_API_BASE")`` etc. directly, bypassing the centralised
 ``__init__`` MUST consult ``load_settings()`` (and the F1.9 audit comment
 on the same module prohibits raw ``os.getenv`` for these fields).
 """
+
 from __future__ import annotations
 
 from unittest.mock import patch

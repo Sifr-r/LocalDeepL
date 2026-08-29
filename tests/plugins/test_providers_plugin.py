@@ -163,9 +163,7 @@ async def test_discover_models_ollama_uses_api_tags() -> None:
     from urllib.parse import urlsplit
 
     host = urlsplit(url).hostname or ""
-    assert host in {"127.0.0.1", "::1"}, (
-        f"expected loopback IP, got {host!r}"
-    )
+    assert host in {"127.0.0.1", "::1"}, f"expected loopback IP, got {host!r}"
     assert urlsplit(url).port == 11434
     assert urlsplit(url).path == "/api/tags"
     # The Host header preserves the original hostname so virtual
@@ -206,9 +204,7 @@ async def test_validate_ollama_probes_api_tags_endpoint() -> None:
     from urllib.parse import urlsplit
 
     host = urlsplit(url).hostname or ""
-    assert host in {"127.0.0.1", "::1"}, (
-        f"expected loopback IP, got {host!r}"
-    )
+    assert host in {"127.0.0.1", "::1"}, f"expected loopback IP, got {host!r}"
     assert urlsplit(url).port == 11434
     assert urlsplit(url).path == "/api/tags"
     assert headers.get("Host") == "localhost"

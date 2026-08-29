@@ -9,6 +9,7 @@ Defender exclusion in ``install.ps1``. The test below asserts the
 DLL is present when the lexicon extra is installed (so a future
 dependency change is caught) and skips cleanly when it is not.
 """
+
 from __future__ import annotations
 
 import sys

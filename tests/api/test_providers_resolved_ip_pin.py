@@ -8,18 +8,15 @@ bypassing the guard. The fix pins the connection to the validated IP
 by rewriting the URL host to ``resolved_ip`` while preserving the
 original ``Host`` header.
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from omniscribe.core.llm.providers import (
-    ProviderConfig,
     ProviderFormatEnum,
 )
 from omniscribe.plugins.providers import ProviderManagerImpl
-
 
 _O = ProviderFormatEnum.OPENAI_COMPATIBLE
 
@@ -45,7 +42,7 @@ async def test_H1_discover_models_pins_resolved_ip_in_request_url() -> None:
         def __init__(self, *a, **kw) -> None:
             self.kw = kw
 
-        async def get(self, url: str, headers=None):  # noqa: D401
+        async def get(self, url: str, headers=None):
             captured["url"] = url
             captured["headers"] = headers or {}
             return fake_response
@@ -90,7 +87,7 @@ async def test_H1_validate_pins_resolved_ip() -> None:
         def __init__(self, *a, **kw) -> None:
             pass
 
-        async def get(self, url: str, headers=None):  # noqa: D401
+        async def get(self, url: str, headers=None):
             captured["url"] = url
             return fake_response
 
@@ -108,9 +105,7 @@ async def test_H1_validate_pins_resolved_ip() -> None:
         ),
         patch("httpx.AsyncClient", _FakeClient),
     ):
-        result = await manager.validate(
-            "lmstudio", api_base="http://127.0.0.1:1234/v1"
-        )
+        result = await manager.validate("lmstudio", api_base="http://127.0.0.1:1234/v1")
 
     assert result.valid is True
     assert "url" in captured

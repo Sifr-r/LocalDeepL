@@ -162,6 +162,7 @@ class PdfTextLayerRecall:
         """Inner body of :meth:`supplement`; isolated so the H3 audit
         fail-open wrapper can catch all exceptions without swallowing
         legitimate ``return []`` for normal conditions."""
+        assert self._doc is not None
         if page_num < 0 or page_num >= len(self._doc):
             return []
         page = self._doc[page_num]

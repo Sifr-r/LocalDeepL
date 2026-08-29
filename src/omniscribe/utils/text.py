@@ -13,6 +13,7 @@ shared helper is layered on top of the more-specialized
 ``_is_fallback_response`` rules (which need ``_trim`` character-class
 stripping that the similarity helper does not).
 """
+
 from __future__ import annotations
 
 import re

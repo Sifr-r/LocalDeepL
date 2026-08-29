@@ -388,8 +388,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     if (
         not is_loopback
         and _settings_for_guard.auth_token
-        and _settings_for_guard.auth_token.lower()
-        in _PLACEHOLDER_AUTH_TOKENS
+        and _settings_for_guard.auth_token.lower() in _PLACEHOLDER_AUTH_TOKENS
         and not getattr(args, "allow_placeholder_token", False)
     ):
         raise SystemExit(
@@ -404,10 +403,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     # SSRF-disabled private-network endpoints via ``/api/providers/*``.
     # The default is preserved for local dev; operators who expose the
     # server to a LAN should set ``ALLOW_SSRF_LOCAL=false``.
-    if (
-        not is_loopback
-        and getattr(_settings_for_guard, "allow_ssrf_local", False)
-    ):
+    if not is_loopback and getattr(_settings_for_guard, "allow_ssrf_local", False):
         _log.warning(
             "ALLOW_SSRF_LOCAL=true with non-loopback bind %s: SSRF guard "
             "permits private / loopback URLs from any LAN caller. "
