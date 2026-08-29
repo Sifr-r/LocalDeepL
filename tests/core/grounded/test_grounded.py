@@ -11,7 +11,6 @@ Validates:
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import io
 import json
@@ -134,7 +133,7 @@ class _StubGroundedBackend:
         return self.response
 
 
-def test_pipeline_routes_to_grounded_when_backend_provided(
+async def test_pipeline_routes_to_grounded_when_backend_provided(
     example_pdfs: dict[str, Path], tmp_path: Path
 ):
     """Grounded path skips Surya entirely — no aligner or ocr_processor needed."""
@@ -155,7 +154,7 @@ def test_pipeline_routes_to_grounded_when_backend_provided(
     output_pdf = str(tmp_path / "grounded_out.pdf")
 
     pipe = OCRPipeline(pdf_handler=PDFHandler(), grounded_backend=backend)
-    pages_text = asyncio.run(pipe.run(input_pdf, output_pdf))
+    pages_text = await pipe.run(input_pdf, output_pdf)
 
     # Backend was called with the input path.
     assert backend.called_with == [input_pdf]
@@ -168,7 +167,7 @@ def test_pipeline_routes_to_grounded_when_backend_provided(
     assert "GROUNDED_GAMMA" in text
 
 
-def test_grounded_path_preserves_bbox_position(
+async def test_grounded_path_preserves_bbox_position(
     example_pdfs: dict[str, Path], tmp_path: Path
 ):
     """Text emitted by the grounded backend must land *inside* its bbox —
@@ -184,7 +183,7 @@ def test_grounded_path_preserves_bbox_position(
     output_pdf = str(tmp_path / "grounded_pos.pdf")
 
     pipe = OCRPipeline(pdf_handler=PDFHandler(), grounded_backend=backend)
-    asyncio.run(pipe.run(input_pdf, output_pdf))
+    await pipe.run(input_pdf, output_pdf)
 
     with fitz.open(output_pdf) as doc:
         page = doc[0]
@@ -204,7 +203,7 @@ def test_grounded_path_preserves_bbox_position(
         assert overlap >= 0.5, f"overlap too low: {overlap:.2f}"
 
 
-def test_grounded_path_propagates_failed_pages_to_pipeline(
+async def test_grounded_path_propagates_failed_pages_to_pipeline(
     example_pdfs: dict[str, Path], tmp_path: Path
 ):
     """When a grounded backend reports per-page failures, the pipeline
@@ -240,7 +239,7 @@ def test_grounded_path_propagates_failed_pages_to_pipeline(
 
     input_pdf = str(example_pdfs["digital.pdf"])
     output_pdf = str(tmp_path / "grounded_partial.pdf")
-    asyncio.run(pipe.run(input_pdf, output_pdf, on_warning=on_warning))
+    await pipe.run(input_pdf, output_pdf, on_warning=on_warning)
 
     assert pipe.last_failed_pages == [0, 2]
     assert [w[0] for w in warnings] == [0, 2]
@@ -264,7 +263,7 @@ def test_pipeline_rejects_hybrid_run_without_aligner_or_ocr(
         OCRPipeline(pdf_handler=PDFHandler())  # no aligner, no ocr
 
 
-def test_grounded_path_forwards_progress_callback(
+async def test_grounded_path_forwards_progress_callback(
     example_pdfs: dict[str, Path], tmp_path: Path
 ):
     """The pipeline should forward its progress callback into the grounded
@@ -278,12 +277,10 @@ def test_grounded_path_forwards_progress_callback(
         stages.append(stage)
 
     pipe = OCRPipeline(pdf_handler=PDFHandler(), grounded_backend=backend)
-    asyncio.run(
-        pipe.run(
-            str(example_pdfs["digital.pdf"]),
-            str(tmp_path / "out.pdf"),
-            progress=cb,
-        )
+    await pipe.run(
+        str(example_pdfs["digital.pdf"]),
+        str(tmp_path / "out.pdf"),
+        progress=cb,
     )
 
     # Backend should have emitted "ocr" stage ticks via the forwarded callback,
@@ -598,15 +595,15 @@ class TestPromptedGroundedEnsureModelLoaded:
         )
         return fake_client
 
-    def test_passes_when_model_loaded(self, monkeypatch):
+    async def test_passes_when_model_loaded(self, monkeypatch):
         self._patch_openai(monkeypatch, model_ids=["qwen/qwen3-vl-8b"])
         backend = PromptedGroundedOCR(
             api_base="http://localhost:1234/v1",
             model="qwen/qwen3-vl-8b",
         )
-        asyncio.run(backend.ensure_model_loaded())  # no raise
+        await backend.ensure_model_loaded()  # no raise
 
-    def test_raises_on_mismatch_with_helpful_message(self, monkeypatch):
+    async def test_raises_on_mismatch_with_helpful_message(self, monkeypatch):
         # The exact issue #7 scenario: requested grounded-capable Qwen3-VL,
         # but LM Studio has the OlmOCR text-only model loaded.
         self._patch_openai(monkeypatch, model_ids=["allenai_olmocr-2-7b-1025"])
@@ -615,7 +612,7 @@ class TestPromptedGroundedEnsureModelLoaded:
             model="qwen/qwen3-vl-8b",
         )
         with pytest.raises(ModelNotLoadedError) as exc_info:
-            asyncio.run(backend.ensure_model_loaded())
+            await backend.ensure_model_loaded()
         msg = str(exc_info.value)
         assert "qwen/qwen3-vl-8b" in msg
         assert "allenai_olmocr-2-7b-1025" in msg
