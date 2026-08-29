@@ -36,6 +36,14 @@ the project adheres to [Semantic Versioning](https://semver.org/).
   `ruff check src tests` + `ruff format --check` + `mypy src` +
   `pytest -m "not slow"` gates all pass (1378 passed, 26 skipped,
   6 deselected).
+- **2026-08-29 audit remediation — Sprint 4/M-6: SSRF safety test async/await**
+  `tests/utils/test_ssrf.py::test_ssrf_fails_closed_and_requires_explicit_local_allowance`
+  now uses `await` instead of nested `asyncio.run` calls so the
+  SSRF guard runs on the same event loop as the rest of the
+  suite (pytest-asyncio auto mode). The async conversion catches
+  timing/loop issues that the sync wrapper could mask (e.g. a
+  half-closed ``socket.getaddrinfo`` thread-pool task between
+  successive ``asyncio.run`` boundaries).
 
 ### Rebuilt API on Cordis-style plugin harness
   `src/omniscribe/api/` package is replaced by a plugin-harness
