@@ -207,6 +207,12 @@ class _TabButtonState extends State<_TabButton> {
       textColor = colors.textPrimary;
     }
 
+    // Sprint 3 / H-2 audit fix: explicit Semantics wraps the InkWell
+    // so screen readers announce both "button" and the selection
+    // state. Without this, a screen reader says only "Workstation"
+    // with no indication that the tab is the active one. We
+    // include the tab's description in the label so the screen
+    // reader gets the full tooltip text on long-press / focus.
     return Tooltip(
       message: widget.tab.description,
       waitDuration: const Duration(milliseconds: 500),
@@ -214,11 +220,15 @@ class _TabButtonState extends State<_TabButton> {
         cursor: SystemMouseCursors.click,
         onEnter: (_) => setState(() => _isHovered = true),
         onExit: (_) => setState(() => _isHovered = false),
-        child: InkWell(
-          key: ValueKey(widget.tab.testId),
-          onTap: widget.onTap,
-          borderRadius: BorderRadius.circular(6),
-          child: AnimatedContainer(
+        child: Semantics(
+          button: true,
+          selected: widget.isSelected,
+          label: '${widget.tab.label}, tab',
+          child: InkWell(
+            key: ValueKey(widget.tab.testId),
+            onTap: widget.onTap,
+            borderRadius: BorderRadius.circular(6),
+            child: AnimatedContainer(
             duration: const Duration(milliseconds: 160),
             curve: Curves.easeOut,
             height: 34,
@@ -256,6 +266,7 @@ class _TabButtonState extends State<_TabButton> {
                 ),
               ],
             ),
+          ),
           ),
         ),
       ),
@@ -312,13 +323,22 @@ class _ThemeToggleButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
 
+    // Sprint 3 / H-2 audit fix: explicit Semantics(button: true) on
+    // the theme toggle so a screen reader announces it as a
+    // toggleable button. Without this, the ``GestureDetector`` reads
+    // as plain text + icon and the user has no way to know they can
+    // tap it.
     return Tooltip(
       message: isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme',
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          onTap: onToggle,
-          child: Container(
+        child: Semantics(
+          button: true,
+          label: isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme',
+          toggled: isDark,
+          child: GestureDetector(
+            onTap: onToggle,
+            child: Container(
             width: 28,
             height: 28,
             decoration: BoxDecoration(
@@ -333,6 +353,7 @@ class _ThemeToggleButton extends StatelessWidget {
                 color: colors.textSecondary,
               ),
             ),
+          ),
           ),
         ),
       ),
