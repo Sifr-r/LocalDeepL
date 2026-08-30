@@ -23,6 +23,9 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("pyarrow")
+pytest.importorskip("lancedb")
+
 from omniscribe.core.lexicon import (
     LanceDBLexiconStore,
     LexiconHit,

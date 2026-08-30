@@ -208,8 +208,7 @@ def _hallucination_risks(
     blocks: list[DocumentBlock],
     settings: OCrQualitySettings,
     page_size: tuple[int, int] | None,
-    cross_check_fn: Callable[[str, tuple[float, float, float, float]], str]
-    | None,
+    cross_check_fn: Callable[[str, tuple[float, float, float, float]], str] | None,
     fallback_used_box: list[bool],
 ) -> list[HallucinationRisk]:
     """Per-block hallucination sub-module. Returns one risk per block."""
@@ -322,7 +321,9 @@ def _compose_blocks(
             dataclasses.replace(
                 block,
                 trust_score=verdict.score,
-                trust_flags=tuple(f.value for f in verdict.flags) if verdict.flags else None,
+                trust_flags=tuple(f.value for f in verdict.flags)
+                if verdict.flags
+                else None,
             )
         )
     return new_blocks
@@ -380,9 +381,7 @@ def run(
         cross_check_fn,
         fallback_used_box,
     )
-    calibrated = _calibrated_confidences(
-        blocks, model_id, settings, fallback_used_box
-    )
+    calibrated = _calibrated_confidences(blocks, model_id, settings, fallback_used_box)
     new_blocks = _compose_blocks(
         blocks,
         calibrated,

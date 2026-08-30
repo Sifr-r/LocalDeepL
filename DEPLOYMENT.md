@@ -162,35 +162,13 @@ docker compose --profile async up -d   # adds the celery worker
 Set `REDIS_URL=redis://redis:6379/0` and the worker connects
 automatically. See `compose.yaml` for the full layout.
 
-## Windows Troubleshooting
+## Local Troubleshooting
 
-If you used `install.bat` + `start_app.vbs` and the browser opens
-to a blank page or never opens:
+When running the OmniScribe server locally:
 
-- Check `start_app.log` next to `start_app.vbs`. It has one
-  timestamped line per step (uv pre-check, Docker detect, Redis
-  start, Celery launch, uvicorn poll result).
-- If the log says "uv is not on PATH" — the official uv installer
-  adds uv to your user PATH, but the change only applies to new
-  logon sessions. Log out of Windows and back in, then re-run
-  the Desktop shortcut.
-- If the log says "Docker is not available" — start Docker
-  Desktop. Redis + Celery are skipped, the web server still
-  starts, and only `/api/translate/async` is unavailable.
-- If the log says "Server did not respond within 60s" — open a
-  terminal in the project root and run
-  `uv run --extra web uvicorn omniscribe.server:app --port 8000`
-  directly to see uvicorn's traceback.
-
-> **F5-30 audit note — browser launch is unconditional.**
-> `start_app.vbs:202-203` calls `objShell.Run "http://localhost:8000"`
-> once the server's `/` returns 2xx/3xx/4xx. It does **not** check
-> whether the user already has a browser open, whether the default
-> browser is configured, or whether the operator is on a headless
-> host. The behaviour is intentional for a single-user desktop
-> install — the script is the documented happy path — but a
-> multi-user or kiosk host should edit that line to either
-> `WScript.Quit 0` (no browser) or a configurable URL.
+- If the server fails to start, verify that dependencies are synced (`uv sync --extra web`) and run `uv run omniscribe-server --port 8000`.
+- To connect the Flutter desktop client, navigate to `client/` and run `flutter run -d windows` (or macos/linux).
+- Ensure your local VLM (e.g. LM Studio / Ollama) is running on the configured `LLM_API_BASE` (default `http://localhost:1234/v1`).
 
 
 ## Backup & Recovery

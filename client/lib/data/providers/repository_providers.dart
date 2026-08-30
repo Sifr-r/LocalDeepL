@@ -52,6 +52,8 @@ final wsClientProvider = Provider<WsClient>((ref) {
     final wsScheme = switch (parsed.scheme) {
       'https' => 'wss',
       'http' => 'ws',
+      'wss' => 'wss',
+      'ws' => 'ws',
       _ => 'ws',
     };
     wsUrl = parsed.replace(scheme: wsScheme).toString();

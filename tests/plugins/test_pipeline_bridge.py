@@ -74,6 +74,37 @@ def test_build_pipeline_falls_back_to_settings_llm_coordinates() -> None:
     assert pipeline.grounded_backend.model == settings.llm_model
 
 
+def test_build_pipeline_rejects_ssrf_blocked_api_base() -> None:
+    from fastapi import HTTPException
+
+    settings = load_settings()
+    request = OCRRequest(
+        pipeline_mode="grounded",
+        api_base="http://169.254.169.254/v1",
+    )
+    with pytest.raises(HTTPException) as excinfo:
+        pipeline_bridge.build_pipeline(settings, request)
+    assert excinfo.value.status_code == 400
+    assert "SSRF blocked" in excinfo.value.detail
+
+
+def test_build_pipeline_rejects_localhost_when_ssrf_local_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi import HTTPException
+
+    monkeypatch.setenv("ALLOW_SSRF_LOCAL", "false")
+    settings = load_settings()
+    request = OCRRequest(
+        pipeline_mode="grounded",
+        api_base="http://127.0.0.1:1234/v1",
+    )
+    with pytest.raises(HTTPException) as excinfo:
+        pipeline_bridge.build_pipeline(settings, request)
+    assert excinfo.value.status_code == 400
+    assert "SSRF blocked" in excinfo.value.detail
+
+
 # -- resolve_run_kwargs -----------------------------------------------------------
 
 

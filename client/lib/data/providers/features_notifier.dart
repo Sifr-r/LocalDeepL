@@ -322,8 +322,7 @@ class TranscriptionNotifier extends Notifier<TranscriptionState> {
     _playbackTimer?.cancel();
     state = state.copyWith(isPlaying: true);
 
-    _playbackTimer =
-        Timer.periodic(const Duration(milliseconds: 100), (timer) {
+    _playbackTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
       if (state.currentPlaybackTime >= state.totalDuration) {
         stopPlayback();
         setPlaybackTime(0.0);
@@ -429,47 +428,8 @@ class TranscriptionNotifier extends Notifier<TranscriptionState> {
         totalDuration: dur,
       );
     } catch (e) {
-      final sampleSegments = <TranscriptionSegment>[
-        const TranscriptionSegment(
-          id: 1,
-          start: 0.0,
-          end: 4.5,
-          text: 'Welcome to OmniScribe document and audio intelligence.',
-        ),
-        const TranscriptionSegment(
-          id: 2,
-          start: 4.5,
-          end: 11.2,
-          text:
-              'Today we are demonstrating neural transcription with precise segment timestamps.',
-        ),
-        const TranscriptionSegment(
-          id: 3,
-          start: 11.2,
-          end: 18.0,
-          text:
-              'All speech segments are aligned and can be scrubbed interactively in real time.',
-        ),
-        const TranscriptionSegment(
-          id: 4,
-          start: 18.0,
-          end: 26.5,
-          text:
-              'Exporting to SubRip SRT subtitles and plain text is supported with full precision.',
-        ),
-      ];
-
-      final fallbackResponse = TranscriptionResponse(
-        text: sampleSegments.map((s) => s.text).join(' '),
-        segments: sampleSegments,
-        filename: state.audioFilename,
-        duration: 26.5,
-      );
-
       state = state.copyWith(
         isTranscribing: false,
-        result: fallbackResponse,
-        totalDuration: 26.5,
         errorMessage: e.toString(),
       );
     }
@@ -514,28 +474,7 @@ class GlossaryNotifier extends Notifier<GlossaryState> {
       final libs = await _repo.getGlossaryLibraries();
       state = state.copyWith(libraries: libs, isLoading: false);
     } catch (e) {
-      const fallbackLibs = <GlossaryListItem>[
-        GlossaryListItem(
-          id: 'legal-en-fr',
-          name: 'Legal Terminology EN-FR',
-          format: GlossaryFormat.jsonPairs,
-          entryCount: 42,
-          enabled: true,
-          priority: 1,
-          group: 'legal',
-        ),
-        GlossaryListItem(
-          id: 'medical-terms',
-          name: 'Clinical Diagnostics Latin/EN',
-          format: GlossaryFormat.csv,
-          entryCount: 128,
-          enabled: true,
-          priority: 2,
-          group: 'medical',
-        ),
-      ];
       state = state.copyWith(
-        libraries: fallbackLibs,
         isLoading: false,
         error: e.toString(),
       );
@@ -557,31 +496,7 @@ class GlossaryNotifier extends Notifier<GlossaryState> {
         isLoading: false,
       );
     } catch (e) {
-      const fallbackEntries = <GlossaryEntry>[
-        GlossaryEntry(
-          source: 'arbitration',
-          target: 'arbitrage',
-          note: 'Commercial dispute resolution',
-        ),
-        GlossaryEntry(
-          source: 'plaintiff',
-          target: 'demandeur',
-          note: 'Civil litigation context',
-        ),
-        GlossaryEntry(
-          source: 'force majeure',
-          target: 'force majeure',
-          note: 'Unforeseen event exemption',
-        ),
-        GlossaryEntry(
-          source: 'jurisdiction',
-          target: 'juridiction',
-          note: 'Court authority territory',
-        ),
-      ];
       state = state.copyWith(
-        entries: fallbackEntries,
-        activeViewIndex: 1,
         isLoading: false,
         error: e.toString(),
       );
@@ -595,16 +510,8 @@ class GlossaryNotifier extends Notifier<GlossaryState> {
         for (final e in entries) e.source: e.target,
       };
       state = state.copyWith(mergedLexicon: map);
-    } catch (_) {
-      const fallback = <String, String>{
-        'arbitration': 'arbitrage',
-        'plaintiff': 'demandeur',
-        'force majeure': 'force majeure',
-        'jurisdiction': 'juridiction',
-        'biopsy': 'biopsie',
-        'prognosis': 'pronostic',
-      };
-      state = state.copyWith(mergedLexicon: fallback);
+    } catch (e) {
+      state = state.copyWith(error: e.toString());
     }
   }
 
@@ -703,21 +610,10 @@ class GlossaryNotifier extends Notifier<GlossaryState> {
       await loadMergedLexicon();
       state = state.copyWith(isLoading: false);
     } catch (e) {
-      final newLib = GlossaryListItem(
-        id: 'imported-${DateTime.now().millisecondsSinceEpoch}',
-        name: name?.isNotEmpty == true ? name! : 'Imported Glossary',
-        format: format,
-        entryCount: 16,
-        enabled: true,
-        priority: state.libraries.length + 1,
-        group: 'imported',
-      );
       state = state.copyWith(
-        libraries: [...state.libraries, newLib],
         isLoading: false,
         error: e.toString(),
       );
-      await loadMergedLexicon();
     }
   }
 }
@@ -799,45 +695,8 @@ class ExtractionNotifier extends Notifier<ExtractionState> {
         statusMessage: 'Extraction complete.',
       );
     } catch (e) {
-      dynamic fallbackData;
-      if (state.selectedTemplate == 'invoice') {
-        fallbackData = <String, dynamic>{
-          'invoice_number': 'INV-2026-0881',
-          'vendor_name': 'Acme Document Services LLC',
-          'total_amount': 12450.00,
-          'tax_amount': 1245.00,
-          'date': '2026-08-24',
-          'currency': 'USD',
-          'line_items': <Map<String, dynamic>>[
-            {
-              'description': 'OCR Document Digitization Tier 1',
-              'quantity': 500,
-              'unit_price': 20.00,
-            },
-            {
-              'description': 'Neural Translation French Pack',
-              'quantity': 1,
-              'unit_price': 2450.00,
-            },
-          ],
-          'confidence_score': 0.985,
-        };
-      } else {
-        fallbackData = <String, dynamic>{
-          'template': state.selectedTemplate,
-          'extracted_fields': <String, dynamic>{
-            'status': 'success',
-            'content_summary':
-                text.length > 80 ? '${text.substring(0, 80)}…' : text,
-            'parsed_timestamp': DateTime.now().toIso8601String(),
-          },
-        };
-      }
-
       state = state.copyWith(
         isExtracting: false,
-        extractedData: fallbackData,
-        statusMessage: 'Extracted with schema verification.',
         error: e.toString(),
       );
     }

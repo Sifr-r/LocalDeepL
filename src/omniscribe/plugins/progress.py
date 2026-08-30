@@ -324,8 +324,12 @@ def build_progress_router(service: ProgressServiceImpl) -> APIRouter:
                     message = json.loads(raw)
                 except json.JSONDecodeError:
                     continue
-                if isinstance(message, dict) and message.get("type") == "cancel":
-                    await service.cancel(channel_id)
+                if isinstance(message, dict):
+                    msg_type = message.get("type")
+                    if msg_type == "cancel":
+                        await service.cancel(channel_id)
+                    elif msg_type == "ping":
+                        await service.broadcast(channel_id, {"type": "pong"})
         except WebSocketDisconnect:
             pass
         finally:

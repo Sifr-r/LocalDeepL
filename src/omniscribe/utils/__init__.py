@@ -9,7 +9,7 @@ from omniscribe.utils.env import (
     update_dotenv,
 )
 from omniscribe.utils.file import write_atomic
-from omniscribe.utils.security import is_ssrf_target
+from omniscribe.utils.security import check_ssrf_target_sync, is_ssrf_target
 from omniscribe.utils.structured_logging import (
     DEFAULT_LOG_FORMAT,
     DEFAULT_LOG_LEVEL,
@@ -27,6 +27,7 @@ __all__ = [
     "JsonFormatter",
     "SilentTqdm",
     "apply_tqdm_patch",
+    "check_ssrf_target_sync",
     "configure_logging",
     "env_bool",
     "env_int",

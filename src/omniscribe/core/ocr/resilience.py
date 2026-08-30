@@ -17,7 +17,6 @@ Tunables are env-driven (``OMNISCRIBE_LLM_MAX_RETRIES``,
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import threading
 import time
@@ -215,7 +214,7 @@ class CircuitBreaker:
         self._clock = clock
         self._consecutive_failures = 0
         self._opened_at: float | None = None
-        self._lock = asyncio.Lock()
+        self._lock = threading.Lock()
 
     @property
     def state(self) -> CircuitState:
@@ -247,7 +246,7 @@ class CircuitBreaker:
 
     async def check(self) -> None:
         """Raise :class:`CircuitOpenError` if the circuit is open."""
-        async with self._lock:
+        with self._lock:
             if self.is_open:
                 assert self._opened_at is not None
                 retry_after = self.cooldown_seconds - (self._clock() - self._opened_at)
@@ -257,7 +256,7 @@ class CircuitBreaker:
 
     async def record_success(self) -> None:
         """Record a successful call; closes the circuit if it was probing."""
-        async with self._lock:
+        with self._lock:
             if self._opened_at is not None:
                 logger.info("LLM circuit breaker closed after successful probe")
             self._consecutive_failures = 0
@@ -269,7 +268,7 @@ class CircuitBreaker:
         A failure while half-open (cooldown expired, probe in flight)
         immediately re-opens the circuit with a fresh cooldown.
         """
-        async with self._lock:
+        with self._lock:
             self._consecutive_failures += 1
             if self._opened_at is not None:
                 # Half-open probe failed → re-open with a fresh cooldown.

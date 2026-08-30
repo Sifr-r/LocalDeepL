@@ -243,7 +243,10 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
     async def update_config(
         updates: dict[str, Any] = Body(default_factory=dict),
     ) -> dict[str, Any]:
-        return service.update_config(updates)
+        try:
+            return service.update_config(updates)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return router
 

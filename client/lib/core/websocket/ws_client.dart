@@ -112,7 +112,7 @@ class WsClient {
 
       // 2. Listen for incoming line-delimited JSON frames
       _channelSub = channel.stream.listen(
-        _onMessage,
+        _handleMessage,
         onError: _onError,
         onDone: _onDone,
         cancelOnError: false,
@@ -136,8 +136,8 @@ class WsClient {
   /// path takes over.
   Timer? _keepAliveTimer;
   Timer? _pongWatchdog;
-  int _keepAliveIntervalMs = 20000;
-  int _keepAliveTimeoutMs = 5000;
+  final int _keepAliveIntervalMs = 20000;
+  final int _keepAliveTimeoutMs = 5000;
 
   void _startKeepAlive() {
     _keepAliveTimer?.cancel();
@@ -179,7 +179,10 @@ class WsClient {
     _pongWatchdog = null;
   }
 
-  void _onMessage(dynamic rawMessage) {
+  void _handleMessage(dynamic rawMessage) {
+    _pongWatchdog?.cancel();
+    _pongWatchdog = null;
+
     if (rawMessage is! String) {
       if (rawMessage is List<int>) {
         final decoded = utf8.decode(rawMessage);
@@ -195,9 +198,17 @@ class WsClient {
     for (final line in lines) {
       final trimmed = line.trim();
       if (trimmed.isEmpty) continue;
+      _pongWatchdog?.cancel();
+      _pongWatchdog = null;
       try {
         final dynamic decoded = jsonDecode(trimmed);
         if (decoded is Map<String, dynamic>) {
+          if (decoded['type'] == 'pong') {
+            // Heartbeat pong received — watchdog reset
+            _pongWatchdog?.cancel();
+            _pongWatchdog = null;
+            continue;
+          }
           final envelope = WsEnvelope.fromJson(decoded);
           if (!_envelopeController.isClosed) {
             _envelopeController.add(envelope);

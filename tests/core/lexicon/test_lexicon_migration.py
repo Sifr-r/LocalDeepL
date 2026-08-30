@@ -12,6 +12,9 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("pyarrow")
+pytest.importorskip("lancedb")
+
 from omniscribe.core.lexicon import LanceDBLexiconStore
 from omniscribe.core.lexicon.embedding import EmbeddingModel
 from omniscribe.core.lexicon.migration import (

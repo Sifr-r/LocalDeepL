@@ -14,7 +14,7 @@
 // are informational, not actionable).
 
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscribe_client/core/enums/app_tab.dart';
@@ -25,18 +25,20 @@ void main() {
   testWidgets(
       'TabRibbon exposes Semantics(button: true, selected: ...) for tabs',
       (tester) async {
+    final container = ProviderContainer(
+      overrides: [
+        activeTabProvider.overrideWith((ref) => AppTab.workstation),
+      ],
+    );
+    addTearDown(container.dispose);
+
     await tester.pumpWidget(
-      ProviderScope(
-        // Override only the simple StateProviders. The SettingsNotifier
-        // uses ConfigRepository (overridden below) to fetch its initial
-        // config; for the bare TabRibbon render we don't actually call
-        // ``load()``, so the notifier's ``build()`` returning
-        // ``SettingsState.initial()`` is enough to satisfy the ribbon.
-        overrides: [
-          activeTabProvider.overrideWith((ref) => AppTab.workstation),
-        ],
+      UncontrolledProviderScope(
+        container: container,
         child: const MaterialApp(
-          home: Scaffold(body: TabRibbon()),
+          home: Scaffold(
+            body: TabRibbon(),
+          ),
         ),
       ),
     );

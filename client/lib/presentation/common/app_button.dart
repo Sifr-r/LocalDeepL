@@ -422,12 +422,10 @@ class _MinimumTapTarget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      // ``height: double.infinity`` lets the child pick its natural
-      // height; we only constrain the minimum via ``constraints``.
-      child: ConstrainedBox(
-        constraints: BoxConstraints(minHeight: minimum),
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: minimum),
+      child: Center(
+        heightFactor: 1.0,
         child: child,
       ),
     );

@@ -361,3 +361,53 @@ async def test_config_round_trip_with_settings_write_through(fake_pipeline) -> N
             assert put.json()["dense_mode"] == "always"
     finally:
         await ctx.dispose()
+
+
+async def test_update_config_rejects_ssrf_blocked_api_base(fake_pipeline) -> None:
+    ctx, app = await _boot()
+    try:
+        async with _client(app) as client:
+            res = await client.post(
+                "/api/config",
+                json={"api_base": "http://169.254.169.254/v1"},
+            )
+            assert res.status_code == 400
+            assert "SSRF blocked" in res.json().get("detail", "")
+    finally:
+        await ctx.dispose()
+
+
+async def test_event_buffers_and_done_jobs_are_bounded_and_pruned(
+    fake_pipeline,
+) -> None:
+    from omniscribe.plugins.jobs import JobCompleted, JobQueued
+    from omniscribe.plugins.ocr.service import OCRServiceImpl
+
+    ctx, _app = await _boot()
+    try:
+        service = ctx.inject(ocr_plugin_mod.OCRService)
+        assert isinstance(service, OCRServiceImpl)
+        service._max_buffered_jobs = 10
+
+        for i in range(25):
+            job_id = f"job_{i}"
+            await service.record_event(JobQueued(job_id=job_id))
+            await service.record_event(
+                JobCompleted(job_id=job_id, artifact_id="a", artifact_token="t")
+            )
+
+        assert len(service._event_buffers) <= 10
+        assert len(service._done_jobs) <= 10
+        # Oldest jobs were pruned
+        assert "job_0" not in service._event_buffers
+        assert service.is_done("job_0") is False
+        # Newest jobs are present
+        assert "job_24" in service._event_buffers
+        assert service.is_done("job_24") is True
+
+        # Explicit prune
+        pruned_count = service.prune(max_buffered_jobs=5)
+        assert pruned_count == 5
+        assert len(service._event_buffers) == 5
+    finally:
+        await ctx.dispose()

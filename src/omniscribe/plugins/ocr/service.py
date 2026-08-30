@@ -46,6 +46,7 @@ from omniscribe.plugins.ocr.schemas import (
 )
 from omniscribe.plugins.progress import ProgressFrame, ProgressService
 from omniscribe.plugins.state_backend import JobRecord
+from omniscribe.utils.security import check_ssrf_target_sync
 
 _HttpJobStatus = Literal["pending", "processing", "complete", "error"]
 
@@ -124,6 +125,7 @@ class OCRServiceImpl:
         progress: ProgressService | None,
         max_upload_mb: int,
         quality_defaults: Mapping[str, bool | float | int] | None = None,
+        max_buffered_jobs: int = 500,
     ) -> None:
         self._settings = settings
         self._queue = queue
@@ -135,6 +137,7 @@ class OCRServiceImpl:
         self._quality_defaults: Mapping[str, bool | float | int] = (
             quality_defaults or {}
         )
+        self._max_buffered_jobs = max_buffered_jobs
         self._submission_to_job: dict[str, str] = {}
         self._config: dict[str, Any] = _seed_config(settings)
         self._event_buffers: dict[str, deque[dict[str, Any]]] = {}
@@ -184,6 +187,8 @@ class OCRServiceImpl:
             },
         )
         self._submission_to_job[submission_id] = handle.job_id
+        while len(self._submission_to_job) > self._max_buffered_jobs:
+            self._submission_to_job.pop(next(iter(self._submission_to_job)), None)
         return AsyncSubmitResponse(
             job_id=handle.job_id, status="pending", status_url=handle.status_url
         )
@@ -357,6 +362,15 @@ class OCRServiceImpl:
         return cfg
 
     def update_config(self, updates: Mapping[str, Any]) -> dict[str, Any]:
+        if "api_base" in updates and updates["api_base"] is not None:
+            new_base = str(updates["api_base"]).strip()
+            if new_base:
+                check = check_ssrf_target_sync(new_base)
+                if not check.allowed:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid api_base URL (SSRF blocked: {check.reason})",
+                    )
         for key, value in updates.items():
             if value is None or key not in self._config:
                 continue
@@ -381,6 +395,46 @@ class OCRServiceImpl:
         if type(event) in _TERMINAL_EVENTS:
             self._done_jobs.add(job_id)
         self._event_notify.setdefault(job_id, asyncio.Event()).set()
+        self._prune_events_if_needed()
+
+    def _prune_events_if_needed(self) -> None:
+        """Keep event buffers and done job sets bounded to _max_buffered_jobs."""
+        while len(self._event_buffers) > self._max_buffered_jobs:
+            oldest = next(iter(self._event_buffers))
+            self._event_buffers.pop(oldest, None)
+            self._event_notify.pop(oldest, None)
+            self._done_jobs.discard(oldest)
+
+        if len(self._done_jobs) > self._max_buffered_jobs:
+            excess = set(self._done_jobs) - set(self._event_buffers)
+            for jid in excess:
+                self._done_jobs.discard(jid)
+            while len(self._done_jobs) > self._max_buffered_jobs:
+                self._done_jobs.pop()
+
+    def prune(self, max_buffered_jobs: int | None = None) -> int:
+        """Explicitly prune event buffers and done jobs to the specified limit.
+
+        Returns the number of pruned job buffers.
+        """
+        limit = (
+            self._max_buffered_jobs if max_buffered_jobs is None else max_buffered_jobs
+        )
+        initial_count = len(self._event_buffers)
+        while len(self._event_buffers) > limit:
+            oldest = next(iter(self._event_buffers))
+            self._event_buffers.pop(oldest, None)
+            self._event_notify.pop(oldest, None)
+            self._done_jobs.discard(oldest)
+        while len(self._submission_to_job) > limit:
+            self._submission_to_job.pop(next(iter(self._submission_to_job)), None)
+        if len(self._done_jobs) > limit:
+            excess = set(self._done_jobs) - set(self._event_buffers)
+            for jid in excess:
+                self._done_jobs.discard(jid)
+            while len(self._done_jobs) > limit:
+                self._done_jobs.pop()
+        return initial_count - len(self._event_buffers)
 
     def event_backlog(self, job_id: str) -> list[dict[str, Any]]:
         return list(self._event_buffers.get(job_id, ()))

@@ -131,10 +131,12 @@ Protocol (`ctx.inject(JobQueue)`), never by module singleton.
 | `scripts/` | Repo-root developer utilities: confidence eval, fixture builder, debug/inspection scripts, bbox visualizers |
 | `examples/` | Sample PDFs and images used by `tests/` and the confidence scripts |
 | `tests/` | Unit, integration, security, and slow-path validation |
+| `tests/core/llm/test_client.py` | Direct unit tests for `core/llm/client.py` (provider config resolution, prompt and image extraction, and VLM/LLM invocation) |
 | `client/lib/data/providers/features_state.dart` | Immutable state models (`TranslationState`, `TranscriptionState`, `GlossaryState`, `ExtractionState`) with copyWith, equality, and clearError support |
 | `client/lib/data/providers/features_notifier.dart` | Riverpod 2.x `Notifier` controllers (`translationProvider`, `transcriptionProvider`, `glossaryProvider`, `extractionProvider`) for feature operations |
-| `install.bat` / `install.ps1` | Windows one-click install: `uv` bootstrap, `uv sync --extra web --extra preprocessing`, Docker check, Desktop/Start-Menu shortcuts, post-install verification |
-| `start_app.vbs` | Windows terminal launcher for Redis + Celery + uvicorn; writes a timestamped append log to `start_app.log` |
+| `client/lib/data/models/smart_preset.dart` | Immutable `SmartPreset` models, presets catalog (Standard, Receipt, Handwriting, Historical, Fast, Deep), filename heuristics, and ProcessSettings bidirectional mapping |
+| `client/lib/presentation/workstation/controls/smart_preset_selector.dart` | Visual 1-click smart preset selector cards, active preset highlight, and filename auto-detect suggestion banner |
+| `client/lib/presentation/providers/ai_setup_wizard_modal.dart` | 3-step beginner-friendly guided AI setup wizard for local (Ollama/LM Studio) and cloud (OpenAI/Gemini/Claude/Groq) engine configuration |
 
 ## Extension Points
 
@@ -225,6 +227,15 @@ provider mutation routes (`POST/DELETE /api/providers*`),
 `/api/glossary*` — see the design spec's out-of-scope list.
 
 ## Change Blueprint
+
+### 2026-08-30: Codebase Hardening, SSRF Protection, WebSocket Stability & Multi-Domain Resilience
+
+Addressed edge-case errors, security vulnerabilities, memory bounds, and testing gaps across five domains:
+- **Security & SSRF Guarding**: Added `check_ssrf_target_sync` utility in `src/omniscribe/utils/security.py`. Enforced SSRF validation on `request.api_base` in `plugins/ocr/pipeline_bridge.py` (`build_pipeline`) and on `api_base` in `plugins/ocr/service.py` (`update_config`). Bounded and pruned `_event_buffers`, `_event_notify`, and `_done_jobs` tracking sets to eliminate unbounded memory growth.
+- **WebSocket Keep-Alive & Ping/Pong**: Added server-side `{"type": "pong"}` response in `plugins/progress.py` and updated Flutter `ws_client.dart` to reset `_pongWatchdog` on any inbound message or pong frame, eliminating false keep-alive timeouts and reconnect storms.
+- **Core Pipeline Resilience & Offloading**: Converted `CircuitBreaker._lock` in `core/ocr/resilience.py` from `asyncio.Lock` to `threading.Lock` for multi-loop / cross-thread safety. Offloaded Hugging Face model loading in `local_engine.py` (Whisper), `trocr.py` (TrOCR), and `nllb.py` (NLLB) to `asyncio.to_thread`. Added deterministic client cleanup (`await client.close()`) in `processor.py` and `prompted.py`. Cleaned unicode docstring/comment errors (RUF002/RUF003) and sorted exports in `hybrid_repair.py`.
+- **Frontend Trust & Error States**: Removed fabricated mock invoices, fake speech transcripts, and placeholder terms from `client/lib/data/providers/features_notifier.dart` error catch blocks so the UI faithfully surfaces failure states.
+- **DevOps, Tooling & Test Hygiene**: Fixed `Dockerfile` rootless execution by moving `tini` package installation before `USER app`, configured `ENV HF_HOME=/app/data/hf`, and removed crashing `f.Close` in `start_app.vbs` log rotation. Added `pytest.importorskip("pyarrow")` and `importorskip("lancedb")` across lexicon test fixtures, and added direct unit test suite `tests/core/llm/test_client.py`.
 
 ### 2026-08-20: Robust Multi-Format Model Discovery & 422 Request Resilience
 
@@ -881,6 +892,14 @@ Conducted a full-repository parallel audit covering Core Pipeline, API & Securit
 | **Testing & QA** | - Zero Flutter CI in GitHub Actions workflows (`test.yml`).<br>- Mypy suppresses all type errors in `tests/` (`ignore_errors = true`).<br>- `core/transcription/` has 0% unit test coverage.<br>- `QualityRepairLoop` lacks standalone unit test suite and is untested on hybrid path.<br>- Synchronous tests calling `asyncio.run()` instead of `async def test_`. | Add Flutter CI job, remove Mypy test ignore flag, add transcription and repair loop test suites, migrate sync `asyncio.run` tests. |
 | **DevOps & Config** | - Docker/Compose healthchecks fail with 404 (probing `/health` instead of `/api/health`).<br>- Stale Celery worker command crashes on startup (`ModuleNotFoundError: No module named 'omniscribe.api'`).<br>- `.dockerignore` misses `client/` causing context bloat.<br>- `.env.example` lists unread `OCR_*` variables not parsed by server. | Point healthcheck to `/api/health`, disable deferred Celery worker in compose, add `client/` to `.dockerignore`, sync `.env.example`. |
 
+### 2026-08-30: Flutter Smart Preset Domain Models & Preset Detection Logic
+
+| File | Responsibility |
+| --- | --- |
+| `client/lib/data/models/smart_preset.dart` | Immutable `SmartPreset` domain model defining 6 specialized OCR profiles (`standard`, `receipt`, `handwriting`, `historical`, `fast`, `deep`), filename suggestion heuristics (`suggestForFilename`), settings application (`applyToSettings`), and active preset reverse detection (`detectActivePreset`) |
+| `client/lib/data/models/models.dart` | Barrel export exposing `smart_preset.dart` to the client application |
+| `client/test/data/models/smart_preset_test.dart` | Unit test suite verifying preset integrity, metadata, filename suggestions, settings application, and preset matching logic |
+
 ## See Also
 
 - [README.md](README.md) — feature overview, install, web workspace
@@ -890,8 +909,4 @@ Conducted a full-repository parallel audit covering Core Pipeline, API & Securit
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var reference
 - `audits/` — historical and comprehensive domain audit logs
 
-_Last updated: 2026-08-28_
-
-
-
-
+_Last updated: 2026-08-30_

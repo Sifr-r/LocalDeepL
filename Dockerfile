@@ -84,6 +84,16 @@ RUN groupadd --system app && useradd --system --gid app --uid 1001 --no-create-h
 
 WORKDIR /app
 
+# Sprint 5 / H-2 audit fix: install tini as PID 1 so SIGTERM reaches
+# the Python process group. Without tini, uvicorn is PID 1 inside
+# the container and its default SIGTERM handler exits abruptly
+# without draining WebSocket clients / running the FastAPI lifespan
+# shutdown. tini is ~30 KB and well-trusted; the official Debian
+# package is the simplest source. Must run as root before dropping privileges.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tini \
+ && rm -rf /var/lib/apt/lists/*
+
 # Copy the venv and source from the builder with non-root ownership.
 # D5-02 audit fix: using --chown=app:app directly avoids a redundant
 # RUN chown -R layer that duplicates the ~1.5GB venv in Docker storage.
@@ -93,19 +103,10 @@ COPY --chown=app:app --from=builder /app/pyproject.toml /app/uv.lock ./
 
 RUN mkdir -p /app/data && chown -R app:app /app/data
 
-ENV PATH="/app/.venv/bin:$PATH"
+ENV PATH="/app/.venv/bin:$PATH" \
+    HF_HOME=/app/data/hf
 
 USER app
-
-# Sprint 5 / H-2 audit fix: install tini as PID 1 so SIGTERM reaches
-# the Python process group. Without tini, uvicorn is PID 1 inside
-# the container and its default SIGTERM handler exits abruptly
-# without draining WebSocket clients / running the FastAPI lifespan
-# shutdown. tini is ~30 KB and well-trusted; the official Debian
-# package is the simplest source.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends tini \
- && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 8000
 
@@ -113,8 +114,8 @@ EXPOSE 8000
 # level (not just in ``compose.yaml``) so non-Compose orchestrators
 # (Kubernetes liveness probes, plain Docker ``--health-cmd``,
 # Nomad, ECS task definitions) can detect a half-broken process.
-# The probe hits ``/health`` — the cheap no-I/O endpoint in
-# ``src/omniscribe/api/routers/health.py`` — and uses Python's
+# The probe hits ``/api/health`` — the cheap no-I/O endpoint in
+# ``src/omniscribe/plugins/health.py`` — and uses Python's
 # stdlib ``urllib`` so no extra apt packages are needed (matches
 # the same probe the ``compose.yaml`` ``api`` service uses).
 # ``--start-period`` is generous (30s) because the first request

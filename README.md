@@ -77,10 +77,6 @@ flutter run
 
 The Flutter Client is the supported user workflow. Advanced document intelligence is exposed through the client's Advanced Configuration panel and FastAPI request fields; the user-facing CLI script has been deprecated.
 
-### Windows quick-start
-
-If you are on Windows, double-click `install.bat` (elevates and runs `install.ps1`) to install `uv`, sync the web extra, and create Desktop / Start-Menu shortcuts. `start_app.vbs` starts Redis (via Docker) + Celery + uvicorn in visible terminal windows and opens the browser; it appends a timestamped log to `start_app.log` next to itself. Closing the terminal windows terminates the processes. If `start_app.vbs` cannot find `uv` (e.g. you launched the shortcut right after install), log out of Windows and back in so the `uv` installer's PATH update takes effect, then re-run the shortcut.
-
 The Advanced Configuration panel includes:
 
 - **Preprocess Pages** with orientation detection, deskew, denoise, contrast normalization, and crop cleanup.

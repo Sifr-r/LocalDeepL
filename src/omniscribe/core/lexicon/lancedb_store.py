@@ -56,7 +56,6 @@ def _new_id() -> str:
     return uuid.uuid4().hex
 
 
-
 def _row_from_entry(
     entry: dict[str, object],
     embedding: list[float],

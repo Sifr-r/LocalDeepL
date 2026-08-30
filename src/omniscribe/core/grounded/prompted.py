@@ -301,11 +301,18 @@ class PromptedGroundedOCR:
         and LM Studio silently served bad OCR from the wrong model.
         """
         client = AsyncOpenAI(base_url=self.api_base, api_key=self.api_key)
-        loaded = await _list_loaded_model_ids(client, self.api_base)
-        if not _model_in_loaded(self.model, loaded):
-            raise ModelNotLoadedError(
-                _format_model_not_loaded(self.api_base, self.model, loaded)
-            )
+        try:
+            loaded = await _list_loaded_model_ids(client, self.api_base)
+            if not _model_in_loaded(self.model, loaded):
+                raise ModelNotLoadedError(
+                    _format_model_not_loaded(self.api_base, self.model, loaded)
+                )
+        finally:
+            close_method = getattr(client, "close", None)
+            if callable(close_method):
+                res = close_method()
+                if asyncio.iscoroutine(res):
+                    await res
 
     async def ocr_crop(
         self,

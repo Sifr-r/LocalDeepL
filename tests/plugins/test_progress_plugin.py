@@ -220,6 +220,22 @@ def test_ws_cancel_frame_flips_flag_and_confirms() -> None:
             assert service.is_cancelled(body["channel_id"]) is True
 
 
+def test_ws_ping_frame_receives_pong_response() -> None:
+    service = _service()
+    client = TestClient(_make_app(service))
+    with client:
+        body = client.post("/api/progress/session", json={}).json()
+        with client.websocket_connect(f"/ws/{body['channel_id']}") as ws:
+            ws.send_text(
+                json.dumps({"type": "auth", "session_token": body["session_token"]})
+            )
+            connected_frame = json.loads(ws.receive_text())
+            assert connected_frame["type"] == "connected"
+            ws.send_text(json.dumps({"type": "ping"}))
+            pong_frame = json.loads(ws.receive_text())
+            assert pong_frame["type"] == "pong"
+
+
 # -- plugin ---------------------------------------------------------------------------
 
 

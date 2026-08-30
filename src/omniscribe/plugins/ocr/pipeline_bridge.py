@@ -17,6 +17,8 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from fastapi import HTTPException
+
 from omniscribe.config import RuntimeSettings
 from omniscribe.core.callbacks import BlockCallbackSet
 from omniscribe.core.document import DenseMode, SpellcheckMode
@@ -27,6 +29,7 @@ from omniscribe.core.imaging.page_preprocess import (
 from omniscribe.core.workflows.repair import RepairOptions
 from omniscribe.pipeline import OCRPipeline
 from omniscribe.plugins.ocr.schemas import OCRRequest
+from omniscribe.utils.security import check_ssrf_target_sync
 
 _LOGGER = logging.getLogger("omniscribe.plugins.ocr.bridge")
 
@@ -49,6 +52,14 @@ def build_pipeline(
         PromptedGroundedOCR,
         build_document_processors,
     )
+
+    if request.api_base and request.api_base.strip():
+        check = check_ssrf_target_sync(request.api_base.strip())
+        if not check.allowed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid api_base URL (SSRF blocked: {check.reason})",
+            )
 
     api_base = (request.api_base or settings.llm_api_base).strip()
     api_key = (request.api_key or settings.llm_api_key).strip()

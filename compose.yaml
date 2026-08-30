@@ -93,8 +93,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    # Liveness probe: ``/health`` is the cheap, no-I/O endpoint
-    # (see ``src/omniscribe/api/routers/health.py``) — it only confirms
+    # Liveness probe: ``/api/health`` is the cheap, no-I/O endpoint
+    # (see ``src/omniscribe/plugins/health.py``) — it only confirms
     # that the FastAPI process is up. Uses Python urllib to avoid depending
     # on curl in the container. Interval/timeout/retries/start_period
     # follow the audit's recommended defaults.
@@ -124,6 +124,10 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    # NOTE: Celery async translation worker is deferred during the harness rebuild
+    # (see AGENTS.md / docs/superpowers/specs/2026-08-23-omniscribe-api-rebuild-design.md).
+    # The omniscribe.api.* namespace was retired in the Cordis migration;
+    # async translation routes and Celery tasks are pending re-implementation.
     command: ["celery", "-A", "omniscribe.api.tasks", "worker", "--loglevel=info", "--pool=solo"]
     environment:
       LLM_API_BASE: http://host.docker.internal:1234/v1
@@ -136,6 +140,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    # Healthcheck targets the legacy celery_app module; deferred pending harness rebuild.
     healthcheck:
       test: ["CMD-SHELL", "celery -A omniscribe.api.celery_app inspect ping || exit 1"]
       interval: 30s

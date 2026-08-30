@@ -42,6 +42,8 @@ abstract class WsEnvelope {
         return GlossaryImportFrame.fromJson(json);
       case 'connected':
         return ConnectedFrame.fromJson(json);
+      case 'pong':
+        return PongFrame.fromJson(json);
       default:
         return UnknownFrame(type: type ?? 'unknown', rawData: json);
     }
@@ -525,6 +527,16 @@ class ConnectedFrame extends WsEnvelope {
         'type': 'connected',
         'channel_id': channelId,
       };
+}
+
+/// Keep-alive pong response frame.
+class PongFrame extends WsEnvelope {
+  const PongFrame();
+
+  factory PongFrame.fromJson(Map<String, dynamic> json) => const PongFrame();
+
+  @override
+  Map<String, dynamic> toJson() => {'type': 'pong'};
 }
 
 /// Fallback for unexpected or custom frame types.

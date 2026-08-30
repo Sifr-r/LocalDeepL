@@ -6,6 +6,7 @@ importable without ``transformers`` installed.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 import typing
@@ -79,12 +80,11 @@ class TrOCREngine:
 
     async def recognize(self, image_bytes: bytes) -> TrOCRResult:
         """Recognize text in a single image (PNG/JPEG bytes)."""
-        import asyncio
         import io
 
         from PIL import Image
 
-        self._ensure_loaded()
+        await asyncio.to_thread(self._ensure_loaded)
 
         def _run() -> TrOCRResult:
             assert self._pipeline is not None

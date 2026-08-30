@@ -268,7 +268,8 @@ void main() {
       expect(state.errorMessage, isNull);
     });
 
-    test('transcribe on error populates fallback segments and sets errorMessage',
+    test(
+        'transcribe on error sets errorMessage and does not fabricate segments',
         () async {
       when(
         () => repo.transcribe(
@@ -287,8 +288,7 @@ void main() {
 
       final state = container.read(transcriptionProvider);
       expect(state.isTranscribing, isFalse);
-      expect(state.result, isNotNull);
-      expect(state.result!.segments, isNotEmpty);
+      expect(state.result, isNull);
       expect(state.errorMessage, contains('Backend unavailable'));
     });
 
@@ -331,7 +331,8 @@ void main() {
       expect(container.read(transcriptionProvider).isPlaying, isFalse);
     });
 
-    test('startPlayback advances currentPlaybackTime until totalDuration', () async {
+    test('startPlayback advances currentPlaybackTime until totalDuration',
+        () async {
       final container = makeContainer();
       addTearDown(container.dispose);
       final notifier = container.read(transcriptionProvider.notifier);
@@ -442,6 +443,52 @@ void main() {
       state = container.read(glossaryProvider);
       expect(state.libraries, isEmpty);
     });
+
+    test(
+        'loadLibraries on error sets error and does not fabricate fallback libraries',
+        () async {
+      when(() => repo.getGlossaryLibraries())
+          .thenThrow(Exception('Failed to fetch glossaries'));
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(glossaryProvider.notifier);
+
+      await notifier.loadLibraries();
+
+      final state = container.read(glossaryProvider);
+      expect(state.libraries, isEmpty);
+      expect(state.isLoading, isFalse);
+      expect(state.error, contains('Failed to fetch glossaries'));
+    });
+
+    test(
+        'loadEntries on error sets error and does not fabricate fallback entries',
+        () async {
+      const lib = GlossaryListItem(
+        id: 'lib-1',
+        name: 'Legal',
+        format: GlossaryFormat.jsonPairs,
+        entryCount: 1,
+        enabled: true,
+        priority: 1,
+        group: 'default',
+      );
+
+      when(() => repo.getGlossaryEntries('lib-1'))
+          .thenThrow(Exception('Failed to fetch entries'));
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(glossaryProvider.notifier);
+
+      await notifier.loadEntries(lib);
+
+      final state = container.read(glossaryProvider);
+      expect(state.entries, isEmpty);
+      expect(state.isLoading, isFalse);
+      expect(state.error, contains('Failed to fetch entries'));
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -490,7 +537,7 @@ void main() {
       expect(state.error, isNull);
     });
 
-    test('extract on error sets fallback synthetic data and error message',
+    test('extract on error sets error message without fabricating data',
         () async {
       when(() => repo.extractStructuredData(any()))
           .thenThrow(Exception('LLM failure'));
@@ -504,7 +551,7 @@ void main() {
 
       final state = container.read(extractionProvider);
       expect(state.isExtracting, isFalse);
-      expect(state.extractedData, isNotNull);
+      expect(state.extractedData, isNull);
       expect(state.error, contains('LLM failure'));
     });
   });

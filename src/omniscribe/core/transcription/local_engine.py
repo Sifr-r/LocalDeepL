@@ -63,7 +63,7 @@ class WhisperLocalEngine:
         temperature: float = 0.0,
     ) -> TranscriptionResult:
         """Transcribe audio bytes using local faster-whisper model."""
-        model = self._get_model()
+        model = await asyncio.to_thread(self._get_model)
 
         # Write temp file for faster-whisper ingestion
         ext = Path(filename).suffix or ".wav"

@@ -1,25 +1,25 @@
-"""OCRProcessor Ã¢â‚¬â€ the main OCR class.
+"""OCRProcessor — the main OCR class.
 
 :class:`OCRProcessor` is the single class that performs OCR against a
 local vision LLM (OlmOCR via LM Studio by default; any OpenAI-compatible
-endpoint works, including GLM OCR via Ollama Ã¢â‚¬â€ set LLM_API_BASE/LLM_MODEL
+endpoint works, including GLM OCR via Ollama — set LLM_API_BASE/LLM_MODEL
 or pass ``api_base``/``model``).
 
 It composes four sibling modules:
 
-- :mod:`omniscribe.core.ocr.prompts` Ã¢â‚¬â€ OlmOCR/page/crop/dual-engine/
+- :mod:`omniscribe.core.ocr.prompts` — OlmOCR/page/crop/dual-engine/
   correction/handwriting prompt constants and selection helpers.
-- :mod:`omniscribe.core.ocr.filters` Ã¢â‚¬â€ output sanitization
+- :mod:`omniscribe.core.ocr.filters` — output sanitization
   (YAML front-matter strip, fallback-phrase suppression, runaway-
   repetition clip).
-- :mod:`omniscribe.core.ocr.client` Ã¢â‚¬â€ pre-flight model-loaded checks
+- :mod:`omniscribe.core.ocr.client` — pre-flight model-loaded checks
   (reused by :mod:`omniscribe.core.grounded.zai`).
-- :mod:`omniscribe.core.ocr.exceptions` Ã¢â‚¬â€ :class:`LLMCallError` and
+- :mod:`omniscribe.core.ocr.exceptions` — :class:`LLMCallError` and
   :class:`ModelNotLoadedError`.
 
 Call :meth:`ensure_model_loaded` once at pipeline startup before paying
 for image conversion or detection (LM Studio silently falls back to
-whatever model is currently loaded when the requested one is missing Ã¢â‚¬â€
+whatever model is currently loaded when the requested one is missing —
 see :class:`ModelNotLoadedError` for why this matters). Then use
 :meth:`perform_ocr` for full-page OCR or :meth:`perform_ocr_on_crop`
 for single-box OCR.
@@ -77,7 +77,7 @@ class OCRProcessor:
     """LLM-based OCR processor over an OpenAI-compatible async client.
 
     Local VLMs occasionally fall into runaway-generation loops on dense
-    or unusual pages Ã¢â‚¬â€ we bound both the per-call timeout and the
+    or unusual pages — we bound both the per-call timeout and the
     response token budget so a single bad page can't hang the pipeline
     indefinitely. Tuned per-call (full-page vs single-line crop): a page
     can legitimately take longer than a crop, and warrants a higher token
@@ -88,7 +88,7 @@ class OCRProcessor:
     # retries, retry base delay) used to be class-level constants read
     # from ``_settings`` at module import. A long-running uvicorn worker
     # that picked up an env-var change after the first request would
-    # never see the new value Ã¢â‚¬â€ the module was already loaded and the
+    # never see the new value — the module was already loaded and the
     # class attribute was already bound. We now expose the resolved
     # values as **instance** attributes set in ``__init__`` (which runs
     # at pipeline construction, not at module import), so a fresh
@@ -107,7 +107,7 @@ class OCRProcessor:
     # override the token budget via ``OMNISCRIBE_VLM_PAGE_MAX_TOKENS``
     # for tail-latency tuning on dense pages (Phase 5). Both flow
     # through :mod:`omniscribe.config` / :mod:`omniscribe.utils.env`
-    # (audit H3) Ã¢â‚¬â€ no direct ``os.getenv`` in this module.
+    # (audit H3) — no direct ``os.getenv`` in this module.
     PAGE_TIMEOUT_S: float = load_settings().vlm_page_timeout
     PAGE_MAX_TOKENS: int = env_int("OMNISCRIBE_VLM_PAGE_MAX_TOKENS", 6144)
 
@@ -187,7 +187,7 @@ class OCRProcessor:
             retry_max_delay_s=self.retry_max_delay_s,
             circuit_breaker=self.circuit_breaker,
         )
-        # F1.13 audit fix (PARTIAL Ã¢â€ â€™ FULL): track the number of Tesseract
+        # F1.13 audit fix (PARTIAL -> FULL): track the number of Tesseract
         # fallback failures over the lifetime of this processor. The
         # previous code logged the failure (with ``exc_info=True`` after
         # the F1.4 fix) but had no per-run counter, so an operator
@@ -242,11 +242,18 @@ class OCRProcessor:
         GET, no inference); call once at pipeline startup before paying
         for image conversion or detection.
         """
-        loaded = await _list_loaded_model_ids(self.client, self.api_base)
-        if not _model_in_loaded(self.model, loaded):
-            raise ModelNotLoadedError(
-                _format_model_not_loaded(self.api_base, self.model, loaded)
-            )
+        try:
+            loaded = await _list_loaded_model_ids(self.client, self.api_base)
+            if not _model_in_loaded(self.model, loaded):
+                raise ModelNotLoadedError(
+                    _format_model_not_loaded(self.api_base, self.model, loaded)
+                )
+        finally:
+            close_method = getattr(self.client, "close", None)
+            if callable(close_method):
+                res = close_method()
+                if asyncio.iscoroutine(res):
+                    await res
 
     async def perform_ocr(
         self,
@@ -260,11 +267,11 @@ class OCRProcessor:
         YAML front matter emitted by OlmOCR (rotation/language/is_table flags)
         is stripped before returning. Runaway repetition (the model getting
         stuck emitting the same line over and over) is detected and clipped
-        Ã¢â‚¬â€ this happens occasionally on dense handwritten pages even with
+        — this happens occasionally on dense handwritten pages even with
         max_tokens set, and pollutes downstream alignment with junk lines.
 
         The OLMOCR-2 page prompt is sent as a plain user message with no
-        system role Ã¢â‚¬â€ the model was RL-trained on this exact distribution
+        system role — the model was RL-trained on this exact distribution
         and a system message would shift it. Dual-engine and correction
         paths wrap a system message around their user turns.
         """
@@ -281,7 +288,7 @@ class OCRProcessor:
                 prompt = fill_dual_engine_page(draft)
 
         # OlmOCR-2 page path: pure user message, no system role. Every
-        # other page path gets a system message Ã¢â‚¬â€ *unless* the active
+        # other page path gets a system message — *unless* the active
         # model is one of the system-role-excluded families
         # (e.g. allenai/olmocr-2-7b), in which case we drop the system
         # message entirely to keep the model's RL-trained distribution
@@ -437,7 +444,7 @@ class OCRProcessor:
         if _is_fallback_response(result):
             result = ""
 
-        # Phase A.2 (review M3) Ã¢â‚¬â€ TrOCR dual-engine arbitration.
+        # Phase A.2 (review M3) — TrOCR dual-engine arbitration.
         # See _run_trocr_arbitration() for details on the arbitration logic.
         if getattr(self, "handwriting_mode", False) and self.trocr_engine is not None:
             from omniscribe.core.ocr.trocr import _heuristic_confidence
@@ -533,7 +540,7 @@ class OCRProcessor:
 
         Two reasons to return ``None``:
 
-        1. The canonical OLMOCR-2 page prompt is in use Ã¢â‚¬â€ the model
+        1. The canonical OLMOCR-2 page prompt is in use — the model
            was RL-trained on it as a pure user message; a system role
            would shift the distribution.
         2. The active model is one of the system-role-excluded
@@ -585,7 +592,7 @@ class OCRProcessor:
 
             img = Image.open(io.BytesIO(base64.b64decode(image_base64))).convert("L")
 
-            # Local mean via box blur (radius 10 Ã¢â€°Ë† block_size 21).
+            # Local mean via box blur (radius 10 ~ block_size 21).
             local_mean = img.filter(ImageFilter.BoxBlur(radius=10))
 
             # Adaptive threshold: pixel is white (255) if src > local_mean - C.

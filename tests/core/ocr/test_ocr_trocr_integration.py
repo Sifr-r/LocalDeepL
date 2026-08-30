@@ -51,8 +51,7 @@ async def test_trocr_fallback_uses_recognize_with_raw_bytes(monkeypatch):
     # because OCRProcessor imports it directly: `from omniscribe.core
     # .llm_client import call_llm`. Patching the source module won't
     # affect the already-bound reference. After the P1 god-module split,
-    # the binding lives in `omniscribe.core.ocr.processor`.
-    from omniscribe.core.ocr import processor as processor_module
+    # the binding lives in `omniscribe.core.ocr.chat_client`.
 
     async def _fake_call_llm(**kwargs) -> str:
         return "x"
@@ -87,8 +86,6 @@ async def test_trocr_fallback_swallows_engine_errors(monkeypatch):
     class _BrokenTrOCREngine:
         async def recognize(self, image_bytes: bytes) -> TrOCRResult:
             raise RuntimeError("synthetic TrOCR failure")
-
-    from omniscribe.core.ocr import processor as processor_module
 
     async def _fake_call_llm(**kwargs) -> str:
         return "x"

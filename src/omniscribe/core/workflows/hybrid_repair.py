@@ -31,7 +31,6 @@ from omniscribe.core.callbacks import BlockCallbackSet
 from omniscribe.core.ocr import OCRProcessor
 from omniscribe.core.ocr.resilience import CircuitOpenError
 from omniscribe.core.workflows.base import (
-    OCRCancelled,
     PageBoxes,
     ProgressCallback,
     WarningCallback,
@@ -183,9 +182,7 @@ async def repair_single_page(
         _img: Image.Image = page_image,
         _page: int = p_num,
     ) -> str:
-        crop_b64 = await asyncio.to_thread(
-            crop_for_ocr_from_image, _img, list(bbox)
-        )
+        crop_b64 = await asyncio.to_thread(crop_for_ocr_from_image, _img, list(bbox))
         if crop_b64 is None:
             return ""
         try:
@@ -225,4 +222,4 @@ async def repair_single_page(
     return summary
 
 
-__all__ = ["run_repair_phase", "repair_single_page"]
+__all__ = ["repair_single_page", "run_repair_phase"]

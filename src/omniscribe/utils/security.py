@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import socket
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Final
 from urllib.parse import urlparse
@@ -250,3 +251,21 @@ def is_blocked_host(host: str | None) -> bool:
     except Exception:
         return True
     return False
+
+
+def check_ssrf_target_sync(url: str | None) -> SSRFCheckResult:
+    """Synchronously validate a URL against the SSRF guard.
+
+    Safe to call from both synchronous code without an event loop and
+    synchronous callbacks running inside an active event loop (uses a worker
+    thread in the latter case to prevent event loop blocking/nesting errors).
+    """
+    if not url:
+        return SSRFCheckResult(False, None, "empty-url")
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(is_ssrf_target(url))
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(asyncio.run, is_ssrf_target(url))
+        return future.result()

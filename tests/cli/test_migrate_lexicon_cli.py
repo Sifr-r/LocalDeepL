@@ -24,6 +24,11 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
+pytest.importorskip("pyarrow")
+pytest.importorskip("lancedb")
+
 from omniscribe.cli.migrate_lexicon import main
 from omniscribe.core.lexicon.migration import MigrationReport
 

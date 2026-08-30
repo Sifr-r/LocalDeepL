@@ -124,11 +124,15 @@ class AppBadge extends StatelessWidget {
             child: child!,
           )
         else if (label != null)
-          Text(
-            label!,
-            style: AppTypography.micro(color: colorConfig.textColor).copyWith(
-              fontSize: size.fontSize,
-              fontWeight: FontWeight.w600,
+          Flexible(
+            child: Text(
+              label!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.micro(color: colorConfig.textColor).copyWith(
+                fontSize: size.fontSize,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         if (onDelete != null) ...[

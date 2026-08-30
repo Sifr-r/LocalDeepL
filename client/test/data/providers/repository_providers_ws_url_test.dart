@@ -23,6 +23,8 @@ String _deriveWsUrlForTest(String baseUrl) {
   final wsScheme = switch (parsed.scheme) {
     'https' => 'wss',
     'http' => 'ws',
+    'wss' => 'wss',
+    'ws' => 'ws',
     _ => 'ws',
   };
   return parsed.replace(scheme: wsScheme).toString();

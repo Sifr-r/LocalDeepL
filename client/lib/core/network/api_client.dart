@@ -37,7 +37,7 @@ class ApiClient {
         _dio = dioOverride ??
             Dio(
               BaseOptions(
-                baseUrl: baseUrl,
+                baseUrl: _assertBaseUrlIsTransportSafe(baseUrl),
                 connectTimeout: connectTimeout,
                 receiveTimeout: receiveTimeout,
                 sendTimeout: sendTimeout,
@@ -78,26 +78,27 @@ class ApiClient {
   /// True for loopback hosts where plaintext HTTP/WS is documented safe.
   static bool _isLoopbackHost(String host) {
     final lower = host.toLowerCase();
-    return lower == "127.0.0.1"
-        || lower == "::1"
-        || lower == "localhost"
-        || lower == "[::1]";
+    return lower == '127.0.0.1'
+        || lower == '::1'
+        || lower == 'localhost'
+        || lower == '[::1]';
   }
 
-  static void _assertBaseUrlIsTransportSafe(String url) {
+  static String _assertBaseUrlIsTransportSafe(String url) {
     final parsed = Uri.tryParse(url);
-    if (parsed == null || (parsed.scheme != "http" && parsed.scheme != "https")) {
+    if (parsed == null || (parsed.scheme != 'http' && parsed.scheme != 'https')) {
       throw ArgumentError(
-        "api_base must be http(s); got $url",
+        'api_base must be http(s); got $url',
       );
     }
     final host = parsed.host;
-    if (parsed.scheme == "http" && !_isLoopbackHost(host)) {
+    if (parsed.scheme == 'http' && !_isLoopbackHost(host)) {
       throw ArgumentError(
         "Refusing plaintext HTTP for non-loopback host '$host'. "
-        "Use https:// for any server reachable from a network.",
+        'Use https:// for any server reachable from a network.',
       );
     }
+    return url;
   }
 
   void setAuthToken(String? token) {

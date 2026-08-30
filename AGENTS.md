@@ -46,7 +46,7 @@ merge (per audit C-3):
 | --- | --- | --- | --- |
 | `fast (ubuntu, 3.11)` | ubuntu-latest | 3.11 | Fast tier — lint + mypy + fast tests + coverage ≥ 85 % |
 | `fast (ubuntu, 3.13)` | ubuntu-latest | 3.13 | Fast tier on the Python version the Dockerfile builds |
-| `fast (windows, 3.11)` | windows-latest | 3.11 | Windows path (install.bat, start_app.vbs) |
+| `fast (windows, 3.11)` | windows-latest | 3.11 | Windows runner path |
 | `container scan (trivy)` | ubuntu-latest | n/a | High/critical CVE scan of the production image |
 
 The nightly workflow (`.github/workflows/nightly.yml`) is **not** a
@@ -177,7 +177,6 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/core/imaging/handwriting.py` | Local handwriting image preprocessor |
 | `scripts/` | Developer utilities: confidence eval, fixture builder, debug/inspection scripts, bbox visualizers |
 | `examples/` | Sample PDFs and images for `tests/` and the confidence scripts |
-| `install.bat` / `install.ps1` / `start_app.vbs` | Windows one-click install and terminal launcher |
 
 ## Extension Points
 
@@ -237,7 +236,7 @@ contract tests live in `tests/routers/`, plugin unit tests in
 - **Model pre-flight**: deferred in the harness rebuild. The historical `GET /v1/models` check that guarded against LM Studio's silent model fallback (issue #7) is not yet re-implemented; the OCR plugin only seeds the `verify_model` config key.
 - **Quality repair loop**: `/api/process` re-OCRs blocks whose estimated confidence is below the target (crop-scoped, sequential, accept-only-while-improving) after block emission and before embedding. Defaults ON at the API layer (up to 2 extra VLM passes per low-confidence block); in-process `OCRPipeline.run` callers stay off unless they pass `repair_options=`. Per-request form fields `quality_loop_enabled` / `quality_target` (0.5–1.0) / `quality_max_retries` (0–5); the boot defaults are seeded by the `ocr` plugin's `cordis.yml` config, which expands the env seeds `OMNISCRIBE_QUALITY_LOOP`, `OMNISCRIBE_QUALITY_TARGET`, `OMNISCRIBE_QUALITY_MAX_RETRIES`. WebSocket frames: `block_retry`, `block_revised`, `quality_summary`.
 - Web runtime settings live in the OCR plugin's in-memory `/api/config` store, seeded from `RuntimeSettings` at plugin apply time; LLM coordinate updates write through to the shared settings.
-- **Windows quick-start**: run `install.bat` to install `uv`, sync the web extra, and create Desktop / Start-Menu shortcuts. `start_app.vbs` boots Redis (via Docker) + Celery + uvicorn in visible terminal windows and opens the browser; it writes a timestamped append log to `start_app.log` next to itself. Closing the terminal windows terminates the processes.
+- **Flutter Desktop / UI**: the user-facing client is a multi-platform Flutter app under `client/` connecting to the OmniScribe FastAPI/plugin backend over HTTP and WebSocket.
 - **Developer scripts** live in `scripts/`. The most useful for OCR quality work are `scripts/confidence_eval.py` (hybrid + grounded vs the `examples/*.pdf` fixtures) and `scripts/confidence_image.py` (single-image confidence). The rest are debug/inspection/visualization tools.
 - **Docker**: `Dockerfile` builds a `python:3.14-slim` runtime with the `web`, `async-translation`, and `preprocessing` extras. `compose.yaml` runs `api` + `redis` by default; add `--profile async` to also start a Celery worker. Image exposes port 8000; bind `LLM_API_BASE` to `http://host.docker.internal:1234/v1` to talk to a host-side LM Studio.
 - **Pre-commit**: `.pre-commit-config.yaml` runs ruff (check + format), mypy, and `uv-lock` on every commit. Enable with `uv tool run pre-commit install` after cloning.
