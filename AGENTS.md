@@ -200,7 +200,7 @@ and per-field env overrides (`OMNISCRIBE_PLUGIN_<ID>__<FIELD>`). Plugins are
 applied in file order, register services keyed by Protocol, mount routers
 via `ctx.mount_router`, and dispose their effects in LIFO order on shutdown.
 Unknown state backends or malformed rows fail boot loud (`PluginLoadError`).
-**Last updated: 2026-08-23.**
+**Last updated: 2026-08-30.**
 
 | Boot order | Plugin id | Module | Registers / mounts |
 |---|---|---|---|
@@ -212,16 +212,17 @@ Unknown state backends or malformed rows fail boot loud (`PluginLoadError`).
 | 6 | `progress` | `plugins/progress.py` | `ProgressService` + `/api/progress/*` routes + `/ws/{channel_id}` |
 | 7 | `providers` | `plugins/providers.py` | `/api/providers` catalog and model discovery |
 | 8 | `health` | `plugins/health.py` | `/api/health`, `/api/healthz`, `/ready`, `/readyz` |
-| 9 | `ocr` | `plugins/ocr/` | `OCRService` + `JobRunner`, `/api/process*`, `/api/jobs*`, `/api/config*` |
+| 9 | `documents` | `plugins/documents/` | `/api/extract`, `/api/export/*` (document, docx, html, docx-tree, blocktree, `{id}` fetch), `/api/text/{id}`, `/api/metadata/{id}` |
+| 10 | `ocr` | `plugins/ocr/` | `OCRService` + `JobRunner`, `/api/process*`, `/api/jobs*`, `/api/config*` |
 
 **Deferred capabilities** (not yet rebuilt on the harness — see
 `docs/superpowers/specs/2026-08-23-omniscribe-api-rebuild-design.md`):
-translation / transcription / glossary-import / extraction+export routes,
+translation / transcription / glossary-import routes,
 the auth / rate-limit / upload-size ASGI middlewares, Celery async
 translation dispatch, the Redis state backend, and model pre-flight.
 
 **Testing.** `tests/conftest.py` ships three boot fixtures: `cordis_env`
-(temp nine-row tree, memory backend, small TTLs), `harness_ctx` (a loaded
+(temp ten-row tree, memory backend, small TTLs), `harness_ctx` (a loaded
 Context), and `api_client` (TestClient over `create_app()` — plugins boot
 inside lifespan on the portal loop that also serves the requests). Router
 contract tests live in `tests/routers/`, plugin unit tests in
@@ -285,4 +286,4 @@ survive into the post-scout roadmap) live in
 - [DEPLOYMENT.md](DEPLOYMENT.md) — local / LAN / public-internet deployment profiles
 - [SECURITY.md](SECURITY.md) — threat model, hardening checklist, vulnerability disclosure
 
-_Last updated: 2026-08-23_
+_Last updated: 2026-08-30_

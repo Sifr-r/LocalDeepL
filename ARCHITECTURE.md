@@ -56,6 +56,11 @@ cordis.yml
 │                 cross-loop send marshaling; /api/progress/* + /ws/{channel_id}
 ├─ providers      provider catalog + model discovery (/api/providers*)
 ├─ health         liveness (/api/health, /api/healthz) and readiness (/ready, /readyz)
+├─ documents      extraction + export routes over the token-bound ArtifactStore:
+│                 POST /api/extract (extraction prompts re-homed verbatim,
+│                 PROMPT_VERSION 2026-08-15.v1), /api/export/* builders
+│                 (text/markdown/json/docling/mineru), and the token-bound
+│                 /api/export/{id}, /api/text/{id}, /api/metadata/{id} fetches
 └─ ocr            OCRService + JobRunner; /api/process*, /api/jobs*, /api/config*,
                   SSE /api/process/{job_id}/events; seeds the quality-loop defaults
 ```
@@ -120,7 +125,8 @@ Protocol (`ctx.inject(JobQueue)`), never by module singleton.
 | `src/omniscribe/resources/calibration/` | Pre-trained model confidence calibration files (e.g. `qwen2_5_vl_72b.json`) |
 | `src/omniscribe/core/ocr/multi_format_client.py` | Multi-format LLM completion dispatcher (`openai_compatible`, `anthropic_compatible`, `ollama_compatible`), vision base64 payloads, exponential backoff resilience retries, and timeout boundaries |
 | `src/omniscribe/harness/` | Cordis-style plugin harness: `context.py` (Protocol-keyed services, LIFO effects, event bus, router queue), `loader.py` (YAML tree + patches + env overrides, fails loud), `plugin.py` (Plugin base), plus `errors.py`, `events.py`, `effects.py`, `service.py`, `config.py` |
-| `src/omniscribe/plugins/` | The nine boot plugins (runtime, logging, state_backend, artifacts, jobs, progress, providers, health, ocr) that register services and mount every `/api` router; see the Plugin Tree section |
+| `src/omniscribe/plugins/` | The ten boot plugins (runtime, logging, state_backend, artifacts, jobs, progress, providers, health, documents, ocr) that register services and mount every `/api` router; see the Plugin Tree section |
+| `src/omniscribe/plugins/documents/` | Documents plugin: `schemas.py` (extraction/export request models reproducing the pre-harness contract), `prompts.py` (extraction prompts re-homed verbatim from the pre-harness `api/services/ai.py`; `PROMPT_VERSION 2026-08-15.v1`; invoice/resume/academic/table/table_extraction/custom templates), `service.py` (LLM extraction runner, text/markdown/json/docling-compatible/mineru-compatible export builders, and on-demand block-tree building from the stored text artifact — no tree sidecars), `routes.py` (`POST /api/extract`, `POST /api/export/document`, `GET|POST /api/export/docx`, `POST /api/export/html`, `POST /api/export/docx-tree`, `POST /api/export/blocktree`, token-bound `GET /api/export/{artifact_id}`, `GET /api/text/{artifact_id}`, `GET /api/metadata/{artifact_id}`), and `plugin.py` (mounts the router; no configurable fields) |
 | `src/omniscribe/resources/cordis.yml` | Shipped plugin boot tree; patched via `OMNISCRIBE_CORDIS_PATCH` or `<artifact_dir>/cordis.patch.yml` |
 | `src/omniscribe/utils/structured_logging.py` | Structured JSON logging formatter and handlers |
 | `src/omniscribe/utils/prompt_safety.py` | Prompt injection detection and input sanitization |
@@ -172,8 +178,11 @@ covers three domains: artifacts, jobs, and progress channels.
 The `artifacts` plugin layers an `ArtifactStore` on top: every artifact is
 an opaque id + bearer token pair; sync `/api/process` returns them as
 `X-Text-Artifact-Id` / `X-Text-Artifact-Token` headers, and async jobs
-expose the same pair through `JobStatusResponse`. The metadata/export
-artifact surfaces are deferred with the extraction routes.
+expose the same pair through `JobStatusResponse`. The `documents` plugin
+serves the metadata/export artifact surfaces on the same store:
+`POST /api/export/document` writes a new token-bound export artifact, and
+`GET /api/text/{id}` / `GET /api/metadata/{id}` / `GET /api/export/{id}`
+fetch stored ones.
 
 ### Background OCR lifecycle
 
@@ -216,14 +225,22 @@ Rebuilt surface (pinned by `tests/openapi.json`):
 | `GET` / `DELETE` | `/api/jobs` | `ocr` | Job list; `DELETE` clears all jobs |
 | `GET` | `/api/jobs/{job_id}/result` | `ocr` | Token-bound result PDF download |
 | `POST` | `/api/jobs/{job_id}/cancel` | `ocr` | Cancel pending/running job; terminal jobs are idempotent |
+| `POST` | `/api/extract` | `documents` | Structured data extraction against OCR text; templates `invoice`, `resume`, `academic`, `table`, `table_extraction`, or `custom` prompt |
+| `POST` | `/api/export/document` | `documents` | Build a token-bound export artifact (`text`/`markdown`/`json`/`docling`/`mineru`); returns `{artifact_id, token, format}` |
+| `GET` / `POST` | `/api/export/docx` | `documents` | `.docx` from Markdown page text; the GET form takes `?text=` (Flutter ExportModal) |
+| `POST` | `/api/export/html` | `documents` | Semantic HTML built from the stored text artifact's block tree |
+| `POST` | `/api/export/docx-tree` | `documents` | `.docx` built from the stored text artifact's block tree |
+| `POST` | `/api/export/blocktree` | `documents` | Hierarchical block-tree JSON built from the stored text artifact |
+| `GET` | `/api/export/{artifact_id}` | `documents` | Token-bound (Bearer) export artifact download |
+| `GET` | `/api/text/{artifact_id}` | `documents` | Token-bound (Bearer) OCR text artifact fetch |
+| `GET` | `/api/metadata/{artifact_id}` | `documents` | Token-bound (Bearer) document metadata artifact fetch |
 | `POST` | `/api/progress/session` | `progress` | Issue an opaque progress channel + one-shot session token |
 | `POST` | `/api/progress/cancel/{channel_id}` | `progress` | Request cancellation for a progress channel |
 | `WS` | `/ws/{channel_id}`, `/api/progress/ws/{channel_id}` | `progress` | Token-bound progress stream; auth via first `{"type":"auth",...}` frame (or `?token=`), then accepts `{"type":"cancel"}` |
 
 Deferred in the harness rebuild (routes not mounted): `/api/models*`,
 provider mutation routes (`POST/DELETE /api/providers*`),
-`/api/text|metadata|export/*` artifact reads, `/api/export/*` builders,
-`/api/translate*`, `/api/extract`, `/api/transcribe`, and
+`/api/translate*`, `/api/transcribe`, and
 `/api/glossary*` — see the design spec's out-of-scope list.
 
 ## Change Blueprint

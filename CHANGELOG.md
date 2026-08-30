@@ -277,6 +277,7 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Documents plugin (`plugins/documents/`): rebuilt the deferred extraction and export HTTP surface — `POST /api/extract`, `POST /api/export/document`, `GET|POST /api/export/docx`, `POST /api/export/html`, `POST /api/export/docx-tree`, `POST /api/export/blocktree`, token-bound `GET /api/export/{id}`, `GET /api/text/{id}`, `GET /api/metadata/{id}`. The Flutter client's extraction/export screens and text display work again; no client changes.
 - **2026-08-29 audit remediation — Sprint 3/H-4: AppButton keyboard accessibility**
   `client/lib/presentation/common/app_button.dart` now wraps the
   press target in a `FocusableActionDetector` with an
