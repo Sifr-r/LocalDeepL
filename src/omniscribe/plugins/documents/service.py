@@ -1,15 +1,28 @@
 """Documents service: artifact parsing, tree building, export builders.
 
-Pure functions only — no FastAPI imports, so the whole module is
-unit-testable without HTTP. The extraction runner is added in Task 4.
+Pure functions plus the extraction runner — no FastAPI imports, so the
+whole module is unit-testable without HTTP.
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from omniscribe.config import RuntimeSettings
 from omniscribe.core.block_tree import DocumentTree
+from omniscribe.core.llm.client import call_llm
+from omniscribe.core.llm.temperatures import TEMPERATURE_EXTRACTION
+from omniscribe.plugins.documents.prompts import (
+    EXTRACTION_SYSTEM_MESSAGE,
+    build_extraction_prompt,
+)
+from omniscribe.plugins.documents.schemas import ExtractionRequest
+from omniscribe.utils.json_parse import extract_json
+from omniscribe.utils.security import check_ssrf_target_sync
+
+_LOGGER = logging.getLogger("omniscribe.plugins.documents")
 
 # Typed as `dict[str, str]` so callers can look up by string literal — the
 # StrEnum members are str subclasses, so hash-equal lookup works either way.
@@ -38,6 +51,7 @@ def load_pages(raw: Mapping[str, Any]) -> dict[int, list[str]]:
     Stored shape is ``{"<page_index>": "<lines joined by \\n>"}``
     (``plugins/ocr/service.py``). Non-numeric page keys are ignored —
     artifacts are machine-generated, so anything else is corruption.
+    Non-string values are treated as empty pages, not skipped.
     """
     pages: dict[int, list[str]] = {}
     for key, value in raw.items():
@@ -45,6 +59,8 @@ def load_pages(raw: Mapping[str, Any]) -> dict[int, list[str]]:
             page = int(key)
         except (TypeError, ValueError):
             continue
+        if page in pages:
+            _LOGGER.warning("duplicate page key %r in text artifact; last wins", key)
         text = value if isinstance(value, str) else ""
         pages[page] = text.split("\n")
     return pages
@@ -121,3 +137,40 @@ def _markdown(page_text: Mapping[int, list[str]]) -> str:
     for page, lines in sorted(page_text.items()):
         chunks.append(f"## Page {page + 1}\n\n" + "\n".join(lines))
     return "\n\n".join(chunks).strip() + "\n"
+
+
+async def run_extraction(
+    request: ExtractionRequest, settings: RuntimeSettings
+) -> dict[str, Any]:
+    """Extract structured JSON from text; ``{}`` for invalid model JSON."""
+    if not request.text.strip():
+        return {}
+
+    if request.api_base and request.api_base.strip():
+        check = check_ssrf_target_sync(request.api_base.strip())
+        if not check.allowed:
+            raise DocumentsError(
+                403,
+                "ssrf_blocked",
+                f"URL targets a blocked address: {check.reason}",
+            )
+
+    prompt = build_extraction_prompt(
+        text=request.text,
+        template=request.template.value,
+        custom_prompt=request.custom_prompt,
+    )
+    try:
+        content = await call_llm(
+            model=(request.model or settings.llm_model).strip(),
+            api_base=(request.api_base or settings.llm_api_base).strip(),
+            api_key=(request.api_key or settings.llm_api_key).strip(),
+            temperature=TEMPERATURE_EXTRACTION,
+            system_prompt=EXTRACTION_SYSTEM_MESSAGE,
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except Exception as exc:
+        _LOGGER.exception("Extraction request failed")
+        raise DocumentsError(502, "ai_error", "The AI service request failed.") from exc
+    parsed = extract_json(content.strip())
+    return parsed if isinstance(parsed, dict) else {}
