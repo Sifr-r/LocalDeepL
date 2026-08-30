@@ -300,6 +300,7 @@ def test_export_docx_tree_produces_docx(api_client: TestClient) -> None:
     )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith(DOCX_MEDIA_TYPE)
+    assert "document.docx" in response.headers["content-disposition"]
     assert response.content[:2] == b"PK"
 
 
