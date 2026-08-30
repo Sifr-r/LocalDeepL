@@ -283,6 +283,43 @@ e.g. `eng_Latn`/`fra_Latn`).
 | Unknown job id on status | 404 `not_found` |
 | Malformed request body | 422 (FastAPI native; pre-existing surface-wide behavior) |
 
+## Pedantic-review ride-alongs
+
+`docs/audits/2026-08-30-pedantic-review.md` (landed 2026-08-30, with
+corrections) is folded into this slice as a bounded ride-along set —
+findings that are small, re-verified in source, and live in or adjacent to
+code this slice touches. Everything else is deferred to a dedicated
+remediation wave (mirroring the five-domain audit's remediation order).
+
+In scope (one task in the plan, full fast gate — harness and core paths):
+
+1. **1.2 — env-override lookup case sensitivity** (`harness/loader.py:135-141`):
+   `overrides` is keyed by lowercased plugin id but `row.id` is matched
+   with original casing, so `OMNISCRIBE_PLUGIN_Runtime__*` silently drops.
+   Fix: match on `row.id.lower()`. Unit test with a mixed-case row id.
+2. **1.6 — jobs shutdown cancels only the newest 1000 queued jobs**
+   (`plugins/jobs.py:208`): `list_jobs(limit=1000)` orders by
+   `created_at DESC`, so flooded queues leak "queued" rows forever on the
+   SQLite backend. Fix: paginate until exhausted (drop the magic number).
+   Unit test seeding more jobs than one page.
+3. **1.9 — `assert self._doc is not None`** (`core/recall/text_layer.py:165`):
+   stripped under `python -O`, turning fail-open into an AttributeError.
+   Fix: explicit `if self._doc is None: return []`.
+4. **1.10 — `assert last_exc is not None`** (`core/ocr/chat_client.py:161`):
+   same `-O` hazard in the retry loop. Fix: explicit guard.
+5. **1.1 — `ALLOW_SSRF_LOCAL` docs reconciliation** (docs-only): the code
+   default stays `False` (secure; per the review-file correction), and
+   `AGENTS.md:234` is reworded to state that the *code* default is False
+   while the shipped `.env.example` enables it for local development.
+
+Refuted during re-verification (no action): **7.12** — the quality-loop
+env seeds are consumed via `cordis.yml:61-63` `${...}` expansion.
+
+Deferred to the future remediation wave (recorded, not in this slice):
+1.3, 1.4, 1.5, 1.7, 1.8, 2.1 (needs a paired Flutter change — the client
+switches `exportDocx` to POST before the GET route can be dropped), 2.2,
+2.7, and the remaining section 3–6 findings.
+
 ## Celery retirement
 
 - `compose.yaml`: remove the `worker` (Celery) service block and any
@@ -368,6 +405,7 @@ e.g. `eng_Latn`/`fra_Latn`).
 - [2026-08-30 documents plugin spec](2026-08-30-documents-plugin-extraction-export-design.md) — slice 1; artifact helpers + envelope conventions
 - [2026-08-23 API rebuild design](2026-08-23-omniscribe-api-rebuild-design.md) — deferred-capabilities source
 - [2026-08-29 five-domain audit](../../audits/2026-08-29-five-domain-audit.md) — finding #2 (Celery) closed by this slice
+- [2026-08-30 pedantic review](../../audits/2026-08-30-pedantic-review.md) — bounded ride-along set (see "Pedantic-review ride-alongs")
 - Recovered pre-rebuild sources: commit `44ef123^` (`api/routers/translation.py`, `api/services/ai.py`, `api/celery_app.py`, `api/tasks.py`), contract tests `e6b7b89^`
 
 _Last updated: 2026-08-30_
