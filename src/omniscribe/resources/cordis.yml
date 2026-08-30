@@ -52,6 +52,9 @@ plugins:
   - id: health
     use: omniscribe.plugins.health:plugin
 
+  - id: documents
+    use: omniscribe.plugins.documents:plugin
+
   - id: ocr
     use: omniscribe.plugins.ocr:plugin
     config:

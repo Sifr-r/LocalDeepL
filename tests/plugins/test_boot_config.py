@@ -1,4 +1,4 @@
-"""Boot tree: the shipped cordis.yml mounts all nine plugins and services."""
+"""Boot tree: the shipped cordis.yml mounts all ten plugins and services."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def clean_cordis_env(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
-def test_shipped_cordis_yml_declares_nine_rows_in_boot_order() -> None:
+def test_shipped_cordis_yml_declares_ten_rows_in_boot_order() -> None:
     rows = parse_rows(SHIPPED_CORDIS_YML.read_text(encoding="utf-8"))
     assert [row.id for row in rows] == [
         "runtime",
@@ -53,6 +53,7 @@ def test_shipped_cordis_yml_declares_nine_rows_in_boot_order() -> None:
         "progress",
         "providers",
         "health",
+        "documents",
         "ocr",
     ]
 
@@ -74,8 +75,9 @@ async def test_shipped_cordis_yml_mounts_full_service_tree(
             JobRunner,
         ):
             assert ctx.has(protocol), f"{protocol.__name__} not registered"
-        # health, providers, progress, and ocr each mount one router.
-        assert len(ctx.routes()) == 4
+        # health, providers, progress, documents, and ocr each mount one
+        # router.
+        assert len(ctx.routes()) == 5
     finally:
         await ctx.dispose()
 
