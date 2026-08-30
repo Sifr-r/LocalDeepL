@@ -69,7 +69,7 @@ Source directories are split into **core** (OCR pipeline and API surface) and **
 | --- | --- |
 | `src/omniscribe/core/` | OCR engines, alignment, PDF/image handling, document model, workflows, processors, translation, grounded backends, OCR quality trust layer |
 | `src/omniscribe/harness/` | Cordis-style plugin harness: Context (services/events/effects/router queue), Loader (YAML + patches + env overrides), Plugin base |
-| `src/omniscribe/plugins/` | The nine boot plugins (runtime, logging, state_backend, artifacts, jobs, progress, providers, health, ocr) and their Protocol seams |
+| `src/omniscribe/plugins/` | The ten boot plugins (runtime, logging, state_backend, artifacts, jobs, progress, providers, health, documents, ocr) and their Protocol seams |
 | `src/omniscribe/pipeline.py` | `OCRPipeline` facade |
 | `src/omniscribe/server.py` | FastAPI app entry point |
 | `src/omniscribe/config.py` | Runtime settings |
@@ -163,7 +163,7 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/harness/context.py` | Harness `Context`: Protocol-keyed services, LIFO effect disposal, event subscriptions, `mount_router`/`routes()` |
 | `src/omniscribe/harness/loader.py` | `Loader(ctx).load(base, patch_paths=())` — parses `cordis.yml` plugin rows, deep-merges patches, applies `OMNISCRIBE_PLUGIN_<ID>__<FIELD>` env overrides, fails loud via `PluginLoadError` |
 | `src/omniscribe/harness/plugin.py` | `Plugin` base class (id, `Schema` ClassVar, config dict, `apply`/`dispose`) |
-| `src/omniscribe/resources/cordis.yml` | Shipped nine-plugin boot tree; operator patches layer via `OMNISCRIBE_CORDIS_PATCH` or `<artifact_dir>/cordis.patch.yml` |
+| `src/omniscribe/resources/cordis.yml` | Shipped ten-plugin boot tree; operator patches layer via `OMNISCRIBE_CORDIS_PATCH` or `<artifact_dir>/cordis.patch.yml` |
 | `src/omniscribe/plugins/runtime.py` | `RuntimeService` — settings holder, readiness flag, artifact/channel prune cadence |
 | `src/omniscribe/plugins/logging.py` | Structured logging setup (`format: text\|json`, `level`) applied at boot |
 | `src/omniscribe/plugins/state_backend.py` | `StateBackend` Protocol (artifacts + jobs + channels) + `MemoryStateBackend` (default) + `SQLiteStateBackend` (opt-in via `OMNISCRIBE_STATE_BACKEND=sqlite`); the single registration site for the backend service |
