@@ -142,7 +142,11 @@ def _markdown(page_text: Mapping[int, list[str]]) -> str:
 async def run_extraction(
     request: ExtractionRequest, settings: RuntimeSettings
 ) -> dict[str, Any]:
-    """Extract structured JSON from text; ``{}`` for invalid model JSON."""
+    """Extract structured JSON from text; ``{}`` for invalid model JSON.
+
+    Empty text also returns ``{}`` at the service level; the route layer is
+    responsible for turning empty text into a 400 ``bad_request``.
+    """
     if not request.text.strip():
         return {}
 

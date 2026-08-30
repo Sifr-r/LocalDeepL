@@ -1,6 +1,6 @@
 """Shared fixtures for the router contract tests.
 
-Every test in this package exercises the real nine-plugin tree booted by
+Every test in this package exercises the real ten-plugin tree booted by
 the ``api_client`` fixture in ``tests/conftest.py``; the OCR routes
 additionally need the pipeline bridge faked so no VLM or Surya predictor
 is ever touched.

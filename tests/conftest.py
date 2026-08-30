@@ -7,7 +7,7 @@ Shared fixtures.
 - `stub_ocr` — an OCRProcessor replacement that returns canned text without
   hitting LM Studio, so tests can run offline.
 - `cordis_env` / `harness_ctx` / `api_client` — plugin-harness boot
-  fixtures: a temp nine-row ``cordis.yml`` (memory backend, small TTLs),
+  fixtures: a temp ten-row ``cordis.yml`` (memory backend, small TTLs),
   a loaded harness Context, and a TestClient over ``create_app()``.
 - `EXAMPLE_PDF_NAMES` — the canonical list of on-disk example PDF filenames
   (and the few images) so every parametrized test surface stays in
@@ -109,8 +109,9 @@ def make_stub_ocr():
 # Plugin-harness boot fixtures
 # ---------------------------------------------------------------------------
 
-# Nine-row test tree: same plugins as the shipped resources/cordis.yml with
-# a forced memory backend and small TTLs so tests stay fast and offline.
+# Ten-row test tree: same plugins as the shipped resources/cordis.yml plus
+# the documents plugin, with a forced memory backend and small TTLs so
+# tests stay fast and offline.
 _TEST_CORDIS_YML = """\
 plugins:
   - id: runtime
@@ -152,6 +153,9 @@ plugins:
   - id: health
     use: omniscribe.plugins.health:plugin
 
+  - id: documents
+    use: omniscribe.plugins.documents:plugin
+
   - id: ocr
     use: omniscribe.plugins.ocr:plugin
 """
@@ -182,7 +186,7 @@ def cordis_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.fixture
 async def harness_ctx(cordis_env: Path):
-    """A loaded harness Context for the nine-plugin test tree."""
+    """A loaded harness Context for the ten-plugin test tree."""
     from omniscribe.harness.context import Context
     from omniscribe.harness.loader import Loader
 

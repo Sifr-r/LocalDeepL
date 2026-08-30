@@ -14,6 +14,7 @@ from omniscribe.plugins.documents.service import (
     build_tree,
     load_pages,
 )
+from omniscribe.utils.security import SSRFCheckResult
 
 
 def test_load_pages_splits_joined_lines_and_ignores_non_numeric_keys() -> None:
@@ -172,6 +173,15 @@ async def test_run_extraction_valid_json(monkeypatch: pytest.MonkeyPatch) -> Non
 async def test_run_extraction_request_overrides_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Hermetic: patch the SSRF guard so the request-level api_base does not
+    # hit real DNS (the only remaining real-DNS call site before this pin).
+    monkeypatch.setattr(
+        documents_service,
+        "check_ssrf_target_sync",
+        lambda url: SSRFCheckResult(
+            allowed=True, resolved_ip="93.184.216.34", reason=None
+        ),
+    )
     captured: dict[str, object] = {}
 
     async def fake_call_llm(**kwargs: object) -> str:

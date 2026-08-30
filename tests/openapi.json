@@ -25,6 +25,221 @@
         "title": "AsyncSubmitResponse",
         "type": "object"
       },
+      "DocumentExportFormat": {
+        "enum": [
+          "json",
+          "markdown",
+          "text",
+          "docling",
+          "mineru"
+        ],
+        "title": "DocumentExportFormat",
+        "type": "string"
+      },
+      "DocumentExportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "export_format": {
+            "$ref": "#/components/schemas/DocumentExportFormat",
+            "default": "json"
+          },
+          "metadata_artifact_id": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata Artifact Id"
+          },
+          "metadata_artifact_token": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata Artifact Token"
+          },
+          "text_artifact_id": {
+            "maxLength": 32,
+            "minLength": 32,
+            "title": "Text Artifact Id",
+            "type": "string"
+          },
+          "text_artifact_token": {
+            "maxLength": 256,
+            "minLength": 32,
+            "title": "Text Artifact Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text_artifact_id",
+          "text_artifact_token"
+        ],
+        "title": "DocumentExportRequest",
+        "type": "object"
+      },
+      "ExportBlockTreeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "metadata_artifact_id": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata Artifact Id"
+          },
+          "metadata_artifact_token": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata Artifact Token"
+          },
+          "text_artifact_id": {
+            "maxLength": 32,
+            "minLength": 32,
+            "title": "Text Artifact Id",
+            "type": "string"
+          },
+          "text_artifact_token": {
+            "maxLength": 256,
+            "minLength": 32,
+            "title": "Text Artifact Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text_artifact_id",
+          "text_artifact_token"
+        ],
+        "title": "ExportBlockTreeRequest",
+        "type": "object"
+      },
+      "ExportDocxRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "title": "ExportDocxRequest",
+        "type": "object"
+      },
+      "ExportHtmlRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "text_artifact_id": {
+            "maxLength": 32,
+            "minLength": 32,
+            "title": "Text Artifact Id",
+            "type": "string"
+          },
+          "text_artifact_token": {
+            "maxLength": 256,
+            "minLength": 32,
+            "title": "Text Artifact Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text_artifact_id",
+          "text_artifact_token"
+        ],
+        "title": "ExportHtmlRequest",
+        "type": "object"
+      },
+      "ExtractionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "api_base": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Base"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "custom_prompt": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Custom Prompt",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "template": {
+            "$ref": "#/components/schemas/ExtractionTemplate",
+            "default": "invoice"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "title": "ExtractionRequest",
+        "type": "object"
+      },
+      "ExtractionTemplate": {
+        "enum": [
+          "invoice",
+          "resume",
+          "academic",
+          "table",
+          "table_extraction",
+          "custom"
+        ],
+        "title": "ExtractionTemplate",
+        "type": "string"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -541,6 +756,335 @@
         ]
       }
     },
+    "/api/export/blocktree": {
+      "post": {
+        "operationId": "export_blocktree_api_export_blocktree_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportBlockTreeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Blocktree",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/export/document": {
+      "post": {
+        "operationId": "create_document_export_api_export_document_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Document Export",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/export/docx": {
+      "get": {
+        "operationId": "export_docx_get_api_export_docx_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "text",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Text",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Docx Get",
+        "tags": [
+          "documents"
+        ]
+      },
+      "post": {
+        "operationId": "export_docx_post_api_export_docx_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportDocxRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Docx Post",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/export/docx-tree": {
+      "post": {
+        "operationId": "export_docx_tree_api_export_docx_tree_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportBlockTreeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Docx Tree",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/export/html": {
+      "post": {
+        "operationId": "export_html_api_export_html_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportHtmlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Html",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/export/{artifact_id}": {
+      "get": {
+        "operationId": "get_document_export_api_export__artifact_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Document Export",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/extract": {
+      "post": {
+        "operationId": "extract_api_extract_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtractionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Extract",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
     "/api/health": {
       "get": {
         "operationId": "liveness_api_health_get",
@@ -752,6 +1296,62 @@
         "summary": "Job Result",
         "tags": [
           "ocr"
+        ]
+      }
+    },
+    "/api/metadata/{artifact_id}": {
+      "get": {
+        "operationId": "get_document_metadata_api_metadata__artifact_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Document Metadata",
+        "tags": [
+          "documents"
         ]
       }
     },
@@ -1196,6 +1796,62 @@
         "summary": "Provider Models",
         "tags": [
           "providers"
+        ]
+      }
+    },
+    "/api/text/{artifact_id}": {
+      "get": {
+        "operationId": "get_text_api_text__artifact_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Text",
+        "tags": [
+          "documents"
         ]
       }
     },
