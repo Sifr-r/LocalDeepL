@@ -1,6 +1,6 @@
 """Request schemas for the documents plugin (extraction + export routes).
 
-Field constraints reproduce the pre-harness contract (commit ``44ef123^``,
+Field constraints reproduce the pre-harness contract (commit `44ef123^`,
 ``api/schemas/requests.py``) so the existing Flutter client keeps working
 without changes.
 """
