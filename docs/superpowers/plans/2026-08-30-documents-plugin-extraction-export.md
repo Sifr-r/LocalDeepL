@@ -1885,11 +1885,16 @@ Create `tests/harness/test_documents_boot.py`:
 
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
 
 
 def test_documents_routes_survive_full_boot(api_client: TestClient) -> None:
-    paths = {getattr(route, "path", "") for route in api_client.app.routes}
+    # FastAPI >=0.141 wraps plugin routers in private _IncludedRouter
+    # objects, so app.routes introspection cannot see mounted paths —
+    # assert against the public /openapi.json surface instead.
+    paths = set(json.loads(api_client.get("/openapi.json").text)["paths"])
     assert "/api/extract" in paths
     assert "/api/export/document" in paths
     # Health still answers after the tenth plugin mounts.
