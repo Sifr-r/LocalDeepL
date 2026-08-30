@@ -262,3 +262,105 @@ def test_validation_rejects_malformed_artifact_ids(api_client: TestClient) -> No
         },
     )
     assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Tree routes (html / docx-tree / blocktree)
+# ---------------------------------------------------------------------------
+
+
+def test_export_html_renders_block_text(api_client: TestClient) -> None:
+    artifact_id, token = _seed_text_artifact(
+        api_client, {"0": "Section heading\nFirst paragraph of body text."}
+    )
+    response = api_client.post(
+        "/api/export/html",
+        json={"text_artifact_id": artifact_id, "text_artifact_token": token},
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "document.html" in response.headers["content-disposition"]
+    assert "Section heading" in response.text
+    assert "First paragraph of body text." in response.text
+
+
+def test_export_html_unknown_artifact_404(api_client: TestClient) -> None:
+    response = api_client.post(
+        "/api/export/html",
+        json={"text_artifact_id": "0" * 32, "text_artifact_token": "t" * 43},
+    )
+    assert response.status_code == 404
+
+
+def test_export_docx_tree_produces_docx(api_client: TestClient) -> None:
+    artifact_id, token = _seed_text_artifact(api_client, {"0": "Heading\nBody line."})
+    response = api_client.post(
+        "/api/export/docx-tree",
+        json={"text_artifact_id": artifact_id, "text_artifact_token": token},
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(DOCX_MEDIA_TYPE)
+    assert response.content[:2] == b"PK"
+
+
+def test_export_blocktree_returns_tree_json(api_client: TestClient) -> None:
+    artifact_id, token = _seed_text_artifact(
+        api_client, {"0": "Section heading\nBody line.", "1": "More text."}
+    )
+    response = api_client.post(
+        "/api/export/blocktree",
+        json={"text_artifact_id": artifact_id, "text_artifact_token": token},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    # DocumentTree serializes with page children; both pages must appear.
+    serialized = json.dumps(payload)
+    assert "More text." in serialized
+    assert "Section heading" in serialized
+
+
+def test_export_blocktree_attaches_metadata_processor_report(
+    api_client: TestClient,
+) -> None:
+    artifact_id, token = _seed_text_artifact(api_client, {"0": "Body."})
+    meta_id, meta_token = _seed_artifact(
+        api_client, blob=json.dumps({"structure": {"blocks": 1}}).encode("utf-8")
+    )
+    response = api_client.post(
+        "/api/export/blocktree",
+        json={
+            "text_artifact_id": artifact_id,
+            "text_artifact_token": token,
+            "metadata_artifact_id": meta_id,
+            "metadata_artifact_token": meta_token,
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    report = payload.get("metadata", {}).get("processor_report")
+    assert report is not None, f"processor_report missing: {payload.keys()}"
+    assert report["structure"] == {"blocks": 1}
+
+
+def test_export_blocktree_wrong_text_token_404(api_client: TestClient) -> None:
+    artifact_id, _token = _seed_text_artifact(api_client, {"0": "Body."})
+    response = api_client.post(
+        "/api/export/blocktree",
+        json={"text_artifact_id": artifact_id, "text_artifact_token": "t" * 43},
+    )
+    assert response.status_code == 404
+    assert response.json()["error"] == "not_found"
+
+
+def test_export_blocktree_unknown_metadata_404(api_client: TestClient) -> None:
+    artifact_id, token = _seed_text_artifact(api_client, {"0": "Body."})
+    response = api_client.post(
+        "/api/export/blocktree",
+        json={
+            "text_artifact_id": artifact_id,
+            "text_artifact_token": token,
+            "metadata_artifact_id": "0" * 32,
+            "metadata_artifact_token": "t" * 43,
+        },
+    )
+    assert response.status_code == 404
