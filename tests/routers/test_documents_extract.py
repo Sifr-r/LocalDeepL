@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -67,6 +68,7 @@ def test_extract_ssrf_blocked_403(api_client: TestClient, monkeypatch: Any) -> N
     )
     assert response.status_code == 403
     assert response.json()["error"] == "ssrf_blocked"
+    assert response.json()["detail"].startswith("URL targets a blocked address: ")
 
 
 def test_extract_custom_template_sends_custom_prompt(
@@ -102,3 +104,5 @@ def test_extract_provider_failure_502_envelope(
     assert response.status_code == 502
     body = response.json()
     assert body["error"] == "ai_error"
+    assert body["detail"] == "The AI service request failed."
+    assert "connection reset" not in json.dumps(body)
