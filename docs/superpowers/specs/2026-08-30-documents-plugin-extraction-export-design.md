@@ -240,7 +240,14 @@ server-side.
 | LLM call raises | 502 `{"error": "ai_error", "detail": <public message>}` |
 | LLM returns unparseable JSON | 200 `{"extracted_data": {}}` (old contract — client renders empty state, not an error) |
 | Artifact id unknown / expired / wrong token on `document`, `blocktree`, `html`, `docx-tree` | 404 (old semantics — does not leak existence) |
-| Fetch routes (`/api/export/{id}`, `/api/text/{id}`, `/api/metadata/{id}`) missing or wrong Bearer | 403 |
+| Fetch routes (`/api/export/{id}`, `/api/text/{id}`, `/api/metadata/{id}`) missing or malformed Bearer | 403 |
+
+*Amendment (2026-08-30, post-implementation):* a **well-formed-but-wrong**
+token on the fetch routes returns **404**, not 403 — `ArtifactStore.get`
+cannot distinguish unknown id from wrong token, so 404 is the
+implementable (and stronger no-existence-leak) semantics, consistent with
+the POST-route row above. The plan pinned this; the table above originally
+read "missing or wrong Bearer → 403".
 
 All artifact access stays token-bound (`ArtifactStore.get` compares the
 token). Routes remain unauthenticated like the rest of the surface until
@@ -268,13 +275,13 @@ cases:
 6. `/api/extract` with stubbed `call_llm`: valid JSON → nested
    `extracted_data`; invalid JSON → 200 `{}`; SSRF-blocked `api_base` →
    403 `ssrf_blocked`; empty text → 400.
-7. `GET /api/text/{id}` — 200 with correct Bearer, 403 without/wrong.
+7. `GET /api/text/{id}` — 200 with correct Bearer, 403 without one, 404 for a well-formed-but-wrong token (see amendment above).
 
 Fast tier only; no slow markers, no live LLM.
 
 ## Docs updates
 
-- `AGENTS.md`: boot-order table gains row 10 (`documents`); the
+- `AGENTS.md`: boot-order table gains the `documents` row at boot order 9 (after `health`; `ocr` becomes 10); the
   deferred-capabilities paragraph drops extraction/export from its list.
 - `ARCHITECTURE.md`: plugin list / API surface mentions the documents
   plugin.
