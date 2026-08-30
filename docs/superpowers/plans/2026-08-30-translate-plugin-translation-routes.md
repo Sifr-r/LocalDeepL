@@ -168,6 +168,8 @@ def test_nllb_request_defaults() -> None:
     assert body.target_language == "English"
 ```
 
+Note: the async artifact pair is optional-with-bounds in the schema; the route-level 400 for a missing pair lands in Task 4 (mirrors the sync route).
+
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `uv run pytest tests/plugins/test_translate_schemas.py -v`
@@ -220,11 +222,12 @@ class TranslationRequest(_TrimmedModel):
 
 
 class AsyncTranslationRequest(TranslationRequest):
-    """Async (tree-aware) submission: artifact pair required, legacy
-    defaults, ``text``/``channel_id`` accepted and ignored."""
+    """Async (tree-aware) submission: artifact pair required at the route
+    level (400 envelope), legacy defaults, ``text``/``channel_id``
+    accepted and ignored."""
 
-    text_artifact_id: str = Field(min_length=32, max_length=32)
-    text_artifact_token: str = Field(min_length=32, max_length=256)
+    text_artifact_id: str | None = Field(default=None, min_length=32, max_length=32)
+    text_artifact_token: str | None = Field(default=None, min_length=32, max_length=256)
     target_language: str = Field(default="English", min_length=1, max_length=80)
     channel_id: str | None = None
 
@@ -244,7 +247,7 @@ until Task 4):
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/plugins/test_translate_schemas.py -v`
-Expected: all 11 tests PASS
+Expected: all 13 tests PASS
 
 - [ ] **Step 5: Fast gate**
 

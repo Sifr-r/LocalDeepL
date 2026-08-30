@@ -70,7 +70,9 @@ def test_strings_are_trimmed() -> None:
     assert body.api_base == "http://x"
 
 
-def test_async_request_requires_and_bounds_artifact_pair() -> None:
+def test_async_request_bounds_artifact_pair_when_provided() -> None:
+    body = AsyncTranslationRequest()
+    assert body.text_artifact_id is None
     body = AsyncTranslationRequest(
         text_artifact_id="a" * 32, text_artifact_token="t" * 43
     )
@@ -103,3 +105,36 @@ def test_nllb_request_defaults() -> None:
     body = NllbRequest()
     assert body.text == ""
     assert body.target_language == "English"
+
+
+def test_async_request_rejects_extra_fields() -> None:
+    # extra="forbid" is inherited from _TrimmedModel.
+    with pytest.raises(ValidationError):
+        AsyncTranslationRequest(
+            text_artifact_id="a" * 32, text_artifact_token="t" * 43, bogus="1"
+        )
+
+
+def test_async_request_accepts_superset_fields() -> None:
+    # Deliberate extension vs the old TreeTranslationRequest: the client
+    # posts the same toJson to both routes, so the async schema accepts
+    # everything the sync schema does.
+    body = AsyncTranslationRequest(
+        text_artifact_id="a" * 32,
+        text_artifact_token="t" * 43,
+        glossary_text="en foo fr bar",
+        sliding_window_words=120,
+        dual_translate=True,
+        second_model="m2",
+    )
+    assert body.glossary_text == "en foo fr bar"
+    assert body.sliding_window_words == 120
+    assert body.dual_translate is True
+    assert body.second_model == "m2"
+
+
+def test_target_language_whitespace_only_rejected() -> None:
+    # Trim validator runs before min_length — whitespace-only collapses
+    # to "" and fails min_length=1.
+    with pytest.raises(ValidationError):
+        TranslationRequest(target_language="   ")
