@@ -15,7 +15,7 @@ import json
 import logging
 import secrets
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, ClassVar, Protocol
 
 from omniscribe.config import RuntimeSettings
 from omniscribe.core.block_tree import BlockNode
@@ -24,13 +24,16 @@ from omniscribe.core.llm.temperatures import (
     TEMPERATURE_TRANSLATION,
     TEMPERATURE_TRANSLATION_TREE,
 )
+from omniscribe.core.translate.config import AsyncTranslationUnavailable
 from omniscribe.core.translate.entity_memory import EntityMemory
 from omniscribe.core.translate.glossary import Glossary
+from omniscribe.core.translate.nllb import NLLBEngine
 from omniscribe.core.translate.nodes import TRANSLATION_SYSTEM_MESSAGE
 from omniscribe.core.translate.tree import TranslatorFn, translate_tree
+from omniscribe.core.translate.workflow import get_translation_app
 from omniscribe.plugins.artifacts import ArtifactStore
 from omniscribe.plugins.documents.service import build_tree, load_pages
-from omniscribe.plugins.jobs import JobOutcome
+from omniscribe.plugins.jobs import JobOutcome, TranslationJobRunner
 from omniscribe.plugins.translate.schemas import (
     AsyncTranslationRequest,
     TranslationRequest,
@@ -144,6 +147,10 @@ async def translate_text(
 class _TranslatePayload:
     """One queued translation: submission id + the validated request."""
 
+    # ClassVar dispatch marker (not a field): the jobs queue resolves the
+    # runner registered under this service key at claim time.
+    runner_protocol: ClassVar[type] = TranslationJobRunner
+
     submission_id: str
     request: AsyncTranslationRequest
 
@@ -153,6 +160,10 @@ class TranslationService(Protocol):
     async def run_translate_job(self, payload: Any) -> JobOutcome: ...
     async def job_status(self, job_id: str) -> dict[str, Any] | None: ...
     def job_status_sync(self, record: Any) -> dict[str, Any]: ...
+    async def translate_sync(self, request: TranslationRequest) -> str: ...
+    async def translate_nllb(
+        self, text: str, target_language: str
+    ) -> dict[str, Any]: ...
 
 
 class TranslationServiceImpl:
@@ -175,9 +186,6 @@ class TranslationServiceImpl:
     # -- submission ---------------------------------------------------------
 
     async def submit(self, request: AsyncTranslationRequest) -> dict[str, str]:
-        from omniscribe.core.translate.config import AsyncTranslationUnavailable
-        from omniscribe.core.translate.workflow import get_translation_app
-
         # Availability first (cheap, cached), then artifact existence.
         try:
             get_translation_app()
@@ -331,6 +339,28 @@ class TranslationServiceImpl:
             return None
         return _parse_json_object(blob.blob)
 
+    # -- sync + nllb --------------------------------------------------------
+
+    async def translate_sync(self, request: TranslationRequest) -> str:
+        return await translate_text(request, self._settings, store=self._store)
+
+    async def translate_nllb(self, text: str, target_language: str) -> dict[str, Any]:
+        if not text.strip():
+            raise TranslateError(422, "bad_request", "'text' is required")
+        engine = _get_nllb_engine()
+        if not engine.is_available():
+            raise TranslateError(
+                503,
+                "backend_unavailable",
+                "NLLBEngine is not available. Install the 'nllb' extra: uv sync --extra nllb",
+            )
+        result = await engine.translate(text, target_language)
+        return {
+            "translated_text": result.text,
+            "source_lang": result.source_lang,
+            "target_lang": result.target_lang,
+        }
+
 
 def _build_glossary(request: AsyncTranslationRequest) -> Glossary | None:
     # Old-route precedence (verified): entries win over paired-lines text.
@@ -362,3 +392,21 @@ def _make_translator(
         )
 
     return translator
+
+
+# ---------------------------------------------------------------------------
+# NLLB fast path
+# ---------------------------------------------------------------------------
+
+_NLLB_ENGINE: NLLBEngine | None = None
+
+
+def _get_nllb_engine() -> NLLBEngine:
+    # Module-level singleton: the engine lazily loads the transformers
+    # pipeline on first use and caches it per instance. The old server
+    # constructed a fresh engine per request, reloading the model every
+    # call; the singleton keeps the contract while dropping the reload.
+    global _NLLB_ENGINE
+    if _NLLB_ENGINE is None:
+        _NLLB_ENGINE = NLLBEngine()
+    return _NLLB_ENGINE

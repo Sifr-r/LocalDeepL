@@ -25,6 +25,168 @@
         "title": "AsyncSubmitResponse",
         "type": "object"
       },
+      "AsyncTranslationRequest": {
+        "additionalProperties": false,
+        "description": "Async (tree-aware) submission: artifact pair required at the route\nlevel (400 envelope), legacy defaults, ``text``/``channel_id``\naccepted and ignored.",
+        "properties": {
+          "api_base": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Base"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "channel_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Id"
+          },
+          "dual_translate": {
+            "default": false,
+            "title": "Dual Translate",
+            "type": "boolean"
+          },
+          "glossary": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "maxItems": 1000,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Glossary"
+          },
+          "glossary_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Glossary Text"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "second_api_base": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Second Api Base"
+          },
+          "second_api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Second Api Key"
+          },
+          "second_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Second Model"
+          },
+          "sliding_window_words": {
+            "default": 80,
+            "maximum": 2000.0,
+            "minimum": 0.0,
+            "title": "Sliding Window Words",
+            "type": "integer"
+          },
+          "target_language": {
+            "default": "English",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Target Language",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          },
+          "text_artifact_id": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Artifact Id"
+          },
+          "text_artifact_token": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Artifact Token"
+          }
+        },
+        "title": "AsyncTranslationRequest",
+        "type": "object"
+      },
       "DocumentExportFormat": {
         "enum": [
           "json",
@@ -412,6 +574,23 @@
         "title": "JobStatusResponse",
         "type": "object"
       },
+      "NllbRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "target_language": {
+            "default": "English",
+            "title": "Target Language",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "title": "NllbRequest",
+        "type": "object"
+      },
       "SetActiveProviderRequest": {
         "description": "Payload for ``POST /api/providers/active``.\n\n``populate_by_name=True`` accepts both the snake_case field names\n(the Flutter client's actual payload shape \u2014 see\n``client/lib/data/models/provider_preset.dart`` ``SetActiveProviderRequest.toJson``)\nand the camelCase aliases (used by the curl smoke test and any\nnon-Flutter client). The response is always snake_case because the\nresponse model has no aliases.",
         "properties": {
@@ -475,6 +654,152 @@
           "model"
         ],
         "title": "SetActiveProviderResponse",
+        "type": "object"
+      },
+      "TranslationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "api_base": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Base"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "dual_translate": {
+            "default": false,
+            "title": "Dual Translate",
+            "type": "boolean"
+          },
+          "glossary": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "maxItems": 1000,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Glossary"
+          },
+          "glossary_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Glossary Text"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "second_api_base": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Second Api Base"
+          },
+          "second_api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Second Api Key"
+          },
+          "second_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Second Model"
+          },
+          "sliding_window_words": {
+            "default": 80,
+            "maximum": 2000.0,
+            "minimum": 0.0,
+            "title": "Sliding Window Words",
+            "type": "integer"
+          },
+          "target_language": {
+            "default": "Spanish",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Target Language",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          },
+          "text_artifact_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Artifact Id"
+          },
+          "text_artifact_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Artifact Token"
+          }
+        },
+        "title": "TranslationRequest",
         "type": "object"
       },
       "ValidateProviderRequest": {
@@ -1852,6 +2177,163 @@
         "summary": "Get Text",
         "tags": [
           "documents"
+        ]
+      }
+    },
+    "/api/translate": {
+      "post": {
+        "operationId": "translate_api_translate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranslationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Translate",
+        "tags": [
+          "translate"
+        ]
+      }
+    },
+    "/api/translate/async": {
+      "post": {
+        "operationId": "translate_async_api_translate_async_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AsyncTranslationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Translate Async",
+        "tags": [
+          "translate"
+        ]
+      }
+    },
+    "/api/translate/nllb": {
+      "post": {
+        "operationId": "translate_nllb_api_translate_nllb_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NllbRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Translate Nllb",
+        "tags": [
+          "translate"
+        ]
+      }
+    },
+    "/api/translate/status/{job_id}": {
+      "get": {
+        "operationId": "translation_status_api_translate_status__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Translation Status",
+        "tags": [
+          "translate"
         ]
       }
     },

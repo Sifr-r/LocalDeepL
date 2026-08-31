@@ -88,6 +88,13 @@ class JobRunner(Protocol):
     async def __call__(self, request: Any) -> JobOutcome: ...
 
 
+@runtime_checkable
+class TranslationJobRunner(Protocol):
+    """Executes one queued translation request; registered by the translate plugin."""
+
+    async def __call__(self, request: Any) -> JobOutcome: ...
+
+
 # -- queue ----------------------------------------------------------------------
 
 
@@ -224,9 +231,15 @@ class InMemoryJobQueue:
             finally:
                 self._queue.task_done()
 
-    def _resolve_runner(self) -> JobRunner:
+    def _resolve_runner(self, payload: Any) -> JobRunner:
         if self._runner_override is not None:
             return self._runner_override
+        # Multi-producer dispatch: a payload class may self-describe the
+        # service key its runner is registered under (the translate plugin
+        # does); unmarked payloads keep the default OCR JobRunner seam.
+        marker = getattr(type(payload), "runner_protocol", None)
+        if marker is not None:
+            return cast("JobRunner", self._ctx.inject(marker))
         return cast("JobRunner", self._ctx.inject(JobRunner))
 
     async def _process_one(self, job_id: str) -> None:
@@ -237,7 +250,7 @@ class InMemoryJobQueue:
         record = await self._backend.get_job(job_id)
         if record is None:
             return
-        runner = self._resolve_runner()
+        runner = self._resolve_runner(payload)
         await self._backend.upsert_job(
             replace(record, status="running", updated_at=time.time())
         )
@@ -342,5 +355,6 @@ __all__ = [
     "JobStarted",
     "JobsPlugin",
     "JobsSchema",
+    "TranslationJobRunner",
     "plugin",
 ]

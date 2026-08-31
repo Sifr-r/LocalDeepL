@@ -1,0 +1,270 @@
+"""Router contract tests for the translate plugin.
+
+Contract source: the Flutter client (`feature_repository.dart:68-107`,
+`api_constants.dart:59-64`, `feature_models.dart`) plus the recovered
+pre-harness tests (commit `e6b7b89^`).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import time
+import uuid
+from typing import Any
+
+from fastapi.testclient import TestClient
+
+from omniscribe.plugins.state_backend import StateBackend
+
+
+def _seed_text_artifact(client: TestClient, pages: dict[str, str]) -> tuple[str, str]:
+    backend = client.app.state.context.inject(StateBackend)
+    artifact_id = uuid.uuid4().hex
+    token = "t" * 43
+    asyncio.run(
+        backend.put_artifact(
+            id=artifact_id,
+            token=token,
+            owner_job_id="",
+            content_type="application/json",
+            blob=json.dumps(pages).encode("utf-8"),
+            ttl_seconds=3600,
+        )
+    )
+    return artifact_id, token
+
+
+def _stub_llm(monkeypatch: Any, payload: str) -> None:
+    from omniscribe.plugins.translate import service
+
+    async def fake_call_llm(**kwargs: Any) -> str:
+        return payload
+
+    monkeypatch.setattr(service, "call_llm", fake_call_llm)
+
+
+def _stub_llm_unreachable(monkeypatch: Any) -> None:
+    from omniscribe.plugins.translate import service
+
+    async def fail_call_llm(**kwargs: Any) -> str:
+        raise AssertionError("LLM must not be called")
+
+    monkeypatch.setattr(service, "call_llm", fail_call_llm)
+
+
+def _wait_translation_state(
+    client: TestClient, job_id: str, state: str, *, timeout: float = 5.0
+) -> dict[str, Any]:
+    """Poll the translate status route until `state` is reached.
+
+    The queue worker runs on the TestClient portal loop, so sleeping the
+    test thread lets it make progress between polls.
+    """
+    deadline = time.time() + timeout
+    body: dict[str, Any] = {}
+    while time.time() < deadline:
+        body = client.get(f"/api/translate/status/{job_id}").json()
+        if body.get("state") == state:
+            return body
+        time.sleep(0.01)
+    raise AssertionError(f"job {job_id} never reached {state}: {body}")
+
+
+def test_translate_routes_are_mounted(api_client: TestClient) -> None:
+    paths = set(json.loads(api_client.get("/openapi.json").text)["paths"])
+    assert "/api/translate" in paths
+    assert "/api/translate/async" in paths
+    assert "/api/translate/status/{job_id}" in paths
+    assert "/api/translate/nllb" in paths
+
+
+def test_translate_sync_happy_path(api_client: TestClient, monkeypatch: Any) -> None:
+    _stub_llm(monkeypatch, "Bonjour le monde")
+    response = api_client.post(
+        "/api/translate",
+        json={"text": "Hello world", "target_language": "French"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"translated_text": "Bonjour le monde"}
+
+
+def test_translate_sync_missing_text_and_artifact_400(
+    api_client: TestClient, monkeypatch: Any
+) -> None:
+    _stub_llm_unreachable(monkeypatch)
+    response = api_client.post("/api/translate", json={"target_language": "French"})
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"] == "bad_request"
+    assert (
+        body["detail"]
+        == "'text' or 'text_artifact_id'/'text_artifact_token' is required"
+    )
+
+
+def test_translate_sync_ssrf_blocked_403(
+    api_client: TestClient, monkeypatch: Any
+) -> None:
+    _stub_llm_unreachable(monkeypatch)
+    response = api_client.post(
+        "/api/translate",
+        json={
+            "text": "x",
+            "api_base": "http://169.254.169.254/latest",
+        },
+    )
+    assert response.status_code == 403
+    assert response.json()["error"] == "ssrf_blocked"
+
+
+def test_translate_sync_artifact_fallback(
+    api_client: TestClient, monkeypatch: Any
+) -> None:
+    _stub_llm(monkeypatch, "traduit")
+    artifact_id, token = _seed_text_artifact(
+        api_client, {"0": "page one", "1": "page two"}
+    )
+    response = api_client.post(
+        "/api/translate",
+        json={
+            "text_artifact_id": artifact_id,
+            "text_artifact_token": token,
+            "target_language": "French",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json() == {"translated_text": "traduit"}
+
+
+def test_translate_sync_unknown_artifact_404(
+    api_client: TestClient, monkeypatch: Any
+) -> None:
+    _stub_llm_unreachable(monkeypatch)
+    response = api_client.post(
+        "/api/translate",
+        json={"text_artifact_id": "0" * 32, "text_artifact_token": "t" * 43},
+    )
+    assert response.status_code == 404
+    assert response.json()["error"] == "not_found"
+
+
+def test_translate_async_submit_and_complete(
+    api_client: TestClient, monkeypatch: Any
+) -> None:
+    _stub_llm(monkeypatch, "traduit")
+    artifact_id, token = _seed_text_artifact(api_client, {"0": "Hello world."})
+    response = api_client.post(
+        "/api/translate/async",
+        json={"text_artifact_id": artifact_id, "text_artifact_token": token},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "Processing"
+    assert body["job_id"]
+
+    pending = api_client.get(f"/api/translate/status/{body['job_id']}").json()
+    assert pending["state"] in {"PENDING", "PROGRESS", "SUCCESS"}
+
+    done = _wait_translation_state(api_client, body["job_id"], "SUCCESS")
+    result = done["result"]
+    assert result["artifact_id"] == artifact_id
+    assert result["page_count"] == 1
+    # C-3/H-3 semantics: no artifact token ever crosses the status endpoint.
+    assert "translated_artifact_token" not in json.dumps(done)
+    assert "token" not in result
+
+
+def test_translate_async_missing_artifact_400(api_client: TestClient) -> None:
+    response = api_client.post("/api/translate/async", json={"text": "no artifact"})
+    assert response.status_code == 400
+    assert response.json()["error"] == "bad_request"
+
+
+def test_translate_async_unknown_artifact_404(
+    api_client: TestClient, monkeypatch: Any
+) -> None:
+    _stub_llm_unreachable(monkeypatch)
+    response = api_client.post(
+        "/api/translate/async",
+        json={"text_artifact_id": "0" * 32, "text_artifact_token": "t" * 43},
+    )
+    assert response.status_code == 404
+
+
+def test_translate_async_langgraph_missing_503(
+    api_client: TestClient, monkeypatch: Any
+) -> None:
+    from omniscribe.core.translate.config import AsyncTranslationUnavailable
+    from omniscribe.plugins.translate import service
+
+    def raise_unavailable() -> None:
+        raise AsyncTranslationUnavailable("langgraph is not installed")
+
+    monkeypatch.setattr(service, "get_translation_app", raise_unavailable)
+    artifact_id, token = _seed_text_artifact(api_client, {"0": "Hello."})
+    response = api_client.post(
+        "/api/translate/async",
+        json={"text_artifact_id": artifact_id, "text_artifact_token": token},
+    )
+    assert response.status_code == 503
+    body = response.json()
+    assert body["error"] == "backend_unavailable"
+    assert "langgraph" in body["detail"]
+
+
+def test_translate_status_unknown_job_404(api_client: TestClient) -> None:
+    response = api_client.get("/api/translate/status/no-such-job")
+    assert response.status_code == 404
+    assert response.json()["error"] == "not_found"
+
+
+def test_translate_nllb_happy_path(api_client: TestClient, monkeypatch: Any) -> None:
+    from omniscribe.core.translate.nllb import NLLBResult
+    from omniscribe.plugins.translate import service
+
+    class _FakeEngine:
+        def is_available(self) -> bool:
+            return True
+
+        async def translate(self, text: str, target_language: str) -> NLLBResult:
+            return NLLBResult(
+                text="bonjour", source_lang="eng_Latn", target_lang="fra_Latn"
+            )
+
+    monkeypatch.setattr(service, "_get_nllb_engine", lambda: _FakeEngine())
+    response = api_client.post(
+        "/api/translate/nllb",
+        json={"text": "hello", "target_language": "French"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "translated_text": "bonjour",
+        "source_lang": "eng_Latn",
+        "target_lang": "fra_Latn",
+    }
+
+
+def test_translate_nllb_blank_text_422(api_client: TestClient) -> None:
+    response = api_client.post("/api/translate/nllb", json={"text": "   "})
+    assert response.status_code == 422
+    assert response.json()["error"] == "bad_request"
+
+
+def test_translate_nllb_unavailable_503(
+    api_client: TestClient, monkeypatch: Any
+) -> None:
+    from omniscribe.plugins.translate import service
+
+    class _UnavailableEngine:
+        def is_available(self) -> bool:
+            return False
+
+    monkeypatch.setattr(service, "_get_nllb_engine", lambda: _UnavailableEngine())
+    response = api_client.post(
+        "/api/translate/nllb", json={"text": "hello", "target_language": "French"}
+    )
+    assert response.status_code == 503
+    body = response.json()
+    assert body["error"] == "backend_unavailable"
+    assert "uv sync --extra nllb" in body["detail"]
