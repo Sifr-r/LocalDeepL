@@ -394,22 +394,27 @@ def _stub_engine(
     monkeypatch: pytest.MonkeyPatch,
     result: Any,
     calls: list[dict[str, Any]],
+    factory_calls: list[dict[str, Any]] | None = None,
 ) -> None:
     class _Engine:
         async def transcribe(self, **kwargs: Any) -> Any:
             calls.append(kwargs)
             return result
 
-    monkeypatch.setattr(
-        transcribe_service, "get_transcription_engine", lambda **kw: _Engine()
-    )
+    def _factory(**kw: Any) -> _Engine:
+        if factory_calls is not None:
+            factory_calls.append(kw)
+        return _Engine()
+
+    monkeypatch.setattr(transcribe_service, "get_transcription_engine", _factory)
 
 
 async def test_transcribe_happy_path_stores_artifacts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[dict[str, Any]] = []
-    _stub_engine(monkeypatch, _result(), calls)
+    factory_calls: list[dict[str, Any]] = []
+    _stub_engine(monkeypatch, _result(), calls, factory_calls)
     store = _FakeStore()
     result = await transcribe_service.transcribe(
         TranscribeRequest(model="whisper-1"),
@@ -436,16 +441,25 @@ async def test_transcribe_happy_path_stores_artifacts(
         store.blobs[result["metadata_artifact_id"]][1].decode("utf-8")
     )
     assert set(meta_blob) == {"0"}
-    # Engine received the resolved chain values.
-    assert calls[0]["model"] == "whisper-1"
-    assert calls[0]["api_base"] == "https://api.openai.com/v1"
+    # The factory received the resolved chain values (model/api_base flow
+    # to the factory, not the engine call).
+    assert factory_calls[0]["model"] == "whisper-1"
+    assert factory_calls[0]["api_base"] == "https://api.openai.com/v1"
+    assert set(calls[0]) == {
+        "file_bytes",
+        "filename",
+        "language",
+        "prompt",
+        "temperature",
+    }
 
 
 async def test_transcribe_resolves_form_over_config_over_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[dict[str, Any]] = []
-    _stub_engine(monkeypatch, _result(), calls)
+    factory_calls: list[dict[str, Any]] = []
+    _stub_engine(monkeypatch, _result(), calls, factory_calls)
     await transcribe_service.transcribe(
         TranscribeRequest(model="custom-model", api_key="sk-x"),
         file_bytes=b"x",
@@ -454,7 +468,7 @@ async def test_transcribe_resolves_form_over_config_over_defaults(
         store=_FakeStore(),
         config={"transcription_model": "config-model"},
     )
-    assert calls[0]["model"] == "custom-model"
+    assert factory_calls[0]["model"] == "custom-model"
 
 
 async def test_transcribe_ssrf_checks_override_only(
