@@ -764,7 +764,9 @@ git commit -m "feat(transcribe): service with artifact storage and error mapping
 
 - [ ] **Step 1: Write the failing tests (append)**
 
-Append to `tests/plugins/test_transcribe_service.py`:
+Append to `tests/plugins/test_transcribe_service.py` (also add to the
+file's import block: `from types import SimpleNamespace` and
+`from omniscribe.plugins.transcribe import config_store`):
 
 ```python
 # ---------------------------------------------------------------------------
@@ -787,18 +789,22 @@ def test_config_store_defaults_and_write_through() -> None:
     assert read.transcription_model == "whisper-1"
     assert read.transcription_engine == "api"
     assert read.temperature == 0.0
+    assert read.transcription_auth_token == "********"  # "tok" masked: len <= 8
 
     store.update(
         {"transcription_model": "gpt-4o-audio-preview", "transcription_api_key": "k"}
     )
     read = store.read()
     assert read.transcription_model == "gpt-4o-audio-preview"
-    assert read.transcription_api_key == "k"  # short keys pass through per mask rule
+    assert read.transcription_api_key == "********"  # mask rule: len <= 8
 
 
-def test_discover_models_falls_back_on_bad_endpoint(
+async def test_discover_models_falls_back_on_bad_endpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    async def _ssrf_allowed(url: str | None) -> Any:
+        return SimpleNamespace(allowed=True)
+
     class _FailingClient:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             pass
@@ -812,8 +818,12 @@ def test_discover_models_falls_back_on_bad_endpoint(
         async def get(self, url: str, headers: dict | None = None) -> Any:
             raise RuntimeError("no network")
 
-    monkeypatch.setattr(transcribe_service.httpx, "AsyncClient", _FailingClient)
-    models = transcribe_service.discover_transcription_models(
+    # Patch the SSRF gate so the failing-client path is deterministic in CI
+    # (localhost is SSRF-blocked by default, which would short-circuit to
+    # the fallback before the patched client is ever constructed).
+    monkeypatch.setattr(config_store, "is_ssrf_target", _ssrf_allowed)
+    monkeypatch.setattr(config_store.httpx, "AsyncClient", _FailingClient)
+    models = await transcribe_service.discover_transcription_models(
         "http://localhost:1234/v1", None
     )
     assert models == transcribe_service.TRANSCRIPTION_FALLBACK_MODELS
@@ -833,7 +843,8 @@ def test_extract_model_ids_handles_openai_and_ollama() -> None:
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `uv run pytest tests/plugins/test_transcribe_service.py -v -k "mask or config_store or discover or extract"`
-Expected: FAIL — missing attributes
+Expected: FAIL — ImportError on `config_store` (the test module cannot
+import until the implementation exists)
 
 - [ ] **Step 3: Implement config_store.py**
 
@@ -1017,10 +1028,12 @@ async def discover_transcription_models(
 ```
 
 Then append to `src/omniscribe/plugins/transcribe/service.py` (re-export so
-routes/tests import from one module):
+routes/tests import from one module; place in the module-top import block —
+isort order puts `config_store` before `schemas`):
 
 ```python
-from omniscribe.plugins.transcribe.config_store import (  # noqa: E402
+from omniscribe.plugins.transcribe.config_store import (  # noqa: F401
+    TRANSCRIPTION_FALLBACK_MODELS,
     TranscriptionConfigStore,
     discover_transcription_models,
     extract_model_ids_from_response,
@@ -1028,20 +1041,14 @@ from omniscribe.plugins.transcribe.config_store import (  # noqa: E402
 )
 ```
 
-(Move to module-top imports per ruff isort; also add `import httpx` only if
-the service module itself needs it — it does not; the test monkeypatches
-`transcribe_service.httpx` via the re-exported `config_store` module
-reference, so the test above should target
-`transcribe_service.config_store.httpx` — adjust the test's monkeypatch to:
-
-```python
-    monkeypatch.setattr(
-        transcribe_service.config_store.httpx, "AsyncClient", _FailingClient
-    )
-```
-
-and import `config_store` via `from omniscribe.plugins.transcribe import
-config_store` at the test top.)
+(`TRANSCRIPTION_FALLBACK_MODELS` is included because the discovery test
+asserts against `transcribe_service.TRANSCRIPTION_FALLBACK_MODELS`. The
+`# noqa: F401` is required — the names are unused inside service.py
+itself; they exist for Task 4's routes and the tests. The test file
+imports `from omniscribe.plugins.transcribe import config_store` at the
+top and monkeypatches `config_store.is_ssrf_target` and
+`config_store.httpx` directly; service.py does NOT import httpx or the
+config_store module object.)
 
 - [ ] **Step 4: Run the tests**
 
