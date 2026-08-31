@@ -10,7 +10,6 @@ serialized as JSON using the text-artifact convention
 
 from __future__ import annotations
 
-import inspect
 import json
 import logging
 import uuid
@@ -19,7 +18,6 @@ from typing import Any
 
 from omniscribe.core.transcription import (
     AudioValidationError,
-    TranscriptionEngineProtocol,
     TranscriptionError,
     get_transcription_engine,
     validate_audio_input,
@@ -66,22 +64,6 @@ def resolve_engine_settings(
     }
 
 
-def _engine_call_kwargs(
-    engine: TranscriptionEngineProtocol, context: dict[str, Any]
-) -> dict[str, Any]:
-    """Trim the engine call context to the engine's declared call surface.
-
-    The resolved settings chain rides along for context-aware engines (any
-    ``**kwargs`` transcribe); the core engines keep their exact
-    ``TranscriptionEngineProtocol`` call and receive their settings through
-    the factory constructor instead.
-    """
-    params = inspect.signature(engine.transcribe).parameters
-    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
-        return context
-    return {k: v for k, v in context.items() if k in params}
-
-
 async def transcribe(
     request: TranscribeRequest,
     *,
@@ -121,14 +103,11 @@ async def transcribe(
     )
     try:
         result = await engine.transcribe(
-            **_engine_call_kwargs(
-                engine,
-                {
-                    "file_bytes": file_bytes,
-                    "filename": filename,
-                    **resolved,
-                },
-            )
+            file_bytes=file_bytes,
+            filename=filename,
+            language=resolved["language"],
+            prompt=resolved["prompt"],
+            temperature=resolved["temperature"],
         )
     except TranscriptionError as exc:
         raise TranscribeError(503, "backend_unavailable", exc.message) from exc
