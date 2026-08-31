@@ -55,6 +55,9 @@ plugins:
   - id: documents
     use: omniscribe.plugins.documents:plugin
 
+  - id: translate
+    use: omniscribe.plugins.translate:plugin
+
   - id: ocr
     use: omniscribe.plugins.ocr:plugin
     config:
