@@ -402,6 +402,53 @@
         "title": "ExtractionTemplate",
         "type": "string"
       },
+      "GlossaryFormat": {
+        "enum": [
+          "csv",
+          "tsv",
+          "xliff",
+          "tbx",
+          "tmx",
+          "git_glossary",
+          "sql_table",
+          "json_pairs"
+        ],
+        "title": "GlossaryFormat",
+        "type": "string"
+      },
+      "GlossaryReorderRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "ordered_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 0,
+            "title": "Ordered Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ordered_ids"
+        ],
+        "title": "GlossaryReorderRequest",
+        "type": "object"
+      },
+      "GlossaryToggleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "GlossaryToggleRequest",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1572,6 +1619,346 @@
         "summary": "Extract",
         "tags": [
           "documents"
+        ]
+      }
+    },
+    "/api/glossary/import": {
+      "post": {
+        "operationId": "import_glossary_api_glossary_import_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Import Glossary",
+        "tags": [
+          "glossary"
+        ]
+      }
+    },
+    "/api/glossary/import/url": {
+      "post": {
+        "operationId": "import_glossary_from_url_api_glossary_import_url_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "url",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Url"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name"
+            }
+          },
+          {
+            "in": "query",
+            "name": "encoding",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Encoding"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/GlossaryFormat"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Glossary From Url",
+        "tags": [
+          "glossary"
+        ]
+      }
+    },
+    "/api/glossary/library": {
+      "get": {
+        "operationId": "list_library_api_glossary_library_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Library",
+        "tags": [
+          "glossary"
+        ]
+      }
+    },
+    "/api/glossary/library/merged": {
+      "get": {
+        "operationId": "merged_entries_api_glossary_library_merged_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Merged Entries",
+        "tags": [
+          "glossary"
+        ]
+      }
+    },
+    "/api/glossary/library/preview": {
+      "get": {
+        "operationId": "library_preview_api_glossary_library_preview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Library Preview",
+        "tags": [
+          "glossary"
+        ]
+      }
+    },
+    "/api/glossary/library/reorder": {
+      "post": {
+        "operationId": "reorder_library_api_glossary_library_reorder_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GlossaryReorderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reorder Library",
+        "tags": [
+          "glossary"
+        ]
+      }
+    },
+    "/api/glossary/library/{glossary_id}": {
+      "delete": {
+        "operationId": "delete_library_entry_api_glossary_library__glossary_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "glossary_id",
+            "required": true,
+            "schema": {
+              "title": "Glossary Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Library Entry",
+        "tags": [
+          "glossary"
+        ]
+      }
+    },
+    "/api/glossary/library/{glossary_id}/enable": {
+      "post": {
+        "operationId": "toggle_library_entry_api_glossary_library__glossary_id__enable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "glossary_id",
+            "required": true,
+            "schema": {
+              "title": "Glossary Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GlossaryToggleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Toggle Library Entry",
+        "tags": [
+          "glossary"
+        ]
+      }
+    },
+    "/api/glossary/library/{glossary_id}/entries": {
+      "get": {
+        "operationId": "library_entries_api_glossary_library__glossary_id__entries_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "glossary_id",
+            "required": true,
+            "schema": {
+              "title": "Glossary Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Library Entries",
+        "tags": [
+          "glossary"
         ]
       }
     },
