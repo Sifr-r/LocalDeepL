@@ -157,16 +157,8 @@ def build_glossary_router(service: GlossaryImportService) -> APIRouter:
         if fmt is None:
             return _envelope(422, "validation_failed", INFERENCE_FAILURE_DETAIL)
 
-        try:
-            from omniscribe.plugins.glossary.http_fetch import fetch_url_bytes
-        except ImportError:
-            fetch_url_bytes = None  # type: ignore[assignment]
-        if fetch_url_bytes is None:
-            return _envelope(
-                503,
-                "backend_unavailable",
-                "URL fetching is not configured. Use inline 'text' or 'inline_bytes_b64'.",
-            )
+        from omniscribe.plugins.glossary.http_fetch import fetch_url_bytes
+
         try:
             payload_bytes = await fetch_url_bytes(url)
         except GlossaryError as exc:
@@ -174,16 +166,24 @@ def build_glossary_router(service: GlossaryImportService) -> APIRouter:
         except Exception as exc:
             return _envelope(502, "ai_error", f"Failed to fetch URL: {exc}")
 
-        source = GlossaryImportRequest.model_validate(
-            {
-                "source": {
-                    "format": fmt,
-                    "inline_bytes_b64": base64.b64encode(payload_bytes).decode("ascii"),
-                    "encoding": encoding,
-                    "name": name,
+        try:
+            source = GlossaryImportRequest.model_validate(
+                {
+                    "source": {
+                        "format": fmt,
+                        "inline_bytes_b64": base64.b64encode(payload_bytes).decode(
+                            "ascii"
+                        ),
+                        "encoding": encoding,
+                        "name": name,
+                    }
                 }
-            }
-        )
+            )
+        except ValidationError as exc:
+            return JSONResponse(
+                status_code=422,
+                content={"detail": exc.errors(include_url=False)},
+            )
         try:
             body = await service.import_glossary(source.source)
         except GlossaryError as exc:

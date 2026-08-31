@@ -10,6 +10,7 @@ via `GlossaryError`.
 
 from __future__ import annotations
 
+import asyncio
 import socket
 from typing import Any
 from urllib.parse import urljoin
@@ -21,15 +22,16 @@ from omniscribe.utils.security import is_ssrf_target
 
 _MAX_REDIRECTS = 5
 MAX_GLOSSARY_BYTES: int = 50 * 1024 * 1024
+_PIN_LOCK = asyncio.Lock()
 
 
 class _PinnedIPTransport(httpx.AsyncHTTPTransport):
     """httpx transport pinning connections to the SSRF-resolved IP.
 
-    The scoped ``getaddrinfo`` swap only maps the target host to its
-    validated IP for the duration of one request; other coroutines
-    resolving different hosts are unaffected, and same-host resolution
-    during the window returns the same validated IP.
+    The scoped ``getaddrinfo`` swap maps the target host to its validated
+    IP for the duration of one request. A module-level lock serializes
+    pinned fetches so overlapping requests can never restore a stale pin
+    process-wide.
     """
 
     def __init__(self, resolved_ip: str) -> None:
@@ -37,7 +39,6 @@ class _PinnedIPTransport(httpx.AsyncHTTPTransport):
         self._resolved_ip = resolved_ip
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        request.extensions["server_hostname"] = request.url.host
         original_getaddrinfo = socket.getaddrinfo
 
         def _pinned_getaddrinfo(host: Any, *args: Any, **kwargs: Any) -> Any:
@@ -45,11 +46,12 @@ class _PinnedIPTransport(httpx.AsyncHTTPTransport):
                 return original_getaddrinfo(self._resolved_ip, *args, **kwargs)
             return original_getaddrinfo(host, *args, **kwargs)
 
-        socket.getaddrinfo = _pinned_getaddrinfo
-        try:
-            return await super().handle_async_request(request)
-        finally:
-            socket.getaddrinfo = original_getaddrinfo
+        async with _PIN_LOCK:
+            socket.getaddrinfo = _pinned_getaddrinfo
+            try:
+                return await super().handle_async_request(request)
+            finally:
+                socket.getaddrinfo = original_getaddrinfo
 
 
 async def fetch_url_bytes(url: str, *, timeout: float = 30.0) -> bytes:
@@ -81,7 +83,11 @@ async def fetch_url_bytes(url: str, *, timeout: float = 30.0) -> bytes:
         if response.is_redirect:
             location = response.headers.get("Location")
             if not location:
-                break
+                raise GlossaryError(
+                    502,
+                    "ai_error",
+                    f"Redirect response missing Location header for {current_url}",
+                )
             current_url = urljoin(current_url, location)
             continue
 
