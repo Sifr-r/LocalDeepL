@@ -263,7 +263,8 @@ class SQLiteStateBackend:
                     .execute(
                         "SELECT job_id, status, request_meta, result_artifact_id, "
                         "result_artifact_token, created_at, updated_at, error "
-                        "FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                        "FROM jobs ORDER BY created_at DESC, job_id DESC "
+                        "LIMIT ? OFFSET ?",
                         (limit, offset),
                     )
                     .fetchall()

@@ -77,6 +77,12 @@ class TestOpenAndLifecycle:
         source = PdfTextLayerRecall()
         assert source.supplement(0, []) == []
 
+    def test_supplement_inner_returns_empty_for_unopened_source(self) -> None:
+        """The -O-hardened inner guard contributes no boxes for an
+        unopened source (pedantic review 1.9)."""
+        source = PdfTextLayerRecall()
+        assert source._supplement_inner(0, []) == []
+
     def test_close_is_idempotent(self, tmp_path: Path) -> None:
         pdf = _build_pdf(tmp_path, [["Hello world line"]])
         src = PdfTextLayerRecall()
