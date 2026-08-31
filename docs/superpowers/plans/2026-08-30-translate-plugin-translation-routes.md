@@ -1066,7 +1066,7 @@ def _make_translator(
             model=model,
             api_base=api_base,
             api_key=api_key,
-            temperature=TEMPERATURE_TRANSLATION,
+            temperature=TEMPERATURE_TRANSLATION_TREE,
             system_prompt=TRANSLATION_SYSTEM_MESSAGE,
             prompt=prompt,
         )
