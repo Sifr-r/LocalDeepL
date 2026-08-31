@@ -3769,7 +3769,7 @@ and add to `TranslationServiceImpl`:
             or record.status != "complete"
             or not record.result_artifact_id
             or not record.result_artifact_token
-            or token != record.result_artifact_token
+            or not secrets.compare_digest(token, record.result_artifact_token)
         ):
             return None
         blob = await self._store.get(record.result_artifact_id, token)
@@ -3798,7 +3798,12 @@ In `src/omniscribe/plugins/translate/routes.py`, add inside
 - [ ] **Step 4: Run the translate router tests**
 
 Run: `uv run pytest tests/routers/test_translate_routes.py -v`
-Expected: all PASS (15 prior + 4 new = 19)
+Expected: all PASS (15 prior + 5 new = 20 — the quality review added
+`test_translate_result_uniform_404` pinning byte-identical 404 envelopes
+across all six failure modes (unknown job, incomplete, wrong token,
+missing token, store miss, corrupt JSON) and upgraded the three 404 pins
+to full-envelope equality; the token compare uses
+`secrets.compare_digest`)
 
 - [ ] **Step 5: Fast gate + commit**
 
