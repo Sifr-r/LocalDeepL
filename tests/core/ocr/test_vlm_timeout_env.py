@@ -1,73 +1,98 @@
 """Tests for the env-configurable VLM timeout knobs (audit A-11).
 
-The OCR processor's ``PAGE_TIMEOUT_S`` and ``CROP_TIMEOUT_S`` are now
+The OCR processor's ``page_timeout_s`` / ``crop_timeout_s`` are
 overridable via ``OMNISCRIBE_VLM_PAGE_TIMEOUT`` and
-``OMNISCRIBE_VLM_CROP_TIMEOUT``. These tests pin the override contract
-without reloading the module (which would mask any future regression
-where the env var stops being read).
+``OMNISCRIBE_VLM_CROP_TIMEOUT``.
+
+Pedantic review 1.12: these env values are now resolved per-instance
+in ``__init__`` rather than at module import. A long-running worker
+that picks up an env-var change after import sees the new value on
+the next ``OCRProcessor()`` without reloading the module. The class-
+level ``PAGE_TIMEOUT_S`` / ``CROP_TIMEOUT_S`` constants are hardcoded
+defaults and are the fallback for ``__new__``-built test instances
+(via the ``__getattr__`` shim).
 """
 
 from __future__ import annotations
 
-import importlib
-
 import pytest
 
+from omniscribe.core.ocr.processor import OCRProcessor
 
-@pytest.fixture
-def reload_ocr_processor(monkeypatch: pytest.MonkeyPatch):
-    """Reload the processor module after applying the supplied env var set.
 
-    Forces the module-level ``os.getenv`` calls to re-execute so the
-    test reflects what a fresh worker process would see. Returns the
-    reloaded module so callers can read the resolved class attributes.
+def _make_processor(**env: str) -> OCRProcessor:
+    """Build a fresh ``OCRProcessor`` with ``env`` applied to the process.
+
+    Resolves the env-driven timeouts via the production ``__init__``
+    path; tests that need a different env just patch and call this.
     """
+    import os
 
-    def _reload(**env: str) -> object:
-        for key, value in env.items():
-            monkeypatch.setenv(key, value)
-        # Drop any cached module so the env vars re-evaluate.
-        for mod_name in list(__import__("sys").modules):
-            if mod_name.startswith("omniscribe.core.ocr."):
-                del __import__("sys").modules[mod_name]
-        return importlib.import_module("omniscribe.core.ocr.processor")
-
-    return _reload
-
-
-def test_default_timeouts_when_env_unset(reload_ocr_processor) -> None:
-    """Unset env vars fall back to the documented defaults."""
-    monkeypatch = pytest.MonkeyPatch()
+    previous = {k: os.environ.get(k) for k in env}
     try:
-        monkeypatch.delenv("OMNISCRIBE_VLM_PAGE_TIMEOUT", raising=False)
-        monkeypatch.delenv("OMNISCRIBE_VLM_CROP_TIMEOUT", raising=False)
-        mod = reload_ocr_processor()
-        assert mod.OCRProcessor.PAGE_TIMEOUT_S == 240.0
-        assert mod.OCRProcessor.CROP_TIMEOUT_S == 60.0
+        for key, value in env.items():
+            os.environ[key] = value
+        return OCRProcessor(api_base="http://test.local/v1", api_key="x", model="mock")
     finally:
-        monkeypatch.undo()
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
-def test_page_timeout_override_takes_effect(reload_ocr_processor) -> None:
+def test_default_timeouts_when_env_unset() -> None:
+    """Unset env vars fall back to the documented defaults."""
+    import os
+
+    os.environ.pop("OMNISCRIBE_VLM_PAGE_TIMEOUT", None)
+    os.environ.pop("OMNISCRIBE_VLM_CROP_TIMEOUT", None)
+    proc = _make_processor()
+    assert proc.page_timeout_s == 240.0
+    assert proc.crop_timeout_s == 60.0
+    # Class-level constants stay at the hardcoded default regardless of
+    # env (1.12: the env is no longer read at import time).
+    assert OCRProcessor.PAGE_TIMEOUT_S == 240.0
+    assert OCRProcessor.CROP_TIMEOUT_S == 60.0
+
+
+def test_page_timeout_override_takes_effect() -> None:
     """``OMNISCRIBE_VLM_PAGE_TIMEOUT`` overrides the page-level timeout."""
-    mod = reload_ocr_processor(OMNISCRIBE_VLM_PAGE_TIMEOUT="30")
-    assert mod.OCRProcessor.PAGE_TIMEOUT_S == 30.0
+    proc = _make_processor(OMNISCRIBE_VLM_PAGE_TIMEOUT="30")
+    assert proc.page_timeout_s == 30.0
     # Crop timeout is independent.
-    assert mod.OCRProcessor.CROP_TIMEOUT_S == 60.0
+    assert proc.crop_timeout_s == 60.0
 
 
-def test_crop_timeout_override_takes_effect(reload_ocr_processor) -> None:
+def test_crop_timeout_override_takes_effect() -> None:
     """``OMNISCRIBE_VLM_CROP_TIMEOUT`` overrides the crop-level timeout."""
-    mod = reload_ocr_processor(OMNISCRIBE_VLM_CROP_TIMEOUT="15")
-    assert mod.OCRProcessor.CROP_TIMEOUT_S == 15.0
-    assert mod.OCRProcessor.PAGE_TIMEOUT_S == 240.0
+    proc = _make_processor(OMNISCRIBE_VLM_CROP_TIMEOUT="15")
+    assert proc.crop_timeout_s == 15.0
+    assert proc.page_timeout_s == 240.0
 
 
-def test_both_timeouts_can_be_overridden_simultaneously(reload_ocr_processor) -> None:
+def test_both_timeouts_can_be_overridden_simultaneously() -> None:
     """Both overrides can be applied at once."""
-    mod = reload_ocr_processor(
+    proc = _make_processor(
         OMNISCRIBE_VLM_PAGE_TIMEOUT="90",
         OMNISCRIBE_VLM_CROP_TIMEOUT="20",
     )
-    assert mod.OCRProcessor.PAGE_TIMEOUT_S == 90.0
-    assert mod.OCRProcessor.CROP_TIMEOUT_S == 20.0
+    assert proc.page_timeout_s == 90.0
+    assert proc.crop_timeout_s == 20.0
+
+
+def test_env_change_after_import_picks_up_on_fresh_instance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pedantic 1.11/1.12 regression: an env override applied *after*
+    the processor module has already been imported is visible to a
+    freshly-constructed ``OCRProcessor()``. Under the old import-time
+    resolution this would have required a module reload.
+    """
+    monkeypatch.delenv("OMNISCRIBE_VLM_PAGE_TIMEOUT", raising=False)
+    first = _make_processor()
+    assert first.page_timeout_s == 240.0
+    # Operator tweaks the env between two pipeline runs.
+    monkeypatch.setenv("OMNISCRIBE_VLM_PAGE_TIMEOUT", "75")
+    second = _make_processor()
+    assert second.page_timeout_s == 75.0

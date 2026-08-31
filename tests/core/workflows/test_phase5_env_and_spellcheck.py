@@ -23,54 +23,59 @@ from omniscribe.core.workflows.base import (
 
 class TestMaxTokensEnvOverride:
     """Phase 5 fix: PAGE_MAX_TOKENS / CROP_MAX_TOKENS used to be hard-coded.
-    Both now read from env at import time so operators can tune tail
-    latency without patching the code."""
+    Both now read from env at instance construction time (pedantic 1.11)
+    so operators can tune tail latency without patching the code and
+    without reloading the module."""
+
+    @staticmethod
+    def _make_processor(monkeypatch: pytest.MonkeyPatch) -> object:
+        from omniscribe.core.ocr.processor import OCRProcessor
+
+        return OCRProcessor(api_base="http://test.local/v1", api_key="x", model="mock")
 
     def test_page_max_tokens_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("OMNISCRIBE_VLM_PAGE_MAX_TOKENS", raising=False)
-        # Force re-import to pick up the cleared env var.
-        import importlib
-
         from omniscribe.core.ocr import processor as proc_mod
 
-        importlib.reload(proc_mod)
+        proc = self._make_processor(monkeypatch)
+        # Pedantic 1.11/1.12: env is read per-instance, so the class
+        # constant stays at the hardcoded default and the instance picks
+        # up the (unset) env fallback.
         assert proc_mod.OCRProcessor.PAGE_MAX_TOKENS == 6144
+        assert proc.page_max_tokens == 6144
 
     def test_page_max_tokens_env_override(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("OMNISCRIBE_VLM_PAGE_MAX_TOKENS", "2048")
-        import importlib
-
         from omniscribe.core.ocr import processor as proc_mod
 
-        importlib.reload(proc_mod)
-        assert proc_mod.OCRProcessor.PAGE_MAX_TOKENS == 2048
+        proc = self._make_processor(monkeypatch)
+        assert proc.page_max_tokens == 2048
+        # Class-level default is unchanged because env is no longer
+        # read at import time.
+        assert proc_mod.OCRProcessor.PAGE_MAX_TOKENS == 6144
         # restore default
         monkeypatch.delenv("OMNISCRIBE_VLM_PAGE_MAX_TOKENS", raising=False)
-        importlib.reload(proc_mod)
 
     def test_crop_max_tokens_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("OMNISCRIBE_VLM_CROP_MAX_TOKENS", raising=False)
-        import importlib
-
         from omniscribe.core.ocr import processor as proc_mod
 
-        importlib.reload(proc_mod)
+        proc = self._make_processor(monkeypatch)
         assert proc_mod.OCRProcessor.CROP_MAX_TOKENS == 256
+        assert proc.crop_max_tokens == 256
 
     def test_crop_max_tokens_env_override(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("OMNISCRIBE_VLM_CROP_MAX_TOKENS", "512")
-        import importlib
-
         from omniscribe.core.ocr import processor as proc_mod
 
-        importlib.reload(proc_mod)
-        assert proc_mod.OCRProcessor.CROP_MAX_TOKENS == 512
+        proc = self._make_processor(monkeypatch)
+        assert proc.crop_max_tokens == 512
+        assert proc_mod.OCRProcessor.CROP_MAX_TOKENS == 256
         monkeypatch.delenv("OMNISCRIBE_VLM_CROP_MAX_TOKENS", raising=False)
-        importlib.reload(proc_mod)
 
 
 # --- spellcheck thread offload -----------------------------------------

@@ -84,21 +84,30 @@ class OCRProcessor:
     budget for paragraph-level content.
     """
 
-    # F1.9 audit fix: the four audit-H3 knobs (page / crop timeouts, max
-    # retries, retry base delay) used to be class-level constants read
-    # from ``_settings`` at module import. A long-running uvicorn worker
-    # that picked up an env-var change after the first request would
-    # never see the new value — the module was already loaded and the
-    # class attribute was already bound. We now expose the resolved
-    # values as **instance** attributes set in ``__init__`` (which runs
-    # at pipeline construction, not at module import), so a fresh
-    # ``OCRProcessor()`` picks up the current ``RuntimeSettings``.
+    # Pedantic review 1.11 / 1.12: the audit-H3 knobs (page / crop
+    # timeouts, max retries, retry base delay, page/crop max-tokens) used
+    # to be class-level constants that read ``load_settings()`` and
+    # ``env_int`` at module import. Two problems:
     #
-    # The class-level defaults below remain so existing call sites that
-    # read ``OCRProcessor.PAGE_TIMEOUT_S`` continue to work; they are
-    # the **fallback** used only when ``__init__`` is bypassed (e.g.
-    # ``__new__`` in tests). Production code always goes through
-    # ``__init__`` and uses the per-instance values.
+    # 1. **Instance rebind on stale import-time value** (1.11):
+    #    ``self.page_max_tokens = self.PAGE_MAX_TOKENS`` in ``__init__``
+    #    captured the import-time env value, so an env-var change after
+    #    import did not reach a freshly-constructed instance.
+    # 2. **Module un-importable in subprocesses without env setup**
+    #    (1.12): every import of :mod:`omniscribe.core.ocr.processor`
+    #    parsed the full env and instantiated ``BaseSettings`` via
+    #    ``load_settings()`` at class-body evaluation time, which made
+    #    test runners and child processes fail when the env was empty
+    #    or partial. The ``__getattr__`` workaround masked the failure
+    #    for ``__new__``-based tests but every import still paid the cost.
+    #
+    # The class-level constants below are now **hardcoded defaults**
+    # matching the values :func:`load_settings` would return when no env
+    # override is present. ``__init__`` re-resolves the live values via
+    # :func:`load_settings` and :func:`env_int` at instance construction
+    # time, so a fresh ``OCRProcessor()`` always reflects the current
+    # env. The class-level defaults are still the fallback used by
+    # ``__getattr__`` for ``__new__``-built test instances.
 
     # Page-level OCR (full image): up to ~4 minutes, ~6k tokens of output.
     # Dense handwritten pages with tables can easily produce 2-3k tokens
@@ -108,22 +117,22 @@ class OCRProcessor:
     # for tail-latency tuning on dense pages (Phase 5). Both flow
     # through :mod:`omniscribe.config` / :mod:`omniscribe.utils.env`
     # (audit H3) — no direct ``os.getenv`` in this module.
-    PAGE_TIMEOUT_S: float = load_settings().vlm_page_timeout
-    PAGE_MAX_TOKENS: int = env_int("OMNISCRIBE_VLM_PAGE_MAX_TOKENS", 6144)
+    PAGE_TIMEOUT_S: float = 240.0
+    PAGE_MAX_TOKENS: int = 6144
 
     # Crop-level OCR (single box): a sentence at most. Capping much
     # tighter prevents a confused model from emitting a whole-page worth
     # of hallucinated text into one bbox during the refine stage.
     # Override via ``OMNISCRIBE_VLM_CROP_TIMEOUT`` (audit A-11); token
     # budget via ``OMNISCRIBE_VLM_CROP_MAX_TOKENS`` (Phase 5).
-    CROP_TIMEOUT_S: float = load_settings().vlm_crop_timeout
-    CROP_MAX_TOKENS: int = env_int("OMNISCRIBE_VLM_CROP_MAX_TOKENS", 256)
+    CROP_TIMEOUT_S: float = 60.0
+    CROP_MAX_TOKENS: int = 256
 
     # Retry policy for transient VLM errors (429, 5xx, connection drops).
     # Exponential backoff: base * 2^attempt, capped at MAX. Env overrides:
     # OMNISCRIBE_LLM_MAX_RETRIES, OMNISCRIBE_LLM_RETRY_BASE_DELAY.
-    MAX_RETRIES: int = load_settings().llm_max_retries
-    RETRY_BASE_DELAY_S: float = load_settings().llm_retry_base_delay
+    MAX_RETRIES: int = 2
+    RETRY_BASE_DELAY_S: float = 1.0
     RETRY_MAX_DELAY_S: float = 8.0
 
     def __init__(
@@ -136,21 +145,26 @@ class OCRProcessor:
         confidence_threshold: float = 0.75,
         circuit_breaker_registry: CircuitBreakerRegistry | None = None,
     ):
-        # F1.9 audit fix: resolve the audit-H3 settings at instance
-        # construction time so runtime ``OMNISCRIBE_*`` overrides take
-        # effect on the next ``OCRProcessor()`` after a settings change
-        # (a common operator workflow: tweak the env, restart the
-        # pipeline, observe the new behaviour). Previously the
-        # ``_settings = load_settings()`` at module import made this
-        # impossible without a process restart.
+        # Pedantic 1.11/1.12: resolve all env-driven settings at
+        # instance construction time so the env is read once per
+        # ``OCRProcessor()`` instead of once at module import. A long-
+        # running uvicorn worker that picks up an env-var change after
+        # the module was already imported will see the new value on the
+        # next ``OCRProcessor()``. Importing the module no longer
+        # touches ``load_settings()`` at all, so subprocesses and test
+        # runners that lack the full env set can import freely.
         settings = load_settings()
         self.page_timeout_s: float = settings.vlm_page_timeout
         self.crop_timeout_s: float = settings.vlm_crop_timeout
         self.max_retries: int = settings.llm_max_retries
         self.retry_base_delay_s: float = settings.llm_retry_base_delay
         self.retry_max_delay_s: float = self.RETRY_MAX_DELAY_S
-        self.page_max_tokens: int = self.PAGE_MAX_TOKENS
-        self.crop_max_tokens: int = self.CROP_MAX_TOKENS
+        self.page_max_tokens: int = env_int(
+            "OMNISCRIBE_VLM_PAGE_MAX_TOKENS", self.PAGE_MAX_TOKENS
+        )
+        self.crop_max_tokens: int = env_int(
+            "OMNISCRIBE_VLM_CROP_MAX_TOKENS", self.CROP_MAX_TOKENS
+        )
 
         # H2/H4 audit fix: read LLM coordinates from load_settings()
         # rather than os.getenv so the centralised configuration is the

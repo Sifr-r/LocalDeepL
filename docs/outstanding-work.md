@@ -87,6 +87,13 @@ self.PAGE_MAX_TOKENS` re-binds the class constant at instance time. An
 env-var change after import doesn't reach the instance via
 `OMNISCRIBE_VLM_PAGE_MAX_TOKENS` (it never went through `load_settings()`
 at all). Silently inconsistent with the F1.9 fix documented nearby.
+→ **Closed (Wave 2).** `__init__` now reads the env at instance
+construction time via `env_int("OMNISCRIBE_VLM_PAGE_MAX_TOKENS", ...)` /
+`env_int("OMNISCRIBE_VLM_CROP_MAX_TOKENS", ...)`. A fresh
+`OCRProcessor()` after an env-var change picks up the new value without
+a module reload. Test
+`test_env_change_after_import_picks_up_on_fresh_instance`
+(`tests/core/ocr/test_vlm_timeout_env.py`).
 
 **1.12** `core/ocr/processor.py:111-126` — class-level constants call
 `load_settings()` at import (`PAGE_TIMEOUT_S = load_settings().vlm_page_timeout`,
@@ -94,6 +101,14 @@ etc.). Importing the module parses the full env and instantiates
 `BaseSettings`, making the module un-importable in subprocesses without
 env setup. The `__getattr__` workaround papers over it but every import
 pays the cost.
+→ **Closed (Wave 2).** The class-level constants
+(`PAGE_TIMEOUT_S`, `PAGE_MAX_TOKENS`, `CROP_TIMEOUT_S`,
+`CROP_MAX_TOKENS`, `MAX_RETRIES`, `RETRY_BASE_DELAY_S`,
+`RETRY_MAX_DELAY_S`) are now hardcoded defaults matching
+`load_settings()`'s values. The module is importable in subprocesses
+without the full env set; `__init__` resolves the live values. Tests
+`test_vlm_timeout_env.py` and `test_phase5_env_and_spellcheck.py` were
+rewritten to test the new contract (instance-time resolution).
 
 **1.15** `core/recall/whitespace.py:181-188` — on a page where Surya
 returned only zero-height boxes, the recall filter `min_height` floor
@@ -476,6 +491,14 @@ In the uncommitted Wave 1 batch (§1): **1.1, 1.3, 1.4, 1.7, 1.8, 9.1**.
 
 **Wave 2 (this commit):** **1.5** (real bug, blob leak on INSERT OR
 REPLACE) + **5.2** (its regression test).
+
+**Wave 2 (continued):** **1.11** + **1.12** — `OCRProcessor` class-level
+settings no longer call `load_settings()` at import. The class-level
+constants are hardcoded defaults; `__init__` resolves the live values
+via `load_settings()` and `env_int()` at instance time. Two existing
+test files (`test_vlm_timeout_env.py`,
+`test_phase5_env_and_spellcheck.py`) were rewritten to test the new
+per-instance env contract.
 
 ---
 
