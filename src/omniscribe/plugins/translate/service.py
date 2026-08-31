@@ -5,8 +5,8 @@ The sync path is a verbatim re-home of the pre-harness
 to harness settings resolution and the token-bound ``ArtifactStore``.
 The module deliberately imports ``TRANSLATION_SYSTEM_MESSAGE`` from
 ``core.translate.nodes`` — the same system message the LangGraph workflow
-uses — rather than redefining it. The async runner and status mapping
-land in Task 3.
+uses — rather than redefining it. The async runner and its status
+mapping are JobQueue-backed and live here alongside the sync path.
 """
 
 from __future__ import annotations
@@ -20,7 +20,10 @@ from typing import Any, Protocol
 from omniscribe.config import RuntimeSettings
 from omniscribe.core.block_tree import BlockNode
 from omniscribe.core.llm.client import call_llm
-from omniscribe.core.llm.temperatures import TEMPERATURE_TRANSLATION
+from omniscribe.core.llm.temperatures import (
+    TEMPERATURE_TRANSLATION,
+    TEMPERATURE_TRANSLATION_TREE,
+)
 from omniscribe.core.translate.entity_memory import EntityMemory
 from omniscribe.core.translate.glossary import Glossary
 from omniscribe.core.translate.nodes import TRANSLATION_SYSTEM_MESSAGE
@@ -353,7 +356,7 @@ def _make_translator(
             model=model,
             api_base=api_base,
             api_key=api_key,
-            temperature=TEMPERATURE_TRANSLATION,
+            temperature=TEMPERATURE_TRANSLATION_TREE,
             system_prompt=TRANSLATION_SYSTEM_MESSAGE,
             prompt=prompt,
         )
