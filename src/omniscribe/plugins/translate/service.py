@@ -354,7 +354,13 @@ class TranslationServiceImpl:
                 "backend_unavailable",
                 "NLLBEngine is not available. Install the 'nllb' extra: uv sync --extra nllb",
             )
-        result = await engine.translate(text, target_language)
+        try:
+            result = await engine.translate(text, target_language)
+        except Exception as exc:
+            _LOGGER.exception("NLLB translation request failed")
+            raise TranslateError(
+                502, "ai_error", "The AI service request failed."
+            ) from exc
         return {
             "translated_text": result.text,
             "source_lang": result.source_lang,

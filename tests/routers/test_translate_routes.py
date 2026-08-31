@@ -268,3 +268,24 @@ def test_translate_nllb_unavailable_503(
     body = response.json()
     assert body["error"] == "backend_unavailable"
     assert "uv sync --extra nllb" in body["detail"]
+
+
+def test_translate_nllb_engine_failure_502(
+    api_client: TestClient, monkeypatch: Any
+) -> None:
+    from omniscribe.plugins.translate import service
+
+    class _BrokenEngine:
+        def is_available(self) -> bool:
+            return True
+
+        async def translate(self, text: str, target_language: str) -> object:
+            raise RuntimeError("torch is not installed")
+
+    monkeypatch.setattr(service, "_get_nllb_engine", lambda: _BrokenEngine())
+    response = api_client.post(
+        "/api/translate/nllb", json={"text": "hello", "target_language": "French"}
+    )
+    assert response.status_code == 502
+    body = response.json()
+    assert body["error"] == "ai_error"
