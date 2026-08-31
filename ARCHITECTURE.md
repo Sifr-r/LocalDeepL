@@ -66,7 +66,23 @@ cordis.yml
 │                 dispatched on the harness JobQueue; the translated text is
 │                 stored as a token-bound artifact — the status summary carries
 │                 artifact ids, never tokens), GET /api/translate/status/{job_id},
-│                 and POST /api/translate/nllb
+│                 GET /api/translate/result/{job_id} (token-redeeming async
+│                 result fetch; wrong token → uniform 404), and
+│                 POST /api/translate/nllb
+├─ transcribe     TranscriptionService: POST /api/transcribe (sync multipart
+│                 transcription; the transcript and its metadata are stored
+│                 as token-bound artifacts), GET/POST /api/config/transcription
+│                 (masked keys, always-writable in-memory store), and
+│                 GET /api/models/transcription (SSRF-guarded endpoint
+│                 discovery with a whisper fallback list)
+├─ glossary       GlossaryImportService + GlossaryJobRunner (the JobQueue's
+│                 third runner producer): nine /api/glossary* routes —
+│                 dual-shape imports (legacy JSON source envelope or the
+│                 client's multipart / JSON-body shapes), plus library
+│                 CRUD/enable/reorder/entries/preview/merged. Imports above
+│                 the 5,000-entry estimate dispatch on the harness JobQueue;
+│                 the LanceDB lexicon store loads lazily — routes 503 with
+│                 an install hint when the `lexicon` extra is missing
 └─ ocr            OCRService + JobRunner; /api/process*, /api/jobs*, /api/config*,
                   SSE /api/process/{job_id}/events; seeds the quality-loop defaults
 ```
@@ -131,9 +147,11 @@ Protocol (`ctx.inject(JobQueue)`), never by module singleton.
 | `src/omniscribe/resources/calibration/` | Pre-trained model confidence calibration files (e.g. `qwen2_5_vl_72b.json`) |
 | `src/omniscribe/core/ocr/multi_format_client.py` | Multi-format LLM completion dispatcher (`openai_compatible`, `anthropic_compatible`, `ollama_compatible`), vision base64 payloads, exponential backoff resilience retries, and timeout boundaries |
 | `src/omniscribe/harness/` | Cordis-style plugin harness: `context.py` (Protocol-keyed services, LIFO effects, event bus, router queue), `loader.py` (YAML tree + patches + env overrides, fails loud), `plugin.py` (Plugin base), plus `errors.py`, `events.py`, `effects.py`, `service.py`, `config.py` |
-| `src/omniscribe/plugins/` | The eleven boot plugins (runtime, logging, state_backend, artifacts, jobs, progress, providers, health, documents, translate, ocr) that register services and mount every `/api` router; see the Plugin Tree section |
+| `src/omniscribe/plugins/` | The thirteen boot plugins (runtime, logging, state_backend, artifacts, jobs, progress, providers, health, documents, translate, transcribe, glossary, ocr) that register services and mount every `/api` router; see the Plugin Tree section |
 | `src/omniscribe/plugins/documents/` | Documents plugin: `schemas.py` (extraction/export request models reproducing the pre-harness contract), `prompts.py` (extraction prompts re-homed verbatim from the pre-harness `api/services/ai.py`; `PROMPT_VERSION 2026-08-15.v1`; invoice/resume/academic/table/table_extraction/custom templates), `service.py` (LLM extraction runner, text/markdown/json/docling-compatible/mineru-compatible export builders, and on-demand block-tree building from the stored text artifact — no tree sidecars), `routes.py` (`POST /api/extract`, `POST /api/export/document`, `GET|POST /api/export/docx`, `POST /api/export/html`, `POST /api/export/docx-tree`, `POST /api/export/blocktree`, token-bound `GET /api/export/{artifact_id}`, `GET /api/text/{artifact_id}`, `GET /api/metadata/{artifact_id}`), and `plugin.py` (mounts the router; no configurable fields) |
-| `src/omniscribe/plugins/translate/` | Translate plugin: `schemas.py` (translation request models + client response contracts), `service.py` (`TranslationService` — sync single-shot `translate_text` re-home, JobQueue runner (`TranslationJobRunner` seam) that walks the stored text artifact's tree with `translate_tree`, and client status mapping PENDING/PROGRESS/SUCCESS/FAILURE), `routes.py` (`POST /api/translate`, `POST /api/translate/async`, `GET /api/translate/status/{job_id}`, `POST /api/translate/nllb`), and `plugin.py` (mounts the router; no configurable fields) |
+| `src/omniscribe/plugins/translate/` | Translate plugin: `schemas.py` (translation request models + client response contracts), `service.py` (`TranslationService` — sync single-shot `translate_text` re-home, JobQueue runner (`TranslationJobRunner` seam) that walks the stored text artifact's tree with `translate_tree`, and client status mapping PENDING/PROGRESS/SUCCESS/FAILURE), `routes.py` (`POST /api/translate`, `POST /api/translate/async`, `GET /api/translate/status/{job_id}`, `GET /api/translate/result/{job_id}` token-redeeming fetch, `POST /api/translate/nllb`), and `plugin.py` (mounts the router; no configurable fields) |
+| `src/omniscribe/plugins/transcribe/` | Transcribe plugin: `schemas.py` (form-field and config request models + client response contracts), `service.py` (`TranscriptionService` — sync multipart transcription through the core transcription engines; transcript and metadata serialized JSON using the text-artifact convention and stored as token-bound artifacts), `config_store.py` (always-writable in-memory transcription config store with masked keys; SSRF-guarded endpoint model discovery falling back to the canned whisper list), `routes.py` (`POST /api/transcribe`, `GET|POST /api/config/transcription`, `GET /api/models/transcription`), and `plugin.py` (mounts the router; no configurable fields) |
+| `src/omniscribe/plugins/glossary/` | Glossary plugin: `schemas.py` (import/library request models covering both payload shapes), `service.py` (`GlossaryImportService` — parse → entry-count estimate → sync import or JobQueue dispatch above the 5,000-entry estimate, plus library/toggle/reorder/delete/entries/preview/merged reads against the lexicon store), `store.py` (lazy `LexiconStore` provider — routes 503 with the `uv sync --extra lexicon` install hint when the `lexicon` extra is missing), `http_fetch.py` (SSRF-guarded, IP-pinned URL fetch with manual redirect following for `/api/glossary/import/url`), `routes.py` (the nine `/api/glossary*` routes; dual-shape imports), and `plugin.py` (mounts the router; registers `GlossaryJobRunner`) |
 | `src/omniscribe/resources/cordis.yml` | Shipped plugin boot tree; patched via `OMNISCRIBE_CORDIS_PATCH` or `<artifact_dir>/cordis.patch.yml` |
 | `src/omniscribe/utils/structured_logging.py` | Structured JSON logging formatter and handlers |
 | `src/omniscribe/utils/prompt_safety.py` | Prompt injection detection and input sanitization |
@@ -247,14 +265,28 @@ Rebuilt surface (pinned by `tests/openapi.json`):
 | `POST` | `/api/translate/async` | `translate` | Tree-aware translation dispatched on the harness JobQueue; translated text stored as a token-bound artifact |
 | `GET` | `/api/translate/status/{job_id}` | `translate` | Client status vocabulary (`PENDING`/`PROGRESS`/`SUCCESS`/`FAILURE`); the result summary references artifact ids, never tokens |
 | `POST` | `/api/translate/nllb` | `translate` | Local NLLB translation (lazy module-level engine); 503 when the `nllb` extra is missing |
+| `GET` | `/api/translate/result/{job_id}` | `translate` | Token-redeeming async result fetch (`?token=…`); wrong token → uniform 404 |
+| `POST` | `/api/transcribe` | `transcribe` | Synchronous multipart transcription; token-bound text + metadata artifacts |
+| `GET` / `POST` | `/api/config/transcription` | `transcribe` | Transcription config store; masked keys, always writable |
+| `GET` | `/api/models/transcription` | `transcribe` | Endpoint model discovery; SSRF guard + whisper fallback list |
+| `POST` | `/api/glossary/import` | `glossary` | Dual-shape import: legacy JSON source envelope or the client's multipart upload; above the 5,000-entry estimate dispatches on the JobQueue |
+| `POST` | `/api/glossary/import/url` | `glossary` | Dual-shape URL import: query params or JSON body; SSRF-guarded fetch |
+| `GET` | `/api/glossary/library` | `glossary` | List imported glossaries |
+| `POST` | `/api/glossary/library/{id}/enable` | `glossary` | Enable/disable a glossary |
+| `POST` | `/api/glossary/library/reorder` | `glossary` | Reorder the glossary library |
+| `DELETE` | `/api/glossary/library/{id}` | `glossary` | Delete a glossary |
+| `GET` | `/api/glossary/library/preview` | `glossary` | Preview of enabled entries |
+| `GET` | `/api/glossary/library/{id}/entries` | `glossary` | Entries of one glossary |
+| `GET` | `/api/glossary/library/merged` | `glossary` | Merged enabled entries; 503 with an install hint when the `lexicon` extra is missing |
 | `POST` | `/api/progress/session` | `progress` | Issue an opaque progress channel + one-shot session token |
 | `POST` | `/api/progress/cancel/{channel_id}` | `progress` | Request cancellation for a progress channel |
 | `WS` | `/ws/{channel_id}`, `/api/progress/ws/{channel_id}` | `progress` | Token-bound progress stream; auth via first `{"type":"auth",...}` frame (or `?token=`), then accepts `{"type":"cancel"}` |
 
-Deferred in the harness rebuild (routes not mounted): `/api/models*`,
-provider mutation routes (`POST/DELETE /api/providers*`),
-`/api/transcribe`, and
-`/api/glossary*` — see the design spec's out-of-scope list.
+Deferred in the harness rebuild (routes not mounted): the remaining
+`/api/models*` discovery aliases (the transcribe plugin ships
+`GET /api/models/transcription`) and
+provider mutation routes (`POST/DELETE /api/providers*`) — see the design
+spec's out-of-scope list.
 
 ## Change Blueprint
 
@@ -891,7 +923,7 @@ Conducted an exhaustive 4-domain audit (49 findings across Core Pipeline, API & 
 
 ### 2026-08-27: Flutter Takeover — Phase A (Provider-Config Routes + Auth Banner + Shortcuts + Web Build)
 
-The Flutter client is the canonical UI surface; Phase B has since retired the previous web UI. Provider-config routes (`POST /api/providers/active`, `POST /api/providers/validate`) were added in Phase A; the translation and extraction/export endpoints were then unimplemented (mock fallback notifiers only) — translation shipped 2026-08-30 via the `translate` plugin, extraction/export via the `documents` plugin; transcription and glossary endpoints are still deferred.
+The Flutter client is the canonical UI surface; Phase B has since retired the previous web UI. Provider-config routes (`POST /api/providers/active`, `POST /api/providers/validate`) were added in Phase A; the translation and extraction/export endpoints were then unimplemented (mock fallback notifiers only) — translation shipped 2026-08-30 via the `translate` plugin, extraction/export via the `documents` plugin, and transcription and glossary shipped 2026-08-31 via the `transcribe` and `glossary` plugins.
 
 | File | Responsibility |
 | --- | --- |

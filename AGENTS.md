@@ -69,7 +69,7 @@ Source directories are split into **core** (OCR pipeline and API surface) and **
 | --- | --- |
 | `src/omniscribe/core/` | OCR engines, alignment, PDF/image handling, document model, workflows, processors, translation, grounded backends, OCR quality trust layer |
 | `src/omniscribe/harness/` | Cordis-style plugin harness: Context (services/events/effects/router queue), Loader (YAML + patches + env overrides), Plugin base |
-| `src/omniscribe/plugins/` | The eleven boot plugins (runtime, logging, state_backend, artifacts, jobs, progress, providers, health, documents, translate, ocr) and their Protocol seams |
+| `src/omniscribe/plugins/` | The thirteen boot plugins (runtime, logging, state_backend, artifacts, jobs, progress, providers, health, documents, translate, transcribe, glossary, ocr) and their Protocol seams |
 | `src/omniscribe/pipeline.py` | `OCRPipeline` facade |
 | `src/omniscribe/server.py` | FastAPI app entry point |
 | `src/omniscribe/config.py` | Runtime settings |
@@ -163,7 +163,7 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/harness/context.py` | Harness `Context`: Protocol-keyed services, LIFO effect disposal, event subscriptions, `mount_router`/`routes()` |
 | `src/omniscribe/harness/loader.py` | `Loader(ctx).load(base, patch_paths=())` — parses `cordis.yml` plugin rows, deep-merges patches, applies `OMNISCRIBE_PLUGIN_<ID>__<FIELD>` env overrides, fails loud via `PluginLoadError` |
 | `src/omniscribe/harness/plugin.py` | `Plugin` base class (id, `Schema` ClassVar, config dict, `apply`/`dispose`) |
-| `src/omniscribe/resources/cordis.yml` | Shipped eleven-plugin boot tree; operator patches layer via `OMNISCRIBE_CORDIS_PATCH` or `<artifact_dir>/cordis.patch.yml` |
+| `src/omniscribe/resources/cordis.yml` | Shipped thirteen-plugin boot tree; operator patches layer via `OMNISCRIBE_CORDIS_PATCH` or `<artifact_dir>/cordis.patch.yml` |
 | `src/omniscribe/plugins/runtime.py` | `RuntimeService` — settings holder, readiness flag, artifact/channel prune cadence |
 | `src/omniscribe/plugins/logging.py` | Structured logging setup (`format: text\|json`, `level`) applied at boot |
 | `src/omniscribe/plugins/state_backend.py` | `StateBackend` Protocol (artifacts + jobs + channels) + `MemoryStateBackend` (default) + `SQLiteStateBackend` (opt-in via `OMNISCRIBE_STATE_BACKEND=sqlite`); the single registration site for the backend service |
@@ -173,6 +173,8 @@ PDF/image -> grounded bbox-native VLM -> post-process -> DocumentResult -> optio
 | `src/omniscribe/plugins/providers.py` | Provider catalog + model discovery (`GET /api/providers`, `/{id}`, `/{id}/models`) over the active LLM coordinates |
 | `src/omniscribe/plugins/health.py` | Liveness (`/api/health`, `/api/healthz`) and readiness (`/ready`, `/readyz`) probes |
 | `src/omniscribe/plugins/translate/` | Translate plugin package: `schemas.py` (translation request models + client response contracts), `service.py` (`TranslationService` — sync single-shot, JobQueue runner, status mapping), `routes.py` (the four `/api/translate*` routes), `plugin.py` (router mount) |
+| `src/omniscribe/plugins/transcribe/` | Transcribe plugin package: `schemas.py` (form-field and config request models + client response contracts), `service.py` (`TranscriptionService` — sync multipart transcription through the core transcription engines; transcript + metadata written as token-bound artifacts), `config_store.py` (always-writable in-memory config store with masked keys; SSRF-guarded model discovery with the whisper fallback list), `routes.py` (`POST /api/transcribe`, `GET/POST /api/config/transcription`, `GET /api/models/transcription`), `plugin.py` (router mount) |
+| `src/omniscribe/plugins/glossary/` | Glossary plugin package: `schemas.py` (import/library request models for both payload shapes), `service.py` (`GlossaryImportService` — parse → entry-count estimate → sync import or JobQueue dispatch, plus library/preview/merged reads), `store.py` (lazy `LexiconStore` provider; routes 503 with an install hint when the `lexicon` extra is missing), `http_fetch.py` (SSRF-guarded, IP-pinned URL fetch for `/api/glossary/import/url`), `routes.py` (the nine `/api/glossary*` routes; dual-shape imports), `plugin.py` (router mount; registers `GlossaryJobRunner`) |
 | `src/omniscribe/plugins/ocr/` | OCR plugin package: `plugin.py` (sync/async process routes, job surface, `/api/config` store), `schemas.py` (`OCRRequest` form parsing, client response contracts), `pipeline_bridge.py` (HTTP→`OCRPipeline` assembly), `events.py` |
 | `src/omniscribe/utils/security.py` | SSRF target validation |
 | `src/omniscribe/core/imaging/handwriting.py` | Local handwriting image preprocessor |
@@ -215,16 +217,20 @@ Unknown state backends or malformed rows fail boot loud (`PluginLoadError`).
 | 8 | `health` | `plugins/health.py` | `/api/health`, `/api/healthz`, `/ready`, `/readyz` |
 | 9 | `documents` | `plugins/documents/` | `/api/extract`, `/api/export/*` (document, docx, html, docx-tree, blocktree, `{id}` fetch), `/api/text/{id}`, `/api/metadata/{id}` |
 | 10 | `translate` | `plugins/translate/` | `TranslationService` + `TranslationJobRunner`; `/api/translate`, `/api/translate/async`, `/api/translate/status/{id}`, `/api/translate/nllb` |
-| 11 | `ocr` | `plugins/ocr/` | `OCRService` + `JobRunner`, `/api/process*`, `/api/jobs*`, `/api/config*` |
+| 11 | `transcribe` | `plugins/transcribe/` | `TranscriptionService`; `/api/transcribe`, `/api/config/transcription`, `/api/models/transcription` |
+| 12 | `glossary` | `plugins/glossary/` | `GlossaryImportService` + `GlossaryJobRunner`; `/api/glossary/import` (JSON + multipart), `/api/glossary/import/url` (query + JSON body), `/api/glossary/library{,/preview,/merged}`, `/library/{id}{,/enable,/entries}`, `/library/reorder` |
+| 13 | `ocr` | `plugins/ocr/` | `OCRService` + `JobRunner`, `/api/process*`, `/api/jobs*`, `/api/config*` |
 
 **Deferred capabilities** (not yet rebuilt on the harness — see
 `docs/superpowers/specs/2026-08-23-omniscribe-api-rebuild-design.md`):
-transcription / glossary-import routes,
 the auth / rate-limit / upload-size ASGI middlewares, the Redis
 state backend, and model pre-flight.
 
+**Phase C complete** (2026-08-31): all client-facing routes are rebuilt
+on the harness.
+
 **Testing.** `tests/conftest.py` ships three boot fixtures: `cordis_env`
-(temp eleven-row tree, memory backend, small TTLs), `harness_ctx` (a loaded
+(temp thirteen-row tree, memory backend, small TTLs), `harness_ctx` (a loaded
 Context), and `api_client` (TestClient over `create_app()` — plugins boot
 inside lifespan on the portal loop that also serves the requests). Router
 contract tests live in `tests/routers/`, plugin unit tests in
@@ -232,7 +238,9 @@ contract tests live in `tests/routers/`, plugin unit tests in
 
 ## Web Notes
 
-- The translation **core** (`core/translate/`, LangGraph workflow, LanceDB-backed `LexiconStore` via the `lexicon` extra) powers the `translate` plugin, which serves `/api/translate` (sync single-shot), `/api/translate/async` (tree-aware, dispatched on the harness JobQueue, single worker), `/api/translate/status/{job_id}`, and `/api/translate/nllb`. The `memory` extra name is kept as a one-release deprecation alias for `lexicon`.
+- The translation **core** (`core/translate/`, LangGraph workflow, LanceDB-backed `LexiconStore` via the `lexicon` extra) powers the `translate` plugin, which serves `/api/translate` (sync single-shot), `/api/translate/async` (tree-aware, dispatched on the harness JobQueue, single worker), `/api/translate/status/{job_id}`, `/api/translate/result/{job_id}?token=…` (token-redeeming async result fetch), and `/api/translate/nllb`. The `memory` extra name is kept as a one-release deprecation alias for `lexicon`.
+- **Transcription** ships on the harness via the `transcribe` plugin: `POST /api/transcribe` (sync multipart transcription; the transcript and its metadata are stored as token-bound artifacts), `GET/POST /api/config/transcription` (always-writable in-memory config store; API keys and auth tokens are returned masked), and `GET /api/models/transcription` (endpoint model discovery guarded by `is_ssrf_target`, falling back to the canned whisper model list when discovery fails).
+- **Glossary** ships on the harness via the `glossary` plugin: a 9-route import/library surface — `/api/glossary/import` (JSON + multipart), `/api/glossary/import/url` (query + JSON body), `/api/glossary/library{,/preview,/merged}`, `/library/{id}{,/enable,/entries}`, `/library/reorder`. Imports accept both shapes (legacy JSON source envelope and the client's multipart / JSON-body shapes); imports above the 5,000-entry estimate dispatch on the harness JobQueue (`GlossaryJobRunner`, the third runner producer). The LanceDB lexicon store loads lazily — routes 503 with an install hint (`uv sync --extra lexicon`) when the `lexicon` extra is missing.
 - `ALLOW_SSRF_LOCAL`: the code default is `False` (`RuntimeSettings` in `config.py`); the shipped `.env.example` sets it to `true` for local development. Set it to `false` when exposing the server to untrusted users.
 - **Auth**: the `OMNISCRIBE_AUTH_TOKEN` ASGI middleware is deferred in the harness rebuild; the rebuilt route surface is currently unauthenticated. Do not expose the server to untrusted users until the auth middleware plugin lands.
 - **VLM resilience**: every LLM call retries transient errors (429/5xx/connection resets) with exponential backoff, and a per-request circuit breaker fails fast after `OMNISCRIBE_CB_FAILURE_THRESHOLD` (default 5) consecutive failures. Tunables: `OMNISCRIBE_LLM_MAX_RETRIES` (default 2), `OMNISCRIBE_LLM_RETRY_BASE_DELAY` (default 1.0s), `OMNISCRIBE_CB_COOLDOWN` (default 30s).

@@ -40,11 +40,10 @@ so it stays light (no torch / no multi-GB ML stack):
 uv sync --extra web --extra preprocessing --extra async-translation --extra memory
 ```
 
-> **Upgrading from a pre-LanceDB version?** The server auto-migrates
-> the legacy `glossary_library/library.json` + `chroma_db/lanes_lexicon`
-> pair to the new LanceDB store on first boot (fail-open — a broken
-> migration never blocks startup). If you prefer an explicit, scripted
-> upgrade, run the `omniscribe-migrate-lexicon` console script:
+> **Upgrading from a pre-LanceDB version?** Migrate the legacy
+> `glossary_library/library.json` + `chroma_db/lanes_lexicon`
+> pair to the new LanceDB store with the `omniscribe-migrate-lexicon`
+> console script (the server itself does not auto-migrate on boot):
 >
 > ```bash
 > uv run omniscribe-migrate-lexicon --dry-run      # preview the plan
