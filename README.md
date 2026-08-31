@@ -31,8 +31,8 @@ For asynchronous translation:
 uv sync --extra web --extra preprocessing --extra async-translation
 ```
 
-If you also want the translation lexicon (ChromaDB-backed RAG for
-domain terminology), add the `memory` extra. The async-translation
+If you also want the translation lexicon (LanceDB-backed vector store
+for domain terminology), add the `memory` extra. The async-translation
 extra alone does **not** install ChromaDB or sentence-transformers,
 so it stays light (no torch / no multi-GB ML stack):
 
@@ -119,11 +119,12 @@ OCR responses include token-bound text artifact headers. When processor metadata
 
 ## Async Translation
 
-```bash
-docker run -d --name redis-local-ocr -p 6379:6379 redis
-uv run celery -A omniscribe.api.tasks worker --loglevel=info --pool=solo
-uv run omniscribe-server --port 8000
-```
+`POST /api/translate/async` dispatches tree-aware translation on the
+server's in-process harness JobQueue (single worker); poll
+`GET /api/translate/status/{job_id}` for the client status vocabulary.
+Translated output is stored as a token-bound text artifact and fetched
+via `GET /api/text/{artifact_id}` — no Celery worker is needed; the
+compose stack runs `api` + `redis` only.
 
 ## Validation
 
@@ -171,4 +172,4 @@ PDF-handling surface that pypdfium2 covers with feature parity.
 - [SECURITY.md](SECURITY.md) — threat model, hardening checklist, vulnerability disclosure
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var reference
 
-_Last updated: 2026-08-19_
+_Last updated: 2026-08-31_

@@ -115,10 +115,12 @@ Pinned so the implementation plan does not re-derive them:
 - **`NLLBEngine`** (`core/translate/nllb.py:53`) — `is_available() -> bool`;
   `async translate(text, target_language) -> NLLBResult(text, source_lang,
   target_lang)`; `resolve_nllb_code(language)`; `nllb` extra exists in
-  `pyproject.toml` (line 103).
+  `pyproject.toml` (line 103). The plugin holds the engine in a lazy
+  module-level singleton (the old server re-instantiated per request —
+  same contract, no model reload per call).
 - **`TEMPERATURE_TRANSLATION`** in `core/llm/temperatures.py`;
-  **`TRANSLATION_SYSTEM_MESSAGE`** re-exported from
-  `core/translate/workflow.py`.
+  **`TRANSLATION_SYSTEM_MESSAGE`** defined at
+  `core/translate/nodes.py:42`.
 - **Artifact helpers for the stored text shape** — `load_pages` /
   `build_tree` in `plugins/documents/service.py` parse the stored
   `{"<page>": "<lines joined by \n>"}` blob and build a `DocumentTree`.
@@ -326,6 +328,8 @@ switches `exportDocx` to POST before the GET route can be dropped), 2.2,
   async-profile references that only existed to serve it; keep `redis` if
   other docs reference it — check and prune honestly.
 - `start_app.vbs`: drop the Celery window launcher.
+  `start_app.vbs` no longer exists in the repo; retirement is
+  compose-only.
 - `DEPLOYMENT.md` / `AGENTS.md`: async-profile wording now describes the
   JobQueue path; note the Celery removal.
 - `AGENTS.md` Known Tech Debt: the "Celery task once translation routes

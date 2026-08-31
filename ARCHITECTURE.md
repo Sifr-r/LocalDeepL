@@ -61,6 +61,12 @@ cordis.yml
 │                 PROMPT_VERSION 2026-08-15.v1), /api/export/* builders
 │                 (text/markdown/json/docling/mineru), and the token-bound
 │                 /api/export/{id}, /api/text/{id}, /api/metadata/{id} fetches
+├─ translate      TranslationService + TranslationJobRunner: POST /api/translate
+│                 (sync single-shot), POST /api/translate/async (tree-aware,
+│                 dispatched on the harness JobQueue; the translated text is
+│                 stored as a token-bound artifact — the status summary carries
+│                 artifact ids, never tokens), GET /api/translate/status/{job_id},
+│                 and POST /api/translate/nllb
 └─ ocr            OCRService + JobRunner; /api/process*, /api/jobs*, /api/config*,
                   SSE /api/process/{job_id}/events; seeds the quality-loop defaults
 ```
@@ -125,8 +131,9 @@ Protocol (`ctx.inject(JobQueue)`), never by module singleton.
 | `src/omniscribe/resources/calibration/` | Pre-trained model confidence calibration files (e.g. `qwen2_5_vl_72b.json`) |
 | `src/omniscribe/core/ocr/multi_format_client.py` | Multi-format LLM completion dispatcher (`openai_compatible`, `anthropic_compatible`, `ollama_compatible`), vision base64 payloads, exponential backoff resilience retries, and timeout boundaries |
 | `src/omniscribe/harness/` | Cordis-style plugin harness: `context.py` (Protocol-keyed services, LIFO effects, event bus, router queue), `loader.py` (YAML tree + patches + env overrides, fails loud), `plugin.py` (Plugin base), plus `errors.py`, `events.py`, `effects.py`, `service.py`, `config.py` |
-| `src/omniscribe/plugins/` | The ten boot plugins (runtime, logging, state_backend, artifacts, jobs, progress, providers, health, documents, ocr) that register services and mount every `/api` router; see the Plugin Tree section |
+| `src/omniscribe/plugins/` | The eleven boot plugins (runtime, logging, state_backend, artifacts, jobs, progress, providers, health, documents, translate, ocr) that register services and mount every `/api` router; see the Plugin Tree section |
 | `src/omniscribe/plugins/documents/` | Documents plugin: `schemas.py` (extraction/export request models reproducing the pre-harness contract), `prompts.py` (extraction prompts re-homed verbatim from the pre-harness `api/services/ai.py`; `PROMPT_VERSION 2026-08-15.v1`; invoice/resume/academic/table/table_extraction/custom templates), `service.py` (LLM extraction runner, text/markdown/json/docling-compatible/mineru-compatible export builders, and on-demand block-tree building from the stored text artifact — no tree sidecars), `routes.py` (`POST /api/extract`, `POST /api/export/document`, `GET|POST /api/export/docx`, `POST /api/export/html`, `POST /api/export/docx-tree`, `POST /api/export/blocktree`, token-bound `GET /api/export/{artifact_id}`, `GET /api/text/{artifact_id}`, `GET /api/metadata/{artifact_id}`), and `plugin.py` (mounts the router; no configurable fields) |
+| `src/omniscribe/plugins/translate/` | Translate plugin: `schemas.py` (translation request models + client response contracts), `service.py` (`TranslationService` — sync single-shot `translate_text` re-home, JobQueue runner (`TranslationJobRunner` seam) that walks the stored text artifact's tree with `translate_tree`, and client status mapping PENDING/PROGRESS/SUCCESS/FAILURE), `routes.py` (`POST /api/translate`, `POST /api/translate/async`, `GET /api/translate/status/{job_id}`, `POST /api/translate/nllb`), and `plugin.py` (mounts the router; no configurable fields) |
 | `src/omniscribe/resources/cordis.yml` | Shipped plugin boot tree; patched via `OMNISCRIBE_CORDIS_PATCH` or `<artifact_dir>/cordis.patch.yml` |
 | `src/omniscribe/utils/structured_logging.py` | Structured JSON logging formatter and handlers |
 | `src/omniscribe/utils/prompt_safety.py` | Prompt injection detection and input sanitization |
@@ -182,7 +189,9 @@ expose the same pair through `JobStatusResponse`. The `documents` plugin
 serves the metadata/export artifact surfaces on the same store:
 `POST /api/export/document` writes a new token-bound export artifact, and
 `GET /api/text/{id}` / `GET /api/metadata/{id}` / `GET /api/export/{id}`
-fetch stored ones.
+fetch stored ones. The `translate` plugin writes translated text to the
+same token-bound store; its async status summary carries the artifact ids
+and never the bearer tokens.
 
 ### Background OCR lifecycle
 
@@ -234,13 +243,17 @@ Rebuilt surface (pinned by `tests/openapi.json`):
 | `GET` | `/api/export/{artifact_id}` | `documents` | Token-bound (Bearer) export artifact download |
 | `GET` | `/api/text/{artifact_id}` | `documents` | Token-bound (Bearer) OCR text artifact fetch |
 | `GET` | `/api/metadata/{artifact_id}` | `documents` | Token-bound (Bearer) document metadata artifact fetch |
+| `POST` | `/api/translate` | `translate` | Synchronous single-shot translation; returns `{translated_text}` |
+| `POST` | `/api/translate/async` | `translate` | Tree-aware translation dispatched on the harness JobQueue; translated text stored as a token-bound artifact |
+| `GET` | `/api/translate/status/{job_id}` | `translate` | Client status vocabulary (`PENDING`/`PROGRESS`/`SUCCESS`/`FAILURE`); the result summary references artifact ids, never tokens |
+| `POST` | `/api/translate/nllb` | `translate` | Local NLLB translation (lazy module-level engine); 503 when the `nllb` extra is missing |
 | `POST` | `/api/progress/session` | `progress` | Issue an opaque progress channel + one-shot session token |
 | `POST` | `/api/progress/cancel/{channel_id}` | `progress` | Request cancellation for a progress channel |
 | `WS` | `/ws/{channel_id}`, `/api/progress/ws/{channel_id}` | `progress` | Token-bound progress stream; auth via first `{"type":"auth",...}` frame (or `?token=`), then accepts `{"type":"cancel"}` |
 
 Deferred in the harness rebuild (routes not mounted): `/api/models*`,
 provider mutation routes (`POST/DELETE /api/providers*`),
-`/api/translate*`, `/api/transcribe`, and
+`/api/transcribe`, and
 `/api/glossary*` — see the design spec's out-of-scope list.
 
 ## Change Blueprint
@@ -926,4 +939,4 @@ Conducted a full-repository parallel audit covering Core Pipeline, API & Securit
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var reference
 - `audits/` — historical and comprehensive domain audit logs
 
-_Last updated: 2026-08-30_
+_Last updated: 2026-08-31_

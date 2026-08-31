@@ -148,19 +148,26 @@ configure OCR and translation backends independently.
 when you point at a third-party endpoint. Review the provider's
 data-retention policy before uploading sensitive material.
 
-## Async Translation (Celery + Redis)
+## Async Translation (harness JobQueue)
 
 The synchronous `/api/translate` endpoint works without any extra
-infrastructure. To use `/api/translate/async` (which survives worker
-restarts and exposes long-poll status):
+infrastructure. `/api/translate/async` dispatches tree-aware translation
+on the in-process harness JobQueue (single worker, `plugins/jobs.py`);
+poll `GET /api/translate/status/{job_id}` for the client status
+vocabulary. There is no Celery worker service and no `--profile async` —
+the compose stack is `api` + `redis` only. Redis stays in the stack for
+the `REDIS_URL` env-var contract (the api service still exports it; the
+Redis state backend that would consume it remains deferred in the
+harness rebuild).
 
 ```bash
-uv sync --extra web --extra preprocessing --extra async-translation --extra memory
-docker compose --profile async up -d   # adds the celery worker
+uv sync --extra web --extra preprocessing --extra async-translation
+docker compose up -d   # api + redis
 ```
 
-Set `REDIS_URL=redis://redis:6379/0` and the worker connects
-automatically. See `compose.yaml` for the full layout.
+The `async-translation` extra installs the LangGraph translation core
+(`async-translation`) dependencies; translated output is stored as a
+token-bound text artifact and fetched via `GET /api/text/{artifact_id}`.
 
 ## Local Troubleshooting
 
@@ -240,4 +247,4 @@ Job artifacts in `/tmp/ocr_*` are removed by the startup sweep
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var
   reference
 
-_Last updated: 2026-08-19_
+_Last updated: 2026-08-31_
