@@ -136,3 +136,59 @@ def test_quality_max_retries_above_cap_rejected(
     monkeypatch.setenv("OMNISCRIBE_QUALITY_MAX_RETRIES", "7")
     with pytest.raises(ValidationError):
         RuntimeSettings()
+
+
+# ---------------------------------------------------------------------------
+# Pedantic 3.3: OMNISCRIBE_MAX_PAGES declared in RuntimeSettings
+# ---------------------------------------------------------------------------
+
+
+def test_max_pages_default_matches_rasterizer_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``OMNISCRIBE_MAX_PAGES`` defaults to 500, matching the
+    rasterizer's hard-coded fallback so the declarative field and the
+    runtime read agree when no env is set.
+    """
+    monkeypatch.delenv("OMNISCRIBE_MAX_PAGES", raising=False)
+    settings = RuntimeSettings()
+    assert settings.max_pages == 500
+
+
+def test_max_pages_env_override_is_loaded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A user-supplied ``OMNISCRIBE_MAX_PAGES`` is exposed via
+    :func:`load_settings` so ops tooling (settings dump, health
+    endpoint) can see what the rasterizer is using.
+    """
+    monkeypatch.setenv("OMNISCRIBE_MAX_PAGES", "1500")
+    settings = RuntimeSettings()
+    assert settings.max_pages == 1500
+
+
+def test_max_pages_zero_allowed() -> None:
+    """``OMNISCRIBE_MAX_PAGES=0`` is the documented "cap disabled"
+    sentinel; ``RuntimeSettings`` accepts it (ge=0 allows zero).
+    """
+    import os
+
+    os.environ["OMNISCRIBE_MAX_PAGES"] = "0"
+    try:
+        assert RuntimeSettings().max_pages == 0
+    finally:
+        del os.environ["OMNISCRIBE_MAX_PAGES"]
+
+
+def test_max_pages_negative_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A negative ``OMNISCRIBE_MAX_PAGES`` is invalid and rejected at
+    settings load (the rasterizer also treats negatives as disabled,
+    so failing fast at the boundary gives a clearer error).
+    """
+    from pydantic import ValidationError
+
+    monkeypatch.setenv("OMNISCRIBE_MAX_PAGES", "-10")
+    with pytest.raises(ValidationError):
+        RuntimeSettings()
