@@ -891,7 +891,7 @@ Conducted an exhaustive 4-domain audit (49 findings across Core Pipeline, API & 
 
 ### 2026-08-27: Flutter Takeover — Phase A (Provider-Config Routes + Auth Banner + Shortcuts + Web Build)
 
-The Flutter client is the canonical UI surface; Phase B has since retired the previous web UI. Provider-config routes (`POST /api/providers/active`, `POST /api/providers/validate`) were added in Phase A; the deferred translation/transcription/extraction/export/glossary endpoints remain unimplemented (mock fallback notifiers only).
+The Flutter client is the canonical UI surface; Phase B has since retired the previous web UI. Provider-config routes (`POST /api/providers/active`, `POST /api/providers/validate`) were added in Phase A; the translation and extraction/export endpoints were then unimplemented (mock fallback notifiers only) — translation shipped 2026-08-30 via the `translate` plugin, extraction/export via the `documents` plugin; transcription and glossary endpoints are still deferred.
 
 | File | Responsibility |
 | --- | --- |
