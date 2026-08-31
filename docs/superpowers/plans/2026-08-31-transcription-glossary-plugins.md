@@ -1976,19 +1976,15 @@ class FakeLexiconStore:
 
     def toggle_glossary(self, glossary_id: str, *, enabled: bool) -> Any:
         if glossary_id not in self._glossaries:
-            from omniscribe.core.lexicon import GlossaryNotFoundError
-
-            raise GlossaryNotFoundError(glossary_id)
+            raise KeyError(glossary_id)
         meta = self._glossaries[glossary_id]
         meta.enabled = enabled
         return meta
 
     def reorder_glossaries(self, ordered_ids: Any) -> None:
-        from omniscribe.core.lexicon import GlossaryNotFoundError
-
         missing = [gid for gid in ordered_ids if gid not in self._glossaries]
         if missing:
-            raise GlossaryNotFoundError(missing[0])
+            raise KeyError(missing[0])
         reordered: dict[str, _FakeMeta] = {}
         for gid in ordered_ids:
             reordered[gid] = self._glossaries[gid]
@@ -2676,21 +2672,21 @@ class GlossaryImportServiceImpl:
 
     def toggle(self, glossary_id: str, *, enabled: bool) -> dict[str, Any]:
         store = self._library()
-        from omniscribe.core.lexicon import GlossaryNotFoundError
-
+        # GlossaryNotFoundError subclasses KeyError; catching the base class
+        # avoids importing the lexicon core package (pyarrow) on the
+        # web-only fast tier.
         try:
             meta = store.toggle_glossary(glossary_id, enabled=enabled)
-        except GlossaryNotFoundError as exc:
+        except KeyError as exc:
             raise GlossaryError(404, "not_found", "Glossary not found.") from exc
         return self._serialize_item(meta)
 
     def reorder(self, ordered_ids: list[str]) -> dict[str, Any]:
         store = self._library()
-        from omniscribe.core.lexicon import GlossaryNotFoundError
-
+        # GlossaryNotFoundError subclasses KeyError; see toggle.
         try:
             store.reorder_glossaries(ordered_ids)
-        except GlossaryNotFoundError as exc:
+        except KeyError as exc:
             raise GlossaryError(404, "not_found", "Glossary not found.") from exc
         except ValueError as exc:
             raise GlossaryError(422, "validation_failed", str(exc)) from exc
@@ -3585,7 +3581,9 @@ def test_async_threshold_dispatches_on_queue(
     _inject_store(api_client)
     from omniscribe.plugins.glossary import service as glossary_service
 
-    monkeypatch.setattr(glossary_service, "SYNC_THRESHOLD", 1)
+    # One-line JSON text has 0 newlines → estimate 1; threshold 0 forces
+    # every import onto the async path deterministically.
+    monkeypatch.setattr(glossary_service, "SYNC_THRESHOLD", 0)
     response = _import_json_pairs(
         api_client,
         '{"entries": [{"source": "A", "target": "1"}, {"source": "B", "target": "2"}]}',
@@ -3596,13 +3594,10 @@ def test_async_threshold_dispatches_on_queue(
     assert body["job_id"]
     assert body["entry_count"] == 0
     # The queued job drains on the real worker; the glossary lands in the store.
-    deadline = 5.0
-    import time
-
+    deadline = time.time() + 5.0
     store = _get_service(api_client)._store_provider()
-    while deadline > 0 and not store.list_glossaries():
+    while time.time() < deadline and not store.list_glossaries():
         time.sleep(0.01)
-        deadline -= 0.01
     assert len(store.list_glossaries()) == 1
     assert store.list_glossaries()[0].entry_count == 2
 ```
@@ -3621,7 +3616,16 @@ Adjustment notes for the implementer:
 - [ ] **Step 2: Run to verify they pass (routes landed in Task 8)**
 
 Run: `uv run pytest tests/routers/test_glossary_routes.py -v`
-Expected: all 18 PASS. If any fail, fix routes/service (not the pins).
+Expected: all 23 PASS (20 contract pins + 3 error-branch pins added by the
+quality review: malformed-JSON 400 envelope, multipart-missing-file 400
+envelope via an explicit multipart header, native-422 list-detail shape).
+Also shipped by the quality review: `test_preview_endpoint_reports_conflicts`
+and `test_merged_endpoint_returns_dict` carry
+`@pytest.mark.skipif(find_spec("pyarrow") is None, ...)` (the
+`_NEEDS_LEXICON_EXTRA` module constant) because their service paths import
+the real core.lexicon helpers — CI's web-only tier skips those two; and the
+drain test uses the wall-clock `time.time()` deadline pattern. If any fail,
+fix routes/service (not the pins).
 
 - [ ] **Step 3: Fast gate + commit**
 
