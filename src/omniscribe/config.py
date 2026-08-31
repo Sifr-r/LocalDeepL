@@ -80,6 +80,32 @@ class RuntimeSettings(BaseSettings):
         validation_alias="OMNISCRIBE_ARTIFACT_CLEANUP_INTERVAL_S",
         ge=0,
     )
+
+    # OCR quality repair-loop seeds (pedantic 7.12). The shipped
+    # ``cordis.yml`` also reads these env vars directly via
+    # ``${OMNISCRIBE_QUALITY_*:-default}`` expansion at plugin boot —
+    # declaring them here makes them first-class fields of
+    # :class:`RuntimeSettings` so anything that consumes
+    # :func:`load_settings` (settings dump, tests, ops tooling) sees
+    # the same contract as the boot-time plugin tree. The two paths
+    # agree by default; a plugin-row ``config:`` override still wins at
+    # boot.
+    ocr_quality_loop_enabled: bool = Field(
+        default=True,
+        validation_alias="OMNISCRIBE_QUALITY_LOOP",
+    )
+    ocr_quality_target: float = Field(
+        default=0.85,
+        validation_alias="OMNISCRIBE_QUALITY_TARGET",
+        ge=0.5,
+        le=1.0,
+    )
+    ocr_quality_max_retries: int = Field(
+        default=2,
+        validation_alias="OMNISCRIBE_QUALITY_MAX_RETRIES",
+        ge=0,
+        le=5,
+    )
     chunk_pages: int = Field(
         default=25, validation_alias="OMNISCRIBE_CHUNK_PAGES", ge=1
     )

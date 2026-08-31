@@ -145,6 +145,13 @@ AGENTS.md but **not declared in `config.py`** and not read by the OCR
 plugin's `OCRSchema` (hard-coded `quality_loop_enabled=True`,
 `quality_target=0.85`, `quality_max_retries=2`). The env seeds are
 ignored. Real bug.
+→ **Closed (Wave 2).** The three env vars are now first-class fields
+on `RuntimeSettings` (`ocr_quality_loop_enabled`,
+`ocr_quality_target`, `ocr_quality_max_retries`) so `load_settings()`
+exposes the same contract as the cordis.yml boot-time expansion.
+Out-of-range values are rejected at settings-load time instead of
+crashing the OCR plugin at apply time. Four regression tests added to
+`tests/test_cordis_settings.py`.
 
 ### 2.2 Medium priority (correctness / security / hygiene / drift)
 
@@ -532,6 +539,14 @@ OCR hot path. Regression test
 `test_check_ssrf_target_sync_uses_module_level_executor` in
 `tests/utils/test_ssrf.py` counts `ThreadPoolExecutor.__init__`
 calls during repeated sync checks and asserts it stays at 0.
+
+**Wave 2 (continued):** **7.12** — `OMNISCRIBE_QUALITY_LOOP` /
+`OMNISCRIBE_QUALITY_TARGET` / `OMNISCRIBE_QUALITY_MAX_RETRIES` are
+now first-class fields on `RuntimeSettings`
+(`ocr_quality_loop_enabled`, `ocr_quality_target`,
+`ocr_quality_max_retries`). Out-of-range values are rejected at
+settings-load time instead of crashing the OCR plugin during
+`apply()`. Four regression tests in `tests/test_cordis_settings.py`.
 
 ---
 
