@@ -136,3 +136,15 @@ def test_response_shapes_match_frontend_contracts() -> None:
         "status",
         "failed_pages",
     }
+
+
+def test_job_status_response_accepts_cancelled() -> None:
+    status = JobStatusResponse(
+        job_id="j2",
+        filename="b.pdf",
+        status="cancelled",
+        created_at=1.0,
+        error="Job cancelled.",
+    )
+    assert status.status == "cancelled"
+    assert status.error == "Job cancelled."

@@ -7,7 +7,7 @@ name: Security scan
 # The config set is intentionally narrow — `p/security-audit` covers
 # the OWASP-relevant sinks, `p/secrets` catches hardcoded credentials,
 # and `p/owasp-top-ten` aligns with the project's stated coverage in
-# `docs/superpowers/specs/`. Findings surface in the GitHub Security
+# `SECURITY.md`. Findings surface in the GitHub Security
 # tab via the SARIF upload so the team can triage them alongside
 # Dependabot and Trivy alerts (see `test.yml`'s `container-scan`).
 #

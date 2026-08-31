@@ -45,8 +45,9 @@ merge (per audit C-3):
 | Job | Runner | Python | Purpose |
 | --- | --- | --- | --- |
 | `fast (ubuntu, 3.11)` | ubuntu-latest | 3.11 | Fast tier — lint + mypy + fast tests + coverage ≥ 85 % |
-| `fast (ubuntu, 3.13)` | ubuntu-latest | 3.13 | Fast tier on the Python version the Dockerfile builds |
+| `fast (ubuntu, 3.13)` | ubuntu-latest | 3.13 | Fast tier on Ubuntu (Python 3.13) |
 | `fast (windows, 3.11)` | windows-latest | 3.11 | Windows runner path |
+| `client-tests (flutter)` | ubuntu-latest | n/a | Flutter client static analysis (`--fatal-infos`) and unit/widget test suite |
 | `container scan (trivy)` | ubuntu-latest | n/a | High/critical CVE scan of the production image |
 
 The nightly workflow (`.github/workflows/nightly.yml`) is **not** a
@@ -221,10 +222,10 @@ Unknown state backends or malformed rows fail boot loud (`PluginLoadError`).
 | 12 | `glossary` | `plugins/glossary/` | `GlossaryImportService` + `GlossaryJobRunner`; `/api/glossary/import` (JSON + multipart), `/api/glossary/import/url` (query + JSON body), `/api/glossary/library{,/preview,/merged}`, `/library/{id}{,/enable,/entries}`, `/library/reorder` |
 | 13 | `ocr` | `plugins/ocr/` | `OCRService` + `JobRunner`, `/api/process*`, `/api/jobs*`, `/api/config*` |
 
-**Deferred capabilities** (not yet rebuilt on the harness — see
-`docs/superpowers/specs/2026-08-23-omniscribe-api-rebuild-design.md`):
+**Deferred capabilities** (not yet rebuilt on the harness):
 the auth / rate-limit / upload-size ASGI middlewares, the Redis
-state backend, and model pre-flight.
+state backend, and model pre-flight. Tracked in
+`docs/outstanding-work.md` §5.
 
 **Phase C complete** (2026-08-31): all client-facing routes are rebuilt
 on the harness.
@@ -262,7 +263,7 @@ contract tests live in `tests/routers/`, plugin unit tests in
 - `pages_structured` legacy dict is still the working format inside `HybridEngine`; `DocumentResult` is built at finalize. The output boundary now supports the lossless rich path (`DocumentResultWriter`), but intermediate stages still convert.
 - `dense.pdf` and `notes.pdf` ground-truth fixtures are bootstrapped from hybrid output (regression baseline, not absolute quality).
 - `surya-ocr 0.17.x` used to import `requests` in `surya/common/s3.py` without declaring it; `pyproject.toml` shipped a `requests>=2.31` workaround dep. **Closed in audit-secondary Phase 5 (2026-08-19):** `surya-ocr ≥ 0.22` now declares `requests<3,>=2.28.0` in its own metadata, so the workaround is no longer required. `requests` has been removed from the base deps and moved to `[dependency-groups] dev` (it is only directly imported by `scripts/ingest_lexicon.py`, a dev-only ingestion helper).
-- **A11y regression coverage (F4.9, closed by Phase B).** The historical Playwright a11y spec covered the Svelte web workspace that Phase B deleted, so the F4.9 audit gap is effectively closed. **Forward guard:** any future web client (see `docs/superpowers/specs/2026-08-28-flutter-takeover-phase-b-design.md` for the current Flutter path) must ship a11y regression tests on day one — `axe-playwright` (or the equivalent on the chosen stack) wired into the CI fast tier. The Phase 5d test `tests/scripts/test_tier_discipline.py::test_agents_md_documents_a11y_testing_gap` pins that this forward guard stays discoverable in AGENTS.md.
+- **A11y regression coverage (F4.9, closed by Phase B).** The historical Playwright a11y spec covered the Svelte web workspace that Phase B deleted, so the F4.9 audit gap is effectively closed. **Forward guard:** any future web client (the current Flutter client lives in `client/`) must ship a11y regression tests on day one — `axe-playwright` (or the equivalent on the chosen stack) wired into the CI fast tier. The Phase 5d test `tests/scripts/test_tier_discipline.py::test_agents_md_documents_a11y_testing_gap` pins that this forward guard stays discoverable in AGENTS.md.
 
 ## Product-Planning Notes (scout plans, not code)
 

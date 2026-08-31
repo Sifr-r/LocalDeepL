@@ -290,7 +290,8 @@ async def test_cancel_queued_job(fake_pipeline) -> None:
             cancel = await client.post(f"/api/jobs/{second_id}/cancel")
             assert cancel.status_code == 200
             assert cancel.json() == {"cancelled": True}
-            cancelled = await _wait_status(client, second_id, "error")
+            cancelled = await _wait_status(client, second_id, "cancelled")
+            assert cancelled["status"] == "cancelled"
             assert cancelled["error"] == "Job cancelled."
 
             # terminal cancel is a no-op
@@ -409,5 +410,166 @@ async def test_event_buffers_and_done_jobs_are_bounded_and_pruned(
         pruned_count = service.prune(max_buffered_jobs=5)
         assert pruned_count == 5
         assert len(service._event_buffers) == 5
+    finally:
+        await ctx.dispose()
+
+
+# -- octet-stream format sniff -------------------------------------------------
+#
+# Pedantic review 1.8: the previous implementation let every
+# ``application/octet-stream`` upload through to the tempdir and only
+# relied on the downstream parser to reject non-document bytes. The
+# new route branches on declared type: typed uploads keep the existing
+# per-format magic-byte chain, and octet-stream uploads run the new
+# ``_sniff_format`` detector on the first 12 bytes. See the design
+# note in ``docs/outstanding-work.md`` (§1, "Design note for the 1.8
+# fix").
+
+
+@pytest.mark.parametrize(
+    "head, expected",
+    [
+        # Positive cases — one per supported format, plus the alternative
+        # AVIF/HEIF brands the detector recognises.
+        (b"%PDF-1.4\n", "pdf"),
+        (b"\x89PNG\r\n\x1a\n", "png"),
+        (b"\xff\xd8\xff\xe0\x00\x10JFIF", "jpeg"),
+        (b"RIFF\x00\x00\x00\x00WEBPVP", "webp"),
+        (b"\x00\x00\x00\x20ftypavif", "avif"),
+        (b"\x00\x00\x00\x20ftypavis", "avif"),
+        (b"\x00\x00\x00\x20ftypmif1", "avif"),
+        # Negative cases — no signature match.
+        (b"random text data that is not a document", None),
+        (b"", None),
+        # Truncated header that happens to start with the PNG signature
+        # prefix. The full 8-byte signature is required.
+        (b"\x89PNG", None),
+        # Looks like a 28-byte ftyp box but the brand at offset 8 is not
+        # one of the recognised AVIF/HEIF brands. The old
+        # ``b"\\x00\\x00\\x00\\x1c"`` literal-size check would have
+        # accepted this; the new detector correctly rejects it.
+        (b"\x00\x00\x00\x1cftypxxxx", None),
+    ],
+)
+def test_sniff_format(head: bytes, expected: str | None) -> None:
+    from omniscribe.plugins.ocr.plugin import _sniff_format
+
+    assert _sniff_format(head) == expected
+
+
+async def test_octet_stream_pdf_upload_is_accepted(fake_pipeline) -> None:
+    """``application/octet-stream`` with a real PDF body reaches the pipeline.
+
+    The Flutter file picker surfaces ``application/octet-stream`` when the
+    OS cannot classify a file; the route must still pass a real PDF
+    through to the bridge.
+    """
+    ctx, app = await _boot()
+    try:
+        async with _client(app) as client:
+            response = await client.post(
+                "/api/process",
+                files={
+                    "file": ("doc.bin", b"%PDF-1.4 input", "application/octet-stream")
+                },
+            )
+        assert response.status_code == 200
+        assert response.content == PDF_BYTES
+    finally:
+        await ctx.dispose()
+
+
+async def test_octet_stream_garbage_upload_is_rejected_with_415(fake_pipeline) -> None:
+    """Regression for pedantic review 1.8: garbage labelled ``octet-stream``
+    must 415 *before* the tempdir is written.
+
+    The previous implementation skipped the magic-byte check on the
+    octet-stream branch and only relied on the downstream parser to
+    reject non-document bytes — which meant the upload was written to
+    disk first. The new route sniffs the first 12 bytes and 415s on
+    the null case before any tempdir I/O.
+    """
+    ctx, app = await _boot()
+    try:
+        async with _client(app) as client:
+            response = await client.post(
+                "/api/process",
+                files={
+                    "file": (
+                        "doc.bin",
+                        b"this is not a document at all",
+                        "application/octet-stream",
+                    )
+                },
+            )
+        assert response.status_code == 415
+        assert "octet-stream uploads must be" in response.json().get("detail", "")
+    finally:
+        await ctx.dispose()
+
+
+async def test_octet_stream_size_cap_runs_before_format_sniff(fake_pipeline) -> None:
+    """A 2 MB octet-stream garbage blob against a 1 MB cap returns 413, not 415.
+
+    Pins the size-check → format-sniff ordering: an oversized upload
+    must fail on size before the format detector runs. The 1 MB cap is
+    large enough that the size check triggers first; the upload is
+    labelled ``octet-stream`` so the format check would 415 if it ran
+    first.
+    """
+    ctx, app = await _boot(max_upload_mb=1)
+    try:
+        async with _client(app) as client:
+            response = await client.post(
+                "/api/process",
+                files={
+                    "file": (
+                        "doc.bin",
+                        b"not a document" + b"\x00" * (2 * 1024 * 1024),
+                        "application/octet-stream",
+                    )
+                },
+            )
+        assert response.status_code == 413
+    finally:
+        await ctx.dispose()
+
+
+async def test_octet_stream_typed_upload_path_is_unchanged(fake_pipeline) -> None:
+    """Typed uploads (declared MIME) keep the existing magic-byte chain.
+
+    The new code path is gated on ``content_type == "application/octet-stream"``;
+    typed uploads continue to use the legacy per-format chain. A real
+    PDF declared ``application/pdf`` must still pass the existing check
+    and reach the bridge (no-regression for the typed branch).
+    """
+    ctx, app = await _boot()
+    try:
+        async with _client(app) as client:
+            response = await client.post(
+                "/api/process",
+                files={"file": ("a.pdf", b"%PDF-1.4 input", "application/pdf")},
+            )
+        assert response.status_code == 200
+        assert response.content == PDF_BYTES
+    finally:
+        await ctx.dispose()
+
+
+async def test_typed_avif_upload_with_variable_ftyp_is_accepted(fake_pipeline) -> None:
+    """Regression test for pedantic review 1.7: typed AVIF with variable
+    ftyp box size (e.g. 32 bytes) must pass format validation.
+    """
+    ctx, app = await _boot()
+    try:
+        # 32-byte ftyp box (0x00000020), brand "avif"
+        avif_head = b"\x00\x00\x00\x20ftypavif" + b"\x00" * 50
+        async with _client(app) as client:
+            response = await client.post(
+                "/api/process",
+                files={"file": ("photo.avif", avif_head, "image/avif")},
+            )
+        assert response.status_code == 200
+        assert response.content == PDF_BYTES
     finally:
         await ctx.dispose()

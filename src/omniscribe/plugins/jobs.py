@@ -126,7 +126,9 @@ class JobQueue(Protocol):
 
     def is_cancelled(self, job_id: str) -> bool: ...
 
-    async def list_jobs(self, *, limit: int = 100) -> list[JobRecord]: ...
+    async def list_jobs(
+        self, *, limit: int = 100, offset: int = 0
+    ) -> list[JobRecord]: ...
 
     async def clear(self) -> int: ...
 
@@ -195,8 +197,8 @@ class InMemoryJobQueue:
     def is_cancelled(self, job_id: str) -> bool:
         return job_id in self._cancelled
 
-    async def list_jobs(self, *, limit: int = 100) -> list[JobRecord]:
-        return await self._backend.list_jobs(limit=limit)
+    async def list_jobs(self, *, limit: int = 100, offset: int = 0) -> list[JobRecord]:
+        return await self._backend.list_jobs(limit=limit, offset=offset)
 
     async def clear(self) -> int:
         count = await self._backend.clear_jobs()
@@ -275,12 +277,20 @@ class InMemoryJobQueue:
             outcome = await runner(payload)
         except asyncio.CancelledError:
             raise
-        except Exception as exc:
+        except BaseException as exc:
+            if (
+                self.is_cancelled(job_id)
+                or "cancelled" in exc.__class__.__name__.lower()
+            ):
+                await self._mark_cancelled(job_id, emit=True)
+                return
+            if not isinstance(exc, Exception):
+                raise
             message = str(exc) or exc.__class__.__name__
             await self._set_error(job_id, message)
             await self._ctx.emit(JobFailed(job_id=job_id, error=message))
             return
-        if job_id in self._cancelled:
+        if self.is_cancelled(job_id):
             # The runner honored the cooperative cancel at a block boundary.
             await self._mark_cancelled(job_id, emit=True)
             return

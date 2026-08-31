@@ -139,11 +139,21 @@ async def test_list_and_clear_delegate_to_state() -> None:
 
     ctx = await _boot(runner)
     queue = ctx.inject(JobQueue)
-    handle = await queue.submit({}, request_meta={"filename": "a.pdf"})
-    await _wait_status(queue, handle.job_id, "complete")
-    listed = await queue.list_jobs()
-    assert [r.job_id for r in listed] == [handle.job_id]
-    assert await queue.clear() == 1
+    handle1 = await queue.submit({}, request_meta={"filename": "a.pdf"})
+    await _wait_status(queue, handle1.job_id, "complete")
+    await asyncio.sleep(0.02)
+    handle2 = await queue.submit({}, request_meta={"filename": "b.pdf"})
+    await _wait_status(queue, handle2.job_id, "complete")
+
+    listed = await queue.list_jobs(limit=1, offset=0)
+    assert len(listed) == 1
+    assert listed[0].job_id == handle2.job_id
+
+    listed_offset = await queue.list_jobs(limit=1, offset=1)
+    assert len(listed_offset) == 1
+    assert listed_offset[0].job_id == handle1.job_id
+
+    assert await queue.clear() == 2
     assert await queue.list_jobs() == []
     await ctx.dispose()
 

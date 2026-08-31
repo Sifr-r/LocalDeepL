@@ -26,6 +26,7 @@ from fastapi import HTTPException
 from fastapi.responses import Response
 
 from omniscribe.config import RuntimeSettings
+from omniscribe.core.workflows.base import OCRCancelled
 from omniscribe.harness.events import Event
 from omniscribe.plugins.artifacts import ArtifactStore
 from omniscribe.plugins.jobs import (
@@ -48,14 +49,14 @@ from omniscribe.plugins.progress import ProgressFrame, ProgressService
 from omniscribe.plugins.state_backend import JobRecord
 from omniscribe.utils.security import check_ssrf_target_sync
 
-_HttpJobStatus = Literal["pending", "processing", "complete", "error"]
+_HttpJobStatus = Literal["pending", "processing", "complete", "error", "cancelled"]
 
 _QUEUE_STATUS_TO_HTTP: dict[str, _HttpJobStatus] = {
     "queued": "pending",
     "running": "processing",
     "complete": "complete",
     "error": "error",
-    "cancelled": "error",
+    "cancelled": "cancelled",
 }
 _TERMINAL_QUEUE_STATUSES = {"complete", "error", "cancelled"}
 
@@ -198,9 +199,12 @@ class OCRServiceImpl:
         if not isinstance(payload, _OcrPayload):
             raise ValueError("OCR job queue received a foreign payload")
         job_id = self._submission_to_job.get(payload.submission_id, "")
+        cancel_check = self._cancel_check(job_id, payload.request.progress_channel)
         pdf_bytes, _ = await self._execute(
             payload.request, payload.file_bytes, payload.filename, job_id=job_id
         )
+        if cancel_check is not None and cancel_check():
+            raise OCRCancelled(f"job {job_id} cancelled")
         return JobOutcome(blob=pdf_bytes, content_type="application/pdf")
 
     async def _execute(

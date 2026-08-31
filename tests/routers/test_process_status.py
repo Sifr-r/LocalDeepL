@@ -37,7 +37,7 @@ def test_status_response_matches_frontend_contract(
     done = wait_status(api_client, job_id, "complete")
     assert set(done) == _STATUS_KEYS
     assert done["job_id"] == job_id
-    assert done["status"] in {"pending", "processing", "complete", "error"}
+    assert done["status"] in {"pending", "processing", "complete", "error", "cancelled"}
     assert done["completed_at"] is not None
     assert done["duration_s"] is not None
     assert done["error"] is None

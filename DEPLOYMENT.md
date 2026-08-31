@@ -50,9 +50,7 @@ requires re-entering it.
 
 **What changed from profile 1:**
 
-- `OMNISCRIBE_AUTH_TOKEN` is required for every HTTP route. The
-  WebSocket handshake also requires the per-channel session token
-  (`X-Session-Token`).
+- `OMNISCRIBE_AUTH_TOKEN` is configured for HTTP routes (middleware plugin is deferred in the harness rebuild; see AGENTS.md). The WebSocket handshake uses per-channel session tokens.
 - `ALLOW_SSRF_LOCAL=false` blocks the URL fetcher from reaching
   `localhost` / private IPs. Only public URLs work.
 - The upload cap drops to 2 GB and the rate limit to 30/min — adjust
@@ -180,14 +178,20 @@ When running the OmniScribe server locally:
 
 ## Backup & Recovery
 
-OmniScribe keeps all job artifacts in process memory
-(`api/routers/state.py`). **A restart loses history.** There is no
-on-disk job database in the current release.
+By default, OmniScribe keeps job and artifact state in process memory
+via `MemoryStateBackend` (`src/omniscribe/plugins/state_backend.py`).
+**A restart loses in-memory history.**
 
-If you need durable history, the only path is to swap
-`LocalStateBackend` for a Redis-backed `StateBackend`. That is a
-deliberate single-file change — see `api/services/state/base.py`
-for the protocol.
+For durable, local-first persistence across restarts, enable the SQLite
+state backend:
+```bash
+export OMNISCRIBE_STATE_BACKEND=sqlite
+# Optional custom DB path (defaults to <artifact_dir>/omniscribe-state.db):
+# export OMNISCRIBE_STATE_DB_PATH=/path/to/omniscribe-state.db
+```
+Artifact binaries are saved under `<artifact_dir>/<id>.bin` and metadata is
+persisted in SQLite (WAL mode). Backing up this directory captures all job
+records and artifacts.
 
 ## Upgrading
 

@@ -596,7 +596,8 @@
               "pending",
               "processing",
               "complete",
-              "error"
+              "error",
+              "cancelled"
             ],
             "title": "Status",
             "type": "string"

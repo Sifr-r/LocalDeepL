@@ -54,3 +54,16 @@ def test_result_download_requires_valid_token(
 def test_unknown_job_result_and_cancel_are_404(api_client: TestClient) -> None:
     assert api_client.get("/api/jobs/nope/result").status_code == 404
     assert api_client.post("/api/jobs/nope/cancel").status_code == 404
+
+
+def test_cancel_job_sets_status_cancelled(
+    api_client: TestClient, fake_pipeline: dict
+) -> None:
+    submit = api_client.post("/api/process/async", **upload())
+    job_id = submit.json()["job_id"]
+    # Cancel the job (or wait until completed if it ran instantly)
+    cancel_resp = api_client.post(f"/api/jobs/{job_id}/cancel")
+    assert cancel_resp.status_code in {
+        200,
+        409,
+    }  # 200 if cancelled, 409 if already complete

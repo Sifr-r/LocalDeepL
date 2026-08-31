@@ -39,13 +39,15 @@ strictness:
 
 1. **Local single-user (default)** — the workstation runs on
    `localhost`. The threat is a malicious file you are OCR-ing. Guards:
-   `MaxUploadSizeMiddleware`, sanitised filenames, validated VLM
+   upload size parsing check, sanitised filenames, validated VLM
    responses.
 2. **LAN / trusted-network** — the workstation runs on a private LAN
-   behind a firewall. The threat is a curious housemate. Guards: bearer
-   auth on every route (except `/health`, `/healthz`, `/ready`,
-   `/readyz`), per-route token scoping, rate limiting, audit-friendly
-   logs.
+   behind a firewall. The threat is a curious housemate. Guards:
+   planned bearer auth on every route (except `/health`, `/healthz`,
+   `/ready`, `/readyz`), per-route token scoping, rate limiting,
+   audit-friendly logs. *(Note: ASGI bearer auth and rate-limit
+   middlewares are currently deferred capabilities in the Cordis harness
+   rebuild; see AGENTS.md).*
 3. **Public-internet** — the workstation runs behind a reverse proxy on
    a public IP. The threat is the open internet. **All LAN guards plus:**
    `ALLOW_SSRF_LOCAL=false`, strong random `OMNISCRIBE_AUTH_TOKEN`,
@@ -57,14 +59,21 @@ explicitly opt into profile (2) or (3) by setting the relevant env vars.
 
 ## Security Features
 
+> [!NOTE]
+> Following the Cordis plugin harness rebuild, ASGI bearer authentication
+> (`OMNISCRIBE_AUTH_TOKEN`), rate limiting, and `MaxUploadSizeMiddleware`
+> are currently deferred capabilities. The settings remain declared in
+> `config.py` as configuration scaffolding for the forthcoming middleware
+> plugins. The current active middleware is CORS.
+
 | Layer                  | Guard                              | Default             | Override                                |
 | ---------------------- | ---------------------------------- | ------------------- | --------------------------------------- |
-| HTTP auth              | `OMNISCRIBE_AUTH_TOKEN`           | Unset (open)        | Set to a 32+ char random secret         |
-| Per-service auth       | `OMNISCRIBE_OCR_AUTH_TOKEN`, `OMNISCRIBE_TRANSLATION_AUTH_TOKEN`, `OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN` | Unset | Set when OCR, translation, or transcription should accept different tokens |
-| Upload size            | `OMNISCRIBE_MAX_UPLOAD_MB`        | 10 GB               | Lower for public deployments            |
-| Rate limit             | `OMNISCRIBE_RATE_LIMIT_PER_MIN`   | 60 req/min/IP       | Lower for public deployments            |
+| HTTP auth *(deferred)* | `OMNISCRIBE_AUTH_TOKEN`           | Unset (open)        | Set to a 32+ char random secret (scaffolding for deferred auth plugin) |
+| Per-service auth *(deferred)* | `OMNISCRIBE_OCR_AUTH_TOKEN`, `OMNISCRIBE_TRANSLATION_AUTH_TOKEN`, `OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN` | Unset | Set when OCR, translation, or transcription should accept different tokens |
+| Upload size            | `OMNISCRIBE_MAX_UPLOAD_MB`        | 10 GB (10240 MB)    | Lower for public deployments (enforced at upload parse) |
+| Rate limit *(deferred)* | `OMNISCRIBE_RATE_LIMIT_PER_MIN`   | 60 req/min/IP       | Lower for public deployments (scaffolding for deferred rate-limit plugin) |
 | Trusted reverse proxies | `OMNISCRIBE_TRUSTED_PROXIES`    | Unset (peer IP only) | Comma-separated CIDR list; X-Forwarded-For is honoured only when the ASGI peer is inside one of these ranges |
-| SSRF (URL fetcher)     | `ALLOW_SSRF_LOCAL`                 | `true`              | Set `false` for any non-local exposure  |
+| SSRF (URL fetcher)     | `ALLOW_SSRF_LOCAL`                 | `false` (code default) | Shipped `.env.example` sets `true` for local development; keep `false` for non-local exposure |
 | CORS                   | `OMNISCRIBE_CORS_ORIGINS`          | localhost-only      | Comma-separated allow-list for cross-origin browser clients |
 | VLM resilience         | `OMNISCRIBE_LLM_MAX_RETRIES`, `OMNISCRIBE_LLM_RETRY_BASE_DELAY`, `OMNISCRIBE_CB_FAILURE_THRESHOLD`, `OMNISCRIBE_CB_COOLDOWN` | retries=2, base=1.0s, failures=5, cooldown=30s | Higher to ride out a flaky provider; lower to fail fast |
 | Auth placeholder reject| startup `RuntimeError`             | n/a                 | Always on                               |
@@ -201,4 +210,4 @@ Before exposing OmniScribe beyond `localhost`:
 - [DEPLOYMENT.md](DEPLOYMENT.md) — local / LAN / public-internet deployment profiles
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var reference
 
-_Last updated: 2026-08-14_
+_Last updated: 2026-08-31_

@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
 from fastapi import APIRouter, Body, Header, HTTPException, Request
@@ -77,6 +78,57 @@ class OCRService(Protocol):
 # -- routes -------------------------------------------------------------------
 
 
+#: Document-format signatures the route sniffs out of an upload's first
+#: 12 bytes. The keys are the format names that match the downstream
+#: rasterizer / pipeline branch; the values are the head-byte predicates
+#: checked in order. AVIF/HEIF uses the ISOBMFF ``ftyp`` box layout
+#: (``ftyp`` at offset 4, brand at offset 8) which handles variable-sized
+#: ftyp boxes correctly (pedantic review 1.7 & 1.8).
+_SUPPORTED_FORMAT_SIGNATURES: tuple[tuple[str, Callable[[bytes], bool]], ...] = (
+    ("pdf", lambda head: head.startswith(b"%PDF-")),
+    ("png", lambda head: head.startswith(b"\x89PNG\r\n\x1a\n")),
+    ("jpeg", lambda head: head[:3] == b"\xff\xd8\xff"),
+    (
+        "webp",
+        lambda head: head[:4] == b"RIFF" and head[8:12] == b"WEBP",
+    ),
+    (
+        "avif",
+        # ISOBMFF ftyp box: 4 bytes size, ``ftyp`` literal, 4 bytes major brand.
+        # Recognised brands: avif, avis (AVIF image sequence), mif1 (HEIF).
+        lambda head: (
+            len(head) >= 12
+            and head[4:8] == b"ftyp"
+            and head[8:12] in {b"avif", b"avis", b"mif1"}
+        ),
+    ),
+)
+
+_MIME_TO_FORMAT: dict[str, str] = {
+    "application/pdf": "pdf",
+    "image/png": "png",
+    "image/jpeg": "jpeg",
+    "image/webp": "webp",
+    "image/avif": "avif",
+}
+
+
+def _sniff_format(head: bytes) -> str | None:
+    """Return the supported document format matching ``head``, or ``None``.
+
+    The 12-byte window covers every supported signature; AVIF/HEIF needs
+    the 4-byte size + ``ftyp`` literal + 4-byte brand to disambiguate
+    from a coincidental ``\\x00\\x00\\x00\\x1c`` prefix. A 415 in the
+    route is the natural fallback for the ``None`` case — the route
+    refuses to write arbitrary bytes to the tempdir before the
+    downstream parser gets a chance to reject them.
+    """
+    for name, predicate in _SUPPORTED_FORMAT_SIGNATURES:
+        if predicate(head):
+            return name
+    return None
+
+
 def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
     """Every OCR-plugin route from the spec's route table."""
     router = APIRouter(tags=["ocr"])
@@ -118,23 +170,31 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
                     "Allowed: PDF, PNG, JPEG, WebP, AVIF."
                 ),
             )
-        # H-5 audit fix (continued): magic-byte check so a malicious
-        # client cannot bypass the content-type filter by sending
-        # ``application/octet-stream`` with PDF bytes (or vice-versa).
-        # We check the first 8 bytes against the four common
-        # signatures and let ``application/octet-stream`` through —
-        # those uploads rely on the downstream pipeline's own
-        # magic-byte sniffing (Pymupdf / Pillow) to detect format.
-        if content_type and content_type != "application/octet-stream":
-            head = blob[:8]
-            magic_ok = (
-                head.startswith(b"%PDF-")
-                or head.startswith(b"\x89PNG\r\n\x1a\n")
-                or head[:3] == b"\xff\xd8\xff"
-                or (head[:4] == b"RIFF" and head[8:12] == b"WEBP")
-                or head.startswith(b"\x00\x00\x00\x1c")  # AVIF ftyp
-            )
-            if not magic_ok:
+        # H-5 audit fix (continued) + pedantic review 1.7/1.8:
+        # Magic-byte check so an attacker cannot bypass the filter.
+        #
+        # Two branches:
+        #   * ``application/octet-stream``: the Flutter file picker
+        #     fallback when the OS can't surface a MIME. The route
+        #     sniffs the first 12 bytes via :func:`_sniff_format` and
+        #     accepts the upload only if the sniff matches a supported
+        #     format. Bytes that don't match any signature 415 *before*
+        #     the tempdir is written.
+        #   * Typed upload: declared MIME must match the sniffed format.
+        head = blob[:12]
+        if content_type == "application/octet-stream":
+            if _sniff_format(head) is None:
+                raise HTTPException(
+                    status_code=415,
+                    detail=(
+                        "could not detect a supported document format from "
+                        "the upload contents; octet-stream uploads must be "
+                        "one of PDF, PNG, JPEG, WebP, or AVIF"
+                    ),
+                )
+        elif content_type in _MIME_TO_FORMAT:
+            sniffed = _sniff_format(head)
+            if sniffed != _MIME_TO_FORMAT[content_type]:
                 raise HTTPException(
                     status_code=415,
                     detail=(

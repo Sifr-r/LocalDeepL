@@ -203,7 +203,8 @@ covers three domains: artifacts, jobs, and progress channels.
 The `artifacts` plugin layers an `ArtifactStore` on top: every artifact is
 an opaque id + bearer token pair; sync `/api/process` returns them as
 `X-Text-Artifact-Id` / `X-Text-Artifact-Token` headers, and async jobs
-expose the same pair through `JobStatusResponse`. The `documents` plugin
+expose `text_artifact_id` in `JobStatusResponse` (with the secret token
+delivered out-of-band via the `job_completed` SSE event). The `documents` plugin
 serves the metadata/export artifact surfaces on the same store:
 `POST /api/export/document` writes a new token-bound export artifact, and
 `GET /api/text/{id}` / `GET /api/metadata/{id}` / `GET /api/export/{id}`
@@ -216,10 +217,10 @@ and never the bearer tokens.
 `POST /api/process/async` validates and persists the upload before submitting
 a payload to the single-worker `JobQueue` (`plugins/jobs.py`). The plugin
 starts the worker at apply time and stops it during dispose. Observable HTTP
-states are `pending`, `processing`, `complete`, and `error`; status is
+states are `pending`, `processing`, `complete`, `error`, and `cancelled`; status is
 available at `GET /api/process/status/{job_id}` and as an SSE replay at
 `GET /api/process/{job_id}/events`. `POST /api/jobs/{job_id}/cancel` removes a
-pending job or marks an in-flight job as a stable terminal error without
+pending job or marks an in-flight job as `cancelled` without
 letting the runner's eventual return overwrite the cancellation. With the
 memory backend queue and artifact indexes are lost on restart;
 `OMNISCRIBE_STATE_BACKEND=sqlite` persists them.

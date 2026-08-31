@@ -136,7 +136,7 @@ class JobStatusResponse(BaseModel):
 
     job_id: str
     filename: str = ""
-    status: Literal["pending", "processing", "complete", "error"]
+    status: Literal["pending", "processing", "complete", "error", "cancelled"]
     created_at: float
     started_at: float | None = None
     completed_at: float | None = None
