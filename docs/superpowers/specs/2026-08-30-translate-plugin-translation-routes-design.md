@@ -53,7 +53,7 @@ retires the dead Celery surfaces.
 3. Verbatim re-home of the sync translation service from the deleted
    `api/services/ai.py` (`translate_text` + `build_translation_prompt` +
    `TRANSLATION_SYSTEM_MESSAGE` — the latter already lives in
-   `core/translate/workflow.py`).
+   `core/translate/nodes.py:42`).
 4. Tree-aware async translation through `core/translate/tree.translate_tree`
    with `EntityMemory`, parsed `Glossary`, and optional dual translator;
    translated text stored as a token-bound artifact (no sidecar writes).

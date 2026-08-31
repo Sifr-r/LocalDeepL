@@ -93,36 +93,23 @@ def test_dockerfile_pins_python_and_uv_installs_extras():
     assert "omniscribe-server" in dockerfile
 
 
-def test_compose_yaml_defines_api_redis_and_async_profile_worker():
+def test_compose_yaml_defines_exactly_api_and_redis_services():
     compose = yaml.safe_load(_read(ROOT / "compose.yaml"))
 
     services = compose["services"]
-    assert "api" in services, "compose.yaml must define an `api` service"
-    assert "redis" in services, "compose.yaml must define a `redis` service"
-    assert "worker" in services, "compose.yaml must define a `worker` service"
-
-    # Worker must be opt-in via profile so synchronous users don't pay
-    # the Celery footprint.
-    assert "async" in services["worker"].get("profiles", []), (
-        "worker must be opt-in via `profiles: [async]`"
+    assert set(services) == {"api", "redis"}, (
+        "compose.yaml must define exactly the `api` and `redis` services — "
+        "the Celery `worker` service was retired (async translation rides "
+        "the in-process harness JobQueue)"
     )
 
-    # api + redis must start on a plain `docker compose up`. Compose has
-    # no implicit default profile, so a `profiles:` key would *exclude*
-    # the service — the always-on pair must carry no profiles at all.
+    # No service may carry a `profiles:` key. Compose has no implicit
+    # default profile, so a `profiles:` key would *exclude* the service —
+    # the always-on pair must start on a plain `docker compose up`.
     # (Audit P0-4: `profiles: ["default"]` made `compose up` start nothing.)
-    assert "profiles" not in services["api"], (
-        "api must carry no `profiles:` key so a plain `compose up` starts it"
-    )
-    assert "profiles" not in services["redis"], (
-        "redis must carry no `profiles:` key so api's depends_on resolves "
-        "on a plain `compose up`"
-    )
-
-    # Worker command must use the --pool=solo flag the README documents.
-    worker_cmd = services["worker"].get("command")
-    assert isinstance(worker_cmd, list) and "--pool=solo" in worker_cmd, (
-        "Celery worker should declare --pool=solo for sqlite/transformer safety"
+    profiled = {name for name, svc in services.items() if svc.get("profiles")}
+    assert not profiled, (
+        f"no compose service may carry a `profiles:` key (found: {sorted(profiled)})"
     )
 
 
@@ -212,18 +199,28 @@ def test_nightly_workflow_targets_slow_tests_with_hf_cache():
     )
 
 
-def test_celery_and_uvicorn_targets_match_installed_package_path():
-    """Launcher entry points must use the ``omniscribe.*`` module path.
+def test_compose_has_no_celery_and_api_keeps_uvicorn_entrypoint():
+    """The Celery worker service was retired (async translation
+    dispatches on the in-process harness JobQueue), so compose.yaml
+    must carry no Celery references, and the api service must keep
+    booting the uvicorn-based ``omniscribe-server`` entrypoint from
+    the Dockerfile CMD.
 
-    Keep container entrypoints on the installed-package path and verify
-    legacy Svelte launcher scripts (start_app.vbs, stop_app.bat) have been removed.
+    Also verify legacy Svelte launcher scripts (start_app.vbs, stop_app.bat)
+    have been removed.
     """
-    compose = yaml.safe_load(_read(ROOT / "compose.yaml"))
-
-    worker_cmd = compose["services"]["worker"]["command"]
-    assert "omniscribe.api.tasks" in worker_cmd, (
-        "compose worker must keep using `-A omniscribe.api.tasks`"
+    compose_text = _read(ROOT / "compose.yaml")
+    assert "celery" not in compose_text.lower(), (
+        "compose.yaml must not reference Celery — the worker service was "
+        "retired; async translation rides the harness JobQueue"
     )
+
+    compose = yaml.safe_load(compose_text)
+    assert "command" not in compose["services"]["api"], (
+        "api must not override the Dockerfile CMD so the container keeps "
+        "booting the uvicorn-based `omniscribe-server` entrypoint"
+    )
+
     assert not (ROOT / "start_app.vbs").exists(), (
         "start_app.vbs has been removed in favor of the Flutter client"
     )
