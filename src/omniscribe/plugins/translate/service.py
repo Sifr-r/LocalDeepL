@@ -164,6 +164,7 @@ class TranslationService(Protocol):
     async def translate_nllb(
         self, text: str, target_language: str
     ) -> dict[str, Any]: ...
+    async def result(self, job_id: str, token: str) -> dict[str, Any] | None: ...
 
 
 class TranslationServiceImpl:
@@ -335,6 +336,22 @@ class TranslationServiceImpl:
         blob = await self._store.get(
             record.result_artifact_id, record.result_artifact_token
         )
+        if blob is None:
+            return None
+        return _parse_json_object(blob.blob)
+
+    async def result(self, job_id: str, token: str) -> dict[str, Any] | None:
+        """Token-redeeming async result fetch (ride-along; audit C-3/H-3)."""
+        record = await self._queue.status(job_id)
+        if (
+            record is None
+            or record.status != "complete"
+            or not record.result_artifact_id
+            or not record.result_artifact_token
+            or token != record.result_artifact_token
+        ):
+            return None
+        blob = await self._store.get(record.result_artifact_id, token)
         if blob is None:
             return None
         return _parse_json_object(blob.blob)

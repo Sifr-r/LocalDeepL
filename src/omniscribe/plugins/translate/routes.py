@@ -70,6 +70,18 @@ def build_translate_router(service: TranslationService) -> APIRouter:
             return _envelope(404, "not_found", "unknown job")
         return body
 
+    @router.get("/api/translate/result/{job_id}", response_model=None)
+    async def translate_result(
+        job_id: str,
+        token: str = "",
+    ) -> dict[str, Any] | JSONResponse:
+        body = await service.result(job_id, token)
+        if body is None:
+            # Missing/wrong token, unknown job, or incomplete job all map to
+            # the same 404 (no existence leak; C-3/H-3 semantics).
+            return _envelope(404, "not_found", "result not found")
+        return body
+
     @router.post("/api/translate/nllb", response_model=None)
     async def translate_nllb(body: NllbRequest) -> dict[str, Any] | JSONResponse:
         try:

@@ -76,6 +76,7 @@ def test_translate_routes_are_mounted(api_client: TestClient) -> None:
     assert "/api/translate" in paths
     assert "/api/translate/async" in paths
     assert "/api/translate/status/{job_id}" in paths
+    assert "/api/translate/result/{job_id}" in paths
     assert "/api/translate/nllb" in paths
 
 
@@ -289,3 +290,91 @@ def test_translate_nllb_engine_failure_502(
     assert response.status_code == 502
     body = response.json()
     assert body["error"] == "ai_error"
+
+
+# ---------------------------------------------------------------------------
+# GET /api/translate/result/{job_id} — token-redeeming async result (ride-along)
+# ---------------------------------------------------------------------------
+
+
+def _seed_artifact(
+    api_client: TestClient, artifact_id: str, token: str, blob: bytes
+) -> None:
+    asyncio.run(
+        api_client.app.state.context.inject(StateBackend).put_artifact(
+            id=artifact_id,
+            token=token,
+            owner_job_id="",
+            content_type="application/json",
+            blob=blob,
+            ttl_seconds=3600,
+        )
+    )
+
+
+def _plant_completed_record(
+    api_client: TestClient, artifact_id: str, token: str
+) -> str:
+    import uuid as _uuid
+
+    from omniscribe.plugins.state_backend import JobRecord
+
+    backend = api_client.app.state.context.inject(StateBackend)
+    job_id = _uuid.uuid4().hex
+    asyncio.run(
+        backend.upsert_job(
+            JobRecord(
+                job_id=job_id,
+                status="complete",
+                result_artifact_id=artifact_id,
+                result_artifact_token=token,
+            )
+        )
+    )
+    return job_id
+
+
+def test_translate_result_unknown_job_404(api_client: TestClient) -> None:
+    response = api_client.get("/api/translate/result/no-such-job?token=abc")
+    assert response.status_code == 404
+    assert response.json()["error"] == "not_found"
+
+
+def test_translate_result_wrong_token_404(api_client: TestClient) -> None:
+    import uuid as _uuid
+
+    artifact_id = _uuid.uuid4().hex
+    _seed_artifact(api_client, artifact_id, "t" * 43, b'{"page_count": 1}')
+    job_id = _plant_completed_record(api_client, artifact_id, "t" * 43)
+    response = api_client.get(f"/api/translate/result/{job_id}?token=wrong")
+    assert response.status_code == 404
+    assert response.json()["error"] == "not_found"
+
+
+def test_translate_result_incomplete_job_404(api_client: TestClient) -> None:
+    import uuid as _uuid
+
+    from omniscribe.plugins.state_backend import JobRecord
+
+    backend = api_client.app.state.context.inject(StateBackend)
+    job_id = _uuid.uuid4().hex
+    asyncio.run(backend.upsert_job(JobRecord(job_id=job_id, status="running")))
+    response = api_client.get(f"/api/translate/result/{job_id}?token=abc")
+    assert response.status_code == 404
+
+
+def test_translate_result_happy_path(api_client: TestClient) -> None:
+    import uuid as _uuid
+
+    artifact_id = _uuid.uuid4().hex
+    token = "t" * 43
+    _seed_artifact(
+        api_client,
+        artifact_id,
+        token,
+        json.dumps({"0": "Bonjour le monde"}).encode("utf-8"),
+    )
+    job_id = _plant_completed_record(api_client, artifact_id, token)
+    response = api_client.get(f"/api/translate/result/{job_id}?token={token}")
+    assert response.status_code == 200
+    assert response.json() == {"0": "Bonjour le monde"}
