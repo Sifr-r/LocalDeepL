@@ -2,18 +2,17 @@
 #
 # Services:
 #   * ``api``    - FastAPI web app (port 8000). Always-on.
-#   * ``worker`` - Celery worker for async translation. Optional; only
-#                  starts when ``--profile async`` is passed.
-#   * ``redis``  - Broker + result backend for Celery. Always-on so
-#                  ``api`` can publish jobs even if no worker is up.
+#   * ``redis``  - Redis for the ``REDIS_URL`` env-var contract. Always-on.
+#
+# Async translation dispatches through the in-process harness JobQueue
+# (``plugins/jobs.py``) — the stack needs only ``api`` and ``redis``.
 #
 # ``api`` and ``redis`` carry no ``profiles:`` key on purpose: Compose
 # has no implicit default profile, so a ``profiles: ["default"]`` tag
 # would exclude them from a plain ``docker compose up`` entirely.
 #
 # Usage:
-#   docker compose up             # api + redis only
-#   docker compose --profile async up --build
+#   docker compose up             # api + redis
 
 services:
   api:
@@ -108,50 +107,6 @@ services:
     networks:
       - omniscribe
 
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: omniscribe:app
-    # Same ``mem_limit`` → ``deploy.resources.limits`` migration as
-    # the ``api`` service (F5-07). 4 GB is the same ceiling the
-    # legacy v1 key applied.
-    deploy:
-      resources:
-        limits:
-          memory: 4g
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    # NOTE: Celery async translation worker is deferred during the harness rebuild
-    # (see AGENTS.md / docs/superpowers/specs/2026-08-23-omniscribe-api-rebuild-design.md).
-    # The omniscribe.api.* namespace was retired in the Cordis migration;
-    # async translation routes and Celery tasks are pending re-implementation.
-    command: ["celery", "-A", "omniscribe.api.tasks", "worker", "--loglevel=info", "--pool=solo"]
-    environment:
-      LLM_API_BASE: http://host.docker.internal:1234/v1
-      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env (see .env.example)}@redis:6379/0
-      OMNISCRIBE_ARTIFACT_DIR: /app/data
-    volumes:
-      - app-data:/app/data
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      redis:
-        condition: service_healthy
-    # Healthcheck targets the legacy celery_app module; deferred pending harness rebuild.
-    healthcheck:
-      test: ["CMD-SHELL", "celery -A omniscribe.api.celery_app inspect ping || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
-    restart: unless-stopped
-    networks:
-      - omniscribe
-    profiles: ["async"]
-
   redis:
     # Sprint 5 / H-5 audit fix: pin to a verified OCI image-index digest
     # rather than the floating ``redis:7-alpine`` tag. ``redis:7-alpine``
@@ -177,7 +132,7 @@ services:
     # when it's missing, so a misconfigured stack can never silently
     # come up with the old ``omniscribe-local-dev`` known password.
     command: ["redis-server", "--appendonly", "no", "--save", "", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env (see .env.example)}"]
-    # Loopback-only publish: api/worker reach redis over the compose
+    # Loopback-only publish: api reaches redis over the compose
     # network, so the host port is only for local inspection tools.
     ports:
       - "127.0.0.1:6379:6379"
