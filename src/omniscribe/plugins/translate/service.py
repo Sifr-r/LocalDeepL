@@ -13,15 +13,25 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+import secrets
+from dataclasses import dataclass
+from typing import Any, Protocol
 
 from omniscribe.config import RuntimeSettings
+from omniscribe.core.block_tree import BlockNode
 from omniscribe.core.llm.client import call_llm
 from omniscribe.core.llm.temperatures import TEMPERATURE_TRANSLATION
+from omniscribe.core.translate.entity_memory import EntityMemory
+from omniscribe.core.translate.glossary import Glossary
 from omniscribe.core.translate.nodes import TRANSLATION_SYSTEM_MESSAGE
+from omniscribe.core.translate.tree import TranslatorFn, translate_tree
 from omniscribe.plugins.artifacts import ArtifactStore
-from omniscribe.plugins.documents.service import load_pages
-from omniscribe.plugins.translate.schemas import TranslationRequest
+from omniscribe.plugins.documents.service import build_tree, load_pages
+from omniscribe.plugins.jobs import JobOutcome
+from omniscribe.plugins.translate.schemas import (
+    AsyncTranslationRequest,
+    TranslationRequest,
+)
 from omniscribe.utils.prompt_safety import sanitize_prompt_input
 from omniscribe.utils.security import check_ssrf_target_sync
 
@@ -125,3 +135,227 @@ async def translate_text(
         _LOGGER.exception("Translation request failed")
         raise TranslateError(502, "ai_error", "The AI service request failed.") from exc
     return content.strip()
+
+
+@dataclass(frozen=True)
+class _TranslatePayload:
+    """One queued translation: submission id + the validated request."""
+
+    submission_id: str
+    request: AsyncTranslationRequest
+
+
+class TranslationService(Protocol):
+    async def submit(self, request: AsyncTranslationRequest) -> dict[str, str]: ...
+    async def run_translate_job(self, payload: Any) -> JobOutcome: ...
+    async def job_status(self, job_id: str) -> dict[str, Any] | None: ...
+    def job_status_sync(self, record: Any) -> dict[str, Any]: ...
+
+
+class TranslationServiceImpl:
+    """Harness translation service over the JobQueue + ArtifactStore."""
+
+    def __init__(
+        self,
+        settings: RuntimeSettings,
+        queue: Any,
+        store: Any,
+        *,
+        max_buffered_jobs: int = 500,
+    ) -> None:
+        self._settings = settings
+        self._queue = queue
+        self._store = store
+        self._max_buffered_jobs = max_buffered_jobs
+        self._submission_to_job: dict[str, str] = {}
+
+    # -- submission ---------------------------------------------------------
+
+    async def submit(self, request: AsyncTranslationRequest) -> dict[str, str]:
+        from omniscribe.core.translate.config import AsyncTranslationUnavailable
+        from omniscribe.core.translate.workflow import get_translation_app
+
+        # Availability first (cheap, cached), then artifact existence.
+        try:
+            get_translation_app()
+        except AsyncTranslationUnavailable as exc:
+            raise TranslateError(503, "backend_unavailable", str(exc)) from exc
+
+        blob = await self._store.get(
+            request.text_artifact_id, request.text_artifact_token
+        )
+        if blob is None:
+            raise TranslateError(404, "not_found", "text artifact not found")
+
+        submission_id = secrets.token_hex(16)
+        handle = await self._queue.submit(
+            _TranslatePayload(submission_id=submission_id, request=request),
+            request_meta={
+                "submission_id": submission_id,
+                "target_language": request.target_language,
+            },
+        )
+        self._submission_to_job[submission_id] = handle.job_id
+        while len(self._submission_to_job) > self._max_buffered_jobs:
+            self._submission_to_job.pop(next(iter(self._submission_to_job)), None)
+        return {"job_id": handle.job_id, "status": "Processing"}
+
+    # -- runner -------------------------------------------------------------
+
+    async def run_translate_job(self, payload: Any) -> JobOutcome:
+        if not isinstance(payload, _TranslatePayload):
+            raise ValueError("translate job queue received a foreign payload")
+        request = payload.request
+        job_id = self._submission_to_job.get(payload.submission_id, "")
+
+        blob = await self._store.get(
+            request.text_artifact_id, request.text_artifact_token
+        )
+        if blob is None:
+            raise FileNotFoundError("text artifact not found")
+        raw = _parse_json_object(blob.blob)
+        if raw is None:
+            raise FileNotFoundError("text artifact not found")
+        pages = load_pages(raw)
+        tree = build_tree(pages)
+
+        memory = EntityMemory()
+        for lines in pages.values():
+            for line in lines:
+                memory.add_text(line)
+        glossary = _build_glossary(request)
+
+        translator = _make_translator(
+            request.api_base, request.api_key, request.model, self._settings
+        )
+        second_translator = None
+        if request.dual_translate:
+            second_translator = _make_translator(
+                request.second_api_base,
+                request.second_api_key,
+                request.second_model,
+                self._settings,
+            )
+
+        translated_tree = await translate_tree(
+            tree,
+            target_language=request.target_language,
+            translator=translator,
+            glossary=glossary,
+            memory=memory,
+            sliding_window_words=request.sliding_window_words,
+            dual_translate=request.dual_translate,
+            second_translator=second_translator,
+        )
+
+        translated_pages = {
+            str(page.page_idx): "\n".join(
+                child.text
+                for child in page.children
+                if isinstance(child, BlockNode) and child.text
+            )
+            for page in translated_tree.pages
+        }
+        blocks_translated = sum(
+            1
+            for page in translated_tree.pages
+            for child in page.children
+            if isinstance(child, BlockNode) and child.text
+        )
+        translated_handle = await self._store.put(
+            json.dumps(translated_pages).encode("utf-8"),
+            content_type="application/json",
+            owner_job_id=job_id,
+        )
+        summary = {
+            "artifact_id": request.text_artifact_id,
+            # Deliberately NO translated_artifact_token: the status endpoint
+            # is unauthenticated (audit C-3/H-3 semantics).
+            "translated_artifact_id": translated_handle.id,
+            "page_count": len(translated_tree.pages),
+            "blocks_translated": blocks_translated,
+        }
+        return JobOutcome(
+            blob=json.dumps(summary).encode("utf-8"),
+            content_type="application/json",
+        )
+
+    # -- status -------------------------------------------------------------
+
+    def job_status_sync(self, record: Any) -> dict[str, Any]:
+        """Map one JobRecord to the client's Celery-era status vocabulary."""
+        body: dict[str, Any] = {"job_id": record.job_id}
+        if record.status == "queued":
+            body.update(state="PENDING", status="Pending...")
+        elif record.status == "running":
+            body.update(state="PROGRESS", status="Processing...")
+        elif record.status == "error":
+            body.update(
+                state="FAILURE",
+                status="Failed",
+                error="internal_error",
+                detail="The translation job failed.",
+            )
+        elif record.status == "cancelled":
+            body.update(
+                state="FAILURE",
+                status="Cancelled",
+                error="cancelled",
+                detail="Translation was cancelled.",
+            )
+        else:  # complete
+            body.update(state="SUCCESS", status="Completed")
+        return body
+
+    async def job_status(self, job_id: str) -> dict[str, Any] | None:
+        record = await self._queue.status(job_id)
+        if record is None:
+            return None
+        body = self.job_status_sync(record)
+        if record.status == "complete":
+            result = await self._load_result(record)
+            if result is not None:
+                body["result"] = result
+        return body
+
+    async def _load_result(self, record: Any) -> dict[str, Any] | None:
+        if not record.result_artifact_id or not record.result_artifact_token:
+            return None
+        blob = await self._store.get(
+            record.result_artifact_id, record.result_artifact_token
+        )
+        if blob is None:
+            return None
+        return _parse_json_object(blob.blob)
+
+
+def _build_glossary(request: AsyncTranslationRequest) -> Glossary | None:
+    # Old-route precedence (verified): entries win over paired-lines text.
+    if request.glossary:
+        return Glossary.from_dict({"entries": request.glossary})
+    if request.glossary_text:
+        return Glossary.from_paired_lines(request.glossary_text)
+    return None
+
+
+def _make_translator(
+    request_base: str | None,
+    request_key: str | None,
+    request_model: str | None,
+    settings: RuntimeSettings,
+) -> TranslatorFn:
+    api_base, api_key, model = _resolve_coordinates(
+        request_base, request_key, request_model, settings
+    )
+
+    async def translator(prompt: str, target_language: str) -> str:
+        return await call_llm(
+            model=model,
+            api_base=api_base,
+            api_key=api_key,
+            temperature=TEMPERATURE_TRANSLATION,
+            system_prompt=TRANSLATION_SYSTEM_MESSAGE,
+            prompt=prompt,
+        )
+
+    return translator

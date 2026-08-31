@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import json
+import secrets
+import types
+import uuid
+from typing import Any
 
 import pytest
 
 from omniscribe.config import RuntimeSettings
 from omniscribe.plugins.translate import service as translate_service
-from omniscribe.plugins.translate.schemas import TranslationRequest
+from omniscribe.plugins.translate.schemas import (
+    AsyncTranslationRequest,
+    TranslationRequest,
+)
 
 
 def _settings() -> RuntimeSettings:
@@ -157,3 +164,193 @@ async def test_translate_text_unknown_artifact_404(
             store=_EmptyStore(),  # type: ignore[arg-type]
         )
     assert excinfo.value.status_code == 404
+
+
+async def test_translate_text_missing_store_404() -> None:
+    with pytest.raises(translate_service.TranslateError) as excinfo:
+        await translate_service.translate_text(
+            TranslationRequest(text_artifact_id="a" * 32, text_artifact_token="t" * 43),
+            _settings(),
+        )
+    assert excinfo.value.status_code == 404
+    assert excinfo.value.error == "not_found"
+
+
+# ---------------------------------------------------------------------------
+# TranslationServiceImpl: submit / run_translate_job / job_status
+# ---------------------------------------------------------------------------
+
+
+class _FakeJobQueue:
+    """Records submissions; no worker. status() reads the record we plant."""
+
+    def __init__(self) -> None:
+        self.records: dict[str, Any] = {}
+
+    async def submit(self, request: Any, *, request_meta: dict | None = None):
+        from omniscribe.plugins.jobs import JobHandle
+
+        job_id = uuid.uuid4().hex
+        self.records[job_id] = (request, request_meta or {})
+        return JobHandle(job_id=job_id, status_url=f"/api/jobs/{job_id}/status")
+
+    async def status(self, job_id: str):
+        return self.records.get(job_id)
+
+
+class _FakeStore:
+    """Artifact store double keyed by id → (token, blob, content_type)."""
+
+    def __init__(self) -> None:
+        self.blobs: dict[str, tuple[str, bytes, str]] = {}
+
+    async def put(
+        self,
+        blob: bytes,
+        *,
+        content_type: str,
+        owner_job_id: str,
+        ttl_seconds: int | None = None,
+    ):
+        artifact_id = uuid.uuid4().hex
+        token = secrets.token_urlsafe(32)
+        self.blobs[artifact_id] = (token, blob, content_type)
+        # The real ArtifactStore returns an ArtifactHandle; match its
+        # .id/.token attribute contract.
+        return types.SimpleNamespace(id=artifact_id, token=token)
+
+    async def get(self, artifact_id: str, token: str):
+        entry = self.blobs.get(artifact_id)
+        if entry is None or entry[0] != token:
+            return None
+
+        class _Blob:
+            blob = entry[1]
+            content_type = entry[2]
+
+        return _Blob()
+
+
+def _service(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    llm_payload: str = "traduit",
+    queue: _FakeJobQueue | None = None,
+    store: _FakeStore | None = None,
+) -> tuple[
+    translate_service.TranslationServiceImpl,
+    _FakeJobQueue,
+    _FakeStore,
+    list[dict],
+]:
+    calls: list[dict] = []
+    _stub_llm(monkeypatch, llm_payload, calls)
+    q = queue or _FakeJobQueue()
+    s = store or _FakeStore()
+    impl = translate_service.TranslationServiceImpl(
+        _settings(), q, s, max_buffered_jobs=16
+    )
+    return impl, q, s, calls
+
+
+def _async_request() -> AsyncTranslationRequest:
+    return AsyncTranslationRequest(
+        text_artifact_id="a" * 32, text_artifact_token="t" * 43
+    )
+
+
+async def test_run_translate_job_translates_tree_and_stores_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    impl, _q, store, calls = _service(monkeypatch)
+    artifact_id = uuid.uuid4().hex
+    store.blobs[artifact_id] = (
+        "t" * 43,
+        json.dumps({"0": "Hello world.", "1": "Second page."}).encode("utf-8"),
+        "application/json",
+    )
+    # Point the payload at the seeded artifact.
+    payload = translate_service._TranslatePayload(
+        submission_id="s-1",
+        request=AsyncTranslationRequest(
+            text_artifact_id=artifact_id, text_artifact_token="t" * 43
+        ),
+    )
+
+    outcome = await impl.run_translate_job(payload)
+
+    assert outcome.content_type == "application/json"
+    summary = json.loads(outcome.blob)
+    assert summary["artifact_id"] == artifact_id
+    assert summary["page_count"] == 2
+    assert summary["blocks_translated"] >= 2
+    translated_id = summary["translated_artifact_id"]
+    assert translated_id in store.blobs
+    # The status result must never carry the translated artifact token.
+    assert "translated_artifact_token" not in summary
+    translated_blob = store.blobs[translated_id][1]
+    assert "traduit" in translated_blob.decode("utf-8")
+    assert calls, "translator hook must reach call_llm"
+
+
+async def test_run_translate_job_missing_artifact_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    impl, _q, _store, _calls = _service(monkeypatch)
+    payload = translate_service._TranslatePayload(
+        submission_id="s-1", request=_async_request()
+    )
+    with pytest.raises(FileNotFoundError):
+        await impl.run_translate_job(payload)
+
+
+async def test_run_translate_job_rejects_foreign_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    impl, _q, _store, _calls = _service(monkeypatch)
+    with pytest.raises(ValueError):
+        await impl.run_translate_job(object())
+
+
+async def test_job_status_maps_all_queue_states(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    impl, _q, _store, _calls = _service(monkeypatch)
+    from dataclasses import replace as dc_replace
+
+    from omniscribe.plugins.state_backend import JobRecord
+
+    base = JobRecord(job_id="j-1", status="queued")
+    assert await impl.job_status("missing") is None
+
+    queued = impl.job_status_sync(base)
+    assert queued == {"job_id": "j-1", "state": "PENDING", "status": "Pending..."}
+
+    running = impl.job_status_sync(dc_replace(base, status="running"))
+    assert running["state"] == "PROGRESS"
+
+    error = impl.job_status_sync(dc_replace(base, status="error", error="boom"))
+    assert error["state"] == "FAILURE"
+    assert error["error"] == "internal_error"
+    # The record's exception text must not leak.
+    assert "boom" not in json.dumps(error)
+
+    cancelled = impl.job_status_sync(dc_replace(base, status="cancelled"))
+    assert cancelled["state"] == "FAILURE"
+    assert cancelled["error"] == "cancelled"
+
+    complete_record = dc_replace(
+        base,
+        status="complete",
+        result_artifact_id="r-1",
+        result_artifact_token="rt",
+    )
+    store_blob = json.dumps({"page_count": 1}).encode("utf-8")
+    impl._store.blobs["r-1"] = ("rt", store_blob, "application/json")
+    # JobRecord carries a dict field and is unhashable, so the fake queue
+    # is keyed by job_id: plant the record, then poll by id.
+    impl._queue.records[complete_record.job_id] = complete_record
+    complete = await impl.job_status(complete_record.job_id)
+    assert complete is not None
+    assert complete["state"] == "SUCCESS"
+    assert complete["result"] == {"page_count": 1}
