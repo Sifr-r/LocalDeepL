@@ -115,6 +115,15 @@ returned only zero-height boxes, the recall filter `min_height` floor
 drops to 0.27% of page height (~3 px at 1024 px), accepting basically any
 horizontal ink stripe. Precision breach of the booster's documented
 stance. Either skip the page or use a non-tiny floor.
+→ **Closed (Wave 2).** When *every* surya box has zero height, the
+min/max-height band now falls back to the absolute fallback
+(`_FALLBACK_MIN_HEIGHT = 0.006`, `_FALLBACK_MAX_HEIGHT = 0.06`) instead
+of `0.45 * 0.006` / `2.5 * 0.006`. A 16-px text line that the buggy
+max of 15 px rejected is now accepted (regression test
+`test_all_zero_height_surya_keeps_text_line_above_fallback_band` in
+`tests/core/recall/test_text_recall.py`).
+A hairline-rejection sanity test (`..._rejects_hairline_below_fallback_band`)
+pins the absolute `_MIN_COMPONENT_HEIGHT_PX = 10` gate.
 
 **1.18** `utils/security.py:269-270` — `check_ssrf_target` (sync wrapper)
 spawns a new `ThreadPoolExecutor(max_workers=1)` + new event loop per
@@ -499,6 +508,14 @@ via `load_settings()` and `env_int()` at instance time. Two existing
 test files (`test_vlm_timeout_env.py`,
 `test_phase5_env_and_spellcheck.py`) were rewritten to test the new
 per-instance env contract.
+
+**Wave 2 (continued):** **1.15** — `WhitespaceRecallBooster.supplement`
+now falls through to the absolute `_FALLBACK_MIN_HEIGHT` /
+`_FALLBACK_MAX_HEIGHT` band when *every* surya box has zero height,
+instead of multiplying the fallback by `_MIN_HEIGHT_FRACTION` /
+`_MAX_HEIGHT_FRACTION` and collapsing the height window to
+~[3 px, 15 px]. Two regression tests added to
+`tests/core/recall/test_text_recall.py`.
 
 ---
 

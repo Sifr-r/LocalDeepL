@@ -176,12 +176,23 @@ class WhitespaceRecallBooster:
             return []
 
         if surya_boxes:
-            # Degenerate zero-height boxes would drag the median (and thus
-            # the height floor) to zero, disabling the check entirely.
+            # Pedantic 1.15: filter out zero-height boxes before taking
+            # the median. The previous code used ``_FALLBACK_MIN_HEIGHT``
+            # as the median when the filtered list was empty, which then
+            # got multiplied by ``_MIN_HEIGHT_FRACTION`` and collapsed
+            # the min-height floor to ~0.27% of page height (~3 px at
+            # 1024 px) — accepting basically any horizontal stripe and
+            # breaching the booster's documented precision stance. When
+            # *every* surya box has zero height, fall through to the
+            # absolute fallback band (the same one used for ``[]``).
             heights = [b[3] - b[1] for b in surya_boxes if b[3] - b[1] > 0]
-            median_h = statistics.median(heights) if heights else _FALLBACK_MIN_HEIGHT
-            min_height = _MIN_HEIGHT_FRACTION * median_h
-            max_height = _MAX_HEIGHT_FRACTION * median_h
+            if heights:
+                median_h = statistics.median(heights)
+                min_height = _MIN_HEIGHT_FRACTION * median_h
+                max_height = _MAX_HEIGHT_FRACTION * median_h
+            else:
+                min_height = _FALLBACK_MIN_HEIGHT
+                max_height = _FALLBACK_MAX_HEIGHT
         else:
             min_height = _FALLBACK_MIN_HEIGHT
             max_height = _FALLBACK_MAX_HEIGHT

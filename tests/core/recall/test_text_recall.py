@@ -66,6 +66,48 @@ def test_zero_by_zero_image_yields_no_boxes() -> None:
     assert WhitespaceRecallBooster().supplement(img, []) == []
 
 
+# Pedantic 1.15: when *every* surya box has zero height, the median
+# collapses to 0 and the min-height floor multiplies the
+# ``_FALLBACK_MIN_HEIGHT`` (0.6% of page) by ``_MIN_HEIGHT_FRACTION`` (0.45)
+# to ~0.27% of page height — about 3 px at 1024 px. That floor accepts
+# basically any horizontal stripe and breaches the booster's documented
+# precision stance. The fix routes the all-zero case to the absolute
+# fallback band [0.006, 0.06] (the same one used for ``[]``).
+
+
+def test_all_zero_height_surya_keeps_text_line_above_fallback_band() -> None:
+    """A 16-px text line on a 1000-px page sits above the
+    ``_FALLBACK_MIN_HEIGHT`` (0.006) and below ``_FALLBACK_MAX_HEIGHT``
+    (0.06), so it must survive the filter even when every surya box has
+    zero height (the path the 1.15 fix routes through the fallback).
+    """
+    img = _line_page()
+    surya = [(0.1, 0.2, 0.9, 0.2), (0.1, 0.5, 0.9, 0.5)]  # both zero-height
+    extra = WhitespaceRecallBooster().supplement(img, surya)
+    # The page has three text lines; the one at y=300..316 is not in
+    # surya_boxes so the booster should pick it up.
+    assert any(0.27 < y0 < 0.35 for (x0, y0, x1, y1) in extra)
+
+
+def test_all_zero_height_surya_rejects_hairline_below_fallback_band() -> None:
+    """Sanity check: a 3-px hairline must still be rejected when all
+    surya boxes are zero-height.
+
+    The rejection path is the absolute ``_MIN_COMPONENT_HEIGHT_PX = 10``
+    gate (which sits above the 1.15 min-height fix's 6-px fallback),
+    not the 1.15 fix itself. Kept as a guardrail so a future relaxation
+    of either floor cannot start admitting hairline rules.
+    """
+    img = Image.new("RGB", (800, 1000), "white")
+    draw = ImageDraw.Draw(img)
+    # 3-px hairline spanning the page width at y=500.
+    draw.rectangle([40, 500, 760, 503], fill="black")
+    surya = [(0.1, 0.2, 0.9, 0.2)]  # zero-height
+    extra = WhitespaceRecallBooster().supplement(img, surya)
+    assert extra == []
+
+
+
 # Isolated filter-gate fixtures (eng-new). Page geometry is 800x1000 so the
 # dilation kernel lands at kw=16, kh=6 (components inflate by kw-1 / kh-1);
 # surya_boxes=[] selects the fallback height band [6px, 60px]. Each fixture
