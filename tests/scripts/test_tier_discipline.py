@@ -55,7 +55,7 @@ pytest.importorskip("fastapi")
 
 ROOT = Path(__file__).resolve().parents[2]
 TESTS_DIR = ROOT / "tests"
-AGENTS_MD = ROOT / "AGENTS.md"
+AGENTS_MD = ROOT / "docs" / "AGENTS.md"
 TEST_YML = ROOT / ".github" / "workflows" / "test.yml"
 
 # Per-file exceptions to the "no @pytest.mark.asyncio" rule. Empty for

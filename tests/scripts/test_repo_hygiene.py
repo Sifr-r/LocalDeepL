@@ -397,8 +397,8 @@ def test_memory_and_lexicon_extras_resolve_to_same_install_set():
         f"lexicon = {lexicon_reqs}"
     )
 
-    readme = _read(ROOT / "README.md")
+    readme = _read(ROOT / "docs" / "README.md")
     assert "memory" in readme, (
-        "README.md must still mention the [memory] deprecation alias so "
-        "the migration pointer stays discoverable in the rendered docs"
+        "docs/README.md must still mention the [memory] deprecation alias "
+        "so the migration pointer stays discoverable in the rendered docs"
     )
