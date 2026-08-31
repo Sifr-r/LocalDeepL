@@ -130,6 +130,14 @@ spawns a new `ThreadPoolExecutor(max_workers=1)` + new event loop per
 call, on the request hot path (`plugins/ocr/pipeline_bridge.py:57`,
 `plugins/ocr/service.py:368`). Use a module-level singleton executor or
 `loop.run_in_executor`.
+→ **Closed (Wave 2).** `check_ssrf_target_sync` now reuses a
+module-level `ThreadPoolExecutor` (`_SSRF_EXECUTOR`,
+`max_workers=2`, `thread_name_prefix="omniscribe-ssrf-check"`)
+created once at import time. Regression test
+`test_check_ssrf_target_sync_uses_module_level_executor`
+(`tests/utils/test_ssrf.py`) counts `ThreadPoolExecutor.__init__`
+calls during 5 `check_ssrf_target_sync` invocations and asserts it
+stays at 0.
 
 **7.12** — `OMNISCRIBE_QUALITY_LOOP` / `OMNISCRIBE_QUALITY_TARGET` /
 `OMNISCRIBE_QUALITY_MAX_RETRIES` are documented in `.env.example` and
@@ -516,6 +524,14 @@ instead of multiplying the fallback by `_MIN_HEIGHT_FRACTION` /
 `_MAX_HEIGHT_FRACTION` and collapsing the height window to
 ~[3 px, 15 px]. Two regression tests added to
 `tests/core/recall/test_text_recall.py`.
+
+**Wave 2 (continued):** **1.18** — `check_ssrf_target_sync` reuses a
+module-level `ThreadPoolExecutor` (`_SSRF_EXECUTOR`,
+`max_workers=2`) instead of allocating a fresh pool per call on the
+OCR hot path. Regression test
+`test_check_ssrf_target_sync_uses_module_level_executor` in
+`tests/utils/test_ssrf.py` counts `ThreadPoolExecutor.__init__`
+calls during repeated sync checks and asserts it stays at 0.
 
 ---
 

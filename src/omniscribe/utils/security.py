@@ -266,6 +266,20 @@ def check_ssrf_target_sync(url: str | None) -> SSRFCheckResult:
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(is_ssrf_target(url))
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(asyncio.run, is_ssrf_target(url))
-        return future.result()
+    future = _SSRF_EXECUTOR.submit(asyncio.run, is_ssrf_target(url))
+    return future.result()
+
+
+# Module-level executor (pedantic 1.18): the previous ``with
+# ThreadPoolExecutor(max_workers=1) as executor:`` block allocated and
+# tore down a thread pool on every call. SSRF checks live on the OCR
+# request hot path (``plugins/ocr/pipeline_bridge.py`` and
+# ``plugins/ocr/service.py``), so each request paid for a fresh
+# pool + worker + future. The executor is sized at 2 because the work
+# is dominated by ``socket.getaddrinfo`` (blocking DNS); two workers
+# overlap the next call's DNS lookup with the previous call's return
+# without unbounded growth. Lifetime is the process; if process-shutdown
+# ordering ever needs to be precise, register an ``atexit`` cleanup.
+_SSRF_EXECUTOR: Final[ThreadPoolExecutor] = ThreadPoolExecutor(
+    max_workers=2, thread_name_prefix="omniscribe-ssrf-check"
+)
