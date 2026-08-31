@@ -288,3 +288,29 @@ async def test_library_ops_and_404() -> None:
         impl.toggle("missing-id", enabled=False)
     assert excinfo.value.status_code == 404
     assert excinfo.value.detail == "Glossary not found."
+
+
+async def test_run_import_job_happy_path() -> None:
+    impl, store = _service()
+    kwargs, format_name = await glossary_service.build_parser_kwargs(
+        _json_pairs_source('{"entries": [{"source": "A", "target": "1"}]}')
+    )
+    payload = glossary_service._GlossaryImportPayload(
+        submission_id="s1",
+        format_name=format_name,
+        kwargs=kwargs,
+        display_name="Pinned",
+    )
+    outcome = await impl.run_import_job(payload)
+    assert outcome.content_type == "application/json"
+    data = json.loads(outcome.blob.decode("utf-8"))
+    assert data["glossary_id"] == store.list_glossaries()[0].id
+    assert data["name"] == "Pinned"
+    assert data["entry_count"] == 1
+    assert data["warnings"] == []
+
+
+async def test_run_import_job_rejects_foreign_payload() -> None:
+    impl, _store = _service()
+    with pytest.raises(ValueError):
+        await impl.run_import_job(object())

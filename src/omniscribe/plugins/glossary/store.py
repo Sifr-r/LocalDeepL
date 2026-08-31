@@ -4,7 +4,7 @@
 `omniscribe.core.lexicon` may be imported at THIS module's top level —
 the plugin must boot in images without the lexicon extra. The provider
 defers the runtime import to first use; routes surface 503 with the old
-install hint when the store cannot be constructed.
+install hint when the store cannot be imported.
 """
 
 from __future__ import annotations

@@ -251,7 +251,6 @@ class GlossaryImportServiceImpl:
     ) -> None:
         self._store_provider = store_provider
         self._queue = queue
-        self._submission_to_job: dict[str, str] = {}
 
     # -- store seam ---------------------------------------------------------
 
@@ -339,7 +338,6 @@ class GlossaryImportServiceImpl:
                 "format": format_name,
             },
         )
-        self._submission_to_job[submission_id] = handle.job_id
         return {
             "glossary_id": None,
             "job_id": handle.job_id,
