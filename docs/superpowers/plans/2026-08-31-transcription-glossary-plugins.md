@@ -1975,11 +1975,20 @@ class FakeLexiconStore:
         return self._glossaries[gid]
 
     def toggle_glossary(self, glossary_id: str, *, enabled: bool) -> Any:
+        if glossary_id not in self._glossaries:
+            from omniscribe.core.lexicon import GlossaryNotFoundError
+
+            raise GlossaryNotFoundError(glossary_id)
         meta = self._glossaries[glossary_id]
         meta.enabled = enabled
         return meta
 
     def reorder_glossaries(self, ordered_ids: Any) -> None:
+        from omniscribe.core.lexicon import GlossaryNotFoundError
+
+        missing = [gid for gid in ordered_ids if gid not in self._glossaries]
+        if missing:
+            raise GlossaryNotFoundError(missing[0])
         reordered: dict[str, _FakeMeta] = {}
         for gid in ordered_ids:
             reordered[gid] = self._glossaries[gid]
@@ -2118,9 +2127,9 @@ async def test_async_dispatch_above_threshold(monkeypatch: pytest.MonkeyPatch) -
     impl = glossary_service.GlossaryImportServiceImpl(
         store_provider=lambda: FakeLexiconStore(), queue=_Queue()
     )
-    monkeypatch.setattr(
-        glossary_service, "SYNC_THRESHOLD", 2
-    )  # force the async path
+    # One-line JSON text has 0 newlines → estimate 1; threshold 0 forces
+    # every import onto the async path deterministically.
+    monkeypatch.setattr(glossary_service, "SYNC_THRESHOLD", 0)
     body = await impl.import_glossary(
         _json_pairs_source(
             '{"entries": [{"source": "A", "target": "1"}, {"source": "B", "target": "2"}, {"source": "C", "target": "3"}]}'
@@ -2146,14 +2155,16 @@ async def test_store_missing_503() -> None:
 
 
 async def test_library_ops_and_404() -> None:
-    impl, store = _service()
+    pytest.importorskip("pyarrow")
+    pytest.importorskip("lancedb")
+    impl, _store = _service()
     body = await impl.import_glossary(
         _json_pairs_source(
             '{"entries": [{"source": "A", "target": "1"}]}', name="T"
         )
     )
     gid = body["glossary_id"]
-    assert impl.list_library()[0].name == "T"
+    assert impl.list_library()[0]["name"] == "T"
 
     toggled = impl.toggle(gid, enabled=False)
     assert toggled["enabled"] is False
@@ -2162,12 +2173,36 @@ async def test_library_ops_and_404() -> None:
     assert impl.reorder([gid]) == {"ok": True}
     assert impl.delete(gid) == {"ok": True, "id": gid}
 
-    from omniscribe.core.lexicon import GlossaryNotFoundError
-
     with pytest.raises(glossary_service.GlossaryError) as excinfo:
         impl.toggle("missing-id", enabled=False)
     assert excinfo.value.status_code == 404
     assert excinfo.value.detail == "Glossary not found."
+
+
+async def test_run_import_job_happy_path() -> None:
+    impl, store = _service()
+    kwargs, format_name = await glossary_service.build_parser_kwargs(
+        _json_pairs_source('{"entries": [{"source": "A", "target": "1"}]}')
+    )
+    payload = glossary_service._GlossaryImportPayload(
+        submission_id="s1",
+        format_name=format_name,
+        kwargs=kwargs,
+        display_name="Pinned",
+    )
+    outcome = await impl.run_import_job(payload)
+    assert outcome.content_type == "application/json"
+    data = json.loads(outcome.blob.decode("utf-8"))
+    assert data["glossary_id"] == store.list_glossaries()[0].id
+    assert data["name"] == "Pinned"
+    assert data["entry_count"] == 1
+    assert data["warnings"] == []
+
+
+async def test_run_import_job_rejects_foreign_payload() -> None:
+    impl, _store = _service()
+    with pytest.raises(ValueError):
+        await impl.run_import_job(object())
 ```
 
 - [ ] **Step 2: Run to verify they fail**
@@ -2182,18 +2217,21 @@ Create `src/omniscribe/plugins/glossary/store.py`:
 ```python
 """Lazy LexiconStore provider (optional `lexicon` extra).
 
-`lancedb_store.py` hard-imports pyarrow at module top, so the import
-itself fails without the extra. The plugin always boots; routes surface
-503 with the old install hint when the store cannot be constructed.
+`lancedb_store.py` hard-imports pyarrow at module top, so NEITHER it nor
+`omniscribe.core.lexicon` may be imported at THIS module's top level —
+the plugin must boot in images without the lexicon extra. The provider
+defers the runtime import to first use; routes surface 503 with the old
+install hint when the store cannot be imported.
 """
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
-from omniscribe.core.lexicon import LexiconStore
+if TYPE_CHECKING:
+    from omniscribe.core.lexicon import LexiconStore
 
 _LOGGER = logging.getLogger("omniscribe.plugins.glossary")
 
@@ -2247,22 +2285,18 @@ from __future__ import annotations
 
 import base64
 import binascii
+import json
 import logging
 import secrets
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 from urllib.parse import urlparse
 
 from omniscribe.core.glossary_sources import (
     FormatNotAvailableError,
     GlossaryImportLimitError,
     parse,
-)
-from omniscribe.core.lexicon import (
-    GlossaryNotFoundError,
-    LexiconStore,
-    merged_enabled_glossary,
-    preview,
 )
 from omniscribe.plugins.glossary.schemas import (
     GlossaryFormat,
@@ -2272,6 +2306,9 @@ from omniscribe.plugins.glossary.schemas import (
 )
 from omniscribe.plugins.jobs import GlossaryJobRunner, JobOutcome
 from omniscribe.utils.security import is_ssrf_target
+
+if TYPE_CHECKING:
+    from omniscribe.core.lexicon import LexiconStore
 
 _LOGGER = logging.getLogger("omniscribe.plugins.glossary")
 
@@ -2489,7 +2526,6 @@ class GlossaryImportServiceImpl:
     ) -> None:
         self._store_provider = store_provider
         self._queue = queue
-        self._submission_to_job: dict[str, str] = {}
 
     # -- store seam ---------------------------------------------------------
 
@@ -2583,7 +2619,6 @@ class GlossaryImportServiceImpl:
                 "format": format_name,
             },
         )
-        self._submission_to_job[submission_id] = handle.job_id
         return {
             "glossary_id": None,
             "job_id": handle.job_id,
@@ -2640,15 +2675,21 @@ class GlossaryImportServiceImpl:
         return [self._serialize_item(i) for i in self._library().list_glossaries()]
 
     def toggle(self, glossary_id: str, *, enabled: bool) -> dict[str, Any]:
+        store = self._library()
+        from omniscribe.core.lexicon import GlossaryNotFoundError
+
         try:
-            meta = self._library().toggle_glossary(glossary_id, enabled=enabled)
+            meta = store.toggle_glossary(glossary_id, enabled=enabled)
         except GlossaryNotFoundError as exc:
             raise GlossaryError(404, "not_found", "Glossary not found.") from exc
         return self._serialize_item(meta)
 
     def reorder(self, ordered_ids: list[str]) -> dict[str, Any]:
+        store = self._library()
+        from omniscribe.core.lexicon import GlossaryNotFoundError
+
         try:
-            self._library().reorder_glossaries(ordered_ids)
+            store.reorder_glossaries(ordered_ids)
         except GlossaryNotFoundError as exc:
             raise GlossaryError(404, "not_found", "Glossary not found.") from exc
         except ValueError as exc:
@@ -2662,7 +2703,10 @@ class GlossaryImportServiceImpl:
         return {"ok": True, "id": glossary_id}
 
     def library_preview(self) -> dict[str, Any]:
-        payload = preview(self._library())
+        store = self._library()
+        from omniscribe.core.lexicon import preview
+
+        payload = preview(store)
         conflicts_value = payload.get("conflicts", [])
         enabled_value = payload.get("enabled_glossaries", [])
         if not isinstance(conflicts_value, list):
@@ -2697,13 +2741,16 @@ class GlossaryImportServiceImpl:
         }
 
     def merged(self) -> dict[str, Any]:
-        return merged_enabled_glossary(self._library()).to_dict()
+        store = self._library()
+        from omniscribe.core.lexicon import merged_enabled_glossary
+
+        return merged_enabled_glossary(store).to_dict()
 ```
 
 - [ ] **Step 4: Run the service tests**
 
 Run: `uv run pytest tests/plugins/test_glossary_service.py -v`
-Expected: all 9 PASS.
+Expected: all 11 PASS.
 
 - [ ] **Step 5: Fast gate + commit**
 
