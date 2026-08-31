@@ -10,7 +10,6 @@ install hint when the store cannot be imported.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -44,7 +43,3 @@ class LexiconProvider:
                 _LOGGER.warning("lexicon extra unavailable: %s", exc)
                 self._store = None
         return self._store
-
-
-def null_provider() -> Callable[[], LexiconStore | None]:
-    return lambda: None
