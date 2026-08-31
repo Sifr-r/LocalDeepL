@@ -329,22 +329,35 @@ class OCRServiceImpl:
         )
 
     async def fetch_result(self, job_id: str, token: str | None) -> Response:
+        """Return the result PDF for a completed job.
+
+        Pedantic review 2.7: every non-success path collapses to a
+        single ``404`` with the same generic detail. The previous
+        code distinguished ``unknown job`` (404), ``not complete``
+        (409), and ``invalid result token`` (403) — an attacker
+        with a job-id guess could enumerate which ids exist by
+        watching the differential responses. The single-shape
+        failure makes ``unknown job``, ``not complete``,
+        ``bad token``, and ``artifact gone`` all indistinguishable
+        to the caller; the only successful code is 200 with the
+        PDF bytes.
+        """
+        not_found = HTTPException(status_code=404, detail="result not available")
         record = await self._queue.status(job_id)
-        if record is None:
-            raise HTTPException(status_code=404, detail="unknown job")
-        if record.status != "complete":
-            detail = (
-                "job did not complete"
-                if record.status in _TERMINAL_QUEUE_STATUSES
-                else "job not complete yet"
-            )
-            raise HTTPException(status_code=409, detail=detail)
-        expected = record.result_artifact_token or ""
-        if not token or not secrets.compare_digest(token, expected):
-            raise HTTPException(status_code=403, detail="invalid result token")
+        # Token compare runs only when there is a token to compare
+        # against (i.e. a record with a stored result_artifact_token).
+        # When there is no record, we skip the compare and fall
+        # through to the same 404 — the queue lookup latency
+        # dominates the constant-time compare by orders of
+        # magnitude so there is no practical side channel here.
+        expected = record.result_artifact_token if record else ""
+        if expected and (not token or not secrets.compare_digest(token, expected)):
+            raise not_found
+        if record is None or record.status != "complete":
+            raise not_found
         artifact = await self._artifacts.get(record.result_artifact_id or "", token)
         if artifact is None:
-            raise HTTPException(status_code=404, detail="result artifact missing")
+            raise not_found
         return Response(
             content=artifact.blob,
             media_type=artifact.record.content_type or "application/pdf",

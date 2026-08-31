@@ -221,7 +221,10 @@ async def test_async_submit_status_result_and_job_list(fake_pipeline) -> None:
             wrong = await client.get(
                 f"/api/jobs/{job_id}/result", params={"token": "nope"}
             )
-            assert wrong.status_code == 403
+            # Pedantic 2.7: wrong-token on a complete job now returns
+            # 404 (not 403) so the response is indistinguishable from
+            # an unknown id or a not-yet-complete job.
+            assert wrong.status_code == 404
 
             listing = await client.get("/api/jobs")
             assert listing.status_code == 200
@@ -255,7 +258,10 @@ async def test_async_failure_maps_to_error_status_and_409_result(
             result = await client.get(
                 f"/api/jobs/{job_id}/result", params={"token": "anything"}
             )
-            assert result.status_code == 409
+            # Pedantic 2.7: an errored job's result fetch is also 404
+            # so a caller cannot distinguish "errored" from "unknown"
+            # from "wrong token" by status alone.
+            assert result.status_code == 404
     finally:
         await ctx.dispose()
 

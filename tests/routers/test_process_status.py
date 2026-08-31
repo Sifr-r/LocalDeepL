@@ -64,4 +64,8 @@ def test_status_response_never_returns_artifact_token(
     # The result download still requires the token, but it can only be
     # obtained from the out-of-band channel.
     blocked = api_client.get(f"/api/jobs/{job_id}/result")
-    assert blocked.status_code == 403
+    # Pedantic 2.7: a missing token against a complete job now returns
+    # 404 (not 403) so the response is indistinguishable from a
+    # non-existent / not-complete / token-mismatched result. Only a
+    # correct token sees 200.
+    assert blocked.status_code == 404

@@ -48,12 +48,56 @@ def test_result_download_requires_valid_token(
     assert result.content == PDF_BYTES
 
     wrong = api_client.get(f"/api/jobs/{job_id}/result", params={"token": "nope"})
-    assert wrong.status_code == 403
+    # Pedantic 2.7: wrong-token returns 404, not 403, so the response
+    # is indistinguishable from unknown / not-complete / artifact-gone.
+    assert wrong.status_code == 404
 
 
 def test_unknown_job_result_and_cancel_are_404(api_client: TestClient) -> None:
     assert api_client.get("/api/jobs/nope/result").status_code == 404
     assert api_client.post("/api/jobs/nope/cancel").status_code == 404
+
+
+def test_result_failures_are_indistinguishable(
+    api_client: TestClient, fake_pipeline: dict
+) -> None:
+    """Pedantic review 2.7: every non-success result path must
+    collapse to a single status code + body so an attacker cannot
+    enumerate job ids by watching the differential responses.
+
+    Four failure scenarios — unknown id, wrong token against a
+    real id, valid token against a non-complete id, and missing
+    token against a complete id — must all return the same
+    ``(status, detail)``.
+    """
+    expected = (404, "result not available")
+
+    # 1. Unknown job id.
+    unknown = api_client.get("/api/jobs/nope/result", params={"token": "anything"})
+    assert (unknown.status_code, unknown.json()["detail"]) == expected
+
+    # 2. Wrong token against a real, complete job.
+    submit = api_client.post("/api/process/async", **upload())
+    job_id = submit.json()["job_id"]
+    wait_status(api_client, job_id, "complete")
+    bad_token = api_client.get(
+        f"/api/jobs/{job_id}/result", params={"token": "nope"}
+    )
+    assert (bad_token.status_code, bad_token.json()["detail"]) == expected
+
+    # 3. No token at all against a real, complete job.
+    no_token = api_client.get(f"/api/jobs/{job_id}/result")
+    assert (no_token.status_code, no_token.json()["detail"]) == expected
+
+    # 4. Job that errored before producing a result artifact.
+    fake_pipeline["fail"] = True
+    err_submit = api_client.post("/api/process/async", **upload())
+    err_job_id = err_submit.json()["job_id"]
+    wait_status(api_client, err_job_id, "error")
+    err_resp = api_client.get(
+        f"/api/jobs/{err_job_id}/result", params={"token": "anything"}
+    )
+    assert (err_resp.status_code, err_resp.json()["detail"]) == expected
 
 
 def test_cancel_job_sets_status_cancelled(
