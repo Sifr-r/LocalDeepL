@@ -95,6 +95,13 @@ class TranslationJobRunner(Protocol):
     async def __call__(self, request: Any) -> JobOutcome: ...
 
 
+@runtime_checkable
+class GlossaryJobRunner(Protocol):
+    """Executes one queued glossary import; registered by the glossary plugin."""
+
+    async def __call__(self, request: Any) -> JobOutcome: ...
+
+
 # -- queue ----------------------------------------------------------------------
 
 
@@ -352,6 +359,7 @@ plugin = JobsPlugin()
 
 
 __all__ = [
+    "GlossaryJobRunner",
     "InMemoryJobQueue",
     "JobCancelled",
     "JobCompleted",
