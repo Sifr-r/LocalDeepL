@@ -91,19 +91,15 @@ class FakeLexiconStore:
 
     def toggle_glossary(self, glossary_id: str, *, enabled: bool) -> Any:
         if glossary_id not in self._glossaries:
-            from omniscribe.core.lexicon import GlossaryNotFoundError
-
-            raise GlossaryNotFoundError(glossary_id)
+            raise KeyError(glossary_id)
         meta = self._glossaries[glossary_id]
         meta.enabled = enabled
         return meta
 
     def reorder_glossaries(self, ordered_ids: Any) -> None:
-        from omniscribe.core.lexicon import GlossaryNotFoundError
-
         missing = [gid for gid in ordered_ids if gid not in self._glossaries]
         if missing:
-            raise GlossaryNotFoundError(missing[0])
+            raise KeyError(missing[0])
         reordered: dict[str, _FakeMeta] = {}
         for gid in ordered_ids:
             reordered[gid] = self._glossaries[gid]

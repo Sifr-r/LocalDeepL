@@ -10,14 +10,22 @@ from __future__ import annotations
 import base64
 import json
 import time
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tests.plugins.test_glossary_service import FakeLexiconStore
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "glossary"
+
+_pyarrow_available = find_spec("pyarrow") is not None
+_NEEDS_LEXICON_EXTRA = pytest.mark.skipif(
+    not _pyarrow_available,
+    reason="core.lexicon preview/merged helpers require the lexicon extra (pyarrow)",
+)
 
 
 def _inject_store(api_client: TestClient) -> FakeLexiconStore:
@@ -259,6 +267,7 @@ def test_reorder_endpoints(api_client: TestClient) -> None:
     assert ok.json() == {"ok": True}
 
 
+@_NEEDS_LEXICON_EXTRA
 def test_preview_endpoint_reports_conflicts(api_client: TestClient) -> None:
     _inject_store(api_client)
     _import_json_pairs(
@@ -291,6 +300,7 @@ def test_entries_endpoint_returns_entries(api_client: TestClient) -> None:
     ]
 
 
+@_NEEDS_LEXICON_EXTRA
 def test_merged_endpoint_returns_dict(api_client: TestClient) -> None:
     _inject_store(api_client)
     _import_json_pairs(api_client, '{"entries": [{"source": "A", "target": "1"}]}', "T")
@@ -332,10 +342,50 @@ def test_async_threshold_dispatches_on_queue(
     assert body["job_id"]
     assert body["entry_count"] == 0
     # The queued job drains on the real worker; the glossary lands in the store.
-    deadline = 5.0
+    deadline = time.time() + 5.0
     store = _get_service(api_client)._store_provider()
-    while deadline > 0 and not store.list_glossaries():
+    while time.time() < deadline and not store.list_glossaries():
         time.sleep(0.01)
-        deadline -= 0.01
     assert len(store.list_glossaries()) == 1
     assert store.list_glossaries()[0].entry_count == 2
+
+
+def test_import_malformed_json_400(api_client: TestClient) -> None:
+    _inject_store(api_client)
+    response = api_client.post(
+        "/api/glossary/import",
+        content=b"{not valid json",
+        headers={"content-type": "application/json"},
+    )
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": "bad_request",
+        "detail": "Malformed JSON body.",
+    }
+
+
+def test_import_multipart_missing_file_400(api_client: TestClient) -> None:
+    _inject_store(api_client)
+    # A bare `data=` dict is sent urlencoded, which the route's JSON branch
+    # misreports; force a multipart content-type with an empty body so the
+    # router reaches the missing-'file' branch deterministically.
+    response = api_client.post(
+        "/api/glossary/import",
+        content=b"",
+        headers={"content-type": "multipart/form-data; boundary=testboundary"},
+    )
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": "bad_request",
+        "detail": "missing 'file' field",
+    }
+
+
+def test_import_malformed_source_native_422(api_client: TestClient) -> None:
+    _inject_store(api_client)
+    response = api_client.post("/api/glossary/import", json={"bogus": True})
+    assert response.status_code == 422
+    body = response.json()
+    # Native FastAPI/pydantic shape: detail is a LIST of error objects —
+    # distinct from the envelope 422s, which carry a string detail.
+    assert isinstance(body["detail"], list)

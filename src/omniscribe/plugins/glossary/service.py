@@ -395,21 +395,21 @@ class GlossaryImportServiceImpl:
 
     def toggle(self, glossary_id: str, *, enabled: bool) -> dict[str, Any]:
         store = self._library()
-        from omniscribe.core.lexicon import GlossaryNotFoundError
-
+        # GlossaryNotFoundError subclasses KeyError; catching the base class
+        # avoids importing the lexicon core package (pyarrow) on the
+        # web-only fast tier.
         try:
             meta = store.toggle_glossary(glossary_id, enabled=enabled)
-        except GlossaryNotFoundError as exc:
+        except KeyError as exc:
             raise GlossaryError(404, "not_found", "Glossary not found.") from exc
         return self._serialize_item(meta)
 
     def reorder(self, ordered_ids: list[str]) -> dict[str, Any]:
         store = self._library()
-        from omniscribe.core.lexicon import GlossaryNotFoundError
-
+        # GlossaryNotFoundError subclasses KeyError; see toggle.
         try:
             store.reorder_glossaries(ordered_ids)
-        except GlossaryNotFoundError as exc:
+        except KeyError as exc:
             raise GlossaryError(404, "not_found", "Glossary not found.") from exc
         except ValueError as exc:
             raise GlossaryError(422, "validation_failed", str(exc)) from exc
