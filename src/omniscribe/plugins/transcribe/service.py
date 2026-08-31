@@ -23,6 +23,13 @@ from omniscribe.core.transcription import (
     validate_audio_input,
 )
 from omniscribe.plugins.artifacts import ArtifactStore
+from omniscribe.plugins.transcribe.config_store import (  # noqa: F401
+    TRANSCRIPTION_FALLBACK_MODELS,
+    TranscriptionConfigStore,
+    discover_transcription_models,
+    extract_model_ids_from_response,
+    mask_api_key,
+)
 from omniscribe.plugins.transcribe.schemas import TranscribeRequest
 from omniscribe.utils.security import check_ssrf_target_sync
 

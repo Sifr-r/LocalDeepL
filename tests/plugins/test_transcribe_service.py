@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from omniscribe.plugins.transcribe import config_store
 from omniscribe.plugins.transcribe import service as transcribe_service
 from omniscribe.plugins.transcribe.schemas import TranscribeRequest
 
@@ -236,3 +237,68 @@ async def test_transcribe_unexpected_error_maps_to_502(
     assert excinfo.value.status_code == 502
     assert excinfo.value.error == "ai_error"
     assert excinfo.value.detail == "The AI service request failed."
+
+
+# ---------------------------------------------------------------------------
+# Config store + model discovery
+# ---------------------------------------------------------------------------
+
+
+def test_mask_api_key_matches_old_behavior() -> None:
+    assert transcribe_service.mask_api_key(None) is None
+    assert transcribe_service.mask_api_key("") == ""
+    assert transcribe_service.mask_api_key("lm-studio") == "lm-studio"
+    assert transcribe_service.mask_api_key("short") == "********"
+    assert transcribe_service.mask_api_key("abcd1234wxyz") == "abcd...wxyz"
+
+
+def test_config_store_defaults_and_write_through() -> None:
+    store = transcribe_service.TranscriptionConfigStore(auth_token="tok")
+    read = store.read()
+    assert read.transcription_api_base == "https://api.openai.com/v1"
+    assert read.transcription_model == "whisper-1"
+    assert read.transcription_engine == "api"
+    assert read.temperature == 0.0
+
+    store.update(
+        {"transcription_model": "gpt-4o-audio-preview", "transcription_api_key": "k"}
+    )
+    read = store.read()
+    assert read.transcription_model == "gpt-4o-audio-preview"
+    # mask_api_key masks any short key as "********" (verbatim old rule),
+    # so the write-through shows up as "" → "********".
+    assert read.transcription_api_key == "********"
+
+
+async def test_discover_models_falls_back_on_bad_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FailingClient:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        async def __aenter__(self) -> _FailingClient:
+            return self
+
+        async def __aexit__(self, *args: Any) -> None:
+            return None
+
+        async def get(self, url: str, headers: dict | None = None) -> Any:
+            raise RuntimeError("no network")
+
+    monkeypatch.setattr(config_store.httpx, "AsyncClient", _FailingClient)
+    models = await transcribe_service.discover_transcription_models(
+        "http://localhost:1234/v1", None
+    )
+    assert models == transcribe_service.TRANSCRIPTION_FALLBACK_MODELS
+
+
+def test_extract_model_ids_handles_openai_and_ollama() -> None:
+    openai = {"data": [{"id": "gpt-4o"}, {"id": "gpt-4o-mini"}]}
+    ollama = {"models": [{"name": "llama3"}]}
+    assert transcribe_service.extract_model_ids_from_response(openai) == [
+        "gpt-4o",
+        "gpt-4o-mini",
+    ]
+    assert transcribe_service.extract_model_ids_from_response(ollama) == ["llama3"]
+    assert transcribe_service.extract_model_ids_from_response(None) == []
