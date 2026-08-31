@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -259,6 +260,7 @@ def test_config_store_defaults_and_write_through() -> None:
     assert read.transcription_model == "whisper-1"
     assert read.transcription_engine == "api"
     assert read.temperature == 0.0
+    assert read.transcription_auth_token == "********"  # "tok" masked: len <= 8
 
     store.update(
         {"transcription_model": "gpt-4o-audio-preview", "transcription_api_key": "k"}
@@ -273,6 +275,9 @@ def test_config_store_defaults_and_write_through() -> None:
 async def test_discover_models_falls_back_on_bad_endpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    async def _ssrf_allowed(url: str | None) -> Any:
+        return SimpleNamespace(allowed=True)
+
     class _FailingClient:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             pass
@@ -286,6 +291,7 @@ async def test_discover_models_falls_back_on_bad_endpoint(
         async def get(self, url: str, headers: dict | None = None) -> Any:
             raise RuntimeError("no network")
 
+    monkeypatch.setattr(config_store, "is_ssrf_target", _ssrf_allowed)
     monkeypatch.setattr(config_store.httpx, "AsyncClient", _FailingClient)
     models = await transcribe_service.discover_transcription_models(
         "http://localhost:1234/v1", None
