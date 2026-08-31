@@ -109,9 +109,9 @@ def make_stub_ocr():
 # Plugin-harness boot fixtures
 # ---------------------------------------------------------------------------
 
-# Thirteen-row test tree: the shipped eleven-plugin boot tree plus the
-# documents plugin and the slice-3 transcribe/glossary plugins, with a
-# forced memory backend and small TTLs so tests stay fast and offline.
+# Thirteen-row test tree: mirrors the shipped thirteen-plugin cordis.yml
+# plus the documents plugin, with a forced memory backend and small TTLs
+# so tests stay fast and offline.
 _TEST_CORDIS_YML = """\
 plugins:
   - id: runtime
