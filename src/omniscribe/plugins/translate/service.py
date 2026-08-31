@@ -348,7 +348,7 @@ class TranslationServiceImpl:
             or record.status != "complete"
             or not record.result_artifact_id
             or not record.result_artifact_token
-            or token != record.result_artifact_token
+            or not secrets.compare_digest(token, record.result_artifact_token)
         ):
             return None
         blob = await self._store.get(record.result_artifact_id, token)

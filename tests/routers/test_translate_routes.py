@@ -337,7 +337,7 @@ def _plant_completed_record(
 def test_translate_result_unknown_job_404(api_client: TestClient) -> None:
     response = api_client.get("/api/translate/result/no-such-job?token=abc")
     assert response.status_code == 404
-    assert response.json()["error"] == "not_found"
+    assert response.json() == {"error": "not_found", "detail": "result not found"}
 
 
 def test_translate_result_wrong_token_404(api_client: TestClient) -> None:
@@ -348,7 +348,7 @@ def test_translate_result_wrong_token_404(api_client: TestClient) -> None:
     job_id = _plant_completed_record(api_client, artifact_id, "t" * 43)
     response = api_client.get(f"/api/translate/result/{job_id}?token=wrong")
     assert response.status_code == 404
-    assert response.json()["error"] == "not_found"
+    assert response.json() == {"error": "not_found", "detail": "result not found"}
 
 
 def test_translate_result_incomplete_job_404(api_client: TestClient) -> None:
@@ -361,6 +361,7 @@ def test_translate_result_incomplete_job_404(api_client: TestClient) -> None:
     asyncio.run(backend.upsert_job(JobRecord(job_id=job_id, status="running")))
     response = api_client.get(f"/api/translate/result/{job_id}?token=abc")
     assert response.status_code == 404
+    assert response.json() == {"error": "not_found", "detail": "result not found"}
 
 
 def test_translate_result_happy_path(api_client: TestClient) -> None:
@@ -378,3 +379,52 @@ def test_translate_result_happy_path(api_client: TestClient) -> None:
     response = api_client.get(f"/api/translate/result/{job_id}?token={token}")
     assert response.status_code == 200
     assert response.json() == {"0": "Bonjour le monde"}
+
+
+def test_translate_result_uniform_404(api_client: TestClient) -> None:
+    # No existence leak (C-3/H-3): every failure mode must return a
+    # byte-identical 404 envelope.
+    import uuid as _uuid
+
+    from omniscribe.plugins.state_backend import JobRecord
+
+    backend = api_client.app.state.context.inject(StateBackend)
+    token = "t" * 43
+    corrupt_artifact_id = _uuid.uuid4().hex
+    _seed_artifact(api_client, corrupt_artifact_id, token, b"not json at all")
+    job_running = _uuid.uuid4().hex
+    asyncio.run(backend.upsert_job(JobRecord(job_id=job_running, status="running")))
+    job_store_miss = _uuid.uuid4().hex
+    asyncio.run(
+        backend.upsert_job(
+            JobRecord(
+                job_id=job_store_miss,
+                status="complete",
+                result_artifact_id="ghost-artifact",
+                result_artifact_token=token,
+            )
+        )
+    )
+    job_corrupt_json = _uuid.uuid4().hex
+    asyncio.run(
+        backend.upsert_job(
+            JobRecord(
+                job_id=job_corrupt_json,
+                status="complete",
+                result_artifact_id=corrupt_artifact_id,
+                result_artifact_token=token,
+            )
+        )
+    )
+    responses = [
+        api_client.get("/api/translate/result/no-such-job?token=abc"),
+        api_client.get(f"/api/translate/result/{job_running}?token=abc"),
+        api_client.get(f"/api/translate/result/{job_store_miss}?token={token}"),
+        api_client.get("/api/translate/result/another-missing"),
+        api_client.get(f"/api/translate/result/{job_corrupt_json}?token={token}"),
+        api_client.get("/api/translate/result/yet-another"),
+    ]
+    for response in responses:
+        assert response.status_code == 404
+        assert response.json() == {"error": "not_found", "detail": "result not found"}
+    assert len({response.content for response in responses}) == 1
