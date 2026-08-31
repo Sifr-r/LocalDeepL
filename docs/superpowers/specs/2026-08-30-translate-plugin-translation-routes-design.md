@@ -374,8 +374,14 @@ switches `exportDocx` to POST before the GET route can be dropped), 2.2,
    changes (field names, wrappers, status vocabulary, 2s-polling
    stop conditions).
 2. `/api/translate/async` completes end-to-end in-test: submit → queued →
-   drained by the single worker → SUCCESS status with the summary result;
-   translated text fetchable via `GET /api/text/{translated_artifact_id}`.
+   drained by the single worker → SUCCESS status with the summary result
+   (`artifact_id`, `translated_artifact_id`, `page_count`,
+   `blocks_translated` — no token, per C-3/H-3). The translated text is
+   **not** client-fetchable from the status surface alone: `/api/text/{id}`
+   requires the bearer token and the summary deliberately omits it (the
+   frozen client never fetched async results — it renders the summary).
+   A token-redeeming result route (mirroring OCR's
+   `/api/jobs/{id}/result`) is a tracked follow-up for a future slice.
 3. Fast gate green (`ruff check/format`, `mypy src`,
    `pytest -m "not slow"`); openapi snapshot additions-only.
 4. Shipped `cordis.yml` boots eleven plugins; `compose.yaml` +
