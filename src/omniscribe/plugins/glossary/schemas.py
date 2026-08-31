@@ -83,7 +83,7 @@ class GlossaryUrlImportBody(BaseModel):
     encoding: str | None = None
     channel_id: str | None = None
 
-    @field_validator("name", "encoding", "channel_id", mode="before")
+    @field_validator("url", "name", "encoding", "channel_id", mode="before")
     @classmethod
     def _strip_optional(cls, value: Any) -> Any:
         return _validate_optional_string(value)
