@@ -3819,8 +3819,12 @@ git commit -m "feat(translate): token-redeeming async result route"
 
 ### Task 11: Boot wiring — conftest + shipped cordis.yml + pins
 
+(Shipped amendment: the conftest half of this task landed early — the
+transcribe row with Task 4, the glossary row with Task 9 — so Step 1 is
+already done; this task is Steps 2-6 only, committing cordis.yml +
+test_boot_config.py + test_phase_c_boot.py.)
+
 **Files:**
-- Modify: `tests/conftest.py` (`_TEST_CORDIS_YML` → thirteen rows)
 - Modify: `src/omniscribe/resources/cordis.yml` (+ transcribe row 11, glossary row 12)
 - Modify: `tests/plugins/test_boot_config.py`
 - Test: `tests/harness/test_phase_c_boot.py` (create)
@@ -3944,6 +3948,11 @@ Expected: the only failure is the openapi snapshot drift test. Regenerate
 + rerun; generated from the test tree — never hand-edit).
 
 - [ ] **Step 2: Verify additions-only**
+
+(Shipped correction: Tasks 4 and 9 already regenerated the snapshot for
+their slices, so the only drift at this point was Task 10's
+`/api/translate/result/{job_id}` — the shipped diff was 50 added / 0
+deleted, exactly that one path.)
 
 Run: `git diff --numstat tests/openapi.json`
 Expected: insertions only (13 new paths: `/api/transcribe`,
