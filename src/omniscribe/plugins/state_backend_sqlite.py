@@ -126,8 +126,21 @@ class SQLiteStateBackend:
 
             def _put() -> None:
                 conn = self._require_conn()
-                path = self._blob_path(id)
-                path.write_bytes(blob)
+                new_path = self._blob_path(id)
+                # Capture the existing row's blob_path (if any) before
+                # INSERT OR REPLACE so we can unlink the previous file on
+                # replace. Without this, an existing row whose blob_path
+                # points to a different file (operator cleanup, backup
+                # restore, ad-hoc SQL) would leak that file: the new write
+                # targets ``new_path`` only, and the DB row would switch
+                # to ``new_path`` without unlinking the previous one.
+                previous_path: Path | None = None
+                existing = conn.execute(
+                    "SELECT blob_path FROM artifacts WHERE id = ?", (id,)
+                ).fetchone()
+                if existing is not None:
+                    previous_path = Path(existing[0])
+                new_path.write_bytes(blob)
                 conn.execute(
                     "INSERT OR REPLACE INTO artifacts "
                     "(id, token, owner_job_id, content_type, blob_path, created_at, ttl_seconds) "
@@ -137,12 +150,14 @@ class SQLiteStateBackend:
                         token,
                         owner_job_id,
                         content_type,
-                        str(path),
+                        str(new_path),
                         time.time(),
                         ttl_seconds,
                     ),
                 )
                 conn.commit()
+                if previous_path is not None and previous_path != new_path:
+                    previous_path.unlink(missing_ok=True)
 
             await asyncio.to_thread(_put)
 

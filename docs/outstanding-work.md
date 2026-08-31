@@ -76,6 +76,11 @@ as of 2026-08-31 and may drift — re-verify before fixing.
 previous `.bin`. If the same `id` already exists (operator cleanup, backup
 restore, ad-hoc SQL), the old blob file leaks. `delete_artifact` unlinks
 properly; the asymmetry is purely a bug in `put`.
+→ **Closed (Wave 2).** `put_artifact` now reads the existing row's
+`blob_path` before INSERT OR REPLACE and unlinks the previous file if it
+differs from the canonical path. Regression test
+`test_put_artifact_replaces_unlinks_previous_blob_file`
+(`tests/plugins/test_state_backend_sqlite.py`).
 
 **1.11** `core/ocr/processor.py:153` — `self.page_max_tokens: int =
 self.PAGE_MAX_TOKENS` re-binds the class constant at instance time. An
@@ -310,6 +315,10 @@ lookup misses (evicted by the 500-deep map) — service silently uses
 `job_id=""`.
 
 **5.2** No test for the SQLite `INSERT OR REPLACE` blob leak (1.5).
+→ **Closed (Wave 2).** `test_put_artifact_replaces_unlinks_previous_blob_file`
+simulates the operator-cleanup / backup-restore scenario by repointing the
+row's `blob_path` to a sibling file, then asserts the sibling is unlinked
+after the second `put_artifact`.
 
 **5.3** A `-O` regression test around `core/recall/text_layer.py` would
 still be valuable after the 1.9 fix.
@@ -464,6 +473,9 @@ pagination), **1.9** (text_layer assert → explicit None check), **1.10**
 (chat_client assert → explicit RuntimeError).
 
 In the uncommitted Wave 1 batch (§1): **1.1, 1.3, 1.4, 1.7, 1.8, 9.1**.
+
+**Wave 2 (this commit):** **1.5** (real bug, blob leak on INSERT OR
+REPLACE) + **5.2** (its regression test).
 
 ---
 

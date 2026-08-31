@@ -78,6 +78,59 @@ async def test_artifact_delete_removes_blob_file(
     assert not blob_file.exists()
 
 
+async def test_put_artifact_replaces_unlinks_previous_blob_file(
+    backend: SQLiteStateBackend, tmp_path: Path
+) -> None:
+    """Pedantic 1.5 / test gap 5.2: ``INSERT OR REPLACE`` must unlink the
+    prior ``.bin`` if the existing row points to a different path.
+
+    Simulates the operator-cleanup / backup-restore / ad-hoc-SQL scenario
+    where the row's ``blob_path`` is updated out-of-band to a file that
+    is not the canonical ``<blob_dir>/<id>.bin``. A subsequent
+    ``put_artifact`` for the same id must not leave the stale file
+    behind.
+    """
+    # Seed an artifact and a sibling file the row will be repointed at.
+    await backend.put_artifact(
+        id="a1",
+        token="tok",
+        owner_job_id="j",
+        content_type="t",
+        blob=b"v1",
+        ttl_seconds=3600,
+    )
+    canonical = tmp_path / "blobs" / "a1.bin"
+    sibling_dir = tmp_path / "stale_blobs"
+    sibling_dir.mkdir()
+    sibling = sibling_dir / "a1.bin"
+    sibling.write_bytes(b"v0-from-backup")
+    # Ad-hoc SQL: repoint the row to the sibling file (no API path does
+    # this; this models operator cleanup / backup restore / ad-hoc SQL).
+    conn = sqlite3.connect(str(tmp_path / "state.db"))
+    conn.execute(
+        "UPDATE artifacts SET blob_path = ? WHERE id = ?",
+        (str(sibling), "a1"),
+    )
+    conn.commit()
+    conn.close()
+
+    # The previous fix would have written ``v2`` to ``canonical``,
+    # updated the row, and left ``sibling`` orphaned on disk.
+    await backend.put_artifact(
+        id="a1",
+        token="tok2",
+        owner_job_id="j",
+        content_type="t",
+        blob=b"v2",
+        ttl_seconds=3600,
+    )
+
+    assert canonical.read_bytes() == b"v2"
+    assert not sibling.exists(), "previous blob file leaked on INSERT OR REPLACE"
+    record = await backend.get_artifact("a1", "tok2")
+    assert record is not None and record.blob == b"v2"
+
+
 async def test_artifact_prune(backend: SQLiteStateBackend) -> None:
     await backend.put_artifact(
         id="short",
