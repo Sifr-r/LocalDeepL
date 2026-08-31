@@ -2,7 +2,7 @@
 name = "omniscribe"
 version = "0.1.0"
 description = "Transform scanned and written documents into fully searchable, selectable PDFs using the power of Local LLM Vision"
-readme = "README.md"
+readme = "docs/README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [
@@ -156,7 +156,7 @@ packages = ["src/omniscribe"]
 [tool.hatch.build.targets.sdist]
 include = [
     "src/omniscribe",
-    "README.md",
+    "docs/README.md",
     "LICENSE",
     "pyproject.toml",
 ]
