@@ -106,6 +106,19 @@ class RuntimeSettings(BaseSettings):
         ge=0,
         le=5,
     )
+
+    # Hard cap on pages a single run is allowed to rasterize (pedantic
+    # 3.3). Declared here for the env-var inventory and ops tooling that
+    # consumes :func:`load_settings`; the runtime read still happens via
+    # ``os.getenv`` in :mod:`omniscribe.core.pdf.rasterizer` so the
+    # per-page cap is hot-reloadable from a long-running uvicorn
+    # worker without a process restart. Both paths default to 500 and
+    # agree on the contract (``0`` or unparseable → cap disabled).
+    max_pages: int = Field(
+        default=500,
+        validation_alias="OMNISCRIBE_MAX_PAGES",
+        ge=0,
+    )
     chunk_pages: int = Field(
         default=25, validation_alias="OMNISCRIBE_CHUNK_PAGES", ge=1
     )
@@ -152,47 +165,29 @@ class RuntimeSettings(BaseSettings):
 
     auth_token: str | None = Field(
         default=None,
-        validation_alias=AliasChoices(
-            "OMNISCRIBE_AUTH_TOKEN", "LOCAL_DEEPL_AUTH_TOKEN"
-        ),
+        validation_alias="OMNISCRIBE_AUTH_TOKEN",
     )
-    ocr_auth_token: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices(
-            "OMNISCRIBE_OCR_AUTH_TOKEN", "LOCAL_DEEPL_OCR_AUTH_TOKEN"
-        ),
-    )
-    translation_auth_token: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices(
-            "OMNISCRIBE_TRANSLATION_AUTH_TOKEN",
-            "LOCAL_DEEPL_TRANSLATION_AUTH_TOKEN",
-        ),
-    )
+    # Transcription auth token: currently consumed only by the
+    # transcription config store as a mask source (so the
+    # ``/api/config/transcription`` response can preview the token
+    # without exposing it in the clear). The auth middleware that will
+    # actually enforce it is deferred — see
+    # ``docs/outstanding-work.md`` §5 "Deferred capabilities".
     transcription_auth_token: str | None = Field(
         default=None,
-        validation_alias=AliasChoices(
-            "OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN",
-            "LOCAL_DEEPL_TRANSCRIPTION_AUTH_TOKEN",
-        ),
+        validation_alias="OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN",
     )
     cors_origins_raw: str | None = Field(
         default=None,
-        validation_alias=AliasChoices(
-            "OMNISCRIBE_CORS_ORIGINS", "LOCAL_DEEPL_CORS_ORIGINS"
-        ),
+        validation_alias="OMNISCRIBE_CORS_ORIGINS",
     )
     max_upload_mb: int = Field(
         default=10_240,
-        validation_alias=AliasChoices(
-            "OMNISCRIBE_MAX_UPLOAD_MB", "LOCAL_DEEPL_MAX_UPLOAD_MB"
-        ),
+        validation_alias="OMNISCRIBE_MAX_UPLOAD_MB",
     )
     rate_limit_per_min: int | None = Field(
         default=None,
-        validation_alias=AliasChoices(
-            "OMNISCRIBE_RATE_LIMIT_PER_MIN", "LOCAL_DEEPL_RATE_LIMIT_PER_MIN"
-        ),
+        validation_alias="OMNISCRIBE_RATE_LIMIT_PER_MIN",
     )
 
     @field_validator("max_upload_mb", mode="before")
@@ -291,8 +286,6 @@ class RuntimeSettings(BaseSettings):
 
     @field_validator(
         "auth_token",
-        "ocr_auth_token",
-        "translation_auth_token",
         "transcription_auth_token",
         mode="after",
     )
