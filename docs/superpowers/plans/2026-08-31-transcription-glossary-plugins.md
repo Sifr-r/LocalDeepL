@@ -1072,6 +1072,12 @@ git commit -m "feat(transcribe): plugin-owned config store + model discovery"
 **Files:**
 - Create: `src/omniscribe/plugins/transcribe/routes.py`, `plugin.py`
 - Replace: `src/omniscribe/plugins/transcribe/__init__.py`
+- Modify: `tests/conftest.py` (transcribe boot row between translate/ocr —
+  the route tests boot through `api_client`, so the plugin must be mounted
+  in the TEST tree here; Task 11 only adds the shipped-tree row + glossary)
+- Modify: `tests/openapi.json` (regenerated, additions-only — the mounted
+  routes would otherwise fail `test_openapi_schema_matches_snapshot` until
+  Task 12)
 - Test: `tests/routers/test_transcribe_routes.py`
 
 - [ ] **Step 1: Write the failing router tests**
@@ -1502,7 +1508,7 @@ Run: `uv run ruff check src tests && uv run ruff format src tests --check && uv 
 Expected: clean
 
 ```bash
-git add src/omniscribe/plugins/transcribe/ tests/routers/test_transcribe_routes.py
+git add src/omniscribe/plugins/transcribe/ tests/routers/test_transcribe_routes.py tests/conftest.py tests/openapi.json
 git commit -m "feat(transcribe): client-frozen routes, config store, model discovery"
 ```
 
@@ -3711,14 +3717,12 @@ git commit -m "feat(translate): token-redeeming async result route"
 
 - [ ] **Step 1: Update the conftest test tree (failing state)**
 
-In `tests/conftest.py`, insert between the `translate` and `ocr` rows
-(making it THIRTEEN rows) and update the "eleven-row" comment mentions to
-"thirteen-row":
+The `transcribe` boot row already landed in Task 4 (conftest is currently
+TWELVE rows; its comment mentions say "twelve-row"). Insert ONLY the
+glossary row — between the `transcribe` and `ocr` rows (making it THIRTEEN
+rows) — and update the "twelve-row" comment mentions to "thirteen-row":
 
 ```yaml
-  - id: translate
-    use: omniscribe.plugins.translate:plugin
-
   - id: transcribe
     use: omniscribe.plugins.transcribe:plugin
 
