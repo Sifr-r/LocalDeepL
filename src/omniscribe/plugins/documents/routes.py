@@ -10,6 +10,13 @@ return type (payload or ``JSONResponse``). FastAPI cannot build a
 response model from such unions, so those decorators pass
 ``response_model=None`` — the handler's return value is used as-is, and
 ``JSONResponse`` instances already bypass response-model serialization.
+
+Pedantic review 2.1: ``/api/export/docx`` is POST-only. The previous
+GET-with-text-query-parameter variant put the entire document body in
+the URL — uvicorn access logs, reverse-proxy logs, browser history,
+and the Referer header all leaked it. The Flutter client was updated
+in lockstep (``feature_repository.dart::exportDocx``) to POST the
+text in the request body.
 """
 
 from __future__ import annotations
@@ -124,11 +131,6 @@ def build_documents_router(ctx: Context) -> APIRouter:
             media_type=DOCX_MEDIA_TYPE,
             headers={"Content-Disposition": 'attachment; filename="document.docx"'},
         )
-
-    @router.get("/api/export/docx")
-    async def export_docx_get(text: str = "") -> Response:
-        # The Flutter ExportModal sends text as a query parameter (getBytes).
-        return _docx_response(text)
 
     @router.post("/api/export/docx")
     async def export_docx_post(body: ExportDocxRequest) -> Response:

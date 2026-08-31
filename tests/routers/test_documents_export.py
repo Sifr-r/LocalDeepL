@@ -209,12 +209,21 @@ def test_export_docx_post_inline_bytes(api_client: TestClient) -> None:
     assert response.content[:2] == b"PK"
 
 
-def test_export_docx_get_query_param(api_client: TestClient) -> None:
-    # The Flutter ExportModal calls getBytes with query parameters.
-    response = api_client.get("/api/export/docx", params={"text": "# Title\n\nBody."})
-    assert response.status_code == 200
-    assert response.content[:2] == b"PK"
-    assert "document.docx" in response.headers["content-disposition"]
+def test_export_docx_get_no_longer_returns_docx(api_client: TestClient) -> None:
+    """Pedantic 2.1: the GET /api/export/docx variant that put
+    document text in the query string is gone. With the GET handler
+    removed, ``GET /api/export/docx`` falls through to the
+    parametrized ``GET /api/export/{artifact_id}`` route and is
+    rejected there (403 without a Bearer token). Crucially, the
+    response body is **not** a DOCX stream — the text in the query
+    string is never rendered into a document.
+    """
+    response = api_client.get("/api/export/docx", params={"text": "ignored"})
+    # 403 from the artifact_id route's bearer check; 405 would also
+    # be acceptable but FastAPI matches the parametrized path first.
+    assert response.status_code in (403, 405)
+    assert response.content[:2] != b"PK"  # never a DOCX zip header
+    assert "wordprocessingml" not in response.headers.get("content-type", "")
 
 
 def test_export_docx_empty_text_is_lenient(api_client: TestClient) -> None:

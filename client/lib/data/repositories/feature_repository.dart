@@ -170,10 +170,17 @@ class FeatureRepositoryImpl implements FeatureRepository {
 
   @override
   Future<Uint8List> exportDocx(ExportDocxRequest request) async {
-    return _apiClient.getBytes(
+    // Pedantic 2.1: POST the body instead of GETting with the text
+    // in the query string. The server route is POST-only; the GET
+    // variant used to put the full document text into the URL,
+    // which uvicorn access logs, reverse-proxy logs, browser
+    // history, and the Referer header all captured.
+    final json = await _apiClient.post<List<int>>(
       ApiConstants.exportDocx,
-      queryParameters: request.toJson(),
+      data: request.toJson(),
+      options: Options(responseType: ResponseType.bytes),
     );
+    return Uint8List.fromList(json);
   }
 
   @override
