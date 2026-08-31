@@ -7,7 +7,7 @@ Shared fixtures.
 - `stub_ocr` — an OCRProcessor replacement that returns canned text without
   hitting LM Studio, so tests can run offline.
 - `cordis_env` / `harness_ctx` / `api_client` — plugin-harness boot
-  fixtures: a temp eleven-row ``cordis.yml`` (memory backend, small TTLs),
+  fixtures: a temp twelve-row ``cordis.yml`` (memory backend, small TTLs),
   a loaded harness Context, and a TestClient over ``create_app()``.
 - `EXAMPLE_PDF_NAMES` — the canonical list of on-disk example PDF filenames
   (and the few images) so every parametrized test surface stays in
@@ -109,7 +109,7 @@ def make_stub_ocr():
 # Plugin-harness boot fixtures
 # ---------------------------------------------------------------------------
 
-# Eleven-row test tree: same plugins as the shipped resources/cordis.yml
+# Twelve-row test tree: same plugins as the shipped resources/cordis.yml
 # plus the documents plugin, with a forced memory backend and small TTLs so
 # tests stay fast and offline.
 _TEST_CORDIS_YML = """\
@@ -158,6 +158,9 @@ plugins:
 
   - id: translate
     use: omniscribe.plugins.translate:plugin
+
+  - id: transcribe
+    use: omniscribe.plugins.transcribe:plugin
 
   - id: ocr
     use: omniscribe.plugins.ocr:plugin

@@ -14,8 +14,9 @@ import json
 import logging
 import uuid
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Protocol
 
+from omniscribe.config import RuntimeSettings
 from omniscribe.core.transcription import (
     AudioValidationError,
     TranscriptionError,
@@ -30,7 +31,12 @@ from omniscribe.plugins.transcribe.config_store import (  # noqa: F401
     extract_model_ids_from_response,
     mask_api_key,
 )
-from omniscribe.plugins.transcribe.schemas import TranscribeRequest
+from omniscribe.plugins.transcribe.schemas import (
+    TranscribeRequest,
+    TranscriptionConfigResponse,
+    TranscriptionConfigUpdate,
+    TranscriptionJobResponse,
+)
 from omniscribe.utils.security import check_ssrf_target_sync
 
 _LOGGER = logging.getLogger("omniscribe.plugins.transcribe")
@@ -158,3 +164,96 @@ async def transcribe(
             for s in result.segments
         ],
     }
+
+
+class TranscriptionService(Protocol):
+    async def transcribe(
+        self,
+        request: TranscribeRequest,
+        *,
+        file_bytes: bytes,
+        filename: str,
+        content_type: str | None,
+    ) -> dict[str, Any] | TranscriptionJobResponse: ...
+
+    def get_config(self) -> TranscriptionConfigResponse: ...
+
+    def update_config(
+        self, body: TranscriptionConfigUpdate
+    ) -> TranscriptionConfigResponse: ...
+
+    async def discover_models(self) -> list[str]: ...
+
+
+class TranscriptionServiceImpl:
+    """Harness transcription service over the ArtifactStore."""
+
+    def __init__(
+        self,
+        settings: RuntimeSettings,
+        store: ArtifactStore,
+    ) -> None:
+        self._settings = settings
+        self._store = store
+        self._config = TranscriptionConfigStore(
+            auth_token=settings.transcription_auth_token
+        )
+
+    async def transcribe(
+        self,
+        request: TranscribeRequest,
+        *,
+        file_bytes: bytes,
+        filename: str,
+        content_type: str | None,
+    ) -> dict[str, Any]:
+        return await transcribe(
+            request,
+            file_bytes=file_bytes,
+            filename=filename,
+            content_type=content_type,
+            store=self._store,
+            config=self._config.get(),
+        )
+
+    def get_config(self) -> TranscriptionConfigResponse:
+        return self._config.read()
+
+    def update_config(
+        self, body: TranscriptionConfigUpdate
+    ) -> TranscriptionConfigResponse:
+        updates: dict[str, Any] = {}
+        if body.api_base is not None:
+            check = check_ssrf_target_sync(body.api_base)
+            if not check.allowed:
+                raise TranscribeError(
+                    403,
+                    "ssrf_blocked",
+                    f"URL targets a blocked address: {check.reason}",
+                )
+            updates["transcription_api_base"] = body.api_base
+        if body.transcription_api_key is not None:
+            updates["transcription_api_key"] = body.transcription_api_key
+        elif body.api_key is not None:
+            updates["transcription_api_key"] = body.api_key
+        if body.model is not None:
+            updates["transcription_model"] = body.model
+        if body.engine is not None:
+            updates["transcription_engine"] = body.engine.value
+        if body.language is not None:
+            updates["transcription_language"] = body.language
+        if body.prompt is not None:
+            updates["transcription_prompt"] = body.prompt
+        if body.temperature is not None:
+            updates["transcription_temperature"] = body.temperature
+        if updates:
+            self._config.update(updates)
+        return self._config.read()
+
+    async def discover_models(self) -> list[str]:
+        config = self._config.get()
+        api_base = str(
+            config.get("transcription_api_base", DEFAULT_TRANSCRIPTION_API_BASE)
+        )
+        api_key = str(config.get("transcription_api_key", "")) or None
+        return await discover_transcription_models(api_base, api_key)

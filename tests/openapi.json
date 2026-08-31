@@ -656,6 +656,115 @@
         "title": "SetActiveProviderResponse",
         "type": "object"
       },
+      "TranscriptionConfigUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "api_base": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Base"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "engine": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TranscriptionEngineType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature"
+          },
+          "transcription_api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcription Api Key"
+          }
+        },
+        "title": "TranscriptionConfigUpdate",
+        "type": "object"
+      },
+      "TranscriptionEngineType": {
+        "enum": [
+          "api",
+          "whisper_api",
+          "local",
+          "whisper_local",
+          "faster_whisper",
+          "faster-whisper",
+          "auto"
+        ],
+        "title": "TranscriptionEngineType",
+        "type": "string"
+      },
       "TranslationRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1078,6 +1187,62 @@
         "summary": "Update Config",
         "tags": [
           "ocr"
+        ]
+      }
+    },
+    "/api/config/transcription": {
+      "get": {
+        "operationId": "get_transcription_config_api_config_transcription_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Transcription Config",
+        "tags": [
+          "transcribe"
+        ]
+      },
+      "post": {
+        "operationId": "update_transcription_config_api_config_transcription_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranscriptionConfigUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Transcription Config",
+        "tags": [
+          "transcribe"
         ]
       }
     },
@@ -1680,6 +1845,25 @@
         ]
       }
     },
+    "/api/models/transcription": {
+      "get": {
+        "operationId": "get_transcription_models_api_models_transcription_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Transcription Models",
+        "tags": [
+          "transcribe"
+        ]
+      }
+    },
     "/api/process": {
       "post": {
         "operationId": "process_sync_api_process_post",
@@ -2177,6 +2361,25 @@
         "summary": "Get Text",
         "tags": [
           "documents"
+        ]
+      }
+    },
+    "/api/transcribe": {
+      "post": {
+        "operationId": "transcribe_audio_api_transcribe_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Transcribe Audio",
+        "tags": [
+          "transcribe"
         ]
       }
     },
