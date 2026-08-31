@@ -186,6 +186,16 @@ is deliberate.
 puts the document text in the query string → uvicorn access logs, proxy
 logs, browser history, Referer headers. Fix: `POST /api/export/docx` only,
 delete the GET (needs a paired Flutter client change).
+→ **Closed (Wave 4).** The GET handler is gone. With the GET
+removed, `GET /api/export/docx` falls through to the parametrized
+`/api/export/{artifact_id}` route and is rejected there (403 without a
+Bearer token) — the query string is never rendered into a document.
+Paired Flutter change in
+`feature_repository.dart::exportDocx` (GET → POST with body, same
+shape as `exportHtml`). `tests/openapi.json` regenerated to drop
+the GET operation. New test
+`test_export_docx_get_no_longer_returns_docx` pins the no-DOCX
+property. Commit `129ddae`.
 
 **2.2** `core/ocr/processor.py:252-256` — `client.close()` runs in
 `try/finally` on every pre-flight. The `AsyncOpenAI` client is created in
@@ -213,6 +223,17 @@ re-discovered later.
 existence via differential status codes (unknown → 404, bad token → 403,
 in-progress → 409), enabling job-id enumeration. Collapse to a single
 404 for "unknown or invalid".
+→ **Closed (Wave 4).** Every non-200 path in `fetch_result` now
+returns ``404`` with the same ``"result not available"`` detail.
+The constant-time token compare still runs against a real
+record's stored token so a wrong-token attempt has the same
+timing shape as a record-missing attempt at the order of
+magnitude of the queue-status round trip. New test
+`test_result_failures_are_indistinguishable` exercises all four
+failure modes and asserts the uniform ``(404, "result not
+available")`` shape. Four pre-existing tests that pinned the
+old 403/409 codes are updated to 404 with a comment pointing
+at 2.7. Commit `6006c89`.
 
 **2.8** `plugins/ocr/service.py` / `_OcrPayload` — the full upload bytes
 are held in `_submission_to_job` until `run_job` consumes them; the memory
@@ -583,6 +604,16 @@ because it flows into the config-mask path), **3.3**
 (`OMNISCRIBE_MAX_PAGES` declared on `RuntimeSettings`;
 `OMNISCRIBE_TRUSTED_PROXIES` removed from `.env.example` and
 `SECURITY.md` because it was never implemented).
+
+**Wave 4 (this batch):** **2.1** + **2.7** (security sweep on
+public surfaces: ``GET /api/export/docx`` deleted because the
+text-in-query-string variant leaked the document body to
+uvicorn / proxy / browser-history / Referer; the Flutter
+client was updated in lockstep to POST the text in the
+request body. ``fetch_result`` failures now collapse to a
+single uniform 404 + ``"result not available"`` detail so
+job-id enumeration via differential status codes is no
+longer possible.)
 
 ---
 
