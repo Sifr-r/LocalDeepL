@@ -13,7 +13,7 @@ from omniscribe.harness.errors import (
 from omniscribe.harness.events import AgentEvent, CapabilityEvent, Event, SessionEvent
 from omniscribe.harness.loader import Loader, PluginRow
 from omniscribe.harness.plugin import Plugin
-from omniscribe.harness.service import Service, service_protocol
+from omniscribe.harness.service import Service
 
 __all__ = [
     "AgentEvent",
@@ -32,5 +32,4 @@ __all__ = [
     "ServiceNotFoundError",
     "SessionEvent",
     "effect_scope",
-    "service_protocol",
 ]
