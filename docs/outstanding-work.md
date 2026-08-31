@@ -229,14 +229,35 @@ helper.
 `translation_auth_token`, `transcription_auth_token` — none consumed by
 any route. Misleading while auth is deferred; delete or document a
 deprecation plan.
+→ **Closed (Wave 3).** `ocr_auth_token` and `translation_auth_token`
+deleted; `transcription_auth_token` kept (it flows into
+`TranscriptionConfigStore`, which masks it for the
+`/api/config/transcription` response). The `SECURITY.md` per-service
+auth row was updated to list only the surviving field with a
+config-mask / future-enforce note. Commit `9df1a81`.
 
 **3.2** `config.py:128-145` — six legacy `LOCAL_DEEPL_*` aliases survive
 the rename to OmniScribe. If the rename was intentional, the aliases can
 go.
+→ **Closed (Wave 3).** All six dropped from the `AliasChoices` entries
+in `config.py` (the four auth-token ones via 3.1, the three
+cors / max_upload_mb / rate_limit_per_min ones in the same commit).
+Commit `9df1a81`.
 
 **3.3** `.env.example:50-58` documents `OMNISCRIBE_MAX_PAGES` and
 `OMNISCRIBE_TRUSTED_PROXIES`, which are not declared anywhere in `src/`.
 Either document the missing features or remove the lines.
+→ **Closed (Wave 3).** `OMNISCRIBE_MAX_PAGES` is now a first-class
+field on `RuntimeSettings` (default 500, `ge=0`) so `load_settings()`
+exposes the same contract the rasterizer is using. The runtime
+read stays as `os.getenv` in `core/pdf/rasterizer.py:115` so the
+per-call cap is hot-reloadable; both paths default to 500 and
+agree on the `0` / unparseable = cap-disabled sentinel. Four
+regression tests in `tests/test_cordis_settings.py` cover
+default / override / zero-sentinel / negative-rejection.
+`OMNISCRIBE_TRUSTED_PROXIES` was never implemented in code;
+removed from `.env.example`, the `SECURITY.md` security-features
+table, and the deployment checklist. Commit `6b53b89`.
 
 **3.4** `.env.example:15-23` shows only the `LLM_*` form; `config.py`
 also accepts `OMNISCRIBE_LLM_*` aliases. Users searching for the
@@ -289,6 +310,10 @@ threads can lose entries.
 **9.5** `harness/service.py:21-41` — `service_protocol(name, methods)`
 dynamically fabricates Protocol classes via `types.new_class`; **no
 caller uses it**. Breaks mypy/IDE navigation. Delete or document a user.
+→ **Closed (Wave 3).** `service_protocol()` deleted along with its
+re-export from `omniscribe.harness.__init__` and the self-test
+`test_service_protocol_builds_named_protocol` (the two marker-Protocol
+tests stay). Commit `a4de270`.
 
 **9.6** `plugins/glossary/store.py:33-46` — `LexiconProvider.get()` is a
 one-shot lazy load: after an `ImportError` (missing `lexicon` extra),
@@ -297,6 +322,8 @@ restart. Document or invalidate `_tried` on `ImportError` only.
 
 **9.7** `plugins/glossary/store.py:49-52` — `null_provider()` has zero
 call sites. Dead helper; delete or wire.
+→ **Closed (Wave 3).** `null_provider()` deleted (and the now-unused
+`Callable` import). Commit `e05be41`.
 
 **9.8** `plugins/glossary/plugin.py:31-34` — `LexiconProvider` is created
 per boot; the service captures the bound `provider.get`. Right shape, but
@@ -547,6 +574,15 @@ now first-class fields on `RuntimeSettings`
 `ocr_quality_max_retries`). Out-of-range values are rejected at
 settings-load time instead of crashing the OCR plugin during
 `apply()`. Four regression tests in `tests/test_cordis_settings.py`.
+
+**Wave 3 (this batch):** **9.5** + **9.7** (dead helpers deleted:
+`service_protocol()` and `null_provider()`), **3.1** + **3.2**
+(truly-dead per-service auth tokens + legacy `LOCAL_DEEPL_*` aliases
+removed from `RuntimeSettings`; `transcription_auth_token` kept
+because it flows into the config-mask path), **3.3**
+(`OMNISCRIBE_MAX_PAGES` declared on `RuntimeSettings`;
+`OMNISCRIBE_TRUSTED_PROXIES` removed from `.env.example` and
+`SECURITY.md` because it was never implemented).
 
 ---
 
