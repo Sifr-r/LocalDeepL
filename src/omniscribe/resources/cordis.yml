@@ -58,6 +58,12 @@ plugins:
   - id: translate
     use: omniscribe.plugins.translate:plugin
 
+  - id: transcribe
+    use: omniscribe.plugins.transcribe:plugin
+
+  - id: glossary
+    use: omniscribe.plugins.glossary:plugin
+
   - id: ocr
     use: omniscribe.plugins.ocr:plugin
     config:
