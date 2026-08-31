@@ -254,7 +254,7 @@ class SQLiteStateBackend:
 
             return await asyncio.to_thread(_get)
 
-    async def list_jobs(self, *, limit: int = 100) -> list[JobRecord]:
+    async def list_jobs(self, *, limit: int = 100, offset: int = 0) -> list[JobRecord]:
         async with self._lock:
 
             def _list() -> list[JobRecord]:
@@ -263,8 +263,8 @@ class SQLiteStateBackend:
                     .execute(
                         "SELECT job_id, status, request_meta, result_artifact_id, "
                         "result_artifact_token, created_at, updated_at, error "
-                        "FROM jobs ORDER BY created_at DESC LIMIT ?",
-                        (limit,),
+                        "FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                        (limit, offset),
                     )
                     .fetchall()
                 )

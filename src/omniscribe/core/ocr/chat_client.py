@@ -158,7 +158,8 @@ class ChatClient:
                     )
                     await asyncio.sleep(delay)
 
-        assert last_exc is not None
+        if last_exc is None:  # pragma: no cover - unreachable defensive guard
+            raise RuntimeError("retry loop exited without capturing an exception")
         err_msg = str(last_exc)
         if any(
             term in err_msg.lower()

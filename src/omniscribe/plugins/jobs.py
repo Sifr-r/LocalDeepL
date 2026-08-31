@@ -212,11 +212,20 @@ class InMemoryJobQueue:
                 await self._worker
             self._worker = None
         # Pending work will never run now — mark it cancelled for callers.
-        for record in await self._backend.list_jobs(limit=1000):
-            if record.status == "queued":
-                await self._backend.upsert_job(
-                    replace(record, status="cancelled", updated_at=time.time())
-                )
+        # Paginate until exhausted: list_jobs orders created_at DESC, so a
+        # single bounded page would strand older queued rows forever
+        # (pedantic review 1.6).
+        offset = 0
+        while True:
+            page = await self._backend.list_jobs(limit=100, offset=offset)
+            if not page:
+                break
+            offset += len(page)
+            for record in page:
+                if record.status == "queued":
+                    await self._backend.upsert_job(
+                        replace(record, status="cancelled", updated_at=time.time())
+                    )
         self._payloads.clear()
 
     async def _run(self) -> None:

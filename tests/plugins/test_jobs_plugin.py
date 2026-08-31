@@ -201,6 +201,37 @@ async def test_shutdown_marks_pending_jobs_cancelled() -> None:
     assert (await queue.status(second.job_id)).status == "cancelled"  # type: ignore[union-attr]
 
 
+async def test_shutdown_cancels_queued_jobs_beyond_one_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pedantic review 1.6: shutdown must cancel ALL queued jobs, not
+    only the newest page (list_jobs orders created_at DESC)."""
+    ctx = await _boot()
+    try:
+        queue = ctx.inject(JobQueue)
+        backend = ctx.inject(sb.StateBackend)
+        for i in range(5):
+            await backend.upsert_job(JobRecord(job_id=f"j{i}", status="queued"))
+
+        real_list = backend.list_jobs
+
+        async def two_per_page(**kwargs: Any) -> list[JobRecord]:
+            # Emulate a 2-row page regardless of the caller's limit so a
+            # single bounded list_jobs call cannot see the whole queue.
+            # Forwards offset so the paginated shutdown walks every page.
+            kwargs["limit"] = 2
+            return await real_list(**kwargs)
+
+        monkeypatch.setattr(backend, "list_jobs", two_per_page)
+
+        await queue.shutdown()
+
+        records = await real_list(limit=100)
+        assert {r.status for r in records} == {"cancelled"}
+    finally:
+        await ctx.dispose()
+
+
 async def test_missing_artifact_store_fails_loud() -> None:
     ctx = Context()
     await ctx.plugin(sb.StateBackendPlugin(), config={"backend": "memory"})

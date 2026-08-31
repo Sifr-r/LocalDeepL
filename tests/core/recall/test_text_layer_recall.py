@@ -70,6 +70,13 @@ class TestOpenAndLifecycle:
         src = PdfTextLayerRecall()
         assert src.supplement(0, []) == []
 
+    def test_supplement_returns_empty_for_unopened_source(self) -> None:
+        """Pedantic review 1.9: a source with no open document contributes
+        no boxes instead of raising (fail-open contract; asserts vanish
+        under `python -O`)."""
+        source = PdfTextLayerRecall()
+        assert source.supplement(0, []) == []
+
     def test_close_is_idempotent(self, tmp_path: Path) -> None:
         pdf = _build_pdf(tmp_path, [["Hello world line"]])
         src = PdfTextLayerRecall()

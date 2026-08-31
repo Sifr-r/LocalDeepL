@@ -99,12 +99,12 @@ class MemoryStateBackend:
         async with self._lock:
             return self._jobs.get(job_id)
 
-    async def list_jobs(self, *, limit: int = 100) -> list[JobRecord]:
+    async def list_jobs(self, *, limit: int = 100, offset: int = 0) -> list[JobRecord]:
         async with self._lock:
             ordered = sorted(
                 self._jobs.values(), key=lambda r: r.created_at, reverse=True
             )
-            return ordered[:limit]
+            return ordered[offset : offset + limit]
 
     async def clear_jobs(self) -> int:
         async with self._lock:

@@ -135,12 +135,16 @@ def _apply_env_overrides(rows: list[PluginRow]) -> list[PluginRow]:
         overrides.setdefault(plugin_part.lower(), {})[field_part.lower()] = raw
     if not overrides:
         return rows
-    return [
-        replace(row, config={**row.config, **overrides[row.id]})
-        if row.id in overrides
-        else row
-        for row in rows
-    ]
+    # Match case-insensitively: env keys are uppercased by convention while
+    # row ids keep their cordis.yml casing, so exact matching silently
+    # dropped every override for a capitalized row id (pedantic review 1.2).
+    folded: list[PluginRow] = []
+    for row in rows:
+        row_overrides = overrides.get(row.id.lower())
+        if row_overrides:
+            row = replace(row, config={**row.config, **row_overrides})
+        folded.append(row)
+    return folded
 
 
 class Loader:
