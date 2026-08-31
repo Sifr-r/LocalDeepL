@@ -2890,8 +2890,8 @@ def build_glossary_router(service: GlossaryImportService) -> APIRouter:
         else:
             try:
                 payload = await request.json()
-            except Exception as exc:
-                return _envelope(400, "bad_request", "Malformed JSON body.") from exc
+            except Exception:
+                return _envelope(400, "bad_request", "Malformed JSON body.")
             try:
                 source = GlossaryImportRequest.model_validate(payload)
             except ValidationError as exc:
@@ -2918,8 +2918,8 @@ def build_glossary_router(service: GlossaryImportService) -> APIRouter:
         if content_type.startswith("application/json"):
             try:
                 payload = await request.json()
-            except Exception as exc:
-                return _envelope(400, "bad_request", "Malformed JSON body.") from exc
+            except Exception:
+                return _envelope(400, "bad_request", "Malformed JSON body.")
             try:
                 body_model = GlossaryUrlImportBody.model_validate(payload)
             except ValidationError as exc:
@@ -2937,16 +2937,7 @@ def build_glossary_router(service: GlossaryImportService) -> APIRouter:
         if fmt is None:
             return _envelope(422, "validation_failed", INFERENCE_FAILURE_DETAIL)
 
-        try:
-            from omniscribe.plugins.glossary.http_fetch import fetch_url_bytes
-        except ImportError:
-            fetch_url_bytes = None  # type: ignore[assignment]
-        if fetch_url_bytes is None:
-            return _envelope(
-                503,
-                "backend_unavailable",
-                "URL fetching is not configured. Use inline 'text' or 'inline_bytes_b64'.",
-            )
+        from omniscribe.plugins.glossary.http_fetch import fetch_url_bytes
         try:
             payload_bytes = await fetch_url_bytes(url)
         except GlossaryError as exc:
@@ -2954,16 +2945,24 @@ def build_glossary_router(service: GlossaryImportService) -> APIRouter:
         except Exception as exc:
             return _envelope(502, "ai_error", f"Failed to fetch URL: {exc}")
 
-        source = GlossaryImportRequest.model_validate(
-            {
-                "source": {
-                    "format": fmt,
-                    "inline_bytes_b64": base64.b64encode(payload_bytes).decode("ascii"),
-                    "encoding": encoding,
-                    "name": name,
+        try:
+            source = GlossaryImportRequest.model_validate(
+                {
+                    "source": {
+                        "format": fmt,
+                        "inline_bytes_b64": base64.b64encode(payload_bytes).decode(
+                            "ascii"
+                        ),
+                        "encoding": encoding,
+                        "name": name,
+                    }
                 }
-            }
-        )
+            )
+        except ValidationError as exc:
+            return JSONResponse(
+                status_code=422,
+                content={"detail": exc.errors(include_url=False)},
+            )
         try:
             body = await service.import_glossary(source.source)
         except GlossaryError as exc:
@@ -3056,6 +3055,9 @@ via `GlossaryError`.
 
 from __future__ import annotations
 
+import asyncio
+import socket
+from typing import Any
 from urllib.parse import urljoin
 
 import httpx
@@ -3066,33 +3068,36 @@ from omniscribe.utils.security import is_ssrf_target
 _MAX_REDIRECTS = 5
 MAX_GLOSSARY_BYTES: int = 50 * 1024 * 1024
 
+_PIN_LOCK = asyncio.Lock()
+
 
 class _PinnedIPTransport(httpx.AsyncHTTPTransport):
-    """httpx transport pinning connections to the SSRF-resolved IP."""
+    """httpx transport pinning connections to the SSRF-resolved IP.
 
-    def __init__(self, resolved_ip: str, timeout: float) -> None:
-        super().__init__(timeout=timeout)
+    The scoped ``getaddrinfo`` swap maps the target host to its validated
+    IP for the duration of one request. A module-level lock serializes
+    pinned fetches so overlapping requests can never restore a stale pin
+    process-wide.
+    """
+
+    def __init__(self, resolved_ip: str) -> None:
+        super().__init__()
         self._resolved_ip = resolved_ip
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        request.extensions["server_hostname"] = request.url.host
-        # Pin the connection to the validated IP (TOCTOU defense).
-        import socket
-
         original_getaddrinfo = socket.getaddrinfo
 
         def _pinned_getaddrinfo(host: Any, *args: Any, **kwargs: Any) -> Any:
             if host == request.url.host:
-                return original_getaddrinfo(
-                    self._resolved_ip, *args, **kwargs
-                )
+                return original_getaddrinfo(self._resolved_ip, *args, **kwargs)
             return original_getaddrinfo(host, *args, **kwargs)
 
-        socket.getaddrinfo = _pinned_getaddrinfo  # type: ignore[assignment]
-        try:
-            return await super().handle_async_request(request)
-        finally:
-            socket.getaddrinfo = original_getaddrinfo  # type: ignore[assignment]
+        async with _PIN_LOCK:
+            socket.getaddrinfo = _pinned_getaddrinfo
+            try:
+                return await super().handle_async_request(request)
+            finally:
+                socket.getaddrinfo = original_getaddrinfo
 
 
 async def fetch_url_bytes(url: str, *, timeout: float = 30.0) -> bytes:
@@ -3112,7 +3117,7 @@ async def fetch_url_bytes(url: str, *, timeout: float = 30.0) -> bytes:
                 403, "ssrf_blocked", "URL resolved to no address."
             )
 
-        transport = _PinnedIPTransport(resolved_ip=check.resolved_ip, timeout=timeout)
+        transport = _PinnedIPTransport(resolved_ip=check.resolved_ip)
         client = httpx.AsyncClient(
             transport=transport,
             timeout=timeout,
@@ -3126,7 +3131,11 @@ async def fetch_url_bytes(url: str, *, timeout: float = 30.0) -> bytes:
         if response.is_redirect:
             location = response.headers.get("Location")
             if not location:
-                break
+                raise GlossaryError(
+                    502,
+                    "ai_error",
+                    f"Redirect response missing Location header for {current_url}",
+                )
             current_url = urljoin(current_url, location)
             continue
 
@@ -3143,14 +3152,13 @@ async def fetch_url_bytes(url: str, *, timeout: float = 30.0) -> bytes:
     )
 ```
 
-(The `_PinnedIPTransport` here is a simplified re-implementation of the old
-~230-line raw-socket transport using httpx's transport hook + a scoped
-`getaddrinfo` swap; the behavioral contract — SSRF-check every hop, pin the
-IP, cap redirects — is what the tests pin. If the implementer finds the
-monkeypatched getaddrinfo approach interferes with httpx's connection
-pooling in tests, patch `check` verification instead: assert the SSRF check
-ran per hop via monkeypatched `is_ssrf_target` and let httpx resolve
-normally in the test.)
+(The `_PinnedIPTransport` is a simplified re-implementation of the old
+~230-line raw-socket transport using httpx's transport hook + a
+`_PIN_LOCK`-serialized `getaddrinfo` swap; the behavioral contract —
+SSRF-check every hop, pin the IP, cap redirects — is what the tests pin.
+Task 9's tests avoid the transport entirely: they monkeypatch
+`fetch_url_bytes` for the happy path and use SSRF-denied literal-IP
+targets (no transport runs) for the 403 path.)
 
 - [ ] **Step 3: Implement plugin.py + __init__.py**
 
@@ -3220,7 +3228,7 @@ __all__ = ["plugin"]
 - [ ] **Step 4: Run the service suite + harness boot check**
 
 Run: `uv run pytest tests/plugins/test_glossary_service.py -q`
-Expected: still 9 PASS (routes not yet exercised — Task 9 adds them)
+Expected: still 11 PASS (routes not yet exercised — Task 9 adds them)
 
 - [ ] **Step 5: Fast gate + commit**
 
