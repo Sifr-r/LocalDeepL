@@ -110,9 +110,8 @@ def make_stub_ocr():
 # ---------------------------------------------------------------------------
 
 # Thirteen-row test tree: the shipped eleven-plugin boot tree plus the
-# documents plugin and the slice-3 transcribe/glossary plugins (their
-# shipped-tree rows land with the Task 11 boot wiring), with a forced
-# memory backend and small TTLs so tests stay fast and offline.
+# documents plugin and the slice-3 transcribe/glossary plugins, with a
+# forced memory backend and small TTLs so tests stay fast and offline.
 _TEST_CORDIS_YML = """\
 plugins:
   - id: runtime

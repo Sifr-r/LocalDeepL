@@ -2887,6 +2887,56 @@
         ]
       }
     },
+    "/api/translate/result/{job_id}": {
+      "get": {
+        "operationId": "translate_result_api_translate_result__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "token",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Translate Result",
+        "tags": [
+          "translate"
+        ]
+      }
+    },
     "/api/translate/status/{job_id}": {
       "get": {
         "operationId": "translation_status_api_translate_status__job_id__get",
