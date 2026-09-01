@@ -146,7 +146,7 @@ Protocol (`ctx.inject(JobQueue)`), never by module singleton.
 | `src/omniscribe/resources/dictionaries/` | Packaged compiled spellcheck dictionaries loaded before legacy repository-root dictionaries |
 | `src/omniscribe/resources/calibration/` | Pre-trained model confidence calibration files (e.g. `qwen2_5_vl_72b.json`) |
 | `src/omniscribe/core/ocr/multi_format_client.py` | Multi-format LLM completion dispatcher (`openai_compatible`, `anthropic_compatible`, `ollama_compatible`), vision base64 payloads, exponential backoff resilience retries, and timeout boundaries |
-| `src/omniscribe/harness/` | Cordis-style plugin harness: `context.py` (Protocol-keyed services, LIFO effects, event bus, router queue), `loader.py` (YAML tree + patches + env overrides, fails loud), `plugin.py` (Plugin base), plus `errors.py`, `events.py`, `effects.py`, `service.py`, `config.py` |
+| `src/omniscribe/harness/` | Cordis-style plugin harness: `context.py` (Protocol-keyed services, LIFO effects, event bus, router queue, duplicate protection, and non-shadowing rollback), `loader.py` (YAML tree + patches + env overrides, fails loud), `plugin.py` (Plugin base), plus `errors.py` (hierarchical domain exceptions: `DuplicateServiceError`, `DuplicatePluginError`, `ContextDisposedError`, `ServiceNotFoundError`, `PluginLoadError`), `events.py`, `effects.py`, `service.py`, `config.py` |
 | `src/omniscribe/plugins/` | The thirteen boot plugins (runtime, logging, state_backend, artifacts, jobs, progress, providers, health, documents, translate, transcribe, glossary, ocr) that register services and mount every `/api` router; see the Plugin Tree section |
 | `src/omniscribe/plugins/documents/` | Documents plugin: `schemas.py` (extraction/export request models reproducing the pre-harness contract), `prompts.py` (extraction prompts re-homed verbatim from the pre-harness `api/services/ai.py`; `PROMPT_VERSION 2026-08-15.v1`; invoice/resume/academic/table/table_extraction/custom templates), `service.py` (LLM extraction runner, text/markdown/json/docling-compatible/mineru-compatible export builders, and on-demand block-tree building from the stored text artifact — no tree sidecars), `routes.py` (`POST /api/extract`, `POST /api/export/document`, `GET|POST /api/export/docx`, `POST /api/export/html`, `POST /api/export/docx-tree`, `POST /api/export/blocktree`, token-bound `GET /api/export/{artifact_id}`, `GET /api/text/{artifact_id}`, `GET /api/metadata/{artifact_id}`), and `plugin.py` (mounts the router; no configurable fields) |
 | `src/omniscribe/plugins/translate/` | Translate plugin: `schemas.py` (translation request models + client response contracts), `service.py` (`TranslationService` — sync single-shot `translate_text` re-home, JobQueue runner (`TranslationJobRunner` seam) that walks the stored text artifact's tree with `translate_tree`, and client status mapping PENDING/PROGRESS/SUCCESS/FAILURE), `routes.py` (`POST /api/translate`, `POST /api/translate/async`, `GET /api/translate/status/{job_id}`, `GET /api/translate/result/{job_id}` token-redeeming fetch, `POST /api/translate/nllb`), and `plugin.py` (mounts the router; no configurable fields) |
@@ -163,6 +163,7 @@ Protocol (`ctx.inject(JobQueue)`), never by module singleton.
 | `examples/` | Sample PDFs and images used by `tests/` and the confidence scripts |
 | `tests/` | Unit, integration, security, and slow-path validation |
 | `tests/core/llm/test_client.py` | Direct unit tests for `core/llm/client.py` (provider config resolution, prompt and image extraction, and VLM/LLM invocation) |
+| `tests/plugins/test_job_error_sanitization.py` | Unit tests for OCR job error sanitization (`_sanitize_job_error` and `OCRService._status_response`) |
 | `client/lib/data/providers/features_state.dart` | Immutable state models (`TranslationState`, `TranscriptionState`, `GlossaryState`, `ExtractionState`) with copyWith, equality, and clearError support |
 | `client/lib/data/providers/features_notifier.dart` | Riverpod 2.x `Notifier` controllers (`translationProvider`, `transcriptionProvider`, `glossaryProvider`, `extractionProvider`) for feature operations |
 | `client/lib/data/models/smart_preset.dart` | Immutable `SmartPreset` models, presets catalog (Standard, Receipt, Handwriting, Historical, Fast, Deep), filename heuristics, and ProcessSettings bidirectional mapping |
@@ -224,6 +225,16 @@ pending job or marks an in-flight job as `cancelled` without
 letting the runner's eventual return overwrite the cancellation. With the
 memory backend queue and artifact indexes are lost on restart;
 `OMNISCRIBE_STATE_BACKEND=sqlite` persists them.
+
+### Multi-producer job runner dispatch
+
+The single-worker `JobQueue` supports multiple producer plugins (OCR,
+translate, glossary) through runtime-checkable `JobPayload` protocol
+conformance. Payloads tag their class with `runner_protocol = <RunnerProtocol>`.
+At claim time, `InMemoryJobQueue._resolve_runner` inspects the payload: if it
+conforms to `JobPayload` (or defines `runner_protocol`), its declared runner
+protocol key is injected from the application `Context`; otherwise, it defaults
+to injecting `JobRunner`.
 
 ### Authentication and runtime security
 
@@ -540,7 +551,7 @@ the three services.
 | `src/omniscribe/core/translate/config.py` | Own typed translation settings and the deterministic optional-feature error used by core and API boundaries |
 | `src/omniscribe/core/translate/workflow.py` | Keep chunking and evaluation helpers importable without async extras, lazily build the LangGraph workflow, and accept injected translation settings |
 | `src/omniscribe/api/routers/config.py` | Adapt the mutable web runtime config into core-owned translation settings without exposing `_config` to core modules |
-| `src/omniscribe/api/celery_app.py` | Guard Celery imports and provide an import-safe fallback task facade when async extras are not installed |
+| `src/omniscribe/api/celery_app.py` | (since deleted) Guard Celery imports and provide an import-safe fallback task facade when async extras are not installed |
 | `src/omniscribe/api/tasks.py` | Validate async translation task inputs and pass explicit translation settings into the core workflow |
 | `src/omniscribe/api/routers/ocr.py` | Validate async translation route inputs and return deterministic 503 responses when optional async extras are unavailable |
 | `pyproject.toml` | Move Celery, Redis, LangGraph, ChromaDB, and sentence-transformers into the `async-translation` extra with `translation` as an alias extra |
@@ -706,7 +717,7 @@ Conducted a comprehensive 3-domain audit (Core Pipeline, Backend API/Security, a
 | `src/omniscribe/core/translate/config.py` | Own typed translation settings and the deterministic optional-feature error used by core and API boundaries |
 | `src/omniscribe/core/translate/workflow.py` | Keep chunking and evaluation helpers importable without async extras, lazily build the LangGraph workflow, and accept injected translation settings |
 | `src/omniscribe/api/routers/config.py` | Adapt the mutable web runtime config into core-owned translation settings without exposing `_config` to core modules |
-| `src/omniscribe/api/celery_app.py` | Guard Celery imports and provide an import-safe fallback task facade when async extras are not installed |
+| `src/omniscribe/api/celery_app.py` | (since deleted) Guard Celery imports and provide an import-safe fallback task facade when async extras are not installed |
 | `src/omniscribe/api/tasks.py` | Validate async translation task inputs and pass explicit translation settings into the core workflow |
 | `src/omniscribe/api/routers/ocr.py` | Validate async translation route inputs and return deterministic 503 responses when optional async extras are unavailable |
 | `pyproject.toml` | Move Celery, Redis, LangGraph, ChromaDB, and sentence-transformers into the `async-translation` extra with `translation` as an alias extra |
@@ -963,6 +974,54 @@ Conducted a full-repository parallel audit covering Core Pipeline, API & Securit
 | `client/lib/data/models/models.dart` | Barrel export exposing `smart_preset.dart` to the client application |
 | `client/test/data/models/smart_preset_test.dart` | Unit test suite verifying preset integrity, metadata, filename suggestions, settings application, and preset matching logic |
 
+### 2026-09-01: Wave 7 — Domain D: Harness & Engine Polish
+
+Hardening, observability improvements, and polish across harness loading, invisible PDF text layer embedding, and progress event handling:
+
+| File | Responsibility |
+| --- | --- |
+| `src/omniscribe/harness/loader.py` | `Loader.load()` validates explicit `patch_paths` (including `OMNISCRIBE_CORDIS_PATCH`) and warns if missing; simplified exception propagation preserving `PluginLoadError`; logged plugin mount count; enhanced `_instantiate()` error reporting with target row plugin use and ID. |
+| `src/omniscribe/core/pdf/embedder_helpers.py` | Implemented `_log_once` helper replacing `_UNICODE_GLYPH_MISS_LOGGED` boolean flag; eliminated `exc_info=True` noise from expected font probe failures; added Persian `peh` (`\u067e` / `0x067E`) to `_PROBE_CODEPOINTS`. |
+| `src/omniscribe/core/pdf/embedder.py` | Re-exported `_PROBE_CODEPOINTS` and `_log_once` in `__all__` for module surface parity. |
+| `src/omniscribe/plugins/progress.py` | Narrowed `_on_foreign_send_done` exception handling to catch `KeyError` cleanly on concurrent channel disconnects while logging unexpected failures via `_LOGGER.exception`. |
+
+### 2026-09-01: Wave 7 — Domain A: Security & Recall Hygiene
+
+Security fail-closed hardening, recall constant deduplication, and observable lifecycle logging across core recall and network security:
+
+| File | Responsibility |
+| --- | --- |
+| `src/omniscribe/core/recall/__init__.py` | Export shared recall constants (`MAX_RECALL_BOXES_PER_PAGE = 10`, `STRADDLE_MIN_OVERLAP = 0.15`) and backward-compatible aliases for recall passes. |
+| `src/omniscribe/core/recall/text_layer.py` | Add debug logging when skipping non-PDF inputs or failing document open; consume `DISABLE_STRINGS` from `omniscribe.utils.env` and promoted constants from `omniscribe.core.recall`. |
+| `src/omniscribe/core/recall/whitespace.py` | Fix stale plan docstring reference to point to `docs/ARCHITECTURE.md`; consume `DISABLE_STRINGS` from `omniscribe.utils.env`; align `_MAX_WHITESPACE_BOXES_PER_PAGE` and `_STRADDLE_MIN_OVERLAP` with standard recall constants. |
+| `src/omniscribe/utils/security.py` | Document blocking `socket.getaddrinfo` DNS hazard in `is_blocked_host` docstring warning against async thread use; document intentional non-public blocking stance for `normalized.is_reserved` (240.0.0.0/4 and CGNAT 100.64.0.0/10). |
+| `src/omniscribe/utils/env.py` | Export canonical `DISABLE_STRINGS: Final[frozenset[str]]` for standardized falsy environment variable parsing. |
+| `tests/core/recall/test_text_layer_recall.py` | Regression tests for non-PDF/corrupted-PDF debug logging and recall constant parity. |
+| `### 2026-09-01: Wave 7 — Domain B: Environment, Booleans & Configuration
+
+Standardized boolean parsing vocabularies, config seed observability, and state-backend allowlist validation:
+
+| File | Responsibility |
+| --- | --- |
+| `src/omniscribe/utils/env.py` | Declare canonical `ENABLE_STRINGS` and `DISABLE_STRINGS` sets; implement `parse_bool` and `env_bool` unifying truthy/falsy evaluation across env vars and form data. |
+| `src/omniscribe/plugins/ocr/schemas.py` | Delegate `_parse_bool` to `omniscribe.utils.env.parse_bool` supporting extended booleans (`"enabled"`, `"disabled"`, etc.) uniformly. |
+| `src/omniscribe/config.py` | Validate `state_backend` strictly against `{"memory", "sqlite"}` with explicit early guidance when unbuilt backends like `redis` are requested. |
+| `src/omniscribe/plugins/ocr/service.py` | Document canonical 24 exposed keys in `_CONFIG_KEY_SET` for the `/api/config` endpoint. |
+| `.env.example` | Document `OMNISCRIBE_LLM_*` aliases alongside canonical `LLM_*` variables. |
+| `tests/utils/test_env.py` | Cover canonical boolean sets, `parse_bool`, and `env_bool` truthy/falsy parsing. |
+| `tests/plugins/test_ocr_schemas.py` | Cover uniform boolean parsing across form requests. |
+| `tests/test_cordis_settings.py` | Validate state backend default, SQLite acceptance, and Redis rejection. |
+
+### 2026-09-01: Wave 7 — Domain C: Server & VLM Client Lifecycle
+
+Clean server module logging and settings instantiation, preflight client isolation, and developer documentation reconciliation:
+
+| File | Responsibility |
+| --- | --- |
+| `src/omniscribe/server.py` | Remove redundant module-level `_LOGGER`, eliminate inner `import logging` inside `_unhandled_exception_handler`, deduplicate `load_settings()` calls in `create_app()`, add `_load_attr` helper, and standardize divider comment styles. |
+| `src/omniscribe/core/ocr/processor.py` | Isolate `ensure_model_loaded()` client lifecycle using an ephemeral client closed in `finally` without mutating or closing `self.client`; update references to `TestPromptConstants`. |
+| `docs/AGENTS.md` | Reconcile model pre-flight documentation with in-core `ensure_model_loaded()`; document `OMNISCRIBE_VLM_PAGE_MAX_TOKENS` and `OMNISCRIBE_VLM_CROP_MAX_TOKENS` tunables; list `tests/core/ocr/test_ocr.py` in test inventory. |
+
 ## See Also
 
 - [README.md](README.md) — feature overview, install, web workspace
@@ -972,4 +1031,4 @@ Conducted a full-repository parallel audit covering Core Pipeline, API & Securit
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var reference
 - `audits/` — historical and comprehensive domain audit logs
 
-_Last updated: 2026-08-31_
+_Last updated: 2026-09-01_
