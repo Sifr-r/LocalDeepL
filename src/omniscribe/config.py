@@ -119,19 +119,6 @@ class RuntimeSettings(BaseSettings):
         validation_alias="OMNISCRIBE_MAX_PAGES",
         ge=0,
     )
-
-    # Hard cap on pages a single run is allowed to rasterize (pedantic
-    # 3.3). Declared here for the env-var inventory and ops tooling that
-    # consumes :func:`load_settings`; the runtime read still happens via
-    # ``os.getenv`` in :mod:`omniscribe.core.pdf.rasterizer` so the
-    # per-page cap is hot-reloadable from a long-running uvicorn
-    # worker without a process restart. Both paths default to 500 and
-    # agree on the contract (``0`` or unparseable → cap disabled).
-    max_pages: int = Field(
-        default=500,
-        validation_alias="OMNISCRIBE_MAX_PAGES",
-        ge=0,
-    )
     chunk_pages: int = Field(
         default=25, validation_alias="OMNISCRIBE_CHUNK_PAGES", ge=1
     )

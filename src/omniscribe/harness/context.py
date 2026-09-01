@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import itertools
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -43,6 +44,16 @@ class Context:
         self._plugin_effects: dict[str, list[EffectRef]] = {}
         self._root_effects: list[EffectRef] = []
         self._disposed = False
+        # Pedantic 9.2: per-instance id source for ``EffectRef``s.
+        # Previously the harness relied on a module-level
+        # ``itertools.count`` in effects.py that was process-global
+        # and never reset, so two ``Context`` instances in the same
+        # process shared an id space. The per-instance counter below
+        # makes id allocation local to one ``Context`` lifetime.
+        self._effect_id_source = itertools.count(1)
+
+    def _next_effect_id(self) -> int:
+        return next(self._effect_id_source)
 
     # -- internals ----------------------------------------------------------
 
@@ -75,7 +86,12 @@ class Context:
                 f"service already registered for protocol {protocol.__name__!r}"
             )
         self._services[protocol] = instance
-        ref = EffectRef(plugin_id=self._current_plugin(), kind="service", key=protocol)
+        ref = EffectRef(
+            plugin_id=self._current_plugin(),
+            kind="service",
+            key=protocol,
+            _id=self._next_effect_id(),
+        )
         return self._track(ref)
 
     def inject(self, protocol: type) -> Any:
@@ -97,6 +113,7 @@ class Context:
             plugin_id=self._current_plugin(),
             kind="listener",
             key=(event_type, handler),
+            _id=self._next_effect_id(),
         )
         return self._track(ref)
 
@@ -131,7 +148,12 @@ class Context:
     def effect(self, cleanup: Cleanup) -> EffectRef:
         """Register a cleanup that runs (in LIFO) when the owner unloads."""
         self._check_not_disposed("register effect")
-        ref = EffectRef(plugin_id=self._current_plugin(), kind="effect", key=cleanup)
+        ref = EffectRef(
+            plugin_id=self._current_plugin(),
+            kind="effect",
+            key=cleanup,
+            _id=self._next_effect_id(),
+        )
         self._effect_cleanups[ref._id] = cleanup
         return self._track(ref)
 
@@ -147,7 +169,12 @@ class Context:
         """Queue ``router`` for inclusion by the server after harness load."""
         self._check_not_disposed("mount router")
         self._routers.append(router)
-        ref = EffectRef(plugin_id=self._current_plugin(), kind="router", key=router)
+        ref = EffectRef(
+            plugin_id=self._current_plugin(),
+            kind="router",
+            key=router,
+            _id=self._next_effect_id(),
+        )
         return self._track(ref)
 
     def routes(self) -> list[Any]:

@@ -23,7 +23,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, get_args, runtime_checkable
 
 from pydantic import BaseModel
 
@@ -34,6 +34,19 @@ from omniscribe.harness.plugin import Plugin
 _LOGGER = logging.getLogger("omniscribe.plugins.state")
 
 JobStatus = Literal["queued", "running", "complete", "error", "cancelled"]
+
+# Pedantic 9.16: the canonical terminal-state set, derived from
+# ``JobStatus``. ``plugins/jobs.py`` and ``plugins/ocr/service.py``
+# both use this; a new terminal status (e.g. ``"superseded"``) needs
+# only one edit on this module. The "non-terminal" statuses
+# (``queued``, ``running``) are listed explicitly so a literal
+# annotation reading is enough; everything else in the union is
+# terminal by construction.
+_NON_TERMINAL_JOB_STATUSES: frozenset[str] = frozenset({"queued", "running"})
+TERMINAL_JOB_STATUSES: frozenset[str] = frozenset(
+    set(get_args(JobStatus)) - _NON_TERMINAL_JOB_STATUSES
+)
+del _NON_TERMINAL_JOB_STATUSES
 
 
 @dataclass(frozen=True)
@@ -208,6 +221,7 @@ from .state_backend_memory import MemoryStateBackend  # noqa: E402
 from .state_backend_sqlite import SQLiteStateBackend  # noqa: E402
 
 __all__ = [
+    "TERMINAL_JOB_STATUSES",
     "ArtifactBlob",
     "ArtifactRecord",
     "ChannelRecord",

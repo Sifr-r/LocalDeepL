@@ -21,11 +21,19 @@ from omniscribe.harness.context import Context
 from omniscribe.harness.events import AgentEvent, SessionEvent
 from omniscribe.harness.plugin import Plugin
 from omniscribe.plugins.artifacts import ArtifactStore
-from omniscribe.plugins.state_backend import JobRecord, StateBackend
+from omniscribe.plugins.state_backend import (
+    TERMINAL_JOB_STATUSES,
+    JobRecord,
+    StateBackend,
+)
 
 _LOGGER = logging.getLogger("omniscribe.plugins.jobs")
 
-_TERMINAL_STATUSES = {"complete", "error", "cancelled"}
+# Pedantic 9.16: derive the terminal set from the JobStatus literal
+# instead of duplicating the literal set. The single source of truth
+# lives in ``state_backend.py`` so a new terminal status (e.g.
+# ``"superseded"``) needs only one edit.
+_TERMINAL_STATUSES = TERMINAL_JOB_STATUSES
 
 
 # -- events -------------------------------------------------------------------
@@ -82,24 +90,36 @@ class JobOutcome:
 
 
 @runtime_checkable
-class JobRunner(Protocol):
+class _JobRunnerContract(Protocol):
+    """The shape every async job runner satisfies.
+
+    The three concrete runner protocols below (JobRunner,
+    TranslationJobRunner, GlossaryJobRunner) are intentionally
+    distinct type identities — they double as DI keys so the
+    multi-producer dispatch in :meth:`InMemoryJobQueue._resolve_runner`
+    can route a payload to the right runner via the
+    ``runner_protocol`` class attribute. They are structurally
+    identical (the ``__call__`` signature below is the entire
+    contract); the distinct keys are the reason they exist as
+    three named classes instead of a single alias.
+    """
+
+    async def __call__(self, request: Any) -> JobOutcome: ...
+
+
+@runtime_checkable
+class JobRunner(_JobRunnerContract, Protocol):
     """Executes one queued request; registered by the OCR plugin."""
 
-    async def __call__(self, request: Any) -> JobOutcome: ...
-
 
 @runtime_checkable
-class TranslationJobRunner(Protocol):
+class TranslationJobRunner(_JobRunnerContract, Protocol):
     """Executes one queued translation request; registered by the translate plugin."""
 
-    async def __call__(self, request: Any) -> JobOutcome: ...
-
 
 @runtime_checkable
-class GlossaryJobRunner(Protocol):
+class GlossaryJobRunner(_JobRunnerContract, Protocol):
     """Executes one queued glossary import; registered by the glossary plugin."""
-
-    async def __call__(self, request: Any) -> JobOutcome: ...
 
 
 # -- queue ----------------------------------------------------------------------

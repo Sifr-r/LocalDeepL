@@ -323,10 +323,23 @@ resets. Tie it to the `Context` instance or owning scope.
 **9.3** `harness/effects.py:47-56` — `EffectScope.aclose` abandons
 remaining cleanups if the first raises. Pick a policy: best-effort
 (log + continue) or strict (fail fast).
+→ **Closed (Wave 5).** Each cleanup call (sync and async paths)
+is wrapped in try/except; a failure is logged at ERROR with
+the traceback and the loop continues so every registered
+effect gets a chance to run. New tests
+``test_scope_aclose_continues_after_failing_cleanup`` and
+``test_scope_aclose_continues_after_failing_async_cleanup``
+pin the contract. Commit `0e8bee7`.
 
 **9.4** `harness/effects.py:41-45` — `EffectScope.add` mutates
 `self._cleanups` without a lock; concurrent registration from plugin
 threads can lose entries.
+→ **Closed (Wave 5).** A ``threading.Lock`` now guards the
+``_cleanups`` list mutation in ``add()`` and the
+``aclose()`` pop loop. New test
+``test_scope_add_is_thread_safe`` fires 8 threads × 50 adds
+through a barrier and asserts the final list length is
+exactly 400. Commit `0e8bee7`.
 
 **9.5** `harness/service.py:21-41` — `service_protocol(name, methods)`
 dynamically fabricates Protocol classes via `types.new_class`; **no
@@ -340,6 +353,14 @@ tests stay). Commit `a4de270`.
 one-shot lazy load: after an `ImportError` (missing `lexicon` extra),
 `_tried` stays True forever. Installing the extra later requires a process
 restart. Document or invalidate `_tried` on `ImportError` only.
+→ **Closed (Wave 5).** ``_tried`` is now set to ``True`` only
+on a successful import. ``ImportError`` leaves it ``False``
+so the next call retries the import. A successful import is
+still cached — the same store object is returned on every
+subsequent call without re-invoking the constructor. Three
+regression tests in
+``tests/plugins/test_glossary_store.py`` (new file). Commit
+`3281764`.
 
 **9.7** `plugins/glossary/store.py:49-52` — `null_provider()` has zero
 call sites. Dead helper; delete or wire.
@@ -382,12 +403,37 @@ classes; no Protocol declares it. A fourth producer's author must read
 **9.15** `plugins/jobs.py:91-102` — `JobRunner`, `TranslationJobRunner`,
 `GlossaryJobRunner` are three near-identical Protocols differing only in
 name/docstring. Deduplicate via a base + aliases.
+→ **Closed (Wave 5).** The structural contract is extracted
+into a private ``_JobRunnerContract`` Protocol that each
+runner extends with only a distinguishing docstring. The
+three runner Protocols remain distinct type identities (DI
+keys) so the multi-producer dispatch in
+``InMemoryJobQueue._resolve_runner`` still routes payloads
+to the right runner via the ``runner_protocol`` class
+attribute. The duplicate ``async def __call__`` body now
+lives in only one place. New test
+``test_runner_protocols_share_contract`` pins both the
+distinct-identity property and the shared-MRO property.
+Commit `ed8ed3a`.
 
 **9.16** `plugins/jobs.py:28` `_TERMINAL_STATUSES`,
 `plugins/state_backend.py:36` `JobStatus` literal, and
 `plugins/ocr/service.py:60` `_TERMINAL_QUEUE_STATUSES` — three copies of
 the same terminal set. Promote one public constant or derive it from the
 literal's `__args__`.
+→ **Closed (Wave 5).** ``TERMINAL_JOB_STATUSES: frozenset[str]``
+added to ``state_backend.py``, derived from
+``get_args(JobStatus)`` minus the non-terminal set
+(``{queued, running}``). ``plugins/jobs.py::_TERMINAL_STATUSES``
+and
+``plugins/ocr/service.py::_TERMINAL_QUEUE_STATUSES``
+are now aliases of the canonical constant — kept as
+source-level readability for the call sites but pointing
+at the same object. A new terminal status (e.g.
+``"superseded"``) needs one edit. New test
+``test_terminal_job_statuses_derived_from_literal``
+pins the single-source-of-truth contract. Commit
+`ed8ed3a`.
 
 **9.17** `plugins/translate/routes.py`, `plugins/transcribe/routes.py`,
 `plugins/glossary/routes.py` — the three new route modules never got the
@@ -614,6 +660,15 @@ request body. ``fetch_result`` failures now collapse to a
 single uniform 404 + ``"result not available"`` detail so
 job-id enumeration via differential status codes is no
 longer possible.)
+
+**Wave 5 (this batch):** **9.2** / **9.3** / **9.4** (per-Context
+effect-id counter + ``EffectScope.aclose`` failure isolation
++ thread-safe ``add``); **9.6** (retry
+``LexiconProvider.get`` on ``ImportError`` so a later
+``uv sync --extra lexicon`` doesn't need a restart);
+**9.15** / **9.16** (dedupe the three runner Protocols
+behind a shared ``_JobRunnerContract`` base + canonicalise
+the terminal status set in ``state_backend``).
 
 ---
 

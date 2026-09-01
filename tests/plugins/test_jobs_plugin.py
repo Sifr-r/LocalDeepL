@@ -248,3 +248,60 @@ async def test_missing_artifact_store_fails_loud() -> None:
     with pytest.raises(ServiceNotFoundError):
         await ctx.plugin(jobs.JobsPlugin(), config={})
     await ctx.dispose()
+
+
+# ---------------------------------------------------------------------------
+# Pedantic 9.15 / 9.16: job-runner Protocols + terminal status set
+# ---------------------------------------------------------------------------
+
+
+def test_runner_protocols_share_contract() -> None:
+    """Pedantic 9.15: the three runner Protocols (``JobRunner``,
+    ``TranslationJobRunner``, ``GlossaryJobRunner``) are
+    intentionally distinct DI keys but share a single structural
+    contract (``_JobRunnerContract``). They remain distinct
+    type identities so the harness can route to the right
+    producer via the ``runner_protocol`` class attribute on the
+    payload, but the duplicate ``__call__`` method lives in
+    only one place.
+    """
+    from omniscribe.plugins.jobs import (
+        GlossaryJobRunner,
+        JobRunner,
+        TranslationJobRunner,
+        _JobRunnerContract,
+    )
+
+    # All three satisfy the shared contract — they have the same
+    # callable shape, even though they are distinct types.
+    assert JobRunner.__mro__[0] is not TranslationJobRunner
+    assert TranslationJobRunner.__mro__[0] is not GlossaryJobRunner
+    assert _JobRunnerContract in JobRunner.__mro__
+    assert _JobRunnerContract in TranslationJobRunner.__mro__
+    assert _JobRunnerContract in GlossaryJobRunner.__mro__
+
+
+def test_terminal_job_statuses_derived_from_literal() -> None:
+    """Pedantic 9.16: a single source of truth for the terminal
+    job-status set, derived from the ``JobStatus`` literal in
+    ``state_backend``. Both ``plugins/jobs.py`` and
+    ``plugins/ocr/service.py`` import it; a new terminal status
+    needs one edit.
+    """
+    from omniscribe.plugins.jobs import _TERMINAL_STATUSES
+    from omniscribe.plugins.ocr.service import _TERMINAL_QUEUE_STATUSES
+    from omniscribe.plugins.state_backend import (
+        TERMINAL_JOB_STATUSES,
+        JobStatus,
+        get_args,
+    )
+
+    # The local aliases point at the same canonical set.
+    assert _TERMINAL_STATUSES is TERMINAL_JOB_STATUSES
+    assert _TERMINAL_QUEUE_STATUSES is TERMINAL_JOB_STATUSES
+
+    # And the canonical set is exactly the JobStatus literal minus
+    # the non-terminal (queued / running) values.
+    expected = frozenset(get_args(JobStatus)) - frozenset({"queued", "running"})
+    assert expected == TERMINAL_JOB_STATUSES
+    assert frozenset({"complete", "error", "cancelled"}) == TERMINAL_JOB_STATUSES

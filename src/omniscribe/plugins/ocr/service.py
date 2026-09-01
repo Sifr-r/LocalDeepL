@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
+from typing import cast
 import shutil
 import tempfile
 from collections import deque
@@ -46,7 +47,7 @@ from omniscribe.plugins.ocr.schemas import (
     OCRRequest,
 )
 from omniscribe.plugins.progress import ProgressFrame, ProgressService
-from omniscribe.plugins.state_backend import JobRecord
+from omniscribe.plugins.state_backend import TERMINAL_JOB_STATUSES, JobRecord
 from omniscribe.utils.security import check_ssrf_target_sync
 
 _HttpJobStatus = Literal["pending", "processing", "complete", "error", "cancelled"]
@@ -58,7 +59,7 @@ _QUEUE_STATUS_TO_HTTP: dict[str, _HttpJobStatus] = {
     "error": "error",
     "cancelled": "cancelled",
 }
-_TERMINAL_QUEUE_STATUSES = {"complete", "error", "cancelled"}
+_TERMINAL_QUEUE_STATUSES = TERMINAL_JOB_STATUSES
 
 _EVENT_NAMES: dict[type, str] = {
     JobQueued: "job_queued",
@@ -355,7 +356,17 @@ class OCRServiceImpl:
             raise not_found
         if record is None or record.status != "complete":
             raise not_found
-        artifact = await self._artifacts.get(record.result_artifact_id or "", token)
+        # Narrow the optional ``token`` to ``str`` so the artifact
+        # store's typed ``get(artifact_id: str, token: str)`` is
+        # satisfied. By this point we have either matched the stored
+        # token (so the caller passed one) or bypassed the compare
+        # (because the record has no stored token), and the runtime
+        # contract is: caller-supplied token wins when present, the
+        # stored token is used when the caller did not pass one.
+        resolved_token = cast("str", token if token is not None else expected)
+        artifact = await self._artifacts.get(
+            record.result_artifact_id or "", resolved_token
+        )
         if artifact is None:
             raise not_found
         return Response(

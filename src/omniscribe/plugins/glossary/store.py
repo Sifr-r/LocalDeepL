@@ -32,14 +32,25 @@ class LexiconProvider:
         self._tried = False
 
     def get(self) -> LexiconStore | None:
-        if not self._tried:
-            self._tried = True
-            try:
-                from omniscribe.core.lexicon import LanceDBLexiconStore
+        # Pedantic 9.6: previously the ``_tried = True`` assignment ran
+        # before the import attempt, so a single ``ImportError``
+        # (operator runs the image without the ``lexicon`` extra) made
+        # the provider permanent-cached to ``None`` and a later
+        # ``uv sync --extra lexicon`` (e.g. the operator installed the
+        # extra mid-run, or a health probe earlier faked an
+        # ImportError) had no chance to recover. The flag is now set
+        # only on success; ``ImportError`` leaves ``_tried`` False so
+        # the next call retries the import.
+        if self._tried:
+            return self._store
+        try:
+            from omniscribe.core.lexicon import LanceDBLexiconStore
 
-                self._store = LanceDBLexiconStore(path=self._store_path)
-                _LOGGER.info("lexicon store ready at %s", self._store_path)
-            except ImportError as exc:
-                _LOGGER.warning("lexicon extra unavailable: %s", exc)
-                self._store = None
+            self._store = LanceDBLexiconStore(path=self._store_path)
+            self._tried = True
+            _LOGGER.info("lexicon store ready at %s", self._store_path)
+        except ImportError as exc:
+            _LOGGER.warning("lexicon extra unavailable: %s", exc)
+            self._store = None
+            # ``_tried`` stays False; the next get() will retry.
         return self._store
