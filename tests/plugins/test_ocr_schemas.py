@@ -150,3 +150,41 @@ def test_job_status_response_accepts_cancelled() -> None:
     )
     assert status.status == "cancelled"
     assert status.error == "Job cancelled."
+
+
+def test_parse_bool_uniform_vocabulary() -> None:
+    from omniscribe.plugins.ocr.schemas import _parse_bool
+
+    # Truthy aliases
+    for val in ("enabled", "yes", "on", "1", "true", "y", True):
+        assert _parse_bool(val) is True
+        assert _parse_bool(val, default=False) is True
+
+    # Falsy aliases
+    for val in ("disabled", "no", "off", "0", "false", "n", False):
+        assert _parse_bool(val) is False
+        assert _parse_bool(val, default=True) is False
+
+    # Default fallback
+    assert _parse_bool(None, default=False) is False
+    assert _parse_bool(None, default=True) is True
+    assert _parse_bool("unrecognized", default=False) is False
+
+
+def test_ocr_request_coerces_extended_booleans() -> None:
+    req = OCRRequest(
+        preprocess_pages="enabled",  # type: ignore[arg-type]
+        orientation_detection="yes",  # type: ignore[arg-type]
+        deskew="disabled",  # type: ignore[arg-type]
+        denoise="on",  # type: ignore[arg-type]
+        normalize_contrast="off",  # type: ignore[arg-type]
+        crop_cleanup="no",  # type: ignore[arg-type]
+        quality_loop_enabled="1",  # type: ignore[arg-type]
+    )
+    assert req.preprocess_pages is True
+    assert req.orientation_detection is True
+    assert req.deskew is False
+    assert req.denoise is True
+    assert req.normalize_contrast is False
+    assert req.crop_cleanup is False
+    assert req.quality_loop_enabled is True

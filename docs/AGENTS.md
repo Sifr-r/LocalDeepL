@@ -83,7 +83,7 @@ uv run mypy src
 uv run pytest -m "not slow"
 ```
 
-If the change touches `core/aligner.py`, `core/workflows/`, or `core/ocr/`, also run `uv run pytest tests/core/test_aligner.py -v`.
+If the change touches `core/aligner.py`, `core/workflows/`, or `core/ocr/`, also run `uv run pytest tests/core/test_aligner.py tests/core/ocr/test_ocr.py -v`.
 
 ### Peripheral — focused validation
 
@@ -224,8 +224,9 @@ Unknown state backends or malformed rows fail boot loud (`PluginLoadError`).
 
 **Deferred capabilities** (not yet rebuilt on the harness):
 the auth / rate-limit / upload-size ASGI middlewares, the Redis
-state backend, and model pre-flight. Tracked in
-`docs/outstanding-work.md` §5.
+state backend, and formal model pre-flight API route (in-core pre-flight
+is implemented via `ensure_model_loaded()` in `core/ocr/processor.py`).
+Tracked in `docs/outstanding-work.md` §5.
 
 **Phase C complete** (2026-08-31): all client-facing routes are rebuilt
 on the harness.
@@ -244,8 +245,8 @@ contract tests live in `tests/routers/`, plugin unit tests in
 - **Glossary** ships on the harness via the `glossary` plugin: a 9-route import/library surface — `/api/glossary/import` (JSON + multipart), `/api/glossary/import/url` (query + JSON body), `/api/glossary/library{,/preview,/merged}`, `/library/{id}{,/enable,/entries}`, `/library/reorder`. Imports accept both shapes (legacy JSON source envelope and the client's multipart / JSON-body shapes); imports above the 5,000-entry estimate dispatch on the harness JobQueue (`GlossaryJobRunner`, the third runner producer). The LanceDB lexicon store loads lazily — routes 503 with an install hint (`uv sync --extra lexicon`) when the `lexicon` extra is missing.
 - `ALLOW_SSRF_LOCAL`: the code default is `False` (`RuntimeSettings` in `config.py`); the shipped `.env.example` sets it to `true` for local development. Set it to `false` when exposing the server to untrusted users.
 - **Auth**: the `OMNISCRIBE_AUTH_TOKEN` ASGI middleware is deferred in the harness rebuild; the rebuilt route surface is currently unauthenticated. Do not expose the server to untrusted users until the auth middleware plugin lands.
-- **VLM resilience**: every LLM call retries transient errors (429/5xx/connection resets) with exponential backoff, and a per-request circuit breaker fails fast after `OMNISCRIBE_CB_FAILURE_THRESHOLD` (default 5) consecutive failures. Tunables: `OMNISCRIBE_LLM_MAX_RETRIES` (default 2), `OMNISCRIBE_LLM_RETRY_BASE_DELAY` (default 1.0s), `OMNISCRIBE_CB_COOLDOWN` (default 30s).
-- **Model pre-flight**: deferred in the harness rebuild. The historical `GET /v1/models` check that guarded against LM Studio's silent model fallback (issue #7) is not yet re-implemented; the OCR plugin only seeds the `verify_model` config key.
+- **VLM resilience**: every LLM call retries transient errors (429/5xx/connection resets) with exponential backoff, and a per-request circuit breaker fails fast after `OMNISCRIBE_CB_FAILURE_THRESHOLD` (default 5) consecutive failures. Tunables: `OMNISCRIBE_LLM_MAX_RETRIES` (default 2), `OMNISCRIBE_LLM_RETRY_BASE_DELAY` (default 1.0s), `OMNISCRIBE_CB_COOLDOWN` (default 30s), `OMNISCRIBE_VLM_PAGE_MAX_TOKENS` (default 6144), `OMNISCRIBE_VLM_CROP_MAX_TOKENS` (default 256).
+- **Model pre-flight**: implemented in-core via `ensure_model_loaded()` in `core/ocr/processor.py` (checks `GET /v1/models` against loaded model IDs before execution to guard against silent model fallback; also mirrored in `core/grounded/prompted.py`). The OCR plugin additionally seeds the `verify_model` config key.
 - **Quality repair loop**: `/api/process` re-OCRs blocks whose estimated confidence is below the target (crop-scoped, sequential, accept-only-while-improving) after block emission and before embedding. Defaults ON at the API layer (up to 2 extra VLM passes per low-confidence block); in-process `OCRPipeline.run` callers stay off unless they pass `repair_options=`. Per-request form fields `quality_loop_enabled` / `quality_target` (0.5–1.0) / `quality_max_retries` (0–5); the boot defaults are seeded by the `ocr` plugin's `cordis.yml` config, which expands the env seeds `OMNISCRIBE_QUALITY_LOOP`, `OMNISCRIBE_QUALITY_TARGET`, `OMNISCRIBE_QUALITY_MAX_RETRIES`. WebSocket frames: `block_retry`, `block_revised`, `quality_summary`.
 - Web runtime settings live in the OCR plugin's in-memory `/api/config` store, seeded from `RuntimeSettings` at plugin apply time; LLM coordinate updates write through to the shared settings.
 - **Flutter Desktop / UI**: the user-facing client is a multi-platform Flutter app under `client/` connecting to the OmniScribe FastAPI/plugin backend over HTTP and WebSocket.

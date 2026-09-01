@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from omniscribe.harness.errors import PluginLoadError
 from omniscribe.harness.plugin import Plugin
@@ -77,9 +78,8 @@ def test_lifespan_dispose_runs_effect_cleanups(
 def test_bad_state_backend_fails_boot_loud(
     boot_env: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # ``redis`` passes RuntimeSettings validation but the harness only ships
-    # memory/sqlite backends — the state_backend row must fail loud at boot.
+    # ``redis`` is not implemented in the harness — must fail loud at boot.
     monkeypatch.setenv("OMNISCRIBE_STATE_BACKEND", "redis")
-    with pytest.raises(PluginLoadError, match="state_backend"):
+    with pytest.raises((PluginLoadError, ValidationError)):
         with TestClient(create_app()):  # type: ignore[arg-type]
             pass

@@ -8,9 +8,11 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+from omniscribe.utils.env import parse_bool
 
 PipelineMode = Literal["hybrid", "grounded"]
 
@@ -33,12 +35,8 @@ _VALID_PROCESSORS = {
 }
 
 
-def _parse_bool(value: str | bool | None, *, default: bool = False) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    return str(value).strip().lower() in {"true", "1", "yes", "on"}
+def _parse_bool(value: Any, default: bool = False) -> Any:
+    return parse_bool(value, default=default)
 
 
 class OCRRequest(BaseModel):

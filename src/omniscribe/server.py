@@ -28,7 +28,6 @@ from omniscribe.config import RuntimeSettings, load_settings
 from omniscribe.utils import configure_logging  # noqa: F401  -- re-exported for tests
 from omniscribe.utils.structured_logging import _resolve_log_format
 
-_LOGGER = logging.getLogger(__name__)
 _log = logging.getLogger("omniscribe.server")
 
 # Sprint 5 / M-10 audit fix: placeholder auth tokens that the operator
@@ -49,9 +48,7 @@ ASGIReceive = Callable[[], Awaitable[dict[str, Any]]]
 ASGISend = Callable[[dict[str, Any]], Awaitable[None]]
 ASGIScope = dict[str, Any]
 
-# ---------------------------------------------------------------------------
-# Static files directory
-# ---------------------------------------------------------------------------
+# --- Static files directory ---
 _STATIC_DIR = Path(__file__).parent / "static"
 
 
@@ -71,6 +68,7 @@ class ASGIApplication(Protocol):
     ) -> None: ...
 
 
+# --- Optional module loading ---
 def _load_optional_module(module_name: str) -> ModuleType:
     try:
         return importlib.import_module(  # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import
@@ -83,9 +81,21 @@ def _load_optional_module(module_name: str) -> ModuleType:
         ) from exc
 
 
-# ---------------------------------------------------------------------------
-# Harness boot
-# ---------------------------------------------------------------------------
+def _load_attr(target: str) -> Any:
+    """Load an attribute from an optional module (e.g. 'fastapi:FastAPI')."""
+    module_name, _, attr_name = target.partition(":")
+    mod = _load_optional_module(module_name)
+    if not attr_name:
+        return mod
+    try:
+        return getattr(mod, attr_name)
+    except AttributeError as exc:
+        raise RuntimeError(
+            f"Cannot start omniscribe-server because `{target}` could not be resolved."
+        ) from exc
+
+
+# --- Harness boot ---
 
 
 async def _load_harness(settings: RuntimeSettings) -> Any:
@@ -106,13 +116,12 @@ async def _load_harness(settings: RuntimeSettings) -> Any:
     return ctx
 
 
-# ---------------------------------------------------------------------------
-# FastAPI application
-# ---------------------------------------------------------------------------
+# --- FastAPI application ---
 
 
 def create_app() -> ASGIApplication:
     """Create the FastAPI app with the plugin-harness lifespan."""
+    settings = load_settings()
     fastapi = _load_optional_module("fastapi")
     staticfiles = _load_optional_module("fastapi.staticfiles")
     responses = _load_optional_module("fastapi.responses")
@@ -121,8 +130,8 @@ def create_app() -> ASGIApplication:
     async def lifespan(web_app: Any) -> AsyncIterator[None]:
         from omniscribe.plugins.runtime import RuntimeService
 
-        settings = _validate_runtime_settings()
-        ctx = await _load_harness(settings)
+        runtime_settings = _validate_runtime_settings(settings)
+        ctx = await _load_harness(runtime_settings)
         web_app.state.context = ctx
         # Routers were registered as effects at plugin apply time; mount
         # them now that the tree is fully loaded.
@@ -147,7 +156,7 @@ def create_app() -> ASGIApplication:
     # the empty default denies cross-origin requests from a browser
     # but still allows the Flutter desktop client (no Origin header)
     # to call the API. A bare ``*`` opens the open wildcard.
-    cors_origins = load_settings().cors_origins
+    cors_origins = settings.cors_origins
     cors_module = _load_optional_module("fastapi.middleware.cors")
     web_app.add_middleware(
         cors_module.CORSMiddleware,
@@ -192,13 +201,9 @@ def create_app() -> ASGIApplication:
     # code (``internal_error``) is the documented contract — clients
     # can display a generic failure message and operators can grep
     # the log for ``omniscribe.server unhandled``.
-    import logging as _logging
-
     @web_app.exception_handler(Exception)
     async def _unhandled_exception_handler(request: Any, exc: Exception) -> Any:
-        _logging.getLogger("omniscribe.server").exception(
-            "unhandled exception in %s %s", request.method, request.url.path
-        )
+        _log.exception("unhandled exception in %s %s", request.method, request.url.path)
         return responses.JSONResponse(
             status_code=500,
             content={"error": "internal_error", "detail": "see server log"},
@@ -234,12 +239,12 @@ class LazyASGIApp:
 app = LazyASGIApp(create_app)
 
 
-# ---------------------------------------------------------------------------
-# Startup validation
-# ---------------------------------------------------------------------------
+# --- Startup validation ---
 
 
-def _validate_runtime_settings() -> RuntimeSettings:
+def _validate_runtime_settings(
+    settings: RuntimeSettings | None = None,
+) -> RuntimeSettings:
     """Load, validate, and log startup-time settings.
 
     Validates:
@@ -253,7 +258,8 @@ def _validate_runtime_settings() -> RuntimeSettings:
     configuration. Auth tokens are surfaced only as an ``auth_enabled``
     boolean — the actual token value never lands in the log.
     """
-    settings = load_settings()
+    if settings is None:
+        settings = load_settings()
     # Validate the log format eagerly so a malformed env var fails
     # startup with a clear message, not a stack trace.
     _resolve_log_format(settings.log_format)
@@ -280,9 +286,7 @@ def _validate_runtime_settings() -> RuntimeSettings:
     return settings
 
 
-# ---------------------------------------------------------------------------
-# CLI entry-point
-# ---------------------------------------------------------------------------
+# --- CLI entry-point ---
 
 
 def _parse_host(value: str) -> str:

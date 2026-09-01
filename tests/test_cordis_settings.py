@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from omniscribe.config import RuntimeSettings
 
@@ -187,8 +188,45 @@ def test_max_pages_negative_rejected(
     settings load (the rasterizer also treats negatives as disabled,
     so failing fast at the boundary gives a clearer error).
     """
-    from pydantic import ValidationError
-
     monkeypatch.setenv("OMNISCRIBE_MAX_PAGES", "-10")
     with pytest.raises(ValidationError):
+        RuntimeSettings()
+
+
+# ---------------------------------------------------------------------------
+# Audit 4.24: state_backend validation in RuntimeSettings
+# ---------------------------------------------------------------------------
+
+
+def test_state_backend_defaults_to_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OMNISCRIBE_STATE_BACKEND", raising=False)
+    settings = RuntimeSettings()
+    assert settings.state_backend == "memory"
+
+
+def test_state_backend_sqlite_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OMNISCRIBE_STATE_BACKEND", "sqlite")
+    settings = RuntimeSettings()
+    assert settings.state_backend == "sqlite"
+
+
+def test_state_backend_redis_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pydantic import ValidationError
+
+    monkeypatch.setenv("OMNISCRIBE_STATE_BACKEND", "redis")
+    with pytest.raises(
+        ValidationError,
+        match="state backend 'redis' is not yet implemented in the plugin harness; supported backends are 'memory' and 'sqlite'",
+    ):
+        RuntimeSettings()
+
+
+def test_state_backend_unsupported_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pydantic import ValidationError
+
+    monkeypatch.setenv("OMNISCRIBE_STATE_BACKEND", "unsupported")
+    with pytest.raises(
+        ValidationError,
+        match="state backend 'unsupported' is not yet implemented in the plugin harness; supported backends are 'memory' and 'sqlite'",
+    ):
         RuntimeSettings()

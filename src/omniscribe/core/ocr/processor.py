@@ -256,18 +256,30 @@ class OCRProcessor:
         GET, no inference); call once at pipeline startup before paying
         for image conversion or detection.
         """
+        # Pedantic 2.2: Use an ephemeral AsyncOpenAI client (or test fake
+        # attached to self.client) so ensure_model_loaded is self-contained
+        # and avoids mutating or closing any client instance on self.
+        client = getattr(self, "client", None)
+        is_ephemeral = False
+        if client is None or isinstance(client, AsyncOpenAI):
+            client = AsyncOpenAI(
+                base_url=self.api_base,
+                api_key=getattr(self, "api_key", None) or "lm-studio",
+            )
+            is_ephemeral = True
         try:
-            loaded = await _list_loaded_model_ids(self.client, self.api_base)
+            loaded = await _list_loaded_model_ids(client, self.api_base)
             if not _model_in_loaded(self.model, loaded):
                 raise ModelNotLoadedError(
                     _format_model_not_loaded(self.api_base, self.model, loaded)
                 )
         finally:
-            close_method = getattr(self.client, "close", None)
-            if callable(close_method):
-                res = close_method()
-                if asyncio.iscoroutine(res):
-                    await res
+            if is_ephemeral:
+                close_method = getattr(client, "close", None)
+                if callable(close_method):
+                    res = close_method()
+                    if asyncio.iscoroutine(res):
+                        await res
 
     async def perform_ocr(
         self,
@@ -285,9 +297,10 @@ class OCRProcessor:
         max_tokens set, and pollutes downstream alignment with junk lines.
 
         The OLMOCR-2 page prompt is sent as a plain user message with no
-        system role — the model was RL-trained on this exact distribution
-        and a system message would shift it. Dual-engine and correction
-        paths wrap a system message around their user turns.
+        system role (pinned by tests/core/ocr/test_ocr.py::TestPromptConstants)
+        — the model was RL-trained on this exact distribution and a system
+        message would shift it. Dual-engine and correction paths wrap a
+        system message around their user turns.
         """
         if binarize:
             image_base64 = await asyncio.to_thread(
@@ -301,7 +314,8 @@ class OCRProcessor:
             if draft:
                 prompt = fill_dual_engine_page(draft)
 
-        # OlmOCR-2 page path: pure user message, no system role. Every
+        # OlmOCR-2 page path: pure user message, no system role (pinned
+        # by tests/core/ocr/test_ocr.py::TestPromptConstants). Every
         # other page path gets a system message — *unless* the active
         # model is one of the system-role-excluded families
         # (e.g. allenai/olmocr-2-7b), in which case we drop the system

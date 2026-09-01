@@ -126,15 +126,12 @@ class RuntimeSettings(BaseSettings):
         default="redis://localhost:6379/0", validation_alias="REDIS_URL"
     )
 
-    # State backend selector (audit A-3). ``memory`` keeps every
-    # store in the local process; ``redis`` offloads artifact
-    # metadata and job history to a Redis instance using
-    # :class:`RedisStateBackend`; ``sqlite`` persists to a single
-    # SQLite file via :class:`SQLiteStateBackend` (no Redis
-    # required — the local-first default when persistence matters
-    # but horizontal scaling does not). The selector is resolved
-    # at startup by :mod:`omniscribe.api.routers.state`; an
-    # unknown value fails fast.
+    # State backend selector (audit A-3, 4.24). ``memory`` keeps every
+    # store in the local process; ``sqlite`` persists to a single SQLite
+    # file via :class:`SQLiteStateBackend` (the local-first default when
+    # persistence matters). ``redis`` is deferred and not yet implemented
+    # in the harness. The selector is validated at startup; unsupported
+    # backends fail fast.
     state_backend: str = Field(
         default="memory",
         validation_alias="OMNISCRIBE_STATE_BACKEND",
@@ -234,10 +231,10 @@ class RuntimeSettings(BaseSettings):
         if value is None or (isinstance(value, str) and not value.strip()):
             return "memory"
         normalized = str(value).strip().lower()
-        if normalized not in {"memory", "redis", "sqlite"}:
+        if normalized not in {"memory", "sqlite"}:
             raise ValueError(
-                f"OMNISCRIBE_STATE_BACKEND must be 'memory', 'redis', or 'sqlite', "
-                f"got {value!r}"
+                f"state backend '{normalized}' is not yet implemented in the plugin harness; "
+                "supported backends are 'memory' and 'sqlite'"
             )
         return normalized
 
