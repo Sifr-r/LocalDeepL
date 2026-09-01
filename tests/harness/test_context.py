@@ -8,7 +8,12 @@ from typing import Protocol
 import pytest
 
 from omniscribe.harness.context import Context
-from omniscribe.harness.errors import ContextDisposedError, ServiceNotFoundError
+from omniscribe.harness.errors import (
+    ContextDisposedError,
+    DuplicatePluginError,
+    DuplicateServiceError,
+    ServiceNotFoundError,
+)
 from omniscribe.harness.events import Event, SessionEvent
 from omniscribe.harness.plugin import Plugin
 
@@ -55,7 +60,9 @@ async def test_inject_unregistered_raises_with_protocol_name() -> None:
 async def test_duplicate_service_registration_raises() -> None:
     ctx = Context()
     ctx.service(SvcA, _ImplA())
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        DuplicateServiceError, match="service already registered for protocol 'SvcA'"
+    ):
         ctx.service(SvcA, _ImplA())
     await ctx.dispose()
 
@@ -290,3 +297,109 @@ async def test_failed_apply_reverses_partial_registrations() -> None:
         await ctx.plugin(_BadPlug())
     assert not ctx.has(SvcA)
     await ctx.dispose()
+
+
+async def test_duplicate_plugin_mounting_raises() -> None:
+    ctx = Context()
+    a = _PluginA()
+    await ctx.plugin(a)
+    with pytest.raises(DuplicatePluginError, match="plugin 'a' is already mounted"):
+        await ctx.plugin(_PluginA())
+    await ctx.dispose()
+
+
+async def test_failed_apply_reversal_failure_does_not_shadow_original_exception() -> (
+    None
+):
+    ctx = Context()
+    executed: list[str] = []
+
+    class _ExplodingCleanupPlug(Plugin):
+        id = "exploding_cleanup"
+
+        async def apply(self, inner_ctx: Context) -> None:
+            inner_ctx.service(SvcA, _ImplA())
+            inner_ctx.effect(lambda: executed.append("first_cleanup"))
+
+            def _bad_cleanup() -> None:
+                executed.append("bad_cleanup")
+                raise RuntimeError("cleanup exploded")
+
+            inner_ctx.effect(_bad_cleanup)
+            inner_ctx.effect(lambda: executed.append("third_cleanup"))
+            raise RuntimeError("original apply failure")
+
+    with pytest.raises(RuntimeError, match="original apply failure"):
+        await ctx.plugin(_ExplodingCleanupPlug())
+
+    # LIFO reversal order: third_cleanup, bad_cleanup (logs error), first_cleanup
+    assert executed == ["third_cleanup", "bad_cleanup", "first_cleanup"]
+    assert not ctx.has(SvcA)
+    assert "exploding_cleanup" not in ctx._plugin_instances
+    assert "exploding_cleanup" not in ctx._plugin_order
+    await ctx.dispose()
+
+
+async def test_plugin_load_unload_reload_cycle() -> None:
+    ctx = Context()
+
+    class _LifecyclePlug(Plugin):
+        id = "cycle_plug"
+
+        def __init__(self) -> None:
+            self.ping_count = 0
+            self.cleaned_up = False
+            self.disposed = False
+
+        async def apply(self, inner_ctx: Context) -> None:
+            inner_ctx.service(SvcA, _ImplA())
+
+            def _handle_ping(_ev: Event) -> None:
+                self.ping_count += 1
+
+            inner_ctx.on(Ping, _handle_ping)
+
+            def _cleanup() -> None:
+                self.cleaned_up = True
+
+            inner_ctx.effect(_cleanup)
+
+        async def dispose(self) -> None:
+            self.disposed = True
+
+    # 1. Mount first instance
+    plug1 = _LifecyclePlug()
+    await ctx.plugin(plug1)
+    assert ctx.has(SvcA)
+    assert ctx.inject(SvcA).value() == "a"
+    await ctx.emit(Ping())
+    assert plug1.ping_count == 1
+    assert not plug1.cleaned_up
+    assert not plug1.disposed
+
+    # 2. Unload first instance
+    await ctx.unload("cycle_plug")
+    assert not ctx.has(SvcA)
+    assert plug1.cleaned_up
+    assert plug1.disposed
+
+    # Verify no leftover effects or listeners respond after unload
+    await ctx.emit(Ping())
+    assert plug1.ping_count == 1
+
+    # 3. Re-mount a fresh instance of the plugin on the same context
+    plug2 = _LifecyclePlug()
+    await ctx.plugin(plug2)
+    assert ctx.has(SvcA)
+    assert ctx.inject(SvcA).value() == "a"
+    await ctx.emit(Ping())
+    assert plug2.ping_count == 1
+    assert plug1.ping_count == 1  # stale instance unaffected
+    assert not plug2.cleaned_up
+    assert not plug2.disposed
+
+    # 4. Final context disposal cleans up the reloaded plugin
+    await ctx.dispose()
+    assert plug2.cleaned_up
+    assert plug2.disposed
+    assert not ctx.has(SvcA)

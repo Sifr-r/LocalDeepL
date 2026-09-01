@@ -122,6 +122,18 @@ class GlossaryJobRunner(_JobRunnerContract, Protocol):
     """Executes one queued glossary import; registered by the glossary plugin."""
 
 
+@runtime_checkable
+class JobPayload(Protocol):
+    """Structural protocol for payloads declaring their own runner service key.
+
+    Producers (e.g. translation, glossary) whose jobs require a runner
+    distinct from the default OCR `JobRunner` tag their payload classes
+    with `runner_protocol = <RunnerProtocol>`.
+    """
+
+    runner_protocol: type
+
+
 # -- queue ----------------------------------------------------------------------
 
 
@@ -270,12 +282,34 @@ class InMemoryJobQueue:
                 self._queue.task_done()
 
     def _resolve_runner(self, payload: Any) -> JobRunner:
+        """Resolve the runner for a queued job payload via DI.
+
+        Multi-producer dispatch:
+        Producers (e.g. translation, glossary) whose jobs require a runner
+        distinct from the default OCR :class:`JobRunner` conform to the
+        :class:`JobPayload` structural protocol by tagging their payload class
+        with a ``runner_protocol = <RunnerProtocol>`` class attribute.
+
+        Resolution order:
+        1. If an explicit runner override was passed to ``__init__``, return it.
+        2. If ``payload`` conforms to :class:`JobPayload` (or defines
+           ``runner_protocol`` on its class/type), inject that protocol key from
+           the application :class:`Context`.
+        3. Untagged payloads (e.g. default OCR dicts/requests) fall back to
+           injecting the default :class:`JobRunner` service.
+
+        Any future 4th producer author only needs to:
+        - Define their runner protocol inheriting from :class:`_JobRunnerContract`.
+        - Register that runner implementation in :class:`Context` under their protocol key.
+        - Tag their job payload class with ``runner_protocol = <TheirRunnerProtocol>``.
+        """
         if self._runner_override is not None:
             return self._runner_override
-        # Multi-producer dispatch: a payload class may self-describe the
-        # service key its runner is registered under (the translate plugin
-        # does); unmarked payloads keep the default OCR JobRunner seam.
-        marker = getattr(type(payload), "runner_protocol", None)
+        marker = (
+            payload.runner_protocol
+            if isinstance(payload, JobPayload)
+            else getattr(type(payload), "runner_protocol", None)
+        )
         if marker is not None:
             return cast("JobRunner", self._ctx.inject(marker))
         return cast("JobRunner", self._ctx.inject(JobRunner))
@@ -396,6 +430,7 @@ __all__ = [
     "JobFailed",
     "JobHandle",
     "JobOutcome",
+    "JobPayload",
     "JobQueue",
     "JobQueued",
     "JobRunner",

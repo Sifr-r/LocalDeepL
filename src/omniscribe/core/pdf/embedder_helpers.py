@@ -62,7 +62,22 @@ _EMBED_FONT_DESCENDER: float = -0.299
 # (logged once) rather than written as .notdef, which extracts back as
 # U+0000 and pollutes copy/paste.
 _UNICODE_CHAIN: tuple[fitz.Font, ...] | None = None
-_UNICODE_GLYPH_MISS_LOGGED: bool = False
+_LOGGED_ONCE_KEYS: set[str] = set()
+
+
+def _log_once(
+    msg: str,
+    *args: Any,
+    level: int = logging.WARNING,
+    key: str | None = None,
+) -> None:
+    """Log a message at most once per distinct key (defaults to msg)."""
+    cache_key = key if key is not None else msg
+    if cache_key in _LOGGED_ONCE_KEYS:
+        return
+    _LOGGED_ONCE_KEYS.add(cache_key)
+    logger.log(level, msg, *args)
+
 
 _BUNDLED_FONT_DIR = (
     Path(__file__).resolve().parent.parent.parent / "resources" / "fonts"
@@ -94,9 +109,10 @@ def _load_font_file(path: Path) -> fitz.Font | None:
 
 
 # Codepoints used to probe whether a font's ToUnicode round-trips:
-# Arabic meem and Hebrew alef — the scripts OS fonts most often remap
-# to presentation-form codepoints (U+FE70+) that break copy/paste.
-_PROBE_CODEPOINTS: tuple[int, ...] = (0x0645, 0x05D0)
+# Arabic meem, Persian peh (\u067e), and Hebrew alef — the scripts OS fonts
+# most often remap to presentation-form codepoints (U+FE70+) that break
+# copy/paste.
+_PROBE_CODEPOINTS: tuple[int, ...] = (0x0645, 0x067E, 0x05D0)
 
 
 def _font_preserves_codepoints(font: fitz.Font) -> bool:
@@ -135,7 +151,6 @@ def _font_preserves_codepoints(font: fitz.Font) -> bool:
         logger.warning(
             "Embedder font probe failed: %s",
             exc,
-            exc_info=True,
         )
         return True
 
@@ -250,7 +265,6 @@ def _filter_uncovered_chars(text: str, font: fitz.Font) -> str:
     corrupt copy/paste. Spaces are always kept so word boundaries
     survive. Logs one warning per process with the offending codepoints.
     """
-    global _UNICODE_GLYPH_MISS_LOGGED
     kept: list[str] = []
     missed: list[int] = []
     for c in text:
@@ -258,10 +272,9 @@ def _filter_uncovered_chars(text: str, font: fitz.Font) -> str:
             kept.append(c)
         else:
             missed.append(ord(c))
-    if missed and not _UNICODE_GLYPH_MISS_LOGGED:
-        _UNICODE_GLYPH_MISS_LOGGED = True
+    if missed:
         sample = ", ".join(f"U+{cp:04X}" for cp in missed[:8])
-        logger.warning(
+        _log_once(
             "Embed font '%s' lacks glyphs for %d character(s) (e.g. %s); "
             "they are omitted from the searchable layer. Set "
             "OMNISCRIBE_EMBED_FONT_PATH or drop a covering font into "
@@ -269,6 +282,7 @@ def _filter_uncovered_chars(text: str, font: fitz.Font) -> str:
             font.name,
             len(missed),
             sample,
+            key=f"glyph_miss:{font.name}",
         )
     return "".join(kept)
 

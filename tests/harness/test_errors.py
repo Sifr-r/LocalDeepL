@@ -6,6 +6,8 @@ import pytest
 
 from omniscribe.harness.errors import (
     ContextDisposedError,
+    DuplicatePluginError,
+    DuplicateServiceError,
     HarnessError,
     PluginLoadError,
     ServiceNotFoundError,
@@ -13,7 +15,13 @@ from omniscribe.harness.errors import (
 
 
 def test_all_errors_subclass_harness_error() -> None:
-    for cls in (ServiceNotFoundError, ContextDisposedError, PluginLoadError):
+    for cls in (
+        ServiceNotFoundError,
+        ContextDisposedError,
+        PluginLoadError,
+        DuplicateServiceError,
+        DuplicatePluginError,
+    ):
         assert issubclass(cls, HarnessError)
 
 
@@ -36,12 +44,19 @@ def test_plugin_load_error_carries_row_id_and_reason() -> None:
     assert "ocr" in str(err)
 
 
+def test_duplicate_errors_subclass_runtime_error() -> None:
+    assert issubclass(DuplicateServiceError, RuntimeError)
+    assert issubclass(DuplicatePluginError, RuntimeError)
+
+
 @pytest.mark.parametrize(
     "exc",
     [
         ServiceNotFoundError("X"),
         ContextDisposedError("y"),
         PluginLoadError(row_id="z", reason="r"),
+        DuplicateServiceError("duplicate service"),
+        DuplicatePluginError("duplicate plugin"),
     ],
 )
 def test_catchable_as_harness_error(exc: Exception) -> None:

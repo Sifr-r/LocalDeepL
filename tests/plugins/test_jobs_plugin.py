@@ -20,6 +20,7 @@ from omniscribe.plugins.jobs import (
     JobCompleted,
     JobFailed,
     JobOutcome,
+    JobPayload,
     JobQueue,
     JobQueued,
     JobRunner,
@@ -305,3 +306,86 @@ def test_terminal_job_statuses_derived_from_literal() -> None:
     expected = frozenset(get_args(JobStatus)) - frozenset({"queued", "running"})
     assert expected == TERMINAL_JOB_STATUSES
     assert frozenset({"complete", "error", "cancelled"}) == TERMINAL_JOB_STATUSES
+
+
+async def test_job_payload_protocol_and_runner_dispatch() -> None:
+    """Wave 6 Finding 9.14: multi-producer runner formalization.
+
+    Verifies that:
+    a) A class with a `runner_protocol` attribute conforms to `isinstance(instance, JobPayload)`.
+    b) A payload declaring a custom runner protocol is dispatched to that custom runner
+       protocol instance registered in `Context`.
+    c) An untagged payload falls back to the default `JobRunner`.
+    """
+    from typing import Protocol, runtime_checkable
+
+    from omniscribe.plugins.jobs import _JobRunnerContract
+
+    @runtime_checkable
+    class CustomRunnerProtocol(_JobRunnerContract, Protocol):
+        """Mock runner protocol for a distinct producer."""
+
+    class TaggedPayload:
+        runner_protocol = CustomRunnerProtocol
+
+        def __init__(self, message: str) -> None:
+            self.message = message
+
+    class UntaggedPayload:
+        def __init__(self, count: int) -> None:
+            self.count = count
+
+    # a) Structural conformance to JobPayload
+    tagged_instance = TaggedPayload("hello")
+    untagged_instance = UntaggedPayload(10)
+    assert isinstance(tagged_instance, JobPayload)
+    assert not isinstance(untagged_instance, JobPayload)
+    assert not isinstance({"page": 1}, JobPayload)
+    assert not isinstance(None, JobPayload)
+
+    # b & c) Dispatch verification
+    custom_calls: list[Any] = []
+    default_calls: list[Any] = []
+
+    async def custom_runner(request: Any) -> JobOutcome:
+        custom_calls.append(request)
+        return JobOutcome(blob=b"custom-output", content_type="text/plain")
+
+    async def default_runner(request: Any) -> JobOutcome:
+        default_calls.append(request)
+        return JobOutcome(blob=b"default-output", content_type="text/plain")
+
+    ctx = Context()
+    await ctx.plugin(sb.StateBackendPlugin(), config={"backend": "memory"})
+    await ctx.plugin(art.ArtifactsPlugin(), config={})
+    ctx.service(JobRunner, default_runner)
+    ctx.service(CustomRunnerProtocol, custom_runner)
+    await ctx.plugin(jobs.JobsPlugin(), config={})
+
+    try:
+        queue = ctx.inject(JobQueue)
+
+        # b) Custom payload dispatched to CustomRunnerProtocol
+        handle_custom = await queue.submit(tagged_instance)
+        record_custom = await _wait_status(queue, handle_custom.job_id, "complete")
+        assert len(custom_calls) == 1
+        assert custom_calls[0] is tagged_instance
+        assert len(default_calls) == 0
+        assert record_custom.result_artifact_id is not None
+
+        # c) Untagged payload falls back to default JobRunner
+        handle_untagged = await queue.submit(untagged_instance)
+        record_untagged = await _wait_status(queue, handle_untagged.job_id, "complete")
+        assert len(default_calls) == 1
+        assert default_calls[0] is untagged_instance
+        assert len(custom_calls) == 1
+        assert record_untagged.result_artifact_id is not None
+
+        # Untagged raw dict also falls back to default JobRunner
+        handle_dict = await queue.submit({"raw": "payload"})
+        await _wait_status(queue, handle_dict.job_id, "complete")
+        assert len(default_calls) == 2
+        assert default_calls[1] == {"raw": "payload"}
+        assert len(custom_calls) == 1
+    finally:
+        await ctx.dispose()

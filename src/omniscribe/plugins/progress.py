@@ -230,6 +230,8 @@ class ProgressServiceImpl:
             )
             try:
                 self.detach(channel_id, connection)
+            except KeyError:
+                pass
             except Exception:
                 _LOGGER.exception("detach after foreign-loop send failure also failed")
 

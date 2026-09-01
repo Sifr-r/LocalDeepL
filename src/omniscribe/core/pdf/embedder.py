@@ -19,10 +19,13 @@ from omniscribe.core.document import BBox
 from omniscribe.core.pdf.embedder_helpers import (
     # Thread-pool executor (used by embed_structured_text)
     _EMBED_RASTER_WORKERS,
+    # Font probing and log helpers
+    _PROBE_CODEPOINTS,
     # Per-page rendering pipeline
     _draw_invisible_text,
     # Image-input branch
     _embed_from_image_input,
+    _log_once,
     # Per-page rasterization (used by the worker pool)
     _rasterize_embed_page,
 )
@@ -108,3 +111,10 @@ def embed_structured_text(
     finally:
         new_doc.close()
         doc.close()
+
+
+__all__ = [
+    "_PROBE_CODEPOINTS",
+    "_log_once",
+    "embed_structured_text",
+]

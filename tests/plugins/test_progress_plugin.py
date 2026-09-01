@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
+import logging
 import threading
 import time
+from unittest.mock import patch
 
 import pytest
 from fastapi import FastAPI, WebSocketDisconnect
@@ -246,3 +249,27 @@ async def test_plugin_registers_service_and_mounts_router() -> None:
     assert ctx.has(ProgressService)
     assert len(ctx.routes()) == 1
     await ctx.dispose()
+
+
+def test_on_foreign_send_done_keyerror_is_swallowed() -> None:
+    service = _service()
+    fut: concurrent.futures.Future[None] = concurrent.futures.Future()
+    fut.set_exception(RuntimeError("connection dropped"))
+    with patch.object(service, "detach", side_effect=KeyError("channel_id")):
+        # KeyError during detach should be swallowed cleanly
+        service._on_foreign_send_done("channel_id", "conn", fut)
+
+
+def test_on_foreign_send_done_unexpected_exception_logged(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    service = _service()
+    fut: concurrent.futures.Future[None] = concurrent.futures.Future()
+    fut.set_exception(RuntimeError("connection dropped"))
+    with patch.object(service, "detach", side_effect=TypeError("unexpected explosion")):
+        with caplog.at_level(logging.ERROR, logger="omniscribe.plugins.progress"):
+            service._on_foreign_send_done("channel_id", "conn", fut)
+    assert any(
+        "detach after foreign-loop send failure also failed" in rec.message
+        for rec in caplog.records
+    )

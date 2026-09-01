@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -229,3 +230,91 @@ async def test_load_plugin_raising_wraps_error(tmp_path: Path) -> None:
 class BrokenPlugin(Plugin):
     async def apply(self, ctx: Context) -> None:
         raise RuntimeError("explode")
+
+
+class FailingInitPlugin(Plugin):
+    def __init__(self) -> None:
+        raise ValueError("initialization blew up")
+
+
+async def test_load_explicit_missing_patch_logs_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    config_path = tmp_path / "cordis.yml"
+    config_path.write_text(_BASE_YAML, encoding="utf-8")
+    missing_patch = tmp_path / "missing_patch.yml"
+    ctx = Context()
+    with caplog.at_level(logging.WARNING, logger="omniscribe.harness"):
+        await Loader(ctx).load(config_path, patch_paths=(missing_patch,))
+    assert any(
+        "cordis patch file specified but not found" in rec.message.lower()
+        and str(missing_patch) in rec.message
+        for rec in caplog.records
+    )
+    await ctx.dispose()
+
+
+async def test_load_explicit_env_missing_patch_logs_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    missing_patch = tmp_path / "missing_from_env.yml"
+    monkeypatch.setenv("OMNISCRIBE_CORDIS_PATCH", str(missing_patch))
+    config_path = tmp_path / "cordis.yml"
+    config_path.write_text(_BASE_YAML, encoding="utf-8")
+    ctx = Context()
+    with caplog.at_level(logging.WARNING, logger="omniscribe.harness"):
+        await Loader(ctx).load(config_path, patch_paths=(missing_patch,))
+    assert any(
+        "cordis patch file specified but not found" in rec.message.lower()
+        and str(missing_patch) in rec.message
+        for rec in caplog.records
+    )
+    await ctx.dispose()
+
+
+async def test_load_default_missing_cordis_patch_does_not_warn(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("OMNISCRIBE_CORDIS_PATCH", raising=False)
+    config_path = tmp_path / "cordis.yml"
+    config_path.write_text(_BASE_YAML, encoding="utf-8")
+    default_patch = tmp_path / "cordis.patch.yml"
+    ctx = Context()
+    with caplog.at_level(logging.WARNING, logger="omniscribe.harness"):
+        await Loader(ctx).load(config_path, patch_paths=(default_patch,))
+    assert not any(
+        "cordis patch file specified but not found" in rec.message.lower()
+        for rec in caplog.records
+    )
+    await ctx.dispose()
+
+
+async def test_load_mounted_plugins_logs_plugin_count(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    config_path = tmp_path / "cordis.yml"
+    config_path.write_text(_BASE_YAML, encoding="utf-8")
+    ctx = Context()
+    with caplog.at_level(logging.INFO, logger="omniscribe.harness"):
+        await Loader(ctx).load(config_path)
+    assert any(
+        "harness mounted plugins: alpha, beta (2 plugins)" in rec.message
+        for rec in caplog.records
+    )
+    await ctx.dispose()
+
+
+async def test_instantiate_error_includes_use_and_id(tmp_path: Path) -> None:
+    config_path = tmp_path / "cordis.yml"
+    config_path.write_text(
+        "plugins:\n  - id: bad_plugin_row\n    use: tests.harness.test_loader:FailingInitPlugin\n",
+        encoding="utf-8",
+    )
+    ctx = Context()
+    with pytest.raises(PluginLoadError) as excinfo:
+        await Loader(ctx).load(config_path)
+    assert excinfo.value.row_id == "bad_plugin_row"
+    assert "bad_plugin_row" in excinfo.value.reason
+    assert "tests.harness.test_loader:FailingInitPlugin" in excinfo.value.reason
+    assert "cannot instantiate plugin" in excinfo.value.reason
+    await ctx.dispose()

@@ -6,6 +6,8 @@ from omniscribe.harness.context import Context
 from omniscribe.harness.effects import EffectRef, EffectScope, effect_scope
 from omniscribe.harness.errors import (
     ContextDisposedError,
+    DuplicatePluginError,
+    DuplicateServiceError,
     HarnessError,
     PluginLoadError,
     ServiceNotFoundError,
@@ -20,6 +22,8 @@ __all__ = [
     "CapabilityEvent",
     "Context",
     "ContextDisposedError",
+    "DuplicatePluginError",
+    "DuplicateServiceError",
     "EffectRef",
     "EffectScope",
     "Event",

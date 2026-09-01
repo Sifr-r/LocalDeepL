@@ -169,6 +169,26 @@ class Loader:
         for patch_path in patch_paths:
             path = Path(patch_path)
             if not path.is_file():
+                env_patch = os.environ.get("OMNISCRIBE_CORDIS_PATCH", "")
+                env_entries = [
+                    Path(p.strip()).expanduser()
+                    for p in env_patch.split(",")
+                    if p.strip()
+                ]
+                is_explicit = any(
+                    path == ep
+                    or str(path) == str(ep)
+                    or (
+                        path.is_absolute()
+                        and ep.is_absolute()
+                        and path.resolve() == ep.resolve()
+                    )
+                    for ep in env_entries
+                ) or (path.name != "cordis.patch.yml")
+                if is_explicit:
+                    _LOGGER.warning(
+                        "Cordis patch file specified but not found: %s", path
+                    )
                 continue
             rows = deep_merge(rows, parse_rows(path.read_text(encoding="utf-8")))
         rows = _apply_env_overrides(rows)
@@ -181,12 +201,16 @@ class Loader:
             instance.id = row.id
             try:
                 await self._ctx.plugin(instance, config=config)
-            except PluginLoadError:
-                raise
             except Exception as exc:
+                if isinstance(exc, PluginLoadError):
+                    raise
                 raise PluginLoadError(row_id=row.id, reason=str(exc)) from exc
             mounted.append(row.id)
-        _LOGGER.info("harness mounted plugins: %s", ", ".join(mounted))
+        _LOGGER.info(
+            "harness mounted plugins: %s (%d plugins)",
+            ", ".join(mounted),
+            len(mounted),
+        )
         return self._ctx
 
     def _instantiate(self, row: PluginRow) -> Plugin:
@@ -196,11 +220,13 @@ class Loader:
                 target = target()
             except Exception as exc:
                 raise PluginLoadError(
-                    row_id=row.id, reason=f"cannot instantiate plugin: {exc}"
+                    row_id=row.id,
+                    reason=f"cannot instantiate plugin {row.use!r} (id {row.id!r}): {exc}",
                 ) from exc
         if not isinstance(target, Plugin):
             raise PluginLoadError(
-                row_id=row.id, reason=f"{row.use!r} is not a harness Plugin"
+                row_id=row.id,
+                reason=f"{row.use!r} (id {row.id!r}) is not a harness Plugin",
             )
         return target
 

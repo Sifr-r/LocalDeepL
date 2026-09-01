@@ -30,3 +30,11 @@ class PluginLoadError(HarnessError, RuntimeError):
         self.row_id = row_id
         self.reason = reason
         super().__init__(f"plugin {row_id!r} failed to load: {reason}")
+
+
+class DuplicateServiceError(HarnessError, RuntimeError):
+    """Raised when a service is registered under a Protocol that is already present."""
+
+
+class DuplicatePluginError(HarnessError, RuntimeError):
+    """Raised when a plugin ID is already mounted on the Context."""

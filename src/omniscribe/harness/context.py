@@ -17,7 +17,12 @@ from contextlib import asynccontextmanager
 from typing import Any, cast
 
 from omniscribe.harness.effects import Cleanup, EffectRef, EffectScope, effect_scope
-from omniscribe.harness.errors import ContextDisposedError, ServiceNotFoundError
+from omniscribe.harness.errors import (
+    ContextDisposedError,
+    DuplicatePluginError,
+    DuplicateServiceError,
+    ServiceNotFoundError,
+)
 from omniscribe.harness.events import Event
 
 _LOGGER = logging.getLogger("omniscribe.harness")
@@ -82,7 +87,7 @@ class Context:
         """Register ``instance`` under ``protocol``; duplicate keys fail loud."""
         self._check_not_disposed("register service")
         if protocol in self._services:
-            raise ValueError(
+            raise DuplicateServiceError(
                 f"service already registered for protocol {protocol.__name__!r}"
             )
         self._services[protocol] = instance
@@ -192,7 +197,7 @@ class Context:
         plugin.id = plugin_id
         plugin.config = dict(config or {})
         if plugin_id in self._plugin_instances:
-            raise ValueError(f"plugin {plugin_id!r} is already mounted")
+            raise DuplicatePluginError(f"plugin {plugin_id!r} is already mounted")
         self._plugin_instances[plugin_id] = plugin
         self._plugin_order.append(plugin_id)
         self._plugin_effects[plugin_id] = []
@@ -205,7 +210,12 @@ class Context:
             self._plugin_instances.pop(plugin_id, None)
             refs = self._plugin_effects.pop(plugin_id, [])
             for ref in reversed(refs):
-                await self._reverse(ref)
+                try:
+                    await self._reverse(ref)
+                except Exception as rev_exc:
+                    _LOGGER.exception(
+                        "error during rollback reversal of %r: %s", ref, rev_exc
+                    )
             raise
         finally:
             _current_plugin_id.reset(token)

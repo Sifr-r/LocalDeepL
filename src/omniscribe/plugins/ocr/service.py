@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import secrets
 import shutil
 import tempfile
@@ -72,6 +73,73 @@ _TERMINAL_EVENTS: tuple[type, ...] = (JobCompleted, JobFailed, JobCancelled)
 
 SSE_KEEPALIVE_SECONDS = 15.0
 
+_TRACEBACK_MARKERS = ("Traceback (most recent call last):",)
+_TRACEBACK_FILE_PATTERN = re.compile(r'File\s+["\'][^"\']+["\']')
+
+_DB_ERROR_PATTERNS = (
+    "sqlite3.",
+    "syntax error near",
+    "operationalerror",
+    "integrityerror",
+    "databaseerror",
+    "programmingerror",
+)
+
+_AUTH_HEADER_PATTERN = re.compile(
+    r'(?i)\b(authorization\s*:\s*(?:bearer\s+|basic\s+)?)[^\s"\'\,]+'
+)
+_BEARER_PATTERN = re.compile(r'(?i)\b(bearer\s+)[^\s"\'\,]+')
+_SECRET_KEY_PATTERN = re.compile(
+    r'(?i)\b(api[_-]?key|access[_-]?token|auth[_-]?token|secret[_-]?key|secret|token|password)(\s*[:=]\s*)(["\']?)[^\s"\'\,]+(\3)'
+)
+_SK_PATTERN = re.compile(r"\b(?:sk|pk)[-_][a-zA-Z0-9_\-]{16,}\b")
+
+_PATH_PATTERN = re.compile(
+    r'(?:[A-Za-z]:[\\/]|\\\\|/(?:tmp|home|var|usr|etc|opt|root|Users|private)/)[^"\'\s]+'
+)
+
+
+def _replace_path(match: re.Match[str]) -> str:
+    path_str = match.group(0)
+    trailing = ""
+    while path_str and path_str[-1] in ":;,.)]":
+        trailing = path_str[-1] + trailing
+        path_str = path_str[:-1]
+    return f"[path]{trailing}"
+
+
+def _sanitize_job_error(error: str | None) -> str | None:
+    """Sanitize a job error string to prevent leaking internal details.
+
+    Redacts tracebacks, raw database errors, internal filesystem paths,
+    and credentials/tokens, while preserving clean known-safe error
+    messages.
+    """
+    if not error:
+        return error
+
+    # 1. Traceback signatures -> generic internal error
+    if any(
+        marker in error for marker in _TRACEBACK_MARKERS
+    ) or _TRACEBACK_FILE_PATTERN.search(error):
+        return "An internal processing error occurred."
+
+    # 2. Raw database error keywords -> generic storage error
+    lower = error.lower()
+    if any(pat in lower for pat in _DB_ERROR_PATTERNS):
+        return "A storage error occurred."
+
+    # 3. Strip secret / token references
+    sanitized = _AUTH_HEADER_PATTERN.sub(r"\1[redacted]", error)
+    sanitized = _BEARER_PATTERN.sub(r"\1[redacted]", sanitized)
+    sanitized = _SECRET_KEY_PATTERN.sub(r"\1\2\3[redacted]\4", sanitized)
+    sanitized = _SK_PATTERN.sub("[redacted]", sanitized)
+
+    # 4. Scrub internal file paths -> [path]
+    sanitized = _PATH_PATTERN.sub(_replace_path, sanitized)
+
+    return sanitized
+
 
 @dataclass(frozen=True)
 class _OcrPayload:
@@ -83,9 +151,72 @@ class _OcrPayload:
     request: OCRRequest
 
 
+#: Canonical set of keys exposed by ``/api/config`` and seeded in :func:`_seed_config`.
+#:
+#: Documents the exposed configuration keys across endpoints, pipeline tunables,
+#: and feature flags:
+#:
+#: 1. ``api_base``: Base URL of the OpenAI-compatible VLM endpoint (e.g. LM Studio, Ollama).
+#: 2. ``api_key``: Authentication key for the VLM endpoint (masked as ``******`` in GET responses).
+#: 3. ``model``: Target VLM model identifier loaded on the inference server.
+#: 4. ``concurrency``: Number of PDF pages rasterized and processed concurrently.
+#: 5. ``dpi``: Target rasterization resolution (DPI) for PDF rendering.
+#: 6. ``dense_mode``: Handling strategy for dense pages ('auto', 'always', 'never').
+#: 7. ``dense_threshold``: Bounding-box threshold above which dense mode activates.
+#: 8. ``max_image_dim``: Maximum pixel dimension for page images fed to the VLM.
+#: 9. ``refine``: Re-align sparse OCR text back to bounding boxes using dynamic programming.
+#: 10. ``verify_model``: Pre-flight check verifying the requested model is loaded on the VLM server.
+#: 11. ``pipeline_mode``: OCR execution pipeline ('hybrid' with Surya or bbox-native 'grounded').
+#: 12. ``self_correction``: Automatic re-prompting pass for low-confidence OCR pages.
+#: 13. ``binarize``: Binarize scanned document images to enhance high-contrast text.
+#: 14. ``dual_engine``: Execute both hybrid and grounded engines in parallel and merge outputs.
+#: 15. ``spellcheck``: Post-OCR dictionary spellcheck mode ('none', 'auto', or ISO language code).
+#: 16. ``cross_page``: Multi-page cross-page text alignment and paragraph flow reconciliation.
+#: 17. ``preprocess_pages``: Master toggle for page preprocessing transforms before OCR.
+#: 18. ``orientation_detection``: Automatic detection and correction of 90/180/270 degree rotation.
+#: 19. ``deskew``: Image deskewing to straighten tilted or rotated scans.
+#: 20. ``denoise``: Noise reduction filtering to eliminate scan artifacts.
+#: 21. ``normalize_contrast``: Dynamic contrast adjustment for low-contrast or faded documents.
+#: 22. ``crop_cleanup``: Margin cropping and border artifact cleanup.
+#: 23. ``quality_routing``: Route pages based on image quality analysis.
+#: 24. ``document_processors``: Enabled post-OCR document analysis processors (e.g. reading order).
+_CONFIG_KEY_SET: frozenset[str] = frozenset(
+    {
+        "api_base",
+        "api_key",
+        "model",
+        "concurrency",
+        "dpi",
+        "dense_mode",
+        "dense_threshold",
+        "max_image_dim",
+        "refine",
+        "verify_model",
+        "pipeline_mode",
+        "self_correction",
+        "binarize",
+        "dual_engine",
+        "spellcheck",
+        "cross_page",
+        "preprocess_pages",
+        "orientation_detection",
+        "deskew",
+        "denoise",
+        "normalize_contrast",
+        "crop_cleanup",
+        "quality_routing",
+        "document_processors",
+    }
+)
+
+
 def _seed_config(settings: RuntimeSettings) -> dict[str, Any]:
     """Initial ``/api/config`` store: LLM coordinates from settings, the
-    rest at their historical workstation defaults."""
+    rest at their historical workstation defaults.
+
+    Seeds the canonical configuration keys defined in :data:`_CONFIG_KEY_SET`.
+    See :data:`_CONFIG_KEY_SET` for the detailed description of each exposed key.
+    """
     return {
         "api_base": settings.llm_api_base,
         "api_key": settings.llm_api_key,
@@ -295,6 +426,7 @@ class OCRServiceImpl:
         error = record.error
         if record.status == "cancelled":
             error = error or "Job cancelled."
+        error = _sanitize_job_error(error)
         # Security (2026-08-29 audit C-3 / H-3): the result token is NOT
         # returned here. The unauthenticated /api/process/status + /api/jobs
         # chain would otherwise bypass the constant-time gate at
@@ -498,8 +630,13 @@ def event_entry(event: Event) -> dict[str, Any]:
     }
 
 
+OCRService = OCRServiceImpl
+
 __all__ = [
     "SSE_KEEPALIVE_SECONDS",
+    "_CONFIG_KEY_SET",
+    "OCRService",
     "OCRServiceImpl",
+    "_sanitize_job_error",
     "event_entry",
 ]

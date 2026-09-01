@@ -329,6 +329,25 @@ class TestWhitespaceRecallOptionsFromEnv:
         assert WhitespaceRecallOptions.from_env().enabled is True
 
 
+def test_whitespace_recall_constants_match_standard() -> None:
+    from omniscribe.core.recall import (
+        MAX_RECALL_BOXES_PER_PAGE,
+        STRADDLE_MIN_OVERLAP,
+    )
+    from omniscribe.core.recall.whitespace import (
+        _MAX_RECALL_BOXES_PER_PAGE,
+        _MAX_WHITESPACE_BOXES_PER_PAGE,
+        _STRADDLE_MIN_OVERLAP,
+    )
+    from omniscribe.utils.env import DISABLE_STRINGS
+
+    assert _STRADDLE_MIN_OVERLAP == STRADDLE_MIN_OVERLAP == 0.15
+    assert _MAX_RECALL_BOXES_PER_PAGE == MAX_RECALL_BOXES_PER_PAGE == 10
+    assert _MAX_WHITESPACE_BOXES_PER_PAGE == 10
+    assert "0" in DISABLE_STRINGS
+    assert "disabled" in DISABLE_STRINGS
+
+
 def test_photo_edge_page_returns_image_with_expected_shape() -> None:
     """Pins the synthetic helper's output shape and line position.
 

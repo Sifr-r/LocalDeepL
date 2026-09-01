@@ -8,7 +8,9 @@ the LLM. No model loads, so they run in well under a second.
 from __future__ import annotations
 
 import base64
+import logging
 from pathlib import Path
+from unittest.mock import patch
 
 import pymupdf as fitz
 import pytest
@@ -348,3 +350,50 @@ class TestEmbedUnicodeFontChain:
         alias, font = embedder._pick_embed_font("中文测试")
         assert alias.startswith("omni-embed-uni")
         assert font is cjk
+
+
+def test_probe_codepoints_includes_persian_peh():
+    from omniscribe.core.pdf.embedder_helpers import _PROBE_CODEPOINTS
+
+    assert ord("\u067e") in _PROBE_CODEPOINTS
+    assert 0x067E in _PROBE_CODEPOINTS
+
+
+def test_log_once_helper(caplog: pytest.LogCaptureFixture):
+    from omniscribe.core.pdf.embedder_helpers import _LOGGED_ONCE_KEYS, _log_once
+
+    _LOGGED_ONCE_KEYS.clear()
+    with caplog.at_level(logging.WARNING):
+        _log_once("test message %d", 1, key="test_key")
+        _log_once("test message %d", 2, key="test_key")
+        _log_once("distinct message %d", 3, key="other_key")
+    messages = [rec.message for rec in caplog.records if "test message" in rec.message]
+    assert len(messages) == 1
+    assert messages[0] == "test message 1"
+    other_messages = [
+        rec.message for rec in caplog.records if "distinct message" in rec.message
+    ]
+    assert len(other_messages) == 1
+    assert other_messages[0] == "distinct message 3"
+
+
+def test_font_probe_failure_warning_avoids_exc_info(caplog: pytest.LogCaptureFixture):
+    from omniscribe.core.pdf import embedder_helpers
+
+    class _StubFont:
+        buffer = b"fake-font-buffer"
+
+        def has_glyph(self, cp: int) -> bool:
+            return True
+
+    with caplog.at_level(logging.WARNING):
+        with patch.object(
+            embedder_helpers.fitz, "open", side_effect=RuntimeError("probe error")
+        ):
+            result = embedder_helpers._font_preserves_codepoints(_StubFont())  # type: ignore[arg-type]
+    assert result is True
+    probe_records = [
+        r for r in caplog.records if "Embedder font probe failed" in r.message
+    ]
+    assert len(probe_records) == 1
+    assert probe_records[0].exc_info is None
