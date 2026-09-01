@@ -116,3 +116,85 @@ def test_update_dotenv_replaces_and_appends(
     assert "LLM_API_KEY=secret-key" in content
     assert os.environ.get("LLM_API_BASE") == "http://new-host/v1"
     assert os.environ.get("LLM_API_KEY") == "secret-key"
+
+
+def test_canonical_boolean_sets() -> None:
+    from omniscribe.utils.env import DISABLE_STRINGS, ENABLE_STRINGS
+
+    assert isinstance(ENABLE_STRINGS, frozenset)
+    assert isinstance(DISABLE_STRINGS, frozenset)
+    assert {"1", "true", "yes", "on", "y", "enabled"} == ENABLE_STRINGS
+    assert {"0", "false", "no", "off", "n", "disabled"} == DISABLE_STRINGS
+    assert ENABLE_STRINGS.isdisjoint(DISABLE_STRINGS)
+
+
+def test_parse_bool() -> None:
+    from omniscribe.utils.env import parse_bool
+
+    # Boolean passthrough
+    assert parse_bool(True) is True
+    assert parse_bool(False) is False
+
+    # None falls back to default
+    assert parse_bool(None) is False
+    assert parse_bool(None, default=True) is True
+
+    # Truthy strings
+    for truthy in (
+        "1",
+        "true",
+        "yes",
+        "on",
+        "y",
+        "enabled",
+        "TRUE",
+        " Enabled ",
+        "Yes",
+    ):
+        assert parse_bool(truthy) is True
+        assert parse_bool(truthy, default=False) is True
+
+    # Falsy strings
+    for falsy in (
+        "0",
+        "false",
+        "no",
+        "off",
+        "n",
+        "disabled",
+        "FALSE",
+        " Disabled ",
+        "No",
+    ):
+        assert parse_bool(falsy) is False
+        assert parse_bool(falsy, default=True) is False
+
+    # Unknown strings fall back to default
+    assert parse_bool("banana", default=False) is False
+    assert parse_bool("banana", default=True) is True
+    assert parse_bool("", default=False) is False
+    assert parse_bool("", default=True) is True
+
+
+def test_env_bool(monkeypatch: pytest.MonkeyPatch) -> None:
+    from omniscribe.utils.env import env_bool
+
+    # Unset falls back to default
+    monkeypatch.delenv("TEST_BOOL_FLAG", raising=False)
+    assert env_bool("TEST_BOOL_FLAG", default=False) is False
+    assert env_bool("TEST_BOOL_FLAG", default=True) is True
+
+    # Truthy env vars
+    for truthy in ("1", "true", "yes", "on", "y", "enabled", "TRUE"):
+        monkeypatch.setenv("TEST_BOOL_FLAG", truthy)
+        assert env_bool("TEST_BOOL_FLAG", default=False) is True
+
+    # Falsy env vars
+    for falsy in ("0", "false", "no", "off", "n", "disabled", "OFF"):
+        monkeypatch.setenv("TEST_BOOL_FLAG", falsy)
+        assert env_bool("TEST_BOOL_FLAG", default=True) is False
+
+    # Unknown string falls back to default
+    monkeypatch.setenv("TEST_BOOL_FLAG", "invalid_value")
+    assert env_bool("TEST_BOOL_FLAG", default=False) is False
+    assert env_bool("TEST_BOOL_FLAG", default=True) is True

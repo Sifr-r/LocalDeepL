@@ -77,6 +77,9 @@ def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
         normalized = ip.ipv4_mapped
     if str(normalized) == "0.0.0.0":
         return True
+    # Deliberate security stance (audit 1.19): normalized.is_reserved includes
+    # 240.0.0.0/4 and CGNAT (100.64.0.0/10), which are deliberately blocked as
+    # non-public IP targets unless ALLOW_SSRF_LOCAL is enabled for local ranges.
     return bool(
         normalized.is_unspecified
         or normalized.is_reserved
@@ -215,7 +218,12 @@ async def is_ssrf_target(url: str | None) -> SSRFCheckResult:
 
 
 def is_blocked_host(host: str | None) -> bool:
-    """Synchronously check if a hostname/IP is a blocked private or metadata target."""
+    """Synchronously check if a hostname/IP is a blocked private or metadata target.
+
+    Warning: This function performs synchronous DNS resolution (`socket.getaddrinfo`)
+    which can block the event loop for seconds. Do NOT call this directly from an
+    async event loop thread; use `check_ssrf_target` or `asyncio.to_thread` instead.
+    """
     if not host:
         return False
     h = host.strip().lower()

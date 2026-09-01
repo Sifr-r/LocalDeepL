@@ -48,15 +48,43 @@ class TestOpenAndLifecycle:
         assert src.open(str(pdf)) is True
         src.close()
 
-    def test_non_pdf_input_is_a_noop(self, tmp_path: Path) -> None:
+    def test_non_pdf_input_is_a_noop(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
         src = PdfTextLayerRecall()
-        assert src.open(str(tmp_path / "scan.png")) is False
+        with caplog.at_level("DEBUG", logger="omniscribe.core.recall.text_layer"):
+            assert src.open(str(tmp_path / "scan.png")) is False
+        assert any(
+            "Text-layer recall skipping non-PDF input" in r.getMessage()
+            for r in caplog.records
+        )
         assert src.supplement(0, []) == []
         src.close()  # close without open must be safe
 
-    def test_missing_pdf_fails_open(self, tmp_path: Path) -> None:
+    def test_missing_pdf_fails_open(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
         src = PdfTextLayerRecall()
-        assert src.open(str(tmp_path / "does-not-exist.pdf")) is False
+        with caplog.at_level("DEBUG", logger="omniscribe.core.recall.text_layer"):
+            assert src.open(str(tmp_path / "does-not-exist.pdf")) is False
+        assert any(
+            "Text-layer recall skipping non-PDF input" in r.getMessage()
+            for r in caplog.records
+        )
+        assert src.supplement(0, []) == []
+
+    def test_corrupt_pdf_fails_open_and_logs_debug(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        corrupt = tmp_path / "corrupt.pdf"
+        corrupt.write_bytes(b"not a valid pdf content")
+        src = PdfTextLayerRecall()
+        with caplog.at_level("DEBUG", logger="omniscribe.core.recall.text_layer"):
+            assert src.open(str(corrupt)) is False
+        assert any(
+            "Text-layer recall skipping non-PDF input" in r.getMessage()
+            for r in caplog.records
+        )
         assert src.supplement(0, []) == []
 
     def test_disabled_options_skip_everything(self, tmp_path: Path) -> None:
@@ -131,6 +159,25 @@ class TestKillSwitchEnv:
     def test_unset_env_defaults_on(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("OMNISCRIBE_TEXT_LAYER_RECALL", raising=False)
         assert TextLayerRecallOptions.from_env().enabled is True
+
+
+def test_recall_constants_promoted_and_consistent() -> None:
+    from omniscribe.core.recall import (
+        MAX_RECALL_BOXES_PER_PAGE,
+        STRADDLE_MIN_OVERLAP,
+    )
+    from omniscribe.core.recall.text_layer import (
+        _MAX_RECALL_BOXES_PER_PAGE,
+        _MAX_TEXT_LAYER_BOXES_PER_PAGE,
+        _STRADDLE_MIN_OVERLAP,
+    )
+    from omniscribe.utils.env import DISABLE_STRINGS
+
+    assert _STRADDLE_MIN_OVERLAP == STRADDLE_MIN_OVERLAP == 0.15
+    assert _MAX_TEXT_LAYER_BOXES_PER_PAGE == MAX_RECALL_BOXES_PER_PAGE == 10
+    assert _MAX_RECALL_BOXES_PER_PAGE == 10
+    assert "0" in DISABLE_STRINGS
+    assert "disabled" in DISABLE_STRINGS
 
 
 class TestSupplement:

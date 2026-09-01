@@ -13,7 +13,7 @@ line-shaped ink blobs; it cannot distinguish text from text-like
 noise (photo edges, figure borders, thin form rules), and it merges
 stacked lines when the inter-line gap is smaller than the dilation
 kernel height. Conservative filters trade recall for precision here;
-see ``docs/superpowers/plans/2026-08-14-whitespace-recall.md`` and
+see ``docs/ARCHITECTURE.md`` and
 ``.autoplan/phase1-ceo-report.md`` (gate addendum G2/G4).
 """
 
@@ -26,13 +26,17 @@ from dataclasses import dataclass
 from PIL import Image
 
 from omniscribe.core.document import BBox
-from omniscribe.utils.env import env_str
+from omniscribe.core.recall import (
+    MAX_RECALL_BOXES_PER_PAGE,
+    STRADDLE_MIN_OVERLAP,
+)
+from omniscribe.utils.env import DISABLE_STRINGS, env_str
 
 logger = logging.getLogger(__name__)
 
 _ENV_RECALL = "OMNISCRIBE_WHITESPACE_RECALL"
-# ``n`` / ``disabled`` accepted alongside the usual falsy spellings (eng S2).
-_DISABLE_VALUES = {"0", "false", "no", "off", "n", "disabled"}
+# ``n`` / ``disabled`` accepted alongside the usual falsy spellings (eng S2 / audit 4.6).
+_DISABLE_VALUES = DISABLE_STRINGS
 
 # Horizontal dilation kernel sizing (ratios of page dimensions, clamped).
 # The kernel must bridge inter-character gaps without fusing stacked lines.
@@ -78,7 +82,8 @@ _MAX_FOREGROUND_FRACTION = 0.5
 # the rest by ink density (most text-like first). Measured worst case on
 # the examples corpus was 6 extras/page; the cap protects pathological
 # layouts and bounds n_boxes inflation toward dense_threshold.
-_MAX_RECALL_BOXES_PER_PAGE = 10
+_MAX_RECALL_BOXES_PER_PAGE = MAX_RECALL_BOXES_PER_PAGE
+_MAX_WHITESPACE_BOXES_PER_PAGE = MAX_RECALL_BOXES_PER_PAGE
 
 # Dedup against Surya boxes. Containment catches a candidate that is mostly
 # inside an existing box (a partial duplicate); IoU catches a candidate that
@@ -89,7 +94,7 @@ _MAX_IOU = 0.3
 # fraction of its own area) spans a gutter or stacked detected lines; it is
 # rejected outright (never split) — a wide cross-column box would feed
 # garbled two-column text to per-box OCR.
-_STRADDLE_MIN_OVERLAP = 0.15
+_STRADDLE_MIN_OVERLAP = STRADDLE_MIN_OVERLAP
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,7 +113,7 @@ class WhitespaceRecallOptions:
         (audit H3) so this module no longer imports ``os``.
         """
         raw = (env_str(_ENV_RECALL) or "").strip().lower()
-        return cls(enabled=raw not in _DISABLE_VALUES)
+        return cls(enabled=raw not in DISABLE_STRINGS)
 
 
 class WhitespaceRecallBooster:

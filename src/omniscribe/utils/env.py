@@ -11,18 +11,29 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 logger = logging.getLogger(__name__)
 
+# Standard falsy / disable string values recognized across configuration and env checks.
 __all__ = [
+    "DISABLE_STRINGS",
+    "ENABLE_STRINGS",
     "env_bool",
     "env_int",
     "env_list_csv",
     "env_str",
     "load_dotenv",
+    "parse_bool",
     "update_dotenv",
 ]
+
+ENABLE_STRINGS: Final[frozenset[str]] = frozenset(
+    {"1", "true", "yes", "on", "y", "enabled"}
+)
+DISABLE_STRINGS: Final[frozenset[str]] = frozenset(
+    {"0", "false", "no", "off", "n", "disabled"}
+)
 
 
 def _find_dotenv(start_dir: Path | None = None) -> Path | None:
@@ -168,12 +179,26 @@ def env_int(name: str, default: int) -> int:
         return default
 
 
+def parse_bool(value: Any, default: bool = False) -> bool:
+    """Parse a boolean or string into a bool using ENABLE_STRINGS / DISABLE_STRINGS."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    val_str = str(value).strip().lower()
+    if val_str in ENABLE_STRINGS:
+        return True
+    if val_str in DISABLE_STRINGS:
+        return False
+    return default
+
+
 def env_bool(name: str, default: bool) -> bool:
-    """Read a boolean env var with truthy/falsy conversion."""
+    """Read a boolean env var with canonical truthy/falsy conversion."""
     value = os.getenv(name)
     if value is None:
         return default
-    return value.strip().lower() not in {"0", "false", "no", "off"}
+    return parse_bool(value, default=default)
 
 
 def env_list_csv(name: str) -> list[str]:

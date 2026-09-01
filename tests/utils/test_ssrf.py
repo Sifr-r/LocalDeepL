@@ -138,3 +138,37 @@ def test_check_ssrf_target_sync_uses_module_level_executor(
     # same object a fresh import would expose.
     assert isinstance(security._SSRF_EXECUTOR, ThreadPoolExecutor)
     assert security._SSRF_EXECUTOR._max_workers >= 1
+
+
+def test_is_blocked_host_docstring_warning() -> None:
+    doc = is_blocked_host.__doc__ or ""
+    normalized_doc = " ".join(doc.split())
+    assert (
+        "Warning: This function performs synchronous DNS resolution (`socket.getaddrinfo`) "
+        "which can block the event loop for seconds. Do NOT call this directly from an "
+        "async event loop thread; use `check_ssrf_target` or `asyncio.to_thread` instead."
+    ) in normalized_doc
+
+
+def test_is_blocked_ip_reserved_and_cgnat(monkeypatch: pytest.MonkeyPatch) -> None:
+    import ipaddress
+
+    from omniscribe.utils.security import _is_blocked_ip, is_blocked_host
+
+    # Deliberate security stance (audit 1.19):
+    # normalized.is_reserved includes 240.0.0.0/4, which is deliberately blocked
+    # as a non-public IP target unless ALLOW_SSRF_LOCAL is enabled.
+    assert _is_blocked_ip(ipaddress.ip_address("240.0.0.1")) is True
+
+    # CGNAT (100.64.0.0/10) is unconditionally blocked regardless of ALLOW_SSRF_LOCAL
+    assert is_blocked_host("100.64.0.1") is True
+
+    # Reserved IP (240.0.0.1) is blocked when ALLOW_SSRF_LOCAL is false
+    monkeypatch.setenv("ALLOW_SSRF_LOCAL", "false")
+    assert is_blocked_host("240.0.0.1") is True
+
+    # When ALLOW_SSRF_LOCAL is true, local ranges are allowed for development
+    monkeypatch.setenv("ALLOW_SSRF_LOCAL", "true")
+    assert is_blocked_host("240.0.0.1") is False
+    # CGNAT stays blocked even when ALLOW_SSRF_LOCAL is true
+    assert is_blocked_host("100.64.0.1") is True

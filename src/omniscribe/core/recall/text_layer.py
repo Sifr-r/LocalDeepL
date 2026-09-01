@@ -24,13 +24,17 @@ from dataclasses import dataclass
 import pymupdf as fitz  # PyMuPDF
 
 from omniscribe.core.document import BBox
-from omniscribe.utils.env import env_str
+from omniscribe.core.recall import (
+    MAX_RECALL_BOXES_PER_PAGE,
+    STRADDLE_MIN_OVERLAP,
+)
+from omniscribe.utils.env import DISABLE_STRINGS, env_str
 
 logger = logging.getLogger(__name__)
 
 _ENV_TEXT_LAYER_RECALL = "OMNISCRIBE_TEXT_LAYER_RECALL"
-# Same falsy-spelling set as the whitespace booster (eng S2).
-_DISABLE_VALUES = {"0", "false", "no", "off", "n", "disabled"}
+# Same falsy-spelling set as the whitespace booster (eng S2 / audit 4.6).
+_DISABLE_VALUES = DISABLE_STRINGS
 
 # Pages with fewer extracted words than this are treated as having no
 # usable text layer (scans, image-only pages, corrupt overlays) and are
@@ -48,12 +52,13 @@ _MAX_IOU = 0.3
 # existing boxes this much (as a fraction of its own area) spans a gutter
 # or stacked lines and is rejected rather than merged — a wide box would
 # feed garbled multi-region text to per-box OCR.
-_STRADDLE_MIN_OVERLAP = 0.15
+_STRADDLE_MIN_OVERLAP = STRADDLE_MIN_OVERLAP
 
 # Junk-blast-radius bound, mirroring the booster: at most this many
 # text-layer boxes per page, kept in extraction (reading) order. Bounds
 # n_boxes inflation toward dense_threshold on pathological text layers.
-_MAX_TEXT_LAYER_BOXES_PER_PAGE = 10
+_MAX_TEXT_LAYER_BOXES_PER_PAGE = MAX_RECALL_BOXES_PER_PAGE
+_MAX_RECALL_BOXES_PER_PAGE = _MAX_TEXT_LAYER_BOXES_PER_PAGE
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,7 +77,7 @@ class TextLayerRecallOptions:
         (audit H3) so this module no longer imports ``os``.
         """
         raw = (env_str(_ENV_TEXT_LAYER_RECALL) or "").strip().lower()
-        return cls(enabled=raw not in _DISABLE_VALUES)
+        return cls(enabled=raw not in DISABLE_STRINGS)
 
 
 class PdfTextLayerRecall:
@@ -109,9 +114,14 @@ class PdfTextLayerRecall:
         if not self.options.enabled:
             return False
         if not input_path.lower().endswith(".pdf"):
+            logger.debug("Text-layer recall skipping non-PDF input: %s", input_path)
             return False
         try:
             self._doc = fitz.open(input_path)
+            if not getattr(self._doc, "is_pdf", True):
+                logger.debug("Text-layer recall skipping non-PDF input: %s", input_path)
+                self.close()
+                return False
         except Exception as e:
             logger.warning(
                 "Text-layer recall could not open %s: %s: %s",
@@ -119,6 +129,7 @@ class PdfTextLayerRecall:
                 type(e).__name__,
                 e,
             )
+            logger.debug("Text-layer recall skipping non-PDF input: %s", input_path)
             self._doc = None
             return False
         return True

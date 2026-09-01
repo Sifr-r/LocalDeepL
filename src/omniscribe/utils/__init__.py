@@ -1,11 +1,14 @@
 """Utility modules."""
 
 from omniscribe.utils.env import (
+    DISABLE_STRINGS,
+    ENABLE_STRINGS,
     env_bool,
     env_int,
     env_list_csv,
     env_str,
     load_dotenv,
+    parse_bool,
     update_dotenv,
 )
 from omniscribe.utils.file import write_atomic
@@ -24,6 +27,8 @@ from omniscribe.utils.tqdm_patch import apply as apply_tqdm_patch
 __all__ = [
     "DEFAULT_LOG_FORMAT",
     "DEFAULT_LOG_LEVEL",
+    "DISABLE_STRINGS",
+    "ENABLE_STRINGS",
     "JsonFormatter",
     "SilentTqdm",
     "apply_tqdm_patch",
@@ -37,6 +42,7 @@ __all__ = [
     "is_ssrf_target",
     "load_dotenv",
     "merge_extras",
+    "parse_bool",
     "update_dotenv",
     "write_atomic",
 ]
