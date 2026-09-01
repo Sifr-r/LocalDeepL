@@ -50,6 +50,7 @@ class DocumentProcessor(Protocol):
     """Async transform contract for in-memory document handoff stages."""
 
     name: str
+    contract: ProcessorContract
 
     async def process(self, document: DocumentResult) -> DocumentResult: ...
 
