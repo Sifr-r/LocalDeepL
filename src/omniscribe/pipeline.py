@@ -13,6 +13,7 @@ the configured components.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, cast
 
@@ -113,6 +114,32 @@ class OCRPipeline:
                 ),
                 text_layer_recall=PdfTextLayerRecall(TextLayerRecallOptions.from_env()),
             )
+
+    async def aclose(self) -> None:
+        """Release any long-lived resources owned by the pipeline.
+
+        Audit M-domain 2: the hybrid engine holds an :class:`OCRProcessor`
+        which in turn holds a long-lived :class:`AsyncOpenAI` client. The
+        grounded path uses the shared ``call_llm`` client and so has no
+        per-pipeline resources to release.
+
+        Idempotent — a second call is a no-op.
+        """
+        ocr_processor = getattr(self._engine, "ocr_processor", None)
+        if ocr_processor is not None:
+            aclose = getattr(ocr_processor, "aclose", None)
+            if callable(aclose):
+                result = aclose()
+                if asyncio.iscoroutine(result):
+                    await result
+
+    async def __aenter__(self) -> OCRPipeline:
+        """Enter the async context manager; returns ``self``."""
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        """Exit the async context manager; releases pipeline resources."""
+        await self.aclose()
 
     @property
     def last_document_result(self):

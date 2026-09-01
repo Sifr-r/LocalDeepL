@@ -165,6 +165,12 @@ class FakePipeline:
 
     def __init__(self) -> None:
         self.calls: dict[str, Any] = {}
+        self.closed = False
+
+    async def aclose(self) -> None:
+        # Mirror the OCRPipeline.aclose contract — the bridge always calls it
+        # in a finally block to release per-request resources.
+        self.closed = True
 
     async def run(
         self,

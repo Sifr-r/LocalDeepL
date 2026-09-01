@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
@@ -280,6 +280,52 @@ class OCRProcessor:
                     res = close_method()
                     if asyncio.iscoroutine(res):
                         await res
+
+    async def aclose(self) -> None:
+        """Close the underlying :class:`AsyncOpenAI` client if one is owned.
+
+        Audit M-domain 2: the long-lived ``AsyncOpenAI`` instance built in
+        :meth:`__init__` was previously never released, so every request
+        that constructed an ``OCRProcessor`` left a connection pool in
+        use until the worker process exited. The hybrid path builds a
+        fresh processor per request via :func:`build_pipeline`, so the
+        per-request socket churn was real.
+
+        Safe to call multiple times — the second call is a no-op once
+        ``self.client`` has been cleared. Test instances built via
+        :meth:`__new__` (which skip :meth:`__init__`) do not have a
+        ``client`` attribute; ``getattr`` with a default keeps the
+        call free.
+        """
+        client = getattr(self, "client", None)
+        if client is None:
+            return
+        try:
+            close_method = getattr(client, "aclose", None) or getattr(
+                client, "close", None
+            )
+            if close_method is None:
+                return
+            result = close_method()
+            if asyncio.iscoroutine(result):
+                await result
+        finally:
+            # Drop the reference so a follow-up aclose() call is a no-op
+            # even if the close itself raised.
+            self.client = None  # type: ignore[assignment]
+
+    async def __aenter__(self) -> OCRProcessor:
+        """Enter the async context manager; returns ``self``."""
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: Any,
+    ) -> None:
+        """Exit the async context manager; closes the OpenAI client."""
+        await self.aclose()
 
     async def perform_ocr(
         self,

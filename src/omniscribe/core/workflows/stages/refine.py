@@ -94,15 +94,28 @@ class HybridRefiner:
             progress, "refine", 0, total, f"Refining {total} uncertain boxes..."
         )
 
+        # Audit M-domain 1: decode all needed pages in parallel rather than
+        # serially awaiting each one. ``decoded_get`` short-circuits the
+        # cache hit; remaining pages fan out across the thread pool.
         page_images: dict[int, Image.Image] = {}
         pages_needed = {p_num for p_num, _, _ in targets}
+        to_decode: list[int] = []
         for p_num in pages_needed:
-            cached = decoded_get(p_num) if decoded_get is not None else None
-            page_images[p_num] = (
-                cached
-                if cached is not None
-                else await asyncio.to_thread(_decode_page_image, images_dict[p_num])
+            if decoded_get is not None:
+                cached = decoded_get(p_num)
+                if cached is not None:
+                    page_images[p_num] = cached
+                    continue
+            to_decode.append(p_num)
+        if to_decode:
+            decoded = await asyncio.gather(
+                *(
+                    asyncio.to_thread(_decode_page_image, images_dict[p_num])
+                    for p_num in to_decode
+                )
             )
+            for p_num, image in zip(to_decode, decoded, strict=True):
+                page_images[p_num] = image
 
         async def refine_one(p_num: int, idx: int, bbox: BBox) -> tuple[int, int, str]:
             try:

@@ -166,12 +166,19 @@ async def run_pipeline(
         await on_warning(f"Warning on page {page_idx + 1}: {exc}")
 
     run_kwargs = resolve_run_kwargs(settings, request)
-    return await pipeline.run(
-        input_path,
-        output_path,
-        progress=_progress,
-        on_warning=_warning,
-        cancel_check=cancel_check,
-        trust_model_id=(request.model or settings.llm_model),
-        **run_kwargs,
-    )
+    # Audit M-domain 2: ensure the per-request pipeline releases its
+    # long-lived AsyncOpenAI client (built in OCRProcessor.__init__) even
+    # when the run raises. ``aclose`` is a no-op for the grounded path
+    # and idempotent for the hybrid path.
+    try:
+        return await pipeline.run(
+            input_path,
+            output_path,
+            progress=_progress,
+            on_warning=_warning,
+            cancel_check=cancel_check,
+            trust_model_id=(request.model or settings.llm_model),
+            **run_kwargs,
+        )
+    finally:
+        await pipeline.aclose()

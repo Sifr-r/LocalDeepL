@@ -768,6 +768,67 @@ class TestHybridRefinePages:
         # Only the refinable box gets a crop call.
         assert ocr.crop_calls == 1
 
+    async def test_refine_decodes_pages_in_parallel(self) -> None:
+        """Audit M-domain 1: pages needed for refine must be decoded
+        concurrently (asyncio.gather), not serially awaited one-by-one.
+        """
+        import asyncio
+        import threading
+        import time
+
+        from omniscribe.core.workflows.stages.refine import (
+            HybridRefiner,
+        )
+        from omniscribe.core.workflows.utils import _decode_page_image
+
+        ocr = _StubOCR(crop_text="ok")
+        refiner = HybridRefiner(ocr_processor=ocr)  # type: ignore[arg-type]
+
+        # 3 pages, all needing decode (no cache hits).
+        images_dict = {i: _make_tiny_b64_image() for i in range(3)}
+        pages_structured = {
+            i: [([0.1, 0.1, 0.9, 0.2], "")] for i in range(3)
+        }
+
+        original = _decode_page_image
+        active = 0
+        peak = 0
+        counter_lock = threading.Lock()
+
+        def _slow_decode(b64: str):
+            nonlocal active, peak
+            with counter_lock:
+                active += 1
+                peak = max(peak, active)
+            try:
+                # Sleep on a worker thread so the asyncio loop stays free
+                # for the gather() to schedule all three decodes.
+                time.sleep(0.05)
+                return original(b64)
+            finally:
+                with counter_lock:
+                    active -= 1
+
+        # Monkey-patch the module-level helper the refiner imports.
+        import omniscribe.core.workflows.stages.refine as _refine_mod
+
+        orig_decode = _refine_mod._decode_page_image
+        _refine_mod._decode_page_image = _slow_decode  # type: ignore[assignment]
+        try:
+            await refiner.refine_uncertain(
+                sparse_structured=pages_structured,  # type: ignore[arg-type]
+                images_dict=images_dict,
+                semaphore=asyncio.Semaphore(3),
+                progress=None,
+            )
+        finally:
+            _refine_mod._decode_page_image = orig_decode
+
+        # Parallel gather -> peak reaches 3. Serial loop -> 1.
+        assert peak == 3, (
+            f"expected parallel decode (peak=3), got {peak}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # _finalize

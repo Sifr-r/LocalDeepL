@@ -452,6 +452,60 @@ class TestOCRPipeline:
         assert pipe.last_failed_pages == []
 
 
+class TestPipelineAclose:
+    """Audit M-domain 2: the per-request pipeline must release the long-lived
+    AsyncOpenAI client it builds in OCRProcessor.__init__.
+    """
+
+    async def test_hybrid_pipeline_closes_ocr_processor_client(self) -> None:
+        from unittest.mock import AsyncMock
+
+        ocr = _StubOCR()
+        # Inject an aclose-capable client so we can observe the close.
+        mock_client = AsyncMock()
+        mock_client.aclose = AsyncMock()
+        ocr.client = mock_client
+        pipe = OCRPipeline(_StubAligner(), ocr, _StubPDF(n_pages=1))
+
+        await pipe.aclose()
+
+        mock_client.aclose.assert_awaited_once()
+        # The aclose method must clear the reference so a second call is a
+        # no-op rather than re-closing a (possibly already-closed) client.
+        assert ocr.client is None
+        await pipe.aclose()  # idempotent
+
+    async def test_grounded_pipeline_aclose_is_noop(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock
+
+        from omniscribe.core.grounded import GroundedResponse
+
+        backend = MagicMock()
+        backend.ocr_document = AsyncMock(
+            return_value=GroundedResponse(blocks=[], failed_pages=[])
+        )
+        # No ocr_processor attribute on the grounded engine; aclose must
+        # handle that without raising.
+        pipe = OCRPipeline(
+            aligner=None,
+            ocr_processor=None,
+            pdf_handler=_StubPDF(n_pages=1),
+            grounded_backend=backend,
+        )
+        await pipe.aclose()  # must not raise
+
+    async def test_pipeline_async_context_manager(self) -> None:
+        from unittest.mock import AsyncMock
+
+        ocr = _StubOCR()
+        mock_client = AsyncMock()
+        mock_client.aclose = AsyncMock()
+        ocr.client = mock_client
+        async with OCRPipeline(_StubAligner(), ocr, _StubPDF(n_pages=1)) as pipe:
+            assert isinstance(pipe, OCRPipeline)
+        mock_client.aclose.assert_awaited_once()
+
+
 class TestPipelineRepairPassthrough:
     async def test_hybrid_run_forwards_repair_options(self, stub_ocr):
         pipe = OCRPipeline(_StubAligner(), stub_ocr, _StubPDF(n_pages=1))

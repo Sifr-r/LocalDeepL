@@ -215,3 +215,85 @@ class TestTesseractErrorCounter:
         result = proc._get_tesseract_draft("aW1hZ2U=")
         assert result == "recovered text"
         assert proc.tesseract_error_count == 2
+
+
+class TestProcessorAclose:
+    """Audit M-domain 2: the long-lived AsyncOpenAI client built in
+    ``OCRProcessor.__init__`` must be released via ``aclose()`` so the
+    per-request hybrid path doesn't leak a connection pool.
+    """
+
+    async def test_aclose_invokes_client_aclose(self) -> None:
+        from unittest.mock import AsyncMock
+
+        proc = OCRProcessor(
+            api_base="http://test.local/v1", api_key="x", model="mock"
+        )
+        # Replace the real AsyncOpenAI with a mock that records aclose.
+        # Capture the mock locally because ``proc.aclose`` clears the
+        # ``client`` attribute on success.
+        mock_client = AsyncMock()
+        mock_client.aclose = AsyncMock()
+        proc.client = mock_client
+
+        await proc.aclose()
+
+        mock_client.aclose.assert_awaited_once()
+        # Reference is cleared so a follow-up call is a no-op.
+        assert getattr(proc, "client", None) is None
+
+    async def test_aclose_is_idempotent(self) -> None:
+        from unittest.mock import AsyncMock
+
+        proc = OCRProcessor(
+            api_base="http://test.local/v1", api_key="x", model="mock"
+        )
+        mock_client = AsyncMock()
+        mock_client.aclose = AsyncMock()
+        proc.client = mock_client
+
+        await proc.aclose()
+        await proc.aclose()  # must not raise, must not re-close
+
+        mock_client.aclose.assert_awaited_once()
+
+    async def test_aclose_noop_when_client_missing(self) -> None:
+        # Test instances built via __new__() have no client attribute; the
+        # getattr-with-default keeps aclose free of AttributeError.
+        proc = OCRProcessor.__new__(OCRProcessor)
+        await proc.aclose()  # must not raise
+        assert getattr(proc, "client", None) is None
+
+    async def test_aclose_falls_back_to_close(self) -> None:
+        from unittest.mock import AsyncMock
+
+        proc = OCRProcessor(
+            api_base="http://test.local/v1", api_key="x", model="mock"
+        )
+        # Some client-shaped objects expose only ``close`` (async) — aclose
+        # must accept those too.
+        mock_client = AsyncMock()
+        mock_client.aclose = None
+        mock_client.close = AsyncMock()
+        proc.client = mock_client
+
+        await proc.aclose()
+
+        mock_client.close.assert_awaited_once()
+
+    async def test_async_context_manager(self) -> None:
+        from unittest.mock import AsyncMock
+
+        proc = OCRProcessor(
+            api_base="http://test.local/v1", api_key="x", model="mock"
+        )
+        mock_client = AsyncMock()
+        mock_client.aclose = AsyncMock()
+        proc.client = mock_client
+
+        async with proc as returned:
+            assert returned is proc
+            # The mock isn't awaited during __aenter__; only on exit.
+            mock_client.aclose.assert_not_awaited()
+
+        mock_client.aclose.assert_awaited_once()

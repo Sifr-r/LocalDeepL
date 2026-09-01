@@ -16,6 +16,7 @@ Shared fixtures.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from pathlib import Path
@@ -84,6 +85,24 @@ class _StubOCR:
         self.crop_text = crop_text
         self.page_calls = 0
         self.crop_calls = 0
+        # ``client`` mirrors OCRProcessor's long-lived AsyncOpenAI; tests
+        # that exercise the aclose lifecycle inject a mock here.
+        self.client: object | None = None
+
+    async def aclose(self) -> None:
+        """Mirror OCRProcessor.aclose: release ``self.client`` if set."""
+        if self.client is None:
+            return
+        client = self.client
+        self.client = None
+        close_method = getattr(client, "aclose", None) or getattr(
+            client, "close", None
+        )
+        if close_method is None:
+            return
+        result = close_method()
+        if asyncio.iscoroutine(result):
+            await result
 
     async def perform_ocr(self, image_base64: str, **kwargs) -> list[str]:
         self.page_calls += 1
