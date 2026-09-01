@@ -40,6 +40,7 @@ start_app.log
 .mavis/
 .superpowers/
 docs/
+!docs/README.md
 scratch/
 .minimax/
 .research/
