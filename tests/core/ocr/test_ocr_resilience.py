@@ -153,7 +153,7 @@ async def test_breaker_state_transitions_closed_to_open():
     await cb.record_failure()
     assert cb.state is CircuitState.CLOSED  # under threshold
     await cb.record_failure()
-    assert cb.state is CircuitState.OPEN
+    assert cb.state is CircuitState.OPEN  # type: ignore[comparison-overlap]
     assert cb.is_open is True
 
 
@@ -167,7 +167,7 @@ async def test_breaker_state_transitions_open_to_half_open():
     assert cb.state is CircuitState.OPEN
     # Cooldown elapsed â†’ half-open: a probe is allowed.
     now[0] = 31.0
-    assert cb.state is CircuitState.HALF_OPEN
+    assert cb.state is CircuitState.HALF_OPEN  # type: ignore[comparison-overlap]
     # is_open is False during half-open (a probe is allowed through).
     assert cb.is_open is False
     await cb.check()  # should not raise
@@ -183,7 +183,7 @@ async def test_breaker_state_transitions_half_open_to_closed_on_success():
     now[0] = 31.0
     assert cb.state is CircuitState.HALF_OPEN
     await cb.record_success()
-    assert cb.state is CircuitState.CLOSED
+    assert cb.state is CircuitState.CLOSED  # type: ignore[comparison-overlap]
     assert cb.consecutive_failures == 0
 
 

@@ -21,7 +21,7 @@ def test_tree_export_json_round_trip():
                 children=[
                     BlockNode(
                         block_type=BlockType.PARAGRAPH,
-                        bbox=[0, 0, 1, 0.1],
+                        bbox=(0, 0, 1, 0.1),
                         text="hi",
                         page_idx=0,
                     ),

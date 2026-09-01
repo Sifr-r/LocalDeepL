@@ -86,7 +86,7 @@ async def test_translate_node_uses_injected_settings(monkeypatch):
         ),
     }
 
-    result = await translation.translate_node(state)  # type: ignore[arg-type]
+    result = await translation.translate_node(state)
 
     assert result["translated_chunk"] == "Bonjour"
     assert captured["model"] == "openai/test-model"
@@ -127,10 +127,10 @@ async def test_translate_node_preserves_error_prefix_on_call_llm_failure(monkeyp
         ),
     }
 
-    result = await translation.translate_node(state)  # type: ignore[arg-type]
+    result = await translation.translate_node(state)
     translated = result["translated_chunk"]
-    assert translated.startswith("[Translation Error")
-    assert "upstream gone" in translated
+    assert translated.startswith("[Translation Error")  # type: ignore[union-attr]
+    assert "upstream gone" in translated  # type: ignore[operator]
 
 
 async def test_translate_node_includes_glossary_and_memory(monkeypatch):

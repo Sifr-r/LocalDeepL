@@ -264,7 +264,7 @@ def test_validate_bbox_coordinates() -> None:
     assert validate_bbox_coordinates([0.1, 0.2, 0.8, 0.9]) == (0.1, 0.2, 0.8, 0.9)
 
     # Clamping out-of-bounds
-    assert validate_bbox_coordinates([-0.5, -0.2, 1.5, 2.0], clamp=True) == (
+    assert validate_bbox_coordinates((-0.5, -0.2, 1.5, 2.0), clamp=True) == (
         0.0,
         0.0,
         1.0,

@@ -52,18 +52,18 @@ def test_extraction_request_defaults() -> None:
 
 def test_extraction_request_rejects_unknown_template() -> None:
     with pytest.raises(ValidationError):
-        ExtractionRequest(text="x", template="nonsense")
+        ExtractionRequest(text="x", template="nonsense")  # type: ignore[arg-type]
 
 
 def test_extraction_request_rejects_extra_fields() -> None:
     with pytest.raises(ValidationError):
-        ExtractionRequest(text="x", bogus="1")
+        ExtractionRequest(text="x", bogus="1")  # type: ignore[call-arg]
 
 
 def test_custom_prompt_max_length() -> None:
-    assert ExtractionRequest(template="custom", custom_prompt="x" * 4000).custom_prompt
+    assert ExtractionRequest(template="custom", custom_prompt="x" * 4000).custom_prompt  # type: ignore[arg-type]
     with pytest.raises(ValidationError):
-        ExtractionRequest(template="custom", custom_prompt="x" * 4001)
+        ExtractionRequest(template="custom", custom_prompt="x" * 4001)  # type: ignore[arg-type]
 
 
 def test_strings_are_trimmed() -> None:

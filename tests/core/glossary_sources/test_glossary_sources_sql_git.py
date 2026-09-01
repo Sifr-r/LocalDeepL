@@ -173,7 +173,7 @@ class TestSqlTable:
         }
         kwargs.update(field_kwargs)
         with pytest.raises(ValueError, match="Invalid SQL identifier"):
-            parse_sql_table(**kwargs)  # type: ignore[arg-type]
+            parse_sql_table(**kwargs)
 
     def test_target_table_mismatch_rejected(self, sql_db: Path) -> None:
         with pytest.raises(ValueError, match="must match"):
@@ -240,7 +240,7 @@ def git_env(monkeypatch: pytest.MonkeyPatch) -> dict:
     monkeypatch.setattr(git_repo_mod, "_ssrf_blocked", lambda url: False)
     captured: dict = {}
 
-    def fake_run(command, **kwargs):  # type: ignore[no-untyped-def]
+    def fake_run(command, **kwargs):
         captured["command"] = command
         captured["timeout"] = kwargs.get("timeout")
         return subprocess.CompletedProcess(
@@ -319,21 +319,21 @@ class TestGitFetch:
     ) -> None:
         monkeypatch.setattr(git_repo_mod, "_ssrf_blocked", lambda url: False)
 
-        def missing_git(command, **kwargs):  # type: ignore[no-untyped-def]
+        def missing_git(command, **kwargs):
             raise FileNotFoundError("git")
 
         monkeypatch.setattr(git_repo_mod.subprocess, "run", missing_git)
         with pytest.raises(FormatNotAvailableError):
             parse_git_glossary(url="https://example.com/repo.git")
 
-        def slow_git(command, **kwargs):  # type: ignore[no-untyped-def]
+        def slow_git(command, **kwargs):
             raise subprocess.TimeoutExpired(command, 30)
 
         monkeypatch.setattr(git_repo_mod.subprocess, "run", slow_git)
         with pytest.raises(ValueError, match="timed out"):
             parse_git_glossary(url="https://example.com/repo.git")
 
-        def failing_git(command, **kwargs):  # type: ignore[no-untyped-def]
+        def failing_git(command, **kwargs):
             raise subprocess.CalledProcessError(1, command)
 
         monkeypatch.setattr(git_repo_mod.subprocess, "run", failing_git)

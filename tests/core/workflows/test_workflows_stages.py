@@ -35,7 +35,7 @@ class _RecordingPreprocessor:
 class TestHybridConverter:
     async def test_convert_returns_images_and_metadata(self) -> None:
         pdf = _StubPDF(n_pages=3)
-        converter = HybridConverter(pdf_handler=pdf)
+        converter = HybridConverter(pdf_handler=pdf)  # type: ignore[arg-type]
         images, page_nums, metadata = await converter.convert(
             input_path="test.pdf",
             dpi=150,
@@ -50,7 +50,7 @@ class TestHybridConverter:
 
     async def test_convert_applies_page_range(self) -> None:
         pdf = _StubPDF(n_pages=5)
-        converter = HybridConverter(pdf_handler=pdf)
+        converter = HybridConverter(pdf_handler=pdf)  # type: ignore[arg-type]
         images, page_nums, _ = await converter.convert(
             input_path="test.pdf",
             dpi=150,
@@ -64,7 +64,7 @@ class TestHybridConverter:
 
     async def test_convert_applies_subset_page_range_not_starting_at_one(self) -> None:
         pdf = _StubPDF(n_pages=10)
-        converter = HybridConverter(pdf_handler=pdf)
+        converter = HybridConverter(pdf_handler=pdf)  # type: ignore[arg-type]
         images, page_nums, _ = await converter.convert(
             input_path="test.pdf",
             dpi=150,
@@ -116,7 +116,7 @@ class TestHybridConverter:
             events.append((stage, cur, tot))
 
         pdf = _StubPDF(n_pages=2)
-        converter = HybridConverter(pdf_handler=pdf)
+        converter = HybridConverter(pdf_handler=pdf)  # type: ignore[arg-type]
         await converter.convert(
             input_path="test.pdf",
             dpi=150,
@@ -160,7 +160,7 @@ class TestHybridLayoutDetector:
 
     async def test_detect_layout_basic(self) -> None:
         aligner = _StubAligner(boxes_per_page=[(0.1, 0.1, 0.9, 0.2)])
-        detector = HybridLayoutDetector(aligner=aligner)
+        detector = HybridLayoutDetector(aligner=aligner)  # type: ignore[arg-type]
         images = {0: _make_tiny_b64_image()}
         pages = await detector.detect_layout(
             images_dict=images,
@@ -172,7 +172,7 @@ class TestHybridLayoutDetector:
     async def test_detect_layout_with_cache_callbacks(self) -> None:
         cache: dict[int, Image.Image] = {}
         aligner = _StubAligner(boxes_per_page=[(0.1, 0.1, 0.9, 0.2)])
-        detector = HybridLayoutDetector(aligner=aligner)
+        detector = HybridLayoutDetector(aligner=aligner)  # type: ignore[arg-type]
         images = {0: _make_tiny_b64_image()}
         pages = await detector.detect_layout(
             images_dict=images,
@@ -239,7 +239,7 @@ class TestHybridLayoutDetector:
 
     def test_select_dense_pages(self) -> None:
         aligner = _StubAligner()
-        detector = HybridLayoutDetector(aligner=aligner)
+        detector = HybridLayoutDetector(aligner=aligner)  # type: ignore[arg-type]
         structured = {
             0: [((0.1, 0.1, 0.9, 0.2), "")] * 10,
             1: [((0.1, 0.1, 0.9, 0.2), "")] * 2,

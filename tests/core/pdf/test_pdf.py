@@ -48,7 +48,7 @@ def test_embed_structured_text_produces_searchable_pdf(
     output_pdf = str(tmp_path / "out.pdf")
 
     marker = "ZZUNIQUEMARKERZZ"
-    pages_data = {0: [([0.1, 0.1, 0.6, 0.15], marker)]}
+    pages_data = {0: [((0.1, 0.1, 0.6, 0.15), marker)]}
 
     pdf_handler.embed_structured_text(input_pdf, output_pdf, pages_data, dpi=150)
 
@@ -70,8 +70,8 @@ def test_embed_handles_empty_text_gracefully(
     # A real pipeline output: one box with text, one empty (DP-skipped).
     pages_data = {
         0: [
-            ([0.1, 0.1, 0.6, 0.15], "hello world"),
-            ([0.1, 0.2, 0.6, 0.25], ""),
+            ((0.1, 0.1, 0.6, 0.15), "hello world"),
+            ((0.1, 0.2, 0.6, 0.25), ""),
         ]
     }
     pdf_handler.embed_structured_text(input_pdf, output_pdf, pages_data, dpi=150)
@@ -116,8 +116,8 @@ def test_embed_page_nums_renders_subset_only(pdf_handler: PDFHandler, tmp_path: 
     output_pdf = str(tmp_path / "subset.pdf")
 
     pages_data = {
-        0: [([0.1, 0.1, 0.9, 0.2], "MARK_FIRST")],
-        2: [([0.1, 0.1, 0.9, 0.2], "MARK_THIRD")],
+        0: [((0.1, 0.1, 0.9, 0.2), "MARK_FIRST")],
+        2: [((0.1, 0.1, 0.9, 0.2), "MARK_THIRD")],
     }
     pdf_handler.embed_structured_text(
         input_pdf, output_pdf, pages_data, dpi=72, page_nums=[0, 2]
@@ -135,7 +135,7 @@ def test_embed_page_nums_filters_multiframe_image(
     input_tiff = _make_multiframe_tiff(tmp_path / "scan.tif", n_frames=3)
     output_pdf = str(tmp_path / "subset_tiff.pdf")
 
-    pages_data = {1: [([0.1, 0.1, 0.9, 0.2], "MARK_MIDDLE")]}
+    pages_data = {1: [((0.1, 0.1, 0.9, 0.2), "MARK_MIDDLE")]}
     pdf_handler.embed_structured_text(
         str(input_tiff), output_pdf, pages_data, dpi=72, page_nums=[1]
     )
@@ -154,7 +154,7 @@ def _make_image_file(path: Path, size=(800, 1000), mode="RGB") -> Path:
 
     img = Image.new(mode, size, "white")
     draw = ImageDraw.Draw(img)
-    draw.rectangle([100, 200, 700, 300], fill="lightgray")
+    draw.rectangle((100, 200, 700, 300), fill="lightgray")
     fmt = {"jpg": "JPEG", "jpeg": "JPEG", "png": "PNG", "tif": "TIFF", "tiff": "TIFF"}[
         path.suffix.lower().lstrip(".")
     ]
@@ -206,7 +206,7 @@ def test_embed_into_image_input_produces_searchable_pdf(
     output_pdf = str(tmp_path / "out.pdf")
 
     marker = "IMAGEMARKERXYZ"
-    pages_data = {0: [([0.15, 0.35, 0.55, 0.40], marker)]}
+    pages_data = {0: [((0.15, 0.35, 0.55, 0.40), marker)]}
     pdf_handler.embed_structured_text(str(src), output_pdf, pages_data)
 
     with fitz.open(output_pdf) as doc:
@@ -221,8 +221,8 @@ def test_embed_multiframe_tiff_produces_multipage_pdf(
     output_pdf = str(tmp_path / "multi_out.pdf")
 
     pages_data = {
-        0: [([0.1, 0.1, 0.4, 0.15], "MARKERPAGEONE")],
-        2: [([0.1, 0.1, 0.4, 0.15], "MARKERPAGETHREE")],
+        0: [((0.1, 0.1, 0.4, 0.15), "MARKERPAGEONE")],
+        2: [((0.1, 0.1, 0.4, 0.15), "MARKERPAGETHREE")],
     }
     pdf_handler.embed_structured_text(str(src), output_pdf, pages_data)
 
@@ -253,7 +253,7 @@ def test_avif_input_round_trip(pdf_handler: PDFHandler, tmp_path: Path):
     from PIL import Image, ImageDraw
 
     img = Image.new("RGB", (800, 1000), "white")
-    ImageDraw.Draw(img).rectangle([100, 200, 700, 300], fill="lightgray")
+    ImageDraw.Draw(img).rectangle((100, 200, 700, 300), fill="lightgray")
     src = tmp_path / "scan.avif"
     img.save(src, format="AVIF", quality=80)
 
@@ -263,7 +263,7 @@ def test_avif_input_round_trip(pdf_handler: PDFHandler, tmp_path: Path):
     output_pdf = str(tmp_path / "out.pdf")
     marker = "AVIFMARKERZZ"
     pdf_handler.embed_structured_text(
-        str(src), output_pdf, {0: [([0.15, 0.35, 0.55, 0.40], marker)]}
+        str(src), output_pdf, {0: [((0.15, 0.35, 0.55, 0.40), marker)]}
     )
     with fitz.open(output_pdf) as doc:
         assert len(doc) == 1
@@ -291,7 +291,7 @@ class TestEmbedUnicodeFontChain:
         Image.new("RGB", (800, 600), "white").save(src)
         out = tmp_path / "out.pdf"
         pdf_handler.embed_structured_text(
-            str(src), str(out), {0: [([0.05, 0.2, 0.95, 0.4], text)]}
+            str(src), str(out), {0: [((0.05, 0.2, 0.95, 0.4), text)]}
         )
         doc = fitz.open(str(out))
         return doc[0].get_text("text"), doc

@@ -119,7 +119,8 @@ def _service(
 ) -> tuple[glossary_service.GlossaryImportServiceImpl, FakeLexiconStore]:
     store = store or FakeLexiconStore()
     impl = glossary_service.GlossaryImportServiceImpl(
-        store_provider=lambda: store, queue=None
+        store_provider=lambda: store,  # type: ignore[arg-type, return-value]
+        queue=None,
     )
     return impl, store
 
@@ -234,7 +235,8 @@ async def test_async_dispatch_above_threshold(monkeypatch: pytest.MonkeyPatch) -
             return _Handle()
 
     impl = glossary_service.GlossaryImportServiceImpl(
-        store_provider=lambda: FakeLexiconStore(), queue=_Queue()
+        store_provider=lambda: FakeLexiconStore(),  # type: ignore[arg-type, return-value]
+        queue=_Queue(),
     )
     # One-line JSON text has 0 newlines → estimate 1; threshold 0 forces
     # every import onto the async path deterministically.

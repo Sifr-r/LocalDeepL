@@ -22,19 +22,19 @@ FIXTURES = Path(__file__).parent.parent / "fixtures"
 
 class TestIoU:
     def test_identical_boxes(self):
-        assert iou([0, 0, 1, 1], [0, 0, 1, 1]) == 1.0
+        assert iou((0, 0, 1, 1), [0, 0, 1, 1]) == 1.0  # type: ignore[arg-type]
 
     def test_disjoint_boxes(self):
-        assert iou([0, 0, 0.2, 0.2], [0.8, 0.8, 1.0, 1.0]) == 0.0
+        assert iou((0, 0, 0.2, 0.2), [0.8, 0.8, 1.0, 1.0]) == 0.0  # type: ignore[arg-type]
 
     def test_half_overlap(self):
         # Two unit squares overlapping by exactly half horizontally.
-        score = iou([0, 0, 1, 1], [0.5, 0, 1.5, 1])
+        score = iou((0, 0, 1, 1), [0.5, 0, 1.5, 1])  # type: ignore[arg-type]
         assert 0.33 < score < 0.34  # 0.5 / 1.5
 
     def test_containment(self):
         # Inner 0.5x0.5 inside outer 1x1: intersection 0.25, union 1.0 → 0.25.
-        score = iou([0, 0, 1, 1], [0.25, 0.25, 0.75, 0.75])
+        score = iou((0, 0, 1, 1), [0.25, 0.25, 0.75, 0.75])  # type: ignore[arg-type]
         assert 0.24 < score < 0.26
 
 
@@ -216,12 +216,12 @@ class TestLoadGroundTruth:
 class TestComputeReport:
     def test_perfect_match(self):
         gt = [
-            GTBlock(bbox=[0.0, 0.0, 0.5, 0.5], text="alpha"),
-            GTBlock(bbox=[0.5, 0.5, 1.0, 1.0], text="beta"),
+            GTBlock(bbox=(0.0, 0.0, 0.5, 0.5), text="alpha"),
+            GTBlock(bbox=(0.5, 0.5, 1.0, 1.0), text="beta"),
         ]
         pipeline = [
-            ([0.0, 0.0, 0.5, 0.5], "alpha"),
-            ([0.5, 0.5, 1.0, 1.0], "beta"),
+            ((0.0, 0.0, 0.5, 0.5), "alpha"),
+            ((0.5, 0.5, 1.0, 1.0), "beta"),
         ]
         report = compute_report("x", gt, pipeline)
         assert report.gt_count == 2
@@ -232,10 +232,10 @@ class TestComputeReport:
 
     def test_missed_block(self):
         gt = [
-            GTBlock(bbox=[0.0, 0.0, 0.5, 0.5], text="alpha"),
-            GTBlock(bbox=[0.5, 0.5, 1.0, 1.0], text="beta"),
+            GTBlock(bbox=(0.0, 0.0, 0.5, 0.5), text="alpha"),
+            GTBlock(bbox=(0.5, 0.5, 1.0, 1.0), text="beta"),
         ]
-        pipeline = [([0.0, 0.0, 0.5, 0.5], "alpha")]  # beta is missing
+        pipeline = [((0.0, 0.0, 0.5, 0.5), "alpha")]  # beta is missing
         report = compute_report("x", gt, pipeline)
         assert report.gt_count == 2
         assert len(report.matched) == 1
@@ -245,17 +245,17 @@ class TestComputeReport:
         # Two GT blocks, only one pipeline block — it must pair with
         # exactly one of them, not both.
         gt = [
-            GTBlock(bbox=[0.0, 0.0, 0.5, 0.5], text="alpha"),
-            GTBlock(bbox=[0.0, 0.0, 0.5, 0.5], text="beta"),  # identical bbox
+            GTBlock(bbox=(0.0, 0.0, 0.5, 0.5), text="alpha"),
+            GTBlock(bbox=(0.0, 0.0, 0.5, 0.5), text="beta"),  # identical bbox
         ]
-        pipeline = [([0.0, 0.0, 0.5, 0.5], "alpha")]
+        pipeline = [((0.0, 0.0, 0.5, 0.5), "alpha")]
         report = compute_report("x", gt, pipeline)
         assert len(report.matched) == 1
 
     def test_low_iou_unmatched(self):
-        gt = [GTBlock(bbox=[0.0, 0.0, 0.2, 0.2], text="alpha")]
+        gt = [GTBlock(bbox=(0.0, 0.0, 0.2, 0.2), text="alpha")]
         # Pipeline box at a far corner — near-zero IoU with GT.
-        pipeline = [([0.8, 0.8, 1.0, 1.0], "alpha")]
+        pipeline = [((0.8, 0.8, 1.0, 1.0), "alpha")]
         report = compute_report("x", gt, pipeline, iou_threshold=0.3)
         assert len(report.matched) == 0
         assert report.block_recall == 0.0
@@ -263,20 +263,20 @@ class TestComputeReport:
     def test_text_similarity_with_minor_differences(self):
         gt = [
             GTBlock(
-                bbox=[0.0, 0.0, 1.0, 0.1],
+                bbox=(0.0, 0.0, 1.0, 0.1),
                 text="Halting: the algo needs to finish in finite time.",
             )
         ]
         pipeline = [
-            ([0.0, 0.0, 1.0, 0.1], "Halting the algo needs to finish in finite time")
+            ((0.0, 0.0, 1.0, 0.1), "Halting the algo needs to finish in finite time")
         ]
         report = compute_report("x", gt, pipeline)
         assert len(report.matched) == 1
         assert report.avg_text_similarity > 0.9
 
     def test_summary_line_contains_metrics(self):
-        gt = [GTBlock(bbox=[0.0, 0.0, 0.5, 0.5], text="x")]
-        pipeline = [([0.0, 0.0, 0.5, 0.5], "x")]
+        gt = [GTBlock(bbox=(0.0, 0.0, 0.5, 0.5), text="x")]
+        pipeline = [((0.0, 0.0, 0.5, 0.5), "x")]
         report = compute_report("sample.pdf", gt, pipeline)
         line = report.summary_line()
         assert "sample.pdf" in line
@@ -284,7 +284,7 @@ class TestComputeReport:
 
 
 def test_report_handles_empty_pipeline():
-    gt = [GTBlock(bbox=[0.0, 0.0, 0.5, 0.5], text="alpha")]
+    gt = [GTBlock(bbox=(0.0, 0.0, 0.5, 0.5), text="alpha")]
     report = compute_report("x", gt, [])
     assert report.pipeline_count == 0
     assert report.block_recall == 0.0
@@ -292,7 +292,7 @@ def test_report_handles_empty_pipeline():
 
 
 def test_report_handles_empty_ground_truth():
-    report = compute_report("x", [], [([0, 0, 0.5, 0.5], "alpha")])
+    report = compute_report("x", [], [((0, 0, 0.5, 0.5), "alpha")])
     assert report.gt_count == 0
     assert report.block_recall == 0.0  # 0/max(1, 0) = 0
 

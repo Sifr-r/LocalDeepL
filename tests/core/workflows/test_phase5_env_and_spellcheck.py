@@ -42,7 +42,7 @@ class TestMaxTokensEnvOverride:
         # constant stays at the hardcoded default and the instance picks
         # up the (unset) env fallback.
         assert proc_mod.OCRProcessor.PAGE_MAX_TOKENS == 6144
-        assert proc.page_max_tokens == 6144
+        assert proc.page_max_tokens == 6144  # type: ignore[attr-defined]
 
     def test_page_max_tokens_env_override(
         self, monkeypatch: pytest.MonkeyPatch
@@ -51,7 +51,7 @@ class TestMaxTokensEnvOverride:
         from omniscribe.core.ocr import processor as proc_mod
 
         proc = self._make_processor(monkeypatch)
-        assert proc.page_max_tokens == 2048
+        assert proc.page_max_tokens == 2048  # type: ignore[attr-defined]
         # Class-level default is unchanged because env is no longer
         # read at import time.
         assert proc_mod.OCRProcessor.PAGE_MAX_TOKENS == 6144
@@ -64,7 +64,7 @@ class TestMaxTokensEnvOverride:
 
         proc = self._make_processor(monkeypatch)
         assert proc_mod.OCRProcessor.CROP_MAX_TOKENS == 256
-        assert proc.crop_max_tokens == 256
+        assert proc.crop_max_tokens == 256  # type: ignore[attr-defined]
 
     def test_crop_max_tokens_env_override(
         self, monkeypatch: pytest.MonkeyPatch
@@ -73,7 +73,7 @@ class TestMaxTokensEnvOverride:
         from omniscribe.core.ocr import processor as proc_mod
 
         proc = self._make_processor(monkeypatch)
-        assert proc.crop_max_tokens == 512
+        assert proc.crop_max_tokens == 512  # type: ignore[attr-defined]
         assert proc_mod.OCRProcessor.CROP_MAX_TOKENS == 256
         monkeypatch.delenv("OMNISCRIBE_VLM_CROP_MAX_TOKENS", raising=False)
 

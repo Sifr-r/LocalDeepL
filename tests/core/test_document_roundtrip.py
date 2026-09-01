@@ -47,7 +47,7 @@ def test_to_pages_data_respects_reading_order_annotation():
     """Blocks annotated with reading_order but NOT physically sorted are
     emitted in reading_order order."""
     result = DocumentResult.from_pages_data(
-        {0: [([0.1, 0.5, 0.3, 0.6], "second"), ([0.1, 0.1, 0.3, 0.2], "first")]}
+        {0: [((0.1, 0.5, 0.3, 0.6), "second"), ((0.1, 0.1, 0.3, 0.2), "first")]}
     )
     # Annotate out-of-order reading_order without physically sorting.
     result.pages[0].blocks[0].reading_order = 1
@@ -60,7 +60,7 @@ def test_to_pages_data_respects_reading_order_annotation():
 
 def test_to_pages_data_without_reading_order_preserves_list_order():
     result = DocumentResult.from_pages_data(
-        {0: [([0.1, 0.5, 0.3, 0.6], "first"), ([0.1, 0.1, 0.3, 0.2], "second")]}
+        {0: [((0.1, 0.5, 0.3, 0.6), "first"), ((0.1, 0.1, 0.3, 0.2), "second")]}
     )
     # Strip reading_order (simulates blocks from a source that doesn't set it).
     for block in result.pages[0].blocks:
@@ -137,7 +137,7 @@ async def test_rich_writer_receives_processor_metadata():
     assert writer.received is not None
     page = writer.received.pages[0]
     assert "quality" in page.metadata
-    assert page.metadata["quality"]["block_count"] == 1
+    assert page.metadata["quality"]["block_count"] == 1  # type: ignore[index]
 
 
 async def test_legacy_callable_writer_still_works():
@@ -225,7 +225,7 @@ async def test_all_processor_metadata_survives_on_last_document_result():
         _MultiBoxAligner(),
         _MultiLineOCR(),
         _RichWriter(),
-        document_processors=_ALL_PROCESSORS,
+        document_processors=_ALL_PROCESSORS,  # type: ignore[arg-type]
     )
     await pipe.run("in.pdf", "out.pdf", refine=False)
 

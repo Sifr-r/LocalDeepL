@@ -71,7 +71,7 @@ class TestMiniFixtureSmoke:
 
             raw = [r.raw for r in records]
             targets = [r.target for r in records]
-            a, b = fit_platt(raw, targets)
+            a, b = fit_platt(raw, targets)  # type: ignore[misc]
             ece_after = _expected_calibration_error(records, a=a, b=b)
             ece_baseline = _expected_calibration_error(records, a=1.0, b=0.0)
             # On a tiny fixture the ECE drop is noisy — we only assert

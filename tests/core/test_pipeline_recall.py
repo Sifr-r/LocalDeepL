@@ -113,15 +113,15 @@ def test_recall_above_threshold(
 
     class _CaptureStub(OCRProcessor):
         # Skip __init__: we don't need a live LLM client.
-        def __init__(self) -> None:  # type: ignore[no-untyped-def]
-            return  # type: ignore[return-value]
+        def __init__(self) -> None:
+            return
 
-        async def perform_ocr(  # type: ignore[no-untyped-def]
+        async def perform_ocr(  # type: ignore[override]
             self, image_base64: str, **kwargs
         ):
             return list(gt_text)
 
-        async def perform_ocr_on_crop(self, image_base64: str, **kwargs) -> str:
+        async def perform_ocr_on_crop(self, image_base64: str, **kwargs) -> str:  # type: ignore[override]
             return "recovered"
 
     pipe = OCRPipeline(

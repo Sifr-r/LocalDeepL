@@ -39,25 +39,25 @@ async def test_translate_tree_skips_header_footer_number():
                 children=[
                     BlockNode(
                         block_type=BlockType.PAGE_HEADER,
-                        bbox=[0, 0, 1, 0.05],
+                        bbox=(0, 0, 1, 0.05),
                         text="HEADER",
                         page_idx=0,
                     ),
                     BlockNode(
                         block_type=BlockType.PARAGRAPH,
-                        bbox=[0, 0.1, 1, 0.2],
+                        bbox=(0, 0.1, 1, 0.2),
                         text="body",
                         page_idx=0,
                     ),
                     BlockNode(
                         block_type=BlockType.PAGE_FOOTER,
-                        bbox=[0, 0.95, 1, 1],
+                        bbox=(0, 0.95, 1, 1),
                         text="FOOTER",
                         page_idx=0,
                     ),
                     BlockNode(
                         block_type=BlockType.PAGE_NUMBER,
-                        bbox=[0.4, 0.5, 0.6, 0.6],
+                        bbox=(0.4, 0.5, 0.6, 0.6),
                         text="42",
                         page_idx=0,
                     ),
@@ -75,11 +75,11 @@ async def test_translate_tree_skips_header_footer_number():
         translator=translator,
     )
     # Headers/footers/page-numbers are unchanged
-    assert tree.pages[0].children[0].text == "HEADER"
-    assert tree.pages[0].children[2].text == "FOOTER"
-    assert tree.pages[0].children[3].text == "42"
+    assert tree.pages[0].children[0].text == "HEADER"  # type: ignore[union-attr]
+    assert tree.pages[0].children[2].text == "FOOTER"  # type: ignore[union-attr]
+    assert tree.pages[0].children[3].text == "42"  # type: ignore[union-attr]
     # The body paragraph was translated
-    assert tree.pages[0].children[1].text == "t"
+    assert tree.pages[0].children[1].text == "t"  # type: ignore[union-attr]
 
 
 async def test_translate_tree_writes_back_and_preserves_structure():
@@ -90,20 +90,20 @@ async def test_translate_tree_writes_back_and_preserves_structure():
                 children=[
                     BlockNode(
                         block_type=BlockType.SECTION_HEADER,
-                        bbox=[0, 0, 1, 0.1],
+                        bbox=(0, 0, 1, 0.1),
                         text="Hello",
                         page_idx=0,
                         level=1,
                     ),
                     BlockNode(
                         block_type=BlockType.PARAGRAPH,
-                        bbox=[0, 0.1, 1, 0.2],
+                        bbox=(0, 0.1, 1, 0.2),
                         text="World",
                         page_idx=0,
                     ),
                     BlockNode(
                         block_type=BlockType.PAGE_HEADER,
-                        bbox=[0, 0.95, 1, 1],
+                        bbox=(0, 0.95, 1, 1),
                         text="pg 1",
                         page_idx=0,
                     ),
@@ -121,12 +121,12 @@ async def test_translate_tree_writes_back_and_preserves_structure():
         translator=translator,
     )
     # The section header and paragraph were translated
-    assert tree.pages[0].children[0].text.startswith("[French] Hello")
-    assert tree.pages[0].children[1].text.startswith("[French] World")
+    assert tree.pages[0].children[0].text.startswith("[French] Hello")  # type: ignore[union-attr]
+    assert tree.pages[0].children[1].text.startswith("[French] World")  # type: ignore[union-attr]
     # The page header was skipped
-    assert tree.pages[0].children[2].text == "pg 1"
+    assert tree.pages[0].children[2].text == "pg 1"  # type: ignore[union-attr]
     # Translation metadata recorded
-    assert "translation" in tree.pages[0].children[0].metadata
+    assert "translation" in tree.pages[0].children[0].metadata  # type: ignore[union-attr]
 
 
 async def test_translate_tree_sliding_window_propagates():
@@ -137,13 +137,13 @@ async def test_translate_tree_sliding_window_propagates():
                 children=[
                     BlockNode(
                         block_type=BlockType.PARAGRAPH,
-                        bbox=[0, 0, 1, 0.1],
+                        bbox=(0, 0, 1, 0.1),
                         text="alpha bravo charlie",
                         page_idx=0,
                     ),
                     BlockNode(
                         block_type=BlockType.PARAGRAPH,
-                        bbox=[0, 0.1, 1, 0.2],
+                        bbox=(0, 0.1, 1, 0.2),
                         text="delta echo foxtrot",
                         page_idx=0,
                     ),
@@ -176,7 +176,7 @@ async def test_translate_tree_dual_translate_chooses_secondary_when_closer():
                 children=[
                     BlockNode(
                         block_type=BlockType.PARAGRAPH,
-                        bbox=[0, 0, 1, 0.1],
+                        bbox=(0, 0, 1, 0.1),
                         text="hi",  # very short source
                         page_idx=0,
                     )
@@ -199,7 +199,7 @@ async def test_translate_tree_dual_translate_chooses_secondary_when_closer():
         dual_translate=True,
     )
     # The shorter, closer-length secondary should win
-    assert tree.pages[0].children[0].text == "hi-traduit"
+    assert tree.pages[0].children[0].text == "hi-traduit"  # type: ignore[union-attr]
 
 
 # ---------------------------------------------------------------------------

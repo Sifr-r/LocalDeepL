@@ -13,7 +13,7 @@ from omniscribe.core.ocr_quality.types import TrustFlag
 
 def _block(text: str, confidence: float = 0.8, bbox=None) -> DocumentBlock:
     return DocumentBlock(
-        bbox=bbox or [0.0, 0.0, 0.5, 0.05],
+        bbox=bbox or [0.0, 0.0, 0.5, 0.05],  # type: ignore[arg-type]
         text=text,
         confidence=confidence,
     )
@@ -41,7 +41,7 @@ class TestPassthrough:
 class TestWatermarkEnabled:
     def test_blocks_unaffected_when_no_hit(self):
         img = _image()
-        blocks = [_block("hello", bbox=[0.0, 0.0, 0.5, 0.05])]
+        blocks = [_block("hello", bbox=(0.0, 0.0, 0.5, 0.05))]
         settings = OCrQualitySettings(watermark_enabled=True)
         out = orchestrator.run(blocks, img, settings, model_id="x")
         # No watermark hit, so no WATERMARK_HIT flag and trust_score still set.
@@ -58,7 +58,7 @@ class TestCalibrationEnabled:
         assert abs(out[0].trust_score - 0.7) < 0.1
 
     def test_block_without_confidence_still_scored(self):
-        b = DocumentBlock(bbox=[0.0, 0.0, 0.5, 0.05], text="hi", confidence=None)
+        b = DocumentBlock(bbox=(0.0, 0.0, 0.5, 0.05), text="hi", confidence=None)
         settings = OCrQualitySettings(calibration_enabled=True)
         out = orchestrator.run([b], None, settings, model_id="x")
         # confidence defaults to 0.0 → trust_score == 0.0
@@ -67,7 +67,7 @@ class TestCalibrationEnabled:
 
 class TestHallucinationEnabled:
     def test_clean_text_no_flags(self):
-        blocks = [_block("This is a clean sentence.", bbox=[0.0, 0.0, 0.5, 0.05])]
+        blocks = [_block("This is a clean sentence.", bbox=(0.0, 0.0, 0.5, 0.05))]
         settings = OCrQualitySettings(hallucination_enabled=True)
         out = orchestrator.run(
             blocks,
@@ -81,7 +81,7 @@ class TestHallucinationEnabled:
         )
 
     def test_repetition_flags_block(self):
-        blocks = [_block("abcdab" * 20, bbox=[0.0, 0.0, 0.5, 0.05])]
+        blocks = [_block("abcdab" * 20, bbox=(0.0, 0.0, 0.5, 0.05))]
         settings = OCrQualitySettings(hallucination_enabled=True)
         out = orchestrator.run(
             blocks,

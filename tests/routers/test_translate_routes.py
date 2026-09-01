@@ -19,7 +19,7 @@ from omniscribe.plugins.state_backend import StateBackend
 
 
 def _seed_text_artifact(client: TestClient, pages: dict[str, str]) -> tuple[str, str]:
-    backend = client.app.state.context.inject(StateBackend)
+    backend = client.app.state.context.inject(StateBackend)  # type: ignore[attr-defined]
     artifact_id = uuid.uuid4().hex
     token = "t" * 43
     asyncio.run(
@@ -301,7 +301,7 @@ def _seed_artifact(
     api_client: TestClient, artifact_id: str, token: str, blob: bytes
 ) -> None:
     asyncio.run(
-        api_client.app.state.context.inject(StateBackend).put_artifact(
+        api_client.app.state.context.inject(StateBackend).put_artifact(  # type: ignore[attr-defined]
             id=artifact_id,
             token=token,
             owner_job_id="",
@@ -319,7 +319,7 @@ def _plant_completed_record(
 
     from omniscribe.plugins.state_backend import JobRecord
 
-    backend = api_client.app.state.context.inject(StateBackend)
+    backend = api_client.app.state.context.inject(StateBackend)  # type: ignore[attr-defined]
     job_id = _uuid.uuid4().hex
     asyncio.run(
         backend.upsert_job(
@@ -356,7 +356,7 @@ def test_translate_result_incomplete_job_404(api_client: TestClient) -> None:
 
     from omniscribe.plugins.state_backend import JobRecord
 
-    backend = api_client.app.state.context.inject(StateBackend)
+    backend = api_client.app.state.context.inject(StateBackend)  # type: ignore[attr-defined]
     job_id = _uuid.uuid4().hex
     asyncio.run(backend.upsert_job(JobRecord(job_id=job_id, status="running")))
     response = api_client.get(f"/api/translate/result/{job_id}?token=abc")
@@ -388,7 +388,7 @@ def test_translate_result_uniform_404(api_client: TestClient) -> None:
 
     from omniscribe.plugins.state_backend import JobRecord
 
-    backend = api_client.app.state.context.inject(StateBackend)
+    backend = api_client.app.state.context.inject(StateBackend)  # type: ignore[attr-defined]
     token = "t" * 43
     corrupt_artifact_id = _uuid.uuid4().hex
     _seed_artifact(api_client, corrupt_artifact_id, token, b"not json at all")

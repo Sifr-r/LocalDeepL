@@ -70,7 +70,7 @@ class _StubPDF:
         return {i: _make_tiny_b64_image() for i in range(self.n_pages)}
 
     def embed_structured_text(self, inp, out, pages, dpi):
-        self.last_pages = dict(pages)
+        self.last_pages = dict(pages)  # type: ignore[assignment]
 
 
 class TestParsePageRange:
@@ -107,7 +107,7 @@ class TestDropRefinedDuplicates:
             (self._box(0), "HEALTH INTAKE FORM"),  # matched
             (self._box(1), "HEALTH INTAKE FORM"),  # refined (dup)
         ]
-        _drop_refined_duplicates(boxes, refined_indices={1})
+        _drop_refined_duplicates(boxes, refined_indices={1})  # type: ignore[arg-type]
         assert boxes[0][1] == "HEALTH INTAKE FORM"  # matched kept
         assert boxes[1][1] == ""  # refined dropped
 
@@ -119,7 +119,7 @@ class TestDropRefinedDuplicates:
             (self._box(0), "HEALTH INTAKE FORM Please fill out the form."),
             (self._box(1), "HEALTH INTAKE FORM"),  # refined (substring)
         ]
-        _drop_refined_duplicates(boxes, refined_indices={1})
+        _drop_refined_duplicates(boxes, refined_indices={1})  # type: ignore[arg-type]
         assert boxes[1][1] == ""
 
     def test_keeps_distinct_text_in_adjacent_box(self):
@@ -131,7 +131,7 @@ class TestDropRefinedDuplicates:
                 "Vyranse (25mg) daily for attention",
             ),  # refined, real 2nd entry
         ]
-        _drop_refined_duplicates(boxes, refined_indices={1})
+        _drop_refined_duplicates(boxes, refined_indices={1})  # type: ignore[arg-type]
         assert boxes[1][1] == "Vyranse (25mg) daily for attention"
 
     def test_case_and_whitespace_normalized(self):
@@ -139,7 +139,7 @@ class TestDropRefinedDuplicates:
             (self._box(0), "Date: 9/14/19"),  # matched
             (self._box(1), "  date:    9/14/19  "),  # refined, sloppy
         ]
-        _drop_refined_duplicates(boxes, refined_indices={1})
+        _drop_refined_duplicates(boxes, refined_indices={1})  # type: ignore[arg-type]
         assert boxes[1][1] == ""
 
     def test_does_not_compare_two_refined_against_each_other(self):
@@ -150,7 +150,7 @@ class TestDropRefinedDuplicates:
             (self._box(0), "same content"),
             (self._box(1), "same content"),
         ]
-        _drop_refined_duplicates(boxes, refined_indices={0, 1})
+        _drop_refined_duplicates(boxes, refined_indices={0, 1})  # type: ignore[arg-type]
         assert boxes[0][1] == "same content"
         assert boxes[1][1] == "same content"
 
@@ -159,7 +159,7 @@ class TestDropRefinedDuplicates:
         boxes = [(self._box(i), "filler") for i in range(20)]
         boxes[0] = (self._box(0), "the line")
         boxes[15] = (self._box(15), "the line")
-        _drop_refined_duplicates(boxes, refined_indices={15}, radius=4)
+        _drop_refined_duplicates(boxes, refined_indices={15}, radius=4)  # type: ignore[arg-type]
         assert boxes[15][1] == "the line"  # too far, not deduped
 
     def test_empty_refined_text_skipped(self):
@@ -168,7 +168,7 @@ class TestDropRefinedDuplicates:
             (self._box(0), "real content"),
             (self._box(1), ""),
         ]
-        _drop_refined_duplicates(boxes, refined_indices={1})
+        _drop_refined_duplicates(boxes, refined_indices={1})  # type: ignore[arg-type]
         assert boxes[1][1] == ""
 
 
@@ -216,7 +216,7 @@ class TestOCRPipeline:
 
         # 2 empty boxes per page × 1 page = 2 crop calls.
         assert ocr.crop_calls == 2
-        texts = [t for _, t in pdf.last_pages[0]]
+        texts = [t for _, t in pdf.last_pages[0]]  # type: ignore[index]
         assert texts[0] == "only one line"
         assert texts[1] == "from crop"
         assert texts[2] == "from crop"
@@ -247,14 +247,14 @@ class TestOCRPipeline:
             "out.pdf",
             concurrency=3,
             refine=False,
-            dense_mode="always",
+            dense_mode="always",  # type: ignore[arg-type]
         )
 
         # 3 boxes × 2 pages = 6 per-box OCR calls. No full-page calls.
         assert ocr.page_calls == 0
         assert ocr.crop_calls == 6
         # Every box got the per-box text, not the (unused) full-page line.
-        for page_boxes in pdf.last_pages.values():
+        for page_boxes in pdf.last_pages.values():  # type: ignore[attr-defined]
             assert all(t == "per-box" for _, t in page_boxes)
 
     async def test_dense_mode_never_keeps_full_page(self, make_stub_ocr):
@@ -267,7 +267,7 @@ class TestOCRPipeline:
             "in.pdf",
             "out.pdf",
             refine=False,
-            dense_mode="never",
+            dense_mode="never",  # type: ignore[arg-type]
         )
         assert ocr.page_calls == 1
         assert ocr.crop_calls == 0
@@ -292,7 +292,7 @@ class TestOCRPipeline:
             "out.pdf",
             concurrency=5,
             refine=False,
-            dense_mode="auto",
+            dense_mode="auto",  # type: ignore[arg-type]
             dense_threshold=60,
         )
         # 70 boxes > 60 threshold → per-box; full-page OCR was NOT called.
@@ -311,7 +311,7 @@ class TestOCRPipeline:
             "in.pdf",
             "out.pdf",
             refine=False,
-            dense_mode="auto",
+            dense_mode="auto",  # type: ignore[arg-type]
             dense_threshold=60,
         )
         assert ocr.page_calls == 1
@@ -320,7 +320,7 @@ class TestOCRPipeline:
     async def test_dense_mode_invalid_raises(self, stub_ocr):
         pipe = OCRPipeline(_StubAligner(), stub_ocr, _StubPDF(n_pages=1))
         with pytest.raises(ValueError, match="dense_mode"):
-            await pipe.run("in.pdf", "out.pdf", dense_mode="invalid")
+            await pipe.run("in.pdf", "out.pdf", dense_mode="invalid")  # type: ignore[arg-type]
 
     async def test_progress_stages_all_fire(self, stub_ocr):
         aligner = _StubAligner(alignment=lambda s, lines: [(b, "") for b, _ in s])
@@ -361,7 +361,7 @@ class TestOCRPipeline:
 
         def custom_writer(inp, out, pages, dpi):
             captured["called"] = True
-            captured["pages"] = dict(pages)
+            captured["pages"] = dict(pages)  # type: ignore[assignment]
             captured["dpi"] = dpi
 
         pipe = OCRPipeline(
@@ -371,7 +371,7 @@ class TestOCRPipeline:
 
         assert captured.get("called") is True
         assert captured["dpi"] == 250
-        assert 0 in captured["pages"]
+        assert 0 in captured["pages"]  # type: ignore[operator]
 
     async def test_per_page_failure_records_last_failed_pages_and_invokes_warning(
         self, stub_ocr
@@ -461,7 +461,7 @@ class TestPipelineRepairPassthrough:
             captured.update(kwargs)
             return {}
 
-        pipe._engine.execute = fake_execute  # type: ignore[method-assign]
+        pipe._engine.execute = fake_execute  # type: ignore[attr-defined]
         opts = RepairOptions(target=0.9)
 
         await pipe.run("in.pdf", "out.pdf", repair_options=opts)
@@ -476,7 +476,7 @@ class TestPipelineRepairPassthrough:
             captured.update(kwargs)
             return {}
 
-        pipe._engine.execute = fake_execute  # type: ignore[method-assign]
+        pipe._engine.execute = fake_execute  # type: ignore[attr-defined]
 
         await pipe.run("in.pdf", "out.pdf")
 
@@ -497,7 +497,7 @@ class TestPipelineRepairPassthrough:
             captured.update(kwargs)
             return {}
 
-        pipe._engine.execute = fake_execute  # type: ignore[method-assign]
+        pipe._engine.execute = fake_execute  # type: ignore[attr-defined]
         opts = RepairOptions(enabled=True, target=0.95)
 
         await pipe.run("in.pdf", "out.pdf", repair_options=opts)
@@ -509,14 +509,14 @@ class TestWhitespaceRecallWiring:
     def test_pipeline_injects_enabled_booster_by_default(self, monkeypatch):
         monkeypatch.delenv("OMNISCRIBE_WHITESPACE_RECALL", raising=False)
         pipe = OCRPipeline(_StubAligner(), _StubOCR(), _StubPDF())
-        booster = pipe._engine.recall_booster
+        booster = pipe._engine.recall_booster  # type: ignore[attr-defined]
         assert booster is not None
         assert booster.options.enabled is True
 
     def test_pipeline_env_kill_switch_disables_booster(self, monkeypatch):
         monkeypatch.setenv("OMNISCRIBE_WHITESPACE_RECALL", "off")
         pipe = OCRPipeline(_StubAligner(), _StubOCR(), _StubPDF())
-        booster = pipe._engine.recall_booster
+        booster = pipe._engine.recall_booster  # type: ignore[attr-defined]
         assert booster is not None
         assert booster.options.enabled is False
 

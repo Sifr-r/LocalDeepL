@@ -64,7 +64,7 @@ class TestDetection:
         pixel = out.load()
         assert pixel is not None
         sample = pixel[200, 50]
-        assert sample == (255, 255, 255) or sample[0] >= 250
+        assert sample == (255, 255, 255) or sample[0] >= 250  # type: ignore[index]
 
 
 class TestErrorHandling:

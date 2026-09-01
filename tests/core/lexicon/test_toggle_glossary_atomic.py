@@ -42,12 +42,12 @@ def store_with_mock_table() -> LanceDBLexiconStore:
     return s
 
 
-def _make_arrow_table(rows: list[dict[str, Any]]) -> pa.Table:
+def _make_arrow_table(rows: list[dict[str, Any]]) -> pa.Table:  # type: ignore[name-defined]
     """Build a minimal pyarrow Table that mirrors the lexicon schema."""
     return pa.Table.from_pylist(rows)
 
 
-def _mock_table_with_arrow(arrow_tbl: pa.Table) -> MagicMock:
+def _mock_table_with_arrow(arrow_tbl: pa.Table) -> MagicMock:  # type: ignore[name-defined]
     """Build a mock ``_table`` whose ``to_arrow()`` returns ``arrow_tbl``."""
     tbl = MagicMock()
     tbl.to_arrow.return_value = arrow_tbl
@@ -90,10 +90,10 @@ def test_C2_toggle_glossary_atomic_swap_calls_add_before_delete(
         priority=0,
         group="default",
         entry_count=2,
-        created_at="2026-08-28T00:00:00Z",
-        updated_at="2026-08-28T00:00:00Z",
+        created_at="2026-08-28T00:00:00Z",  # type: ignore[arg-type]
+        updated_at="2026-08-28T00:00:00Z",  # type: ignore[arg-type]
     )
-    store_with_mock_table.get_glossary = MagicMock(return_value=sentinel_meta)
+    store_with_mock_table.get_glossary = MagicMock(return_value=sentinel_meta)  # type: ignore[method-assign]
 
     meta = store_with_mock_table.toggle_glossary("g1", enabled=False)
     assert meta is not None

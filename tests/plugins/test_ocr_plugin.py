@@ -96,7 +96,7 @@ async def _wait_status(
         response = await client.get(f"/api/process/status/{job_id}")
         body = response.json()
         if body.get("status") == status:
-            return body
+            return body  # type: ignore[no-any-return]
         await asyncio.sleep(0.01)
     raise AssertionError(f"job {job_id} never reached {status!r}; last={body}")
 
@@ -177,7 +177,7 @@ async def test_process_sync_oversized_upload_is_413(fake_pipeline) -> None:
                     "file": ("big.pdf", b"x" * (1024 * 1024 + 1), "application/pdf")
                 }
             }
-            response = await client.post("/api/process", **big)
+            response = await client.post("/api/process", **big)  # type: ignore[arg-type]
         assert response.status_code == 413
     finally:
         await ctx.dispose()

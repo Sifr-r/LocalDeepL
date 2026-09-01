@@ -25,7 +25,7 @@ async def test_dual_translate_chooser():
     assert meta["strategy"] == "dual"
     # secondary (3 words, very close to "hi") should be chosen
     assert chosen == "salut mon ami"
-    assert meta["primary_length_ratio"] > meta["secondary_length_ratio"]
+    assert meta["primary_length_ratio"] > meta["secondary_length_ratio"]  # type: ignore[operator]
 
 
 async def test_dual_translate_falls_back_when_no_prompt_builder():

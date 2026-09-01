@@ -42,7 +42,7 @@ def test_sort_key_handles_none_bbox() -> None:
     block = _make_block(bbox=(0.1, 0.2, 0.3, 0.4))
     # Mutate past the type guard to exercise the defensive branch.
     object.__setattr__(block, "bbox", None)
-    key = proc._sort_key(block)  # type: ignore[attr-defined]
+    key = proc._sort_key(block)
     assert isinstance(key, tuple)
     assert len(key) == 3
     # The all-zero sentinel means the block sorts into row 0

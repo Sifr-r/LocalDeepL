@@ -82,7 +82,7 @@ class TestHybridOCRPagesCancel:
         ocr = _StubOCR()
         engine = _engine(ocr=ocr)
         images = {p: _make_tiny_b64_image() for p in range(10)}
-        pages_structured = {p: [([0.1, 0.1, 0.9, 0.2], "")] * 3 for p in range(10)}
+        pages_structured = {p: [((0.1, 0.1, 0.9, 0.2), "")] * 3 for p in range(10)}
 
         cancel_calls = {"n": 0}
 
@@ -134,7 +134,7 @@ class TestHybridOCRPagesCancel:
         ocr = _StubOCR()
         engine = _engine(ocr=ocr)
         images = {p: _make_tiny_b64_image() for p in range(5)}
-        pages_structured = {p: [([0.1, 0.1, 0.9, 0.2], "")] * 3 for p in range(5)}
+        pages_structured = {p: [((0.1, 0.1, 0.9, 0.2), "")] * 3 for p in range(5)}
 
         await engine._ocr_pages(
             images_dict=images,
@@ -158,7 +158,7 @@ class TestHybridOCRPagesCancel:
         ocr = _StubOCR()
         engine = _engine(ocr=ocr)
         images = {p: _make_tiny_b64_image() for p in range(3)}
-        pages_structured = {p: [([0.1, 0.1, 0.9, 0.2], "")] * 3 for p in range(3)}
+        pages_structured = {p: [((0.1, 0.1, 0.9, 0.2), "")] * 3 for p in range(3)}
 
         await engine._ocr_pages(
             images_dict=images,
@@ -182,7 +182,7 @@ class TestHybridOCRPagesCancel:
         ocr = _StubOCR(crop_text="from crop")
         engine = _engine(ocr=ocr)
         images = {p: _make_tiny_b64_image() for p in range(5)}
-        pages_structured = {p: [([0.1, 0.1, 0.9, 0.2], "")] * 3 for p in range(5)}
+        pages_structured = {p: [((0.1, 0.1, 0.9, 0.2), "")] * 3 for p in range(5)}
 
         cancel_calls = {"n": 0}
 
@@ -232,7 +232,7 @@ class TestHybridOCRPagesCancel:
         ocr = _CancelOnFirstCall()
         engine = _engine(ocr=ocr)
         images = {p: _make_tiny_b64_image() for p in range(3)}
-        pages_structured = {p: [([0.1, 0.1, 0.9, 0.2], "")] * 3 for p in range(3)}
+        pages_structured = {p: [((0.1, 0.1, 0.9, 0.2), "")] * 3 for p in range(3)}
 
         with pytest.raises(OCRCancelled):
             await engine._ocr_pages(
@@ -264,9 +264,9 @@ class TestHybridExecuteCancel:
         ocr = _StubOCR()
         pdf = _StubPDF(n_pages=5)
         engine = HybridEngine(
-            aligner=_StubAligner(),
-            ocr_processor=ocr,
-            pdf_handler=pdf,
+            aligner=_StubAligner(),  # type: ignore[arg-type]
+            ocr_processor=ocr,  # type: ignore[arg-type]
+            pdf_handler=pdf,  # type: ignore[arg-type]
             output_writer=_noop_writer,
         )
 
@@ -287,9 +287,9 @@ class TestHybridExecuteCancel:
         ocr = _StubOCR(crop_text="from crop")
         pdf = _StubPDF(n_pages=3)
         engine = HybridEngine(
-            aligner=_StubAligner(),
-            ocr_processor=ocr,
-            pdf_handler=pdf,
+            aligner=_StubAligner(),  # type: ignore[arg-type]
+            ocr_processor=ocr,  # type: ignore[arg-type]
+            pdf_handler=pdf,  # type: ignore[arg-type]
             output_writer=_noop_writer,
         )
 

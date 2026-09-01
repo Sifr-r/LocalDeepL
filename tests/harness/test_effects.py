@@ -121,7 +121,7 @@ def test_scope_add_is_thread_safe() -> None:
     def worker(tag: str) -> None:
         barrier.wait()
         for i in range(50):
-            scope.add(lambda i=i, tag=tag: (i, tag))
+            scope.add(lambda i=i, tag=tag: (i, tag))  # type: ignore[arg-type, misc]
 
     threads = [threading.Thread(target=worker, args=(f"t{i}",)) for i in range(8)]
     for thread in threads:

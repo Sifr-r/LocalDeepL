@@ -69,11 +69,13 @@ class _StubPDF:
     def __init__(self, n_pages: int = 1) -> None:
         self.n_pages = n_pages
         # page_index -> list[(box, text)]
-        self.pages: dict[int, list[tuple[list[float], str]]] = {}
+        self.pages: dict[int, list[tuple[tuple[float, float, float, float], str]]] = {}
         # crop calls recorded by the pipeline (via
         # ``perform_ocr_on_crop``) so the test can assert the repair
         # loop actually fired.
-        self.embedded: dict[int, list[tuple[list[float], str]]] = {}
+        self.embedded: dict[
+            int, list[tuple[tuple[float, float, float, float], str]]
+        ] = {}
 
     def convert_to_images(self, path, dpi=150, max_image_dim=1024):
         return {i: _tiny_b64() for i in range(self.n_pages)}

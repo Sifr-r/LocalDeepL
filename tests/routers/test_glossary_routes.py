@@ -31,14 +31,14 @@ _NEEDS_LEXICON_EXTRA = pytest.mark.skipif(
 def _inject_store(api_client: TestClient) -> FakeLexiconStore:
     store = FakeLexiconStore()
     service = _get_service(api_client)
-    service._store_provider = lambda: store  # type: ignore[method-assign]
+    service._store_provider = lambda: store
     return store
 
 
 def _get_service(api_client: TestClient) -> Any:
     from omniscribe.plugins.glossary.service import GlossaryImportService
 
-    return api_client.app.state.context.inject(GlossaryImportService)
+    return api_client.app.state.context.inject(GlossaryImportService)  # type: ignore[attr-defined]
 
 
 def _import_json_pairs(
@@ -315,7 +315,7 @@ def test_merged_endpoint_returns_dict(api_client: TestClient) -> None:
 
 def test_store_missing_503_envelope(api_client: TestClient) -> None:
     service = _get_service(api_client)
-    service._store_provider = lambda: None  # type: ignore[method-assign]
+    service._store_provider = lambda: None
     response = api_client.get("/api/glossary/library")
     assert response.status_code == 503
     body = response.json()

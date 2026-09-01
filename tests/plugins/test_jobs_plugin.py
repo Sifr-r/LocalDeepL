@@ -126,7 +126,7 @@ async def test_cancel_queued_job_before_it_runs() -> None:
     gate.set()
     await _wait_status(queue, first.job_id, "complete")
     await asyncio.sleep(0.05)  # let the worker drain the queue
-    assert (await queue.status(second.job_id)).status == "cancelled"  # type: ignore[union-attr]
+    assert (await queue.status(second.job_id)).status == "cancelled"
     assert ran == [{"n": 1}]  # the cancelled job never ran
     assert await queue.cancel(second.job_id) is False  # terminal
     assert await queue.cancel("unknown") is False
@@ -185,8 +185,8 @@ async def test_lifecycle_events_emitted() -> None:
     queue = ctx.inject(JobQueue)
     handle = await queue.submit({})
     record = await _wait_status(queue, handle.job_id, "complete")
-    assert [e.job_id for e in seen["queued"]] == [handle.job_id]
-    assert [e.job_id for e in seen["started"]] == [handle.job_id]
+    assert [e.job_id for e in seen["queued"]] == [handle.job_id]  # type: ignore[attr-defined]
+    assert [e.job_id for e in seen["started"]] == [handle.job_id]  # type: ignore[attr-defined]
     completed = seen["completed"]
     assert len(completed) == 1
     assert isinstance(completed[0], JobCompleted)
@@ -208,7 +208,7 @@ async def test_shutdown_marks_pending_jobs_cancelled() -> None:
     await _wait_status(queue, first.job_id, "running")
     second = await queue.submit({"n": 2})
     await ctx.dispose()  # effect: queue.shutdown()
-    assert (await queue.status(second.job_id)).status == "cancelled"  # type: ignore[union-attr]
+    assert (await queue.status(second.job_id)).status == "cancelled"
 
 
 async def test_shutdown_cancels_queued_jobs_beyond_one_page(
@@ -230,7 +230,7 @@ async def test_shutdown_cancels_queued_jobs_beyond_one_page(
             # single bounded list_jobs call cannot see the whole queue.
             # Forwards offset so the paginated shutdown walks every page.
             kwargs["limit"] = 2
-            return await real_list(**kwargs)
+            return await real_list(**kwargs)  # type: ignore[no-any-return]
 
         monkeypatch.setattr(backend, "list_jobs", two_per_page)
 

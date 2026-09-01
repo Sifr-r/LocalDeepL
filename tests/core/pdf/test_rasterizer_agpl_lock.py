@@ -103,7 +103,7 @@ def test_emit_uses_lock_and_lock_is_mutex() -> None:
 
     real_lock = rasterizer._AGPL_NOTICE_LOCK
     recording = _RecordingLock(real_lock)
-    rasterizer._AGPL_NOTICE_LOCK = recording
+    rasterizer._AGPL_NOTICE_LOCK = recording  # type: ignore[assignment]
     try:
         rasterizer._emit_pymupdf_agpl_notice()
         rasterizer._emit_pymupdf_agpl_notice()

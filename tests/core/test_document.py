@@ -20,7 +20,7 @@ from omniscribe.pipeline import OCRPipeline
 
 def test_document_result_from_pages_data_preserves_order_and_text():
     result = DocumentResult.from_pages_data(
-        {0: [([0.1, 0.2, 0.3, 0.4], "alpha"), ([0.1, 0.5, 0.3, 0.6], "beta")]},
+        {0: [((0.1, 0.2, 0.3, 0.4), "alpha"), ((0.1, 0.5, 0.3, 0.6), "beta")]},
         source_path="scan.pdf",
         source_processor="hybrid",
     )
@@ -34,7 +34,7 @@ def test_document_result_from_pages_data_preserves_order_and_text():
 
 def test_document_result_rejects_non_normalized_bbox():
     with pytest.raises(ValueError, match="normalized bbox"):
-        DocumentResult.from_pages_data({0: [([0.0, 0.0, 2.0, 1.0], "bad")]})
+        DocumentResult.from_pages_data({0: [((0.0, 0.0, 2.0, 1.0), "bad")]})
 
 
 def test_bbox_alias_is_fixed_length_tuple():
@@ -46,8 +46,8 @@ def test_bbox_alias_is_fixed_length_tuple():
     """
     # ``BBox = tuple[float, float, float, float]`` is a plain generic-alias
     # assignment (PEP 585). Compare on origin + args rather than identity.
-    assert BBox.__origin__ is tuple
-    assert BBox.__args__ == (float, float, float, float)
+    assert BBox.__origin__ is tuple  # type: ignore[attr-defined]
+    assert BBox.__args__ == (float, float, float, float)  # type: ignore[attr-defined]
     assert document_module._normalize_bbox([0.1, 0.2, 0.3, 0.4]) == (0.1, 0.2, 0.3, 0.4)
     assert isinstance(document_module._normalize_bbox((0.0, 0.0, 1.0, 1.0)), tuple)
     with pytest.raises(ValueError, match="4 values"):
@@ -94,11 +94,11 @@ async def test_pipeline_records_document_result_without_changing_return_value():
 
 async def test_registry_runs_processors_in_order():
     registry = DocumentProcessorRegistry()
-    registry.register("suffix", lambda: _SuffixProcessor("!"))
-    registry.register("again", lambda: _SuffixProcessor("?"))
+    registry.register("suffix", lambda: _SuffixProcessor("!"))  # type: ignore[arg-type, return-value]
+    registry.register("again", lambda: _SuffixProcessor("?"))  # type: ignore[arg-type, return-value]
 
     result = await run_document_processors(
-        DocumentResult.from_pages_data({0: [([0.1, 0.2, 0.3, 0.4], "hello")]}),
+        DocumentResult.from_pages_data({0: [((0.1, 0.2, 0.3, 0.4), "hello")]}),
         registry.create_many(["suffix", "again"]),
     )
 
@@ -109,7 +109,10 @@ async def test_registry_runs_processors_in_order():
 async def test_pipeline_processors_feed_existing_output_writer():
     pdf = _PDF()
     pipe = OCRPipeline(
-        _Aligner(), _OCR(), pdf, document_processors=[_SuffixProcessor("!")]
+        _Aligner(),
+        _OCR(),
+        pdf,
+        document_processors=[_SuffixProcessor("!")],  # type: ignore[list-item]
     )
 
     pages_text = await pipe.run("in.pdf", "out.pdf", refine=False)
@@ -122,9 +125,9 @@ async def test_reading_order_processor_normalizes_blocks():
     result = DocumentResult.from_pages_data(
         {
             0: [
-                ([0.1, 0.5, 0.3, 0.6], "second"),
-                ([0.1, 0.1, 0.3, 0.2], "first"),
-                ([0.5, 0.1, 0.7, 0.2], "right"),
+                ((0.1, 0.5, 0.3, 0.6), "second"),
+                ((0.1, 0.1, 0.3, 0.2), "first"),
+                ((0.5, 0.1, 0.7, 0.2), "right"),
             ]
         }
     )
@@ -140,17 +143,17 @@ async def test_reading_order_processor_normalizes_blocks():
 
 
 async def test_quality_analysis_processor_records_page_findings():
-    boxes = [([0.0, 0.0, 0.4, 0.4], "")] + [
-        ([0.0, 0.0, 0.01, 0.01], "") for _ in range(20)
+    boxes = [((0.0, 0.0, 0.4, 0.4), "")] + [
+        ((0.0, 0.0, 0.01, 0.01), "") for _ in range(20)
     ]
     result = DocumentResult.from_pages_data({0: boxes})
     quality = (
         (await QualityAnalysisProcessor().process(result)).pages[0].metadata["quality"]
     )
 
-    assert quality["block_count"] == 21
-    assert quality["text_char_count"] == 0
-    assert {finding["code"] for finding in quality["findings"]} == {
+    assert quality["block_count"] == 21  # type: ignore[index]
+    assert quality["text_char_count"] == 0  # type: ignore[index]
+    assert {finding["code"] for finding in quality["findings"]} == {  # type: ignore[index]
         "empty_large_block",
         "empty_page",
         "sparse_text",
@@ -161,11 +164,11 @@ async def test_structure_analysis_processor_classifies_blocks_without_rewriting_
     result = DocumentResult.from_pages_data(
         {
             0: [
-                ([0.1, 0.1, 0.5, 0.15], "INVOICE SUMMARY"),
-                ([0.1, 0.2, 0.5, 0.25], "Invoice No: 12345"),
-                ([0.1, 0.3, 0.8, 0.35], "Item  Qty  Price"),
-                ([0.1, 0.4, 0.8, 0.45], "- Paid by bank transfer"),
-                ([0.1, 0.5, 0.8, 0.55], "This invoice is payable within 30 days."),
+                ((0.1, 0.1, 0.5, 0.15), "INVOICE SUMMARY"),
+                ((0.1, 0.2, 0.5, 0.25), "Invoice No: 12345"),
+                ((0.1, 0.3, 0.8, 0.35), "Item  Qty  Price"),
+                ((0.1, 0.4, 0.8, 0.45), "- Paid by bank transfer"),
+                ((0.1, 0.5, 0.8, 0.55), "This invoice is payable within 30 days."),
             ]
         }
     )
@@ -198,20 +201,20 @@ async def test_structure_analysis_processor_classifies_blocks_without_rewriting_
         "has_key_values": True,
         "has_tables": True,
     }
-    assert page.blocks[0].metadata["structure"]["signals"] == ["short_prominent_text"]
+    assert page.blocks[0].metadata["structure"]["signals"] == ["short_prominent_text"]  # type: ignore[index]
 
 
 async def test_section_analysis_processor_groups_blocks_under_headings():
     result = DocumentResult.from_pages_data(
         {
             0: [
-                ([0.1, 0.05, 0.6, 0.1], "Prepared for internal review."),
-                ([0.1, 0.15, 0.5, 0.2], "Overview"),
-                ([0.1, 0.22, 0.8, 0.3], "This section describes the document."),
-                ([0.1, 0.36, 0.5, 0.41], "Financial Details"),
+                ((0.1, 0.05, 0.6, 0.1), "Prepared for internal review."),
+                ((0.1, 0.15, 0.5, 0.2), "Overview"),
+                ((0.1, 0.22, 0.8, 0.3), "This section describes the document."),
+                ((0.1, 0.36, 0.5, 0.41), "Financial Details"),
             ],
             1: [
-                ([0.1, 0.1, 0.8, 0.16], "Revenue increased this quarter."),
+                ((0.1, 0.1, 0.8, 0.16), "Revenue increased this quarter."),
             ],
         }
     )
@@ -226,7 +229,7 @@ async def test_section_analysis_processor_groups_blocks_under_headings():
         "This section describes the document.",
         "Financial Details",
     ]
-    assert first_page.blocks[0].metadata["section"]["role"] == "unsectioned"
+    assert first_page.blocks[0].metadata["section"]["role"] == "unsectioned"  # type: ignore[index]
     assert first_page.blocks[1].metadata["section"] == {
         "section_index": 0,
         "title": "Overview",
@@ -234,12 +237,12 @@ async def test_section_analysis_processor_groups_blocks_under_headings():
         "heading_block_index": 1,
         "role": "heading",
     }
-    assert first_page.blocks[2].metadata["section"]["title"] == "Overview"
-    assert first_page.blocks[2].metadata["section"]["role"] == "body"
-    assert first_page.blocks[3].metadata["section"]["title"] == "Financial Details"
-    assert second_page.blocks[0].metadata["section"]["title"] == "Financial Details"
-    assert second_page.blocks[0].metadata["section"]["heading_page_index"] == 0
-    assert first_page.metadata["sections"]["section_count"] == 2
+    assert first_page.blocks[2].metadata["section"]["title"] == "Overview"  # type: ignore[index]
+    assert first_page.blocks[2].metadata["section"]["role"] == "body"  # type: ignore[index]
+    assert first_page.blocks[3].metadata["section"]["title"] == "Financial Details"  # type: ignore[index]
+    assert second_page.blocks[0].metadata["section"]["title"] == "Financial Details"  # type: ignore[index]
+    assert second_page.blocks[0].metadata["section"]["heading_page_index"] == 0  # type: ignore[index]
+    assert first_page.metadata["sections"]["section_count"] == 2  # type: ignore[index]
     assert second_page.metadata["sections"] == {
         "headings": [],
         "section_count": 0,

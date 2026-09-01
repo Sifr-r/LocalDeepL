@@ -39,17 +39,17 @@ def _make_doc_result() -> DocumentResult:
         # Deliberately top-of-page header first; the reorder test relies on
         # this being a non-monotonic y order to assert the processor ran.
         DocumentBlock(
-            bbox=[0.1, 0.05, 0.9, 0.12],
+            bbox=(0.1, 0.05, 0.9, 0.12),
             text="first header line",
             kind="text",
         ),
         DocumentBlock(
-            bbox=[0.1, 0.20, 0.9, 0.45],
+            bbox=(0.1, 0.20, 0.9, 0.45),
             text="body paragraph with enough text to look real",
             kind="text",
         ),
         DocumentBlock(
-            bbox=[0.1, 0.55, 0.9, 0.62],
+            bbox=(0.1, 0.55, 0.9, 0.62),
             text="second header line",
             kind="text",
         ),

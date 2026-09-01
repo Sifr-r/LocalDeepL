@@ -32,7 +32,7 @@ class TestPublicImports:
 
 class TestPassthroughGolden:
     def test_default_settings_passthrough(self):
-        block = DocumentBlock(bbox=[0.0, 0.0, 0.5, 0.05], text="Hello", confidence=0.9)
+        block = DocumentBlock(bbox=(0.0, 0.0, 0.5, 0.05), text="Hello", confidence=0.9)
         out = run_trust_scored_blocks(
             [block],
             Image.new("RGB", (200, 200), (255, 255, 255)),
@@ -40,8 +40,8 @@ class TestPassthroughGolden:
             model_id="nonexistent-xyz",
         )
         # Passthrough: trust_score is None, every other field preserved.
-        assert len(out) == 1
-        result = out[0]
+        assert len(out) == 1  # type: ignore[arg-type]
+        result = out[0]  # type: ignore[index]
         assert result.text == "Hello"
         assert result.confidence == 0.9
         assert result.trust_score is None
@@ -49,7 +49,7 @@ class TestPassthroughGolden:
 
     def test_enabled_settings_populate_trust(self):
         block = DocumentBlock(
-            bbox=[0.0, 0.0, 0.5, 0.05],
+            bbox=(0.0, 0.0, 0.5, 0.05),
             text="Hello world",
             confidence=0.8,
         )
@@ -60,7 +60,7 @@ class TestPassthroughGolden:
             settings,
             model_id="identity",  # ships with calibration/identity.json
         )
-        result = out[0]
+        result = out[0]  # type: ignore[index]
         assert result.trust_score is not None
         # Identity calibration at conf=0.8 → calibrated ≈ 0.8.
         assert abs(result.trust_score - 0.8) < 0.1

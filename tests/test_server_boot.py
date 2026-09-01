@@ -29,7 +29,7 @@ def boot_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_boot_serves_health_and_unknown_job_status(boot_env: None) -> None:
-    with TestClient(create_app()) as client:
+    with TestClient(create_app()) as client:  # type: ignore[arg-type]
         health = client.get("/api/health")
         assert health.status_code == 200
         assert health.json() == {"status": "ok"}
@@ -69,7 +69,7 @@ def test_lifespan_dispose_runs_effect_cleanups(
     monkeypatch.setenv("OMNISCRIBE_CORDIS_CONFIG", str(cordis_yml))
 
     assert disposed == []
-    with TestClient(create_app()):
+    with TestClient(create_app()):  # type: ignore[arg-type]
         assert disposed == []
     assert disposed == ["disposed"]
 
@@ -81,5 +81,5 @@ def test_bad_state_backend_fails_boot_loud(
     # memory/sqlite backends — the state_backend row must fail loud at boot.
     monkeypatch.setenv("OMNISCRIBE_STATE_BACKEND", "redis")
     with pytest.raises(PluginLoadError, match="state_backend"):
-        with TestClient(create_app()):
+        with TestClient(create_app()):  # type: ignore[arg-type]
             pass

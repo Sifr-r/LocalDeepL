@@ -34,7 +34,7 @@ def test_translation_request_rejects_extra_fields() -> None:
     # The old contract was extra="forbid"; the client never sends
     # prompt_template/channel_id (notifier leaves them None).
     with pytest.raises(ValidationError):
-        TranslationRequest(text="x", prompt_template="y")
+        TranslationRequest(text="x", prompt_template="y")  # type: ignore[call-arg]
 
 
 def test_target_language_bounds() -> None:
@@ -110,7 +110,7 @@ def test_nllb_request_defaults() -> None:
 def test_async_request_rejects_extra_fields() -> None:
     # extra="forbid" is inherited from _TrimmedModel.
     with pytest.raises(ValidationError):
-        AsyncTranslationRequest(
+        AsyncTranslationRequest(  # type: ignore[call-arg]
             text_artifact_id="a" * 32, text_artifact_token="t" * 43, bogus="1"
         )
 

@@ -44,7 +44,7 @@ def test_build_pipeline_grounded_assembles_grounded_engine() -> None:
         pipeline_mode="grounded",
         model="qwen/qwen3-vl-8b",
         api_base="http://localhost:1234/v1",
-        document_processors="reading_order",
+        document_processors="reading_order",  # type: ignore[arg-type]
     )
     pipeline = pipeline_bridge.build_pipeline(settings, request)
     assert isinstance(pipeline.grounded_backend, PromptedGroundedOCR)
@@ -55,23 +55,23 @@ def test_build_pipeline_hybrid_uses_shared_aligner_and_preprocessor(
     fake_aligner_module: object,
 ) -> None:
     settings = load_settings()
-    request = OCRRequest(pipeline_mode="hybrid", denoise="true")
+    request = OCRRequest(pipeline_mode="hybrid", denoise="true")  # type: ignore[arg-type]
     pipeline = pipeline_bridge.build_pipeline(settings, request)
     assert pipeline.grounded_backend is None
     engine = pipeline._engine
-    assert engine.aligner is fake_aligner_module
+    assert engine.aligner is fake_aligner_module  # type: ignore[attr-defined]
     # a per-page toggle implies preprocessing is on
-    assert isinstance(engine.page_preprocessor, LocalPagePreprocessor)
+    assert isinstance(engine.page_preprocessor, LocalPagePreprocessor)  # type: ignore[attr-defined]
 
     off = pipeline_bridge.build_pipeline(settings, OCRRequest(pipeline_mode="hybrid"))
-    assert off._engine.page_preprocessor is None
+    assert off._engine.page_preprocessor is None  # type: ignore[attr-defined]
 
 
 def test_build_pipeline_falls_back_to_settings_llm_coordinates() -> None:
     settings = load_settings()
     request = OCRRequest(pipeline_mode="grounded")
     pipeline = pipeline_bridge.build_pipeline(settings, request)
-    assert pipeline.grounded_backend.model == settings.llm_model
+    assert pipeline.grounded_backend.model == settings.llm_model  # type: ignore[union-attr]
 
 
 def test_build_pipeline_rejects_ssrf_blocked_api_base() -> None:
@@ -114,9 +114,9 @@ def test_resolve_run_kwargs_maps_request_fields() -> None:
         dense_mode="on",
         spellcheck="en-US",
         pages="1-3",
-        quality_target="0.9",
-        quality_max_retries="4",
-        deskew="true",
+        quality_target="0.9",  # type: ignore[arg-type]
+        quality_max_retries="4",  # type: ignore[arg-type]
+        deskew="true",  # type: ignore[arg-type]
     )
     kwargs = pipeline_bridge.resolve_run_kwargs(settings, request)
     assert kwargs["dense_mode"] is DenseMode.ALWAYS
@@ -136,7 +136,8 @@ def test_resolve_run_kwargs_maps_request_fields() -> None:
 def test_resolve_run_kwargs_disables_repair_loop_on_explicit_false() -> None:
     settings = load_settings()
     kwargs = pipeline_bridge.resolve_run_kwargs(
-        settings, OCRRequest(quality_loop_enabled="false")
+        settings,
+        OCRRequest(quality_loop_enabled="false"),  # type: ignore[arg-type]
     )
     assert kwargs["repair_options"] is None
 
@@ -150,7 +151,8 @@ def test_resolve_run_kwargs_invalid_spellcheck_falls_back_to_none() -> None:
 def test_resolve_run_kwargs_grounded_skips_preprocessing_options() -> None:
     settings = load_settings()
     kwargs = pipeline_bridge.resolve_run_kwargs(
-        settings, OCRRequest(pipeline_mode="grounded", denoise="true")
+        settings,
+        OCRRequest(pipeline_mode="grounded", denoise="true"),  # type: ignore[arg-type]
     )
     assert "preprocessing_options" not in kwargs
 

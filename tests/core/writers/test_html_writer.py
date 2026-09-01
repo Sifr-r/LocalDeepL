@@ -22,21 +22,21 @@ def test_html_writer_emits_semantic_tags():
                 children=[
                     BlockNode(
                         block_type=BlockType.SECTION_HEADER,
-                        bbox=[0, 0, 1, 0.1],
+                        bbox=(0, 0, 1, 0.1),
                         text="Chapter 1",
                         page_idx=0,
                         level=1,
                     ),
                     BlockNode(
                         block_type=BlockType.PARAGRAPH,
-                        bbox=[0, 0.1, 1, 0.2],
+                        bbox=(0, 0.1, 1, 0.2),
                         text="Body text.",
                         page_idx=0,
                         confidence=0.85,
                     ),
                     BlockNode(
                         block_type=BlockType.CODE,
-                        bbox=[0, 0.2, 1, 0.3],
+                        bbox=(0, 0.2, 1, 0.3),
                         text="print(hi)",
                         page_idx=0,
                     ),
@@ -47,7 +47,7 @@ def test_html_writer_emits_semantic_tags():
                 children=[
                     BlockNode(
                         block_type=BlockType.PARAGRAPH,
-                        bbox=[0, 0, 1, 0.1],
+                        bbox=(0, 0, 1, 0.1),
                         text="Page 2",
                         page_idx=1,
                     ),
@@ -71,18 +71,18 @@ def test_html_writer_handles_figure_and_table():
         rows=2,
         cols=2,
         page_idx=0,
-        bbox=[0, 0, 1, 0.5],
+        bbox=(0, 0, 1, 0.5),
         cells=[
             [
                 BlockNode(
                     block_type=BlockType.PARAGRAPH,
-                    bbox=[0, 0, 0.5, 0.25],
+                    bbox=(0, 0, 0.5, 0.25),
                     text="A",
                     page_idx=0,
                 ),
                 BlockNode(
                     block_type=BlockType.PARAGRAPH,
-                    bbox=[0.5, 0, 1, 0.25],
+                    bbox=(0.5, 0, 1, 0.25),
                     text="B",
                     page_idx=0,
                 ),
@@ -90,13 +90,13 @@ def test_html_writer_handles_figure_and_table():
             [
                 BlockNode(
                     block_type=BlockType.PARAGRAPH,
-                    bbox=[0, 0.25, 0.5, 0.5],
+                    bbox=(0, 0.25, 0.5, 0.5),
                     text="C",
                     page_idx=0,
                 ),
                 BlockNode(
                     block_type=BlockType.PARAGRAPH,
-                    bbox=[0.5, 0.25, 1, 0.5],
+                    bbox=(0.5, 0.25, 1, 0.5),
                     text="D",
                     page_idx=0,
                 ),
@@ -111,7 +111,7 @@ def test_html_writer_handles_figure_and_table():
                 children=[
                     BlockNode(
                         block_type=BlockType.FIGURE,
-                        bbox=[0, 0, 1, 0.5],
+                        bbox=(0, 0, 1, 0.5),
                         text="caption text",
                         page_idx=0,
                     ),

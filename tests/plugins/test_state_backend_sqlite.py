@@ -12,12 +12,12 @@ from omniscribe.plugins.state_backend import JobRecord, SQLiteStateBackend
 
 
 @pytest.fixture
-async def backend(tmp_path: Path) -> SQLiteStateBackend:
+async def backend(tmp_path: Path) -> SQLiteStateBackend:  # type: ignore[misc]
     impl = SQLiteStateBackend(
         db_path=tmp_path / "state.db", blob_dir=tmp_path / "blobs"
     )
     await impl.open()
-    yield impl  # type: ignore[misc]
+    yield impl
     await impl.aclose()
 
 

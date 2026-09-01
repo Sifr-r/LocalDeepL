@@ -18,7 +18,7 @@ SNAPSHOT_PATH = Path(__file__).resolve().parent.parent / "openapi.json"
 def test_openapi_schema_matches_snapshot(api_client: TestClient) -> None:
     # Routes are included during lifespan startup, so the booted app's
     # schema is the complete surface.
-    schema = api_client.app.openapi()
+    schema = api_client.app.openapi()  # type: ignore[attr-defined]
     if not SNAPSHOT_PATH.is_file():
         SNAPSHOT_PATH.write_text(
             json.dumps(schema, indent=2, sort_keys=True) + "\n", encoding="utf-8"

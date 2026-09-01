@@ -215,7 +215,7 @@ def api_client(cordis_env: Path, monkeypatch: pytest.MonkeyPatch):
     from omniscribe.server import create_app
 
     monkeypatch.setenv("OMNISCRIBE_CORDIS_CONFIG", str(cordis_env))
-    with TestClient(create_app()) as client:
+    with TestClient(create_app()) as client:  # type: ignore[arg-type]
         yield client
 
 

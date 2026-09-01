@@ -174,7 +174,7 @@ def test_rasterization_settings_post_init_validation() -> None:
         RasterizationSettings(max_safe_pixels="50000000")  # type: ignore
 
     with pytest.raises(ValueError, match="max_safe_pixels must be an integer"):
-        RasterizationSettings(max_safe_pixels=True)  # type: ignore
+        RasterizationSettings(max_safe_pixels=True)
 
     with pytest.raises(
         ValueError,
@@ -197,7 +197,7 @@ def test_rasterization_settings_post_init_validation() -> None:
     with pytest.raises(
         ValueError, match="vlm_jpeg_quality_pdf_path must be an integer"
     ):
-        RasterizationSettings(vlm_jpeg_quality_pdf_path=True)  # type: ignore
+        RasterizationSettings(vlm_jpeg_quality_pdf_path=True)
 
     with pytest.raises(
         ValueError, match=r"vlm_jpeg_quality_pdf_path must be between 1 and 100"

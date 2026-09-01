@@ -15,7 +15,7 @@ from omniscribe.core.block_tree import (
 def test_block_node_to_dict_round_trip():
     node = BlockNode(
         block_type=BlockType.SECTION_HEADER,
-        bbox=[0.0, 0.1, 0.5, 0.15],
+        bbox=(0.0, 0.1, 0.5, 0.15),
         text="Chapter 1",
         page_idx=0,
         level=1,
@@ -34,15 +34,15 @@ def test_block_node_to_dict_round_trip():
 def test_from_pages_data_basic():
     pages = {
         0: [
-            ([0.0, 0.0, 1.0, 0.1], "INTRODUCTION"),
-            ([0.0, 0.1, 1.0, 0.2], "This is a normal paragraph."),
+            ((0.0, 0.0, 1.0, 0.1), "INTRODUCTION"),
+            ((0.0, 0.1, 1.0, 0.2), "This is a normal paragraph."),
         ],
         1: [
-            ([0.0, 0.0, 1.0, 0.1], "CHAPTER 1"),
-            ([0.0, 0.1, 1.0, 0.2], "Some body text."),
+            ((0.0, 0.0, 1.0, 0.1), "CHAPTER 1"),
+            ((0.0, 0.1, 1.0, 0.2), "Some body text."),
         ],
     }
-    tree = from_pages_data(pages, source_path="doc.pdf")
+    tree = from_pages_data(pages, source_path="doc.pdf")  # type: ignore[arg-type]
     assert tree.source_path == "doc.pdf"
     assert len(tree.pages) == 2
     assert tree.pages[0].page_idx == 0
@@ -63,13 +63,13 @@ def test_document_tree_iter_text_blocks():
                 children=[
                     BlockNode(
                         block_type=BlockType.PARAGRAPH,
-                        bbox=[0, 0, 1, 0.1],
+                        bbox=(0, 0, 1, 0.1),
                         text="hello",
                         page_idx=0,
                     ),
                     BlockNode(
                         block_type=BlockType.PAGE_HEADER,
-                        bbox=[0, 0, 1, 0.05],
+                        bbox=(0, 0, 1, 0.05),
                         text="HEADER",
                         page_idx=0,
                     ),
@@ -89,18 +89,18 @@ def test_table_node_to_dict_shape():
         rows=2,
         cols=2,
         page_idx=0,
-        bbox=[0, 0, 1, 0.5],
+        bbox=(0, 0, 1, 0.5),
         cells=[
             [
                 BlockNode(
                     block_type=BlockType.PARAGRAPH,
-                    bbox=[0, 0, 0.5, 0.25],
+                    bbox=(0, 0, 0.5, 0.25),
                     text="A",
                     page_idx=0,
                 ),
                 BlockNode(
                     block_type=BlockType.PARAGRAPH,
-                    bbox=[0.5, 0, 1, 0.25],
+                    bbox=(0.5, 0, 1, 0.25),
                     text="B",
                     page_idx=0,
                 ),
@@ -117,7 +117,7 @@ def test_block_node_image_bytes_default_none():
     # common case for non-figure blocks and the historical default.
     node = BlockNode(
         block_type=BlockType.PARAGRAPH,
-        bbox=[0, 0, 1, 0.1],
+        bbox=(0, 0, 1, 0.1),
         text="hello",
         page_idx=0,
     )
@@ -132,7 +132,7 @@ def test_block_node_image_bytes_set_via_constructor():
     payload = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR"
     node = BlockNode(
         block_type=BlockType.FIGURE,
-        bbox=[0, 0, 1, 0.5],
+        bbox=(0, 0, 1, 0.5),
         text="Figure 1",
         page_idx=0,
         image_bytes=payload,
@@ -148,7 +148,7 @@ def test_block_node_image_bytes_to_dict_omits_payload():
     # artifact (which would break UTF-8 guarantees).
     node = BlockNode(
         block_type=BlockType.FIGURE,
-        bbox=[0, 0, 1, 0.5],
+        bbox=(0, 0, 1, 0.5),
         text="Figure 1",
         page_idx=0,
         image_bytes=b"\x89PNG\r\n",

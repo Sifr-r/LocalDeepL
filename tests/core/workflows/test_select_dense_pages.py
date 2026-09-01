@@ -12,9 +12,9 @@ from omniscribe.core.workflows.hybrid import HybridEngine
 
 def _structured(
     n_boxes_per_page: dict[int, int],
-) -> dict[int, list[tuple[list[float], str]]]:
+) -> dict[int, list[tuple[tuple[float, float, float, float], str]]]:
     return {
-        p: [([0.1, 0.1, 0.9, 0.2], "") for _ in range(n)]
+        p: [((0.1, 0.1, 0.9, 0.2), "") for _ in range(n)]
         for p, n in n_boxes_per_page.items()
     }
 
@@ -71,7 +71,7 @@ async def test_execute_rejects_string_dense_mode():
     """§9g: a legacy caller passing a raw string must raise ValueError."""
     engine = _engine()
     with pytest.raises(ValueError, match="dense_mode must be a DenseMode"):
-        await engine.execute(  # type: ignore[call-arg]
+        await engine.execute(
             "in.pdf",
             "out.pdf",
             dense_mode="auto",  # type: ignore[arg-type]

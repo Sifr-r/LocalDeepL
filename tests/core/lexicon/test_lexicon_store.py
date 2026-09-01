@@ -184,7 +184,7 @@ def test_toggle_glossary(store: LanceDBLexiconStore) -> None:
     meta = store.save_glossary(
         name="Toggle me", format="json_pairs", entries=[{"source": "a", "target": "A"}]
     )
-    assert store.get_glossary(meta.id).enabled is True
+    assert store.get_glossary(meta.id).enabled is True  # type: ignore[union-attr]
     updated = store.toggle_glossary(meta.id, enabled=False)
     assert updated.enabled is False
     # Round-trip back
@@ -391,8 +391,8 @@ def test_preview_helper(store: LanceDBLexiconStore) -> None:
     )
     p = preview(store)
     assert p["count"] == 1
-    assert len(p["conflicts"]) == 1
-    conflict = p["conflicts"][0]
+    assert len(p["conflicts"]) == 1  # type: ignore[arg-type]
+    conflict = p["conflicts"][0]  # type: ignore[index]
     assert conflict["source"] == "bank"
     assert set(conflict["targets"]) == {"banque", "rive"}
 

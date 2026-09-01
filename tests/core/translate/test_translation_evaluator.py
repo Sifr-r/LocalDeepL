@@ -145,7 +145,7 @@ class TestEvaluateFastPaths:
             result = await evaluate_node(state)
         llm.assert_not_called()
         assert result["evaluation_score"] == 0.0
-        assert "too short" in result["feedback"]
+        assert "too short" in result["feedback"]  # type: ignore[operator]
 
     async def test_length_ratio_above_max_skips_llm(self) -> None:
         """§2.5 regression: translation > max_length_ratio × source is garbled."""
@@ -161,7 +161,7 @@ class TestEvaluateFastPaths:
             result = await evaluate_node(state)
         llm.assert_not_called()
         assert result["evaluation_score"] == 0.0
-        assert "too long" in result["feedback"]
+        assert "too long" in result["feedback"]  # type: ignore[operator]
 
     async def test_length_ratio_in_band_no_glossary_skips_llm(self) -> None:
         """§2.5 regression: in-band length + no glossary → accept without LLM."""
@@ -175,7 +175,7 @@ class TestEvaluateFastPaths:
             result = await evaluate_node(state)
         llm.assert_not_called()
         assert result["evaluation_score"] == 1.0
-        assert "no glossary" in result["feedback"]
+        assert "no glossary" in result["feedback"]  # type: ignore[operator]
 
     async def test_length_ratio_in_band_with_glossary_calls_llm(self) -> None:
         """§2.5 regression: in-band length + non-empty glossary → still hits LLM."""
@@ -267,8 +267,8 @@ class TestEvaluateLLMPath:
             new=AsyncMock(return_value=(0.3, "Major omissions")),
         ):
             result = await evaluate_node(state)
-        assert result["evaluation_score"] < 0.8
-        assert "Major omissions" in result["feedback"]
+        assert result["evaluation_score"] < 0.8  # type: ignore[operator]
+        assert "Major omissions" in result["feedback"]  # type: ignore[operator]
 
 
 # ---------------------------------------------------------------------------

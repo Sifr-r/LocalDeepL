@@ -29,7 +29,7 @@ from omniscribe.utils.structured_logging import (
 
 
 @pytest.fixture(autouse=True)
-def _isolate_root_logger() -> None:
+def _isolate_root_logger() -> None:  # type: ignore[misc]
     """Snapshot / restore the root logger around each test.
 
     ``configure_logging`` mutates ``logging.getLogger().handlers`` and
@@ -77,7 +77,7 @@ def test_json_formatter_emits_canonical_fields() -> None:
     # Timestamp is ISO 8601 UTC with timezone offset, parseable round-trip.
     parsed = datetime.fromisoformat(payload["timestamp"])
     assert parsed.tzinfo is not None
-    assert parsed.utcoffset().total_seconds() == 0
+    assert parsed.utcoffset().total_seconds() == 0  # type: ignore[union-attr]
 
 
 def test_json_formatter_includes_extras_at_top_level() -> None:
@@ -157,7 +157,7 @@ def test_configure_logging_installs_json_formatter_by_default(
         h for h in root.handlers if getattr(h, "_omniscribe_configured", False)
     )
     assert isinstance(handler.formatter, JsonFormatter)
-    assert handler.stream is buffer
+    assert handler.stream is buffer  # type: ignore[attr-defined]
 
 
 def test_configure_logging_text_format(monkeypatch: pytest.MonkeyPatch) -> None:

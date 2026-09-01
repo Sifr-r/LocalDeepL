@@ -88,7 +88,7 @@ class Logged(SessionEvent):
 async def test_on_emit_invokes_handler() -> None:
     ctx = Context()
     seen: list[Ping] = []
-    ctx.on(Ping, lambda ev: seen.append(ev))
+    ctx.on(Ping, lambda ev: seen.append(ev))  # type: ignore[arg-type]
     await ctx.emit(Ping(3))
     assert seen == [Ping(3)]
     await ctx.dispose()

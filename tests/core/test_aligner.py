@@ -49,7 +49,7 @@ class TestNormalizeLines:
 
     def test_empty_inputs(self):
         assert _normalize_lines("") == []
-        assert _normalize_lines(None) == []
+        assert _normalize_lines(None) == []  # type: ignore[arg-type]
         assert _normalize_lines([]) == []
         assert _normalize_lines(["   ", ""]) == []
 
@@ -99,7 +99,7 @@ class TestDPAlign:
     def test_one_to_one_equal_sized(self):
         lines = ["alpha line", "beta line", "gamma line"]
         boxes = [[0.0, 0.0, 1.0, 0.3], [0.0, 0.3, 1.0, 0.6], [0.0, 0.6, 1.0, 0.9]]
-        _, mapping, _ = _dp_align(lines, boxes)
+        _, mapping, _ = _dp_align(lines, boxes)  # type: ignore[arg-type]
         assert mapping == {0: ["alpha line"], 1: ["beta line"], 2: ["gamma line"]}
 
     def test_respects_box_sizes(self):
@@ -110,7 +110,7 @@ class TestDPAlign:
             [0.0, 0.15, 1.0, 0.85],  # huge
             [0.4, 0.9, 0.55, 0.93],  # tiny
         ]
-        _, mapping, _ = _dp_align(lines, boxes)
+        _, mapping, _ = _dp_align(lines, boxes)  # type: ignore[arg-type]
         assert mapping[0] == ["Title"]
         assert mapping[1] == ["x" * 200]
         assert mapping[2] == ["Fin"]
@@ -118,14 +118,14 @@ class TestDPAlign:
     def test_more_lines_than_boxes_conserves_text(self):
         lines = ["A", "B", "C", "D", "E"]
         boxes = [[0.0, 0.0, 1.0, 0.5], [0.0, 0.5, 1.0, 1.0]]
-        _, mapping, _ = _dp_align(lines, boxes)
+        _, mapping, _ = _dp_align(lines, boxes)  # type: ignore[arg-type]
         all_placed = [t for vs in mapping.values() for t in vs]
         assert set(all_placed) == set(lines), "every line must be placed"
 
     def test_more_boxes_than_lines_leaves_empties(self):
         lines = ["one", "two"]
         boxes = [[0.0, 0.0, 0.3, 0.1]] * 5
-        _, mapping, _ = _dp_align(lines, boxes)
+        _, mapping, _ = _dp_align(lines, boxes)  # type: ignore[arg-type]
         assert sum(len(v) for v in mapping.values()) == 2
 
     def test_long_line_does_not_displace_short_lines_into_narrow_trap(self):
@@ -146,7 +146,7 @@ class TestDPAlign:
             [0.05, 0.25, 0.95, 0.32],  # wide (long-line home)
             [0.05, 0.40, 0.30, 0.45],  # medium
         ]
-        out = _aligner().align_text([(b, "") for b in boxes], lines)
+        out = _aligner().align_text([(b, "") for b in boxes], lines)  # type: ignore[misc]
         texts = [t for _, t in out]
 
         # The long line lands in the wide box (index 2), not displaced.
@@ -173,7 +173,7 @@ class TestDPAlign:
             [0.55, 0.10, 0.95, 0.12],  # R short title
             [0.55, 0.15, 0.95, 0.35],  # R body
         ]
-        _, mapping, _ = _dp_align(lines, boxes)
+        _, mapping, _ = _dp_align(lines, boxes)  # type: ignore[arg-type]
         assert len(mapping) == 4
         # Each box got text in increasing box-index order (monotonic).
         for i in range(4):
@@ -190,8 +190,8 @@ class TestDPAlign:
             [0.4, 0.85, 0.55, 0.90],  # tiny
         ]
         boxes_shuffled = [boxes_aligned[i] for i in (1, 0, 3, 2)]
-        cost_aligned, _, _ = _dp_align(lines, boxes_aligned)
-        cost_shuffled, _, _ = _dp_align(lines, boxes_shuffled)
+        cost_aligned, _, _ = _dp_align(lines, boxes_aligned)  # type: ignore[arg-type]
+        cost_shuffled, _, _ = _dp_align(lines, boxes_shuffled)  # type: ignore[arg-type]
         assert cost_shuffled > cost_aligned, (
             f"shuffled cost {cost_shuffled} must exceed aligned {cost_aligned}"
         )
@@ -200,7 +200,7 @@ class TestDPAlign:
         assert _dp_align(["some text"], []) == (0.0, {}, 0)
 
     def test_empty_lines_yields_empty_mapping(self):
-        assert _dp_align([], [[0.0, 0.0, 1.0, 1.0]]) == (0.0, {}, 0)
+        assert _dp_align([], [[0.0, 0.0, 1.0, 1.0]]) == (0.0, {}, 0)  # type: ignore[list-item]
 
 
 class TestAlignTextPublicAPI:
@@ -209,14 +209,14 @@ class TestAlignTextPublicAPI:
         assert out == [((0.0, 0.0, 1.0, 1.0), "first line\nsecond line")]
 
     def test_all_empty_when_no_lines(self):
-        structured = [([0.0, 0.0, 0.5, 0.5], ""), ([0.5, 0.5, 1.0, 1.0], "")]
+        structured = [((0.0, 0.0, 0.5, 0.5), ""), ((0.5, 0.5, 1.0, 1.0), "")]
         out = _aligner().align_text(structured, [])
         assert [t for _, t in out] == ["", ""]
 
     def test_result_length_matches_input_boxes(self):
         structured = [([i / 10, 0, i / 10 + 0.1, 0.1], "") for i in range(5)]
         lines = ["a", "b", "c"]
-        out = _aligner().align_text(structured, lines)
+        out = _aligner().align_text(structured, lines)  # type: ignore[arg-type]
         assert len(out) == 5  # one tuple per input box, in order
 
     def test_preserves_box_order(self):
@@ -226,11 +226,11 @@ class TestAlignTextPublicAPI:
             [0.0, 0.2, 1.0, 0.3],
         ]
         structured = [(b, "") for b in boxes]
-        out = _aligner().align_text(structured, ["x", "y", "z"])
-        assert [b for b, _ in out] == boxes
+        out = _aligner().align_text(structured, ["x", "y", "z"])  # type: ignore[arg-type]
+        assert [b for b, _ in out] == boxes  # type: ignore[comparison-overlap]
 
     def test_accepts_both_string_and_list_input(self):
-        structured = [([0.0, 0.0, 0.5, 0.5], "")]
+        structured = [((0.0, 0.0, 0.5, 0.5), "")]
         out_str = _aligner().align_text(structured, "one\ntwo")
         out_lst = _aligner().align_text(structured, ["one", "two"])
         assert out_str == out_lst
@@ -245,7 +245,7 @@ class TestAlignTextPublicAPI:
         boxes = [[0.05, i * 0.05, 0.45, i * 0.05 + 0.04] for i in range(20)]
         structured = [(b, "") for b in boxes]
         single_line = "all the page text emitted as one big string with no line breaks"
-        out = _aligner().align_text(structured, [single_line])
+        out = _aligner().align_text(structured, [single_line])  # type: ignore[arg-type]
         assert len(out) == 1, f"expected full-page fallback, got {len(out)} boxes"
         bbox, text = out[0]
         assert bbox == (0.0, 0.0, 1.0, 1.0)
@@ -256,10 +256,10 @@ class TestAlignTextPublicAPI:
         # should land in its real box, not the full-page fallback.
         boxes = [[0.1, 0.1, 0.9, 0.2]]
         structured = [(b, "") for b in boxes]
-        out = _aligner().align_text(structured, ["the one line"])
+        out = _aligner().align_text(structured, ["the one line"])  # type: ignore[arg-type]
         assert len(out) == 1
         bbox, text = out[0]
-        assert bbox == boxes[0]
+        assert bbox == boxes[0]  # type: ignore[comparison-overlap]
         assert text == "the one line"
 
     @pytest.mark.parametrize("n_lines,n_boxes", [(1, 1), (5, 3), (3, 5), (10, 10)])
@@ -267,7 +267,7 @@ class TestAlignTextPublicAPI:
         lines = [f"line-{i}" for i in range(n_lines)]
         boxes = [[i / n_boxes, 0, (i + 1) / n_boxes, 0.1] for i in range(n_boxes)]
         structured = [(b, "") for b in boxes]
-        out = _aligner().align_text(structured, lines)
+        out = _aligner().align_text(structured, lines)  # type: ignore[arg-type]
         placed_text = " ".join(t for _, t in out if t)
         for line in lines:
             assert line in placed_text, f"line {line!r} was dropped"
@@ -311,7 +311,7 @@ class TestAutoDetectReadingOrder:
         # OlmOCR-style: entire left column emitted first, then right column.
         lines = _AUTODETECT_LEFT_TEXT + _AUTODETECT_RIGHT_TEXT
         structured = [(b, "") for b in _AUTODETECT_BOXES_ROW_MAJOR]
-        out = _aligner().align_text(structured, lines)
+        out = _aligner().align_text(structured, lines)  # type: ignore[arg-type]
         actual = [t for _, t in out]
         for i in range(4):
             assert actual[i * 2] == _AUTODETECT_LEFT_TEXT[i]
@@ -324,7 +324,7 @@ class TestAutoDetectReadingOrder:
             lines.append(_AUTODETECT_LEFT_TEXT[i])
             lines.append(_AUTODETECT_RIGHT_TEXT[i])
         structured = [(b, "") for b in _AUTODETECT_BOXES_ROW_MAJOR]
-        out = _aligner().align_text(structured, lines)
+        out = _aligner().align_text(structured, lines)  # type: ignore[arg-type]
         actual = [t for _, t in out]
         for i in range(4):
             assert actual[i * 2] == _AUTODETECT_LEFT_TEXT[i]
@@ -341,7 +341,7 @@ class TestAutoDetectReadingOrder:
         ]
         lines = ["first", "second", "third", "fourth"]
         structured = [(b, "") for b in boxes]
-        out = _aligner().align_text(structured, lines)
+        out = _aligner().align_text(structured, lines)  # type: ignore[arg-type]
         assert [t for _, t in out] == lines
 
 
@@ -356,7 +356,7 @@ class TestReadingOrderSort:
             [0.1, 0.30, 0.9, 0.35],
             [0.1, 0.40, 0.9, 0.45],
         ]
-        out = _reading_order_sort(list(boxes))
+        out = _reading_order_sort(list(boxes))  # type: ignore[arg-type]
         ys = [b[1] for b in out]
         assert ys == sorted(ys)
 
@@ -382,10 +382,10 @@ class TestReadingOrderSort:
             interleaved.append(right)
             interleaved.append(left)
 
-        out = _reading_order_sort(interleaved)
+        out = _reading_order_sort(interleaved)  # type: ignore[arg-type]
         # Left column first (4 boxes), then right column (4 boxes).
-        assert out[:4] == L
-        assert out[4:] == R
+        assert out[:4] == L  # type: ignore[comparison-overlap]
+        assert out[4:] == R  # type: ignore[comparison-overlap]
 
     def test_lone_marginal_box_does_not_create_fake_column(self):
         # 5 body boxes centered around x≈0.5 plus a single page-number-like
@@ -400,7 +400,7 @@ class TestReadingOrderSort:
             [0.10, 0.90, 0.90, 0.95],
         ]
         page_num = [[0.92, 0.95, 0.99, 0.98]]
-        out = _reading_order_sort(body + page_num)
+        out = _reading_order_sort(body + page_num)  # type: ignore[arg-type]
         # Output must still respect top-to-bottom flow — i.e. body comes
         # before the page number, which sits at the bottom-right.
         ys = [b[1] for b in out]
@@ -414,7 +414,7 @@ class TestReadingOrderSort:
             for x0, x1 in col_x:
                 boxes.append([x0, y, x1, y + 0.05])
 
-        out = _reading_order_sort(boxes)
+        out = _reading_order_sort(boxes)  # type: ignore[arg-type]
         # Column 1 (x≈0.18) → 3 boxes, then column 2 (x≈0.50) → 3,
         # then column 3 (x≈0.83) → 3.
         x_centers = [(b[0] + b[2]) / 2 for b in out]
@@ -438,7 +438,7 @@ def _png_bytes(size: tuple[int, int] = (100, 80)) -> bytes:
 
 def _pred_with_boxes() -> object:
     return types.SimpleNamespace(
-        bboxes=[types.SimpleNamespace(bbox=[10.0, 10.0, 50.0, 40.0])]
+        bboxes=[types.SimpleNamespace(bbox=(10.0, 10.0, 50.0, 40.0))]
     )
 
 
@@ -525,7 +525,7 @@ class TestNaNBboxHandling:
                 [
                     types.SimpleNamespace(
                         bboxes=[
-                            types.SimpleNamespace(bbox=[10.0, 10.0, 50.0, 40.0]),
+                            types.SimpleNamespace(bbox=(10.0, 10.0, 50.0, 40.0)),
                             types.SimpleNamespace(
                                 bbox=[float("nan"), 10.0, 50.0, 40.0]
                             ),

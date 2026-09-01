@@ -107,7 +107,6 @@ def test_all_zero_height_surya_rejects_hairline_below_fallback_band() -> None:
     assert extra == []
 
 
-
 # Isolated filter-gate fixtures (eng-new). Page geometry is 800x1000 so the
 # dilation kernel lands at kw=16, kh=6 (components inflate by kw-1 / kh-1);
 # surya_boxes=[] selects the fallback height band [6px, 60px]. Each fixture
@@ -345,14 +344,14 @@ def test_photo_edge_page_returns_image_with_expected_shape() -> None:
     )
     assert img.size == (1000, 1400)
     # White background check: top-left pixel must be near-white.
-    assert img.getpixel((10, 10))[0] > 240
+    assert img.getpixel((10, 10))[0] > 240  # type: ignore[index]
     # The line sits at y = 0.5 * 1400 = 700. Inside the line region the
     # pixel must be darker than the background. The pre-dilation density
     # is 0.40, so on average 60% of pixels in the line are white and 40%
     # are dark — sampling the center of the line should find a dark pixel
     # at least once across 5 samples.
     samples = [img.getpixel((200 + i * 100, 700)) for i in range(5)]
-    assert any(px[0] < 100 for px in samples), (
+    assert any(px[0] < 100 for px in samples), (  # type: ignore[index]
         f"no dark pixel found in line region (samples={samples})"
     )
 
@@ -459,9 +458,9 @@ class TestHybridWhitespaceRecall:
 
         aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
         engine = HybridEngine(
-            aligner=aligner,
-            ocr_processor=_StubOCR(),
-            pdf_handler=_StubPDF(),
+            aligner=aligner,  # type: ignore[arg-type]
+            ocr_processor=_StubOCR(),  # type: ignore[arg-type]
+            pdf_handler=_StubPDF(),  # type: ignore[arg-type]
             output_writer=_noop_writer,
             recall_booster=_FixedBooster(),  # type: ignore[arg-type]
         )
@@ -478,7 +477,7 @@ class TestHybridWhitespaceRecall:
         pages = await engine._detect_layout(
             images_dict={0: _make_tiny_b64_image()}, page_nums=[0], progress=None
         )
-        assert pages == {0: [([0.1, 0.1, 0.9, 0.2], "")]}
+        assert pages == {0: [([0.1, 0.1, 0.9, 0.2], "")]}  # type: ignore[comparison-overlap]
 
     async def test_booster_exception_keeps_surya_boxes(self) -> None:
         class _ExplodingBooster:
@@ -487,16 +486,16 @@ class TestHybridWhitespaceRecall:
 
         aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
         engine = HybridEngine(
-            aligner=aligner,
-            ocr_processor=_StubOCR(),
-            pdf_handler=_StubPDF(),
+            aligner=aligner,  # type: ignore[arg-type]
+            ocr_processor=_StubOCR(),  # type: ignore[arg-type]
+            pdf_handler=_StubPDF(),  # type: ignore[arg-type]
             output_writer=_noop_writer,
             recall_booster=_ExplodingBooster(),  # type: ignore[arg-type]
         )
         pages = await engine._detect_layout(
             images_dict={0: _make_tiny_b64_image()}, page_nums=[0], progress=None
         )
-        assert pages == {0: [([0.1, 0.1, 0.9, 0.2], "")]}
+        assert pages == {0: [([0.1, 0.1, 0.9, 0.2], "")]}  # type: ignore[comparison-overlap]
 
 
 class TestHybridWhitespaceRecallRunSummary:
@@ -515,9 +514,9 @@ class TestHybridWhitespaceRecallRunSummary:
 
         aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
         engine = HybridEngine(
-            aligner=aligner,
-            ocr_processor=_StubOCR(),
-            pdf_handler=_StubPDF(),
+            aligner=aligner,  # type: ignore[arg-type]
+            ocr_processor=_StubOCR(),  # type: ignore[arg-type]
+            pdf_handler=_StubPDF(),  # type: ignore[arg-type]
             output_writer=_noop_writer,
             recall_booster=_CountingBooster(),  # type: ignore[arg-type]
         )
@@ -544,9 +543,9 @@ class TestHybridWhitespaceRecallRunSummary:
         booster = WhitespaceRecallBooster(WhitespaceRecallOptions.from_env())
         aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
         engine = HybridEngine(
-            aligner=aligner,
-            ocr_processor=_StubOCR(),
-            pdf_handler=_StubPDF(),
+            aligner=aligner,  # type: ignore[arg-type]
+            ocr_processor=_StubOCR(),  # type: ignore[arg-type]
+            pdf_handler=_StubPDF(),  # type: ignore[arg-type]
             output_writer=_noop_writer,
             recall_booster=booster,
         )
@@ -575,9 +574,9 @@ class TestHybridWhitespaceRecallEndToEnd:
         aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
         pdf = _StubPDF(n_pages=1)
         engine = HybridEngine(
-            aligner=aligner,
-            ocr_processor=_StubOCR(),
-            pdf_handler=pdf,
+            aligner=aligner,  # type: ignore[arg-type]
+            ocr_processor=_StubOCR(),  # type: ignore[arg-type]
+            pdf_handler=pdf,  # type: ignore[arg-type]
             # Wire the stub's embed method as the output writer so the
             # finalized pages land in ``pdf.last_pages`` for inspection.
             output_writer=pdf.embed_structured_text,
@@ -600,8 +599,8 @@ class TestHybridWhitespaceRecallEndToEnd:
         assert len(recall_blocks) == 1
         assert recall_blocks[0].text == "Section heading"
         # The embed payload carries the recall box with its text too.
-        assert tuple(pdf.last_pages[0][0][0]) == (0.1, 0.02, 0.9, 0.05)
-        assert pdf.last_pages[0][0][1] == "Section heading"
+        assert tuple(pdf.last_pages[0][0][0]) == (0.1, 0.02, 0.9, 0.05)  # type: ignore[index]
+        assert pdf.last_pages[0][0][1] == "Section heading"  # type: ignore[index]
 
     async def test_env_off_run_is_byte_identical_to_no_booster(
         self, monkeypatch: pytest.MonkeyPatch
@@ -612,9 +611,9 @@ class TestHybridWhitespaceRecallEndToEnd:
             aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
             pdf = _StubPDF(n_pages=1)
             engine = HybridEngine(
-                aligner=aligner,
-                ocr_processor=_StubOCR(),
-                pdf_handler=pdf,
+                aligner=aligner,  # type: ignore[arg-type]
+                ocr_processor=_StubOCR(),  # type: ignore[arg-type]
+                pdf_handler=pdf,  # type: ignore[arg-type]
                 output_writer=pdf.embed_structured_text,
                 recall_booster=booster,
             )
@@ -662,9 +661,9 @@ class TestHybridWhitespaceRecallGuardRails:
 
         aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
         engine = HybridEngine(
-            aligner=aligner,
-            ocr_processor=_StubOCR(),
-            pdf_handler=_StubPDF(),
+            aligner=aligner,  # type: ignore[arg-type]
+            ocr_processor=_StubOCR(),  # type: ignore[arg-type]
+            pdf_handler=_StubPDF(),  # type: ignore[arg-type]
             output_writer=_noop_writer,
             recall_booster=_PartialFailBooster(),  # type: ignore[arg-type]
         )
@@ -678,7 +677,7 @@ class TestHybridWhitespaceRecallGuardRails:
             (0.1, 0.02, 0.9, 0.05),
             [0.1, 0.1, 0.9, 0.2],
         ]
-        assert pages[1] == [([0.1, 0.1, 0.9, 0.2], "")]
+        assert pages[1] == [([0.1, 0.1, 0.9, 0.2], "")]  # type: ignore[comparison-overlap]
 
     async def test_apply_recall_fallback_decodes_on_cache_miss(self) -> None:
         # G4: the LRU can evict a page between chunk decode and recall; the
@@ -688,9 +687,9 @@ class TestHybridWhitespaceRecallGuardRails:
                 return [(0.1, 0.02, 0.9, 0.05)]
 
         engine = HybridEngine(
-            aligner=_StubAligner(),
-            ocr_processor=_StubOCR(),
-            pdf_handler=_StubPDF(),
+            aligner=_StubAligner(),  # type: ignore[arg-type]
+            ocr_processor=_StubOCR(),  # type: ignore[arg-type]
+            pdf_handler=_StubPDF(),  # type: ignore[arg-type]
             output_writer=_noop_writer,
             recall_booster=_FixedBooster(),  # type: ignore[arg-type]
         )
@@ -714,9 +713,9 @@ class TestHybridWhitespaceRecallGuardRails:
 
         aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
         engine = HybridEngine(
-            aligner=aligner,
-            ocr_processor=_StubOCR(),
-            pdf_handler=_StubPDF(),
+            aligner=aligner,  # type: ignore[arg-type]
+            ocr_processor=_StubOCR(),  # type: ignore[arg-type]
+            pdf_handler=_StubPDF(),  # type: ignore[arg-type]
             output_writer=_noop_writer,
             recall_booster=_ListBooster(),  # type: ignore[arg-type]
         )
@@ -742,9 +741,9 @@ class TestHybridWhitespaceRecallGuardRails:
         booster = _CountingBooster()
         aligner = _StubAligner(boxes_per_page=[[0.1, 0.1, 0.9, 0.2]])
         engine = HybridEngine(
-            aligner=aligner,
-            ocr_processor=_StubOCR(),
-            pdf_handler=_StubPDF(),
+            aligner=aligner,  # type: ignore[arg-type]
+            ocr_processor=_StubOCR(),  # type: ignore[arg-type]
+            pdf_handler=_StubPDF(),  # type: ignore[arg-type]
             output_writer=_noop_writer,
             recall_booster=booster,  # type: ignore[arg-type]
         )
@@ -752,7 +751,7 @@ class TestHybridWhitespaceRecallGuardRails:
             images_dict={0: _make_tiny_b64_image()}, page_nums=[0], progress=None
         )
         assert booster.calls == 0
-        assert pages == {0: [([0.1, 0.1, 0.9, 0.2], "")]}
+        assert pages == {0: [([0.1, 0.1, 0.9, 0.2], "")]}  # type: ignore[comparison-overlap]
 
     async def test_apply_recall_without_booster_returns_surya_boxes(self) -> None:
         # T6: the if-guard degrades to the Surya boxes instead of asserting.

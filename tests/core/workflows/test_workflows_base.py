@@ -32,62 +32,62 @@ def _engine(
 
 
 def test_cross_page_merge_joins_unterminated_tail_into_next_page() -> None:
-    pages: dict[int, list[tuple[list[float], str]]] = {
-        0: [([0.0, 0.0, 1.0, 0.1], "Hello world")],
-        1: [([0.0, 0.0, 1.0, 0.1], "continues here")],
+    pages: dict[int, list[tuple[tuple[float, float, float, float], str]]] = {
+        0: [((0.0, 0.0, 1.0, 0.1), "Hello world")],
+        1: [((0.0, 0.0, 1.0, 0.1), "continues here")],
     }
     _engine()._cross_page_merge(pages, [0, 1])
-    assert pages[0][0] == ([0.0, 0.0, 1.0, 0.1], "")
-    assert pages[1][0] == ([0.0, 0.0, 1.0, 0.1], "Hello world continues here")
+    assert pages[0][0] == ((0.0, 0.0, 1.0, 0.1), "")
+    assert pages[1][0] == ((0.0, 0.0, 1.0, 0.1), "Hello world continues here")
 
 
 def test_cross_page_merge_does_not_join_terminated_sentence() -> None:
-    pages: dict[int, list[tuple[list[float], str]]] = {
-        0: [([0.0, 0.0, 1.0, 0.1], "Sentence ends.")],
-        1: [([0.0, 0.0, 1.0, 0.1], "New sentence.")],
+    pages: dict[int, list[tuple[tuple[float, float, float, float], str]]] = {
+        0: [((0.0, 0.0, 1.0, 0.1), "Sentence ends.")],
+        1: [((0.0, 0.0, 1.0, 0.1), "New sentence.")],
     }
     _engine()._cross_page_merge(pages, [0, 1])
-    assert pages[0][0] == ([0.0, 0.0, 1.0, 0.1], "Sentence ends.")
-    assert pages[1][0] == ([0.0, 0.0, 1.0, 0.1], "New sentence.")
+    assert pages[0][0] == ((0.0, 0.0, 1.0, 0.1), "Sentence ends.")
+    assert pages[1][0] == ((0.0, 0.0, 1.0, 0.1), "New sentence.")
 
 
 def test_cross_page_merge_handles_single_page() -> None:
-    pages: dict[int, list[tuple[list[float], str]]] = {
-        0: [([0.0, 0.0, 1.0, 0.1], "Only one")],
+    pages: dict[int, list[tuple[tuple[float, float, float, float], str]]] = {
+        0: [((0.0, 0.0, 1.0, 0.1), "Only one")],
     }
     _engine()._cross_page_merge(pages, [0])
-    assert pages[0][0] == ([0.0, 0.0, 1.0, 0.1], "Only one")
+    assert pages[0][0] == ((0.0, 0.0, 1.0, 0.1), "Only one")
 
 
 def test_cross_page_merge_skips_blank_tail_box() -> None:
-    pages: dict[int, list[tuple[list[float], str]]] = {
+    pages: dict[int, list[tuple[tuple[float, float, float, float], str]]] = {
         0: [
-            ([0.0, 0.0, 1.0, 0.1], "Sentence."),
-            ([0.0, 0.0, 1.0, 0.1], "  "),
+            ((0.0, 0.0, 1.0, 0.1), "Sentence."),
+            ((0.0, 0.0, 1.0, 0.1), "  "),
         ],
-        1: [([0.0, 0.0, 1.0, 0.1], "Next page")],
+        1: [((0.0, 0.0, 1.0, 0.1), "Next page")],
     }
     _engine()._cross_page_merge(pages, [0, 1])
     # The terminated sentence is untouched; the blank box is too.
-    assert pages[0][0] == ([0.0, 0.0, 1.0, 0.1], "Sentence.")
-    assert pages[0][1] == ([0.0, 0.0, 1.0, 0.1], "  ")
-    assert pages[1][0] == ([0.0, 0.0, 1.0, 0.1], "Next page")
+    assert pages[0][0] == ((0.0, 0.0, 1.0, 0.1), "Sentence.")
+    assert pages[0][1] == ((0.0, 0.0, 1.0, 0.1), "  ")
+    assert pages[1][0] == ((0.0, 0.0, 1.0, 0.1), "Next page")
 
 
 def test_cross_page_merge_skips_blank_head_box() -> None:
     """If the next page's first non-blank box isn't its literal first, find it."""
-    pages: dict[int, list[tuple[list[float], str]]] = {
-        0: [([0.0, 0.0, 1.0, 0.1], "Trailing")],
+    pages: dict[int, list[tuple[tuple[float, float, float, float], str]]] = {
+        0: [((0.0, 0.0, 1.0, 0.1), "Trailing")],
         1: [
-            ([0.0, 0.0, 1.0, 0.1], "  "),
-            ([0.0, 0.0, 1.0, 0.1], "real head"),
+            ((0.0, 0.0, 1.0, 0.1), "  "),
+            ((0.0, 0.0, 1.0, 0.1), "real head"),
         ],
     }
     _engine()._cross_page_merge(pages, [0, 1])
-    assert pages[0][0] == ([0.0, 0.0, 1.0, 0.1], "")
+    assert pages[0][0] == ((0.0, 0.0, 1.0, 0.1), "")
     # The merge targets the first non-blank head box.
-    assert pages[1][1] == ([0.0, 0.0, 1.0, 0.1], "Trailing real head")
-    assert pages[1][0] == ([0.0, 0.0, 1.0, 0.1], "  ")
+    assert pages[1][1] == ((0.0, 0.0, 1.0, 0.1), "Trailing real head")
+    assert pages[1][0] == ((0.0, 0.0, 1.0, 0.1), "  ")
 
 
 class _IdentityProcessor(DocumentProcessor):
@@ -131,8 +131,8 @@ class TestBuildDocumentResult:
         )
 
         engine = _engine()
-        pages_data: dict[int, list[tuple[list[float], str]]] = {
-            0: [([0.0, 0.0, 1.0, 0.1], "teh"), ([0.0, 0.0, 1.0, 0.1], "")],
+        pages_data: dict[int, list[tuple[tuple[float, float, float, float], str]]] = {
+            0: [((0.0, 0.0, 1.0, 0.1), "teh"), ((0.0, 0.0, 1.0, 0.1), "")],
         }
 
         result = await engine._build_document_result(
@@ -140,7 +140,7 @@ class TestBuildDocumentResult:
             page_nums=[0],
             source_path="in.pdf",
             source_processor="test",
-            spellcheck="en-US",
+            spellcheck="en-US",  # type: ignore[arg-type]
             cross_page=False,
         )
 
@@ -150,16 +150,16 @@ class TestBuildDocumentResult:
 
     async def test_applies_cross_page_merge_in_place(self) -> None:
         engine = _engine()
-        pages_data: dict[int, list[tuple[list[float], str]]] = {
-            0: [([0.0, 0.0, 1.0, 0.1], "Trailing")],
-            1: [([0.0, 0.0, 1.0, 0.1], "head")],
+        pages_data: dict[int, list[tuple[tuple[float, float, float, float], str]]] = {
+            0: [((0.0, 0.0, 1.0, 0.1), "Trailing")],
+            1: [((0.0, 0.0, 1.0, 0.1), "head")],
         }
         result = await engine._build_document_result(
             pages_data=pages_data,
             page_nums=[0, 1],
             source_path="in.pdf",
             source_processor="test",
-            spellcheck="none",
+            spellcheck="none",  # type: ignore[arg-type]
             cross_page=True,
         )
         # cross_page merge mutates pages_data AND the emitted DocumentResult.
@@ -169,31 +169,31 @@ class TestBuildDocumentResult:
         assert result.pages[1].blocks[0].text == "Trailing head"
 
     async def test_runs_document_processors(self) -> None:
-        engine = _engine(document_processors=[_IdentityProcessor()])
-        pages_data: dict[int, list[tuple[list[float], str]]] = {
-            0: [([0.0, 0.0, 1.0, 0.1], "hello")],
+        engine = _engine(document_processors=[_IdentityProcessor()])  # type: ignore[abstract]
+        pages_data: dict[int, list[tuple[tuple[float, float, float, float], str]]] = {
+            0: [((0.0, 0.0, 1.0, 0.1), "hello")],
         }
         result = await engine._build_document_result(
             pages_data=pages_data,
             page_nums=[0],
             source_path="in.pdf",
             source_processor="test",
-            spellcheck="none",
+            spellcheck="none",  # type: ignore[arg-type]
             cross_page=False,
         )
         assert result.pages[0].metadata.get("identity_processor") is True
 
     async def test_overlays_page_metadata(self) -> None:
         engine = _engine()
-        pages_data: dict[int, list[tuple[list[float], str]]] = {
-            0: [([0.0, 0.0, 1.0, 0.1], "x")],
+        pages_data: dict[int, list[tuple[tuple[float, float, float, float], str]]] = {
+            0: [((0.0, 0.0, 1.0, 0.1), "x")],
         }
         result = await engine._build_document_result(
             pages_data=pages_data,
             page_nums=[0],
             source_path="in.pdf",
             source_processor="test",
-            spellcheck="none",
+            spellcheck="none",  # type: ignore[arg-type]
             cross_page=False,
             page_metadata_overlays={0: {"preprocessing": {"deskewed": True}}},
         )
@@ -216,7 +216,7 @@ class TestEmit:
 
         engine = _WriterEngine(output_writer=writer)
         result_doc = DocumentResult.from_pages_data(
-            {0: [([0.0, 0.0, 1.0, 0.1], "line one")], 1: [([0.0, 0.1, 1.0, 0.2], "")]}
+            {0: [((0.0, 0.0, 1.0, 0.1), "line one")], 1: [((0.0, 0.1, 1.0, 0.2), "")]}
         )
 
         pages_text = await engine._emit(
@@ -245,7 +245,7 @@ class TestEmit:
             pass
 
         engine = _WriterEngine(output_writer=_noop_writer)
-        result_doc = DocumentResult.from_pages_data({0: [([0.0, 0.0, 1.0, 0.1], "x")]})
+        result_doc = DocumentResult.from_pages_data({0: [((0.0, 0.0, 1.0, 0.1), "x")]})
         await engine._emit(
             input_path="in.pdf",
             output_path="out.pdf",
@@ -271,7 +271,7 @@ class TestEmit:
                 self,
                 input_path: str,
                 output_pdf_path: str,
-                document_result,  # type: ignore[no-untyped-def]
+                document_result,
                 dpi: int,
                 page_nums=None,
             ) -> None:
@@ -284,7 +284,7 @@ class TestEmit:
 
         real_to_pages = DocumentResult.to_pages_data
 
-        def _spy_to_pages(self):  # type: ignore[no-untyped-def]
+        def _spy_to_pages(self):
             to_pages_calls["n"] += 1
             return real_to_pages(self)
 
@@ -295,10 +295,10 @@ class TestEmit:
         result_doc = DocumentResult.from_pages_data(
             {
                 0: [
-                    ([0.0, 0.0, 1.0, 0.1], "alpha"),
-                    ([0.0, 0.1, 1.0, 0.2], "  "),  # whitespace-only → filtered
+                    ((0.0, 0.0, 1.0, 0.1), "alpha"),
+                    ((0.0, 0.1, 1.0, 0.2), "  "),  # whitespace-only → filtered
                 ],
-                1: [([0.0, 0.0, 1.0, 0.1], "beta")],
+                1: [((0.0, 0.0, 1.0, 0.1), "beta")],
             }
         )
         DocumentResult.to_pages_data = _spy_to_pages  # type: ignore[method-assign]

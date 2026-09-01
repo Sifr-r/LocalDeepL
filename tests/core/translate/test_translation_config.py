@@ -153,7 +153,7 @@ def test_translation_settings_post_init_validation() -> None:
         TranslationSettings(max_length_ratio=0.5)
 
     with pytest.raises(ValueError, match="max_length_ratio must be a number"):
-        TranslationSettings(max_length_ratio=False)  # type: ignore
+        TranslationSettings(max_length_ratio=False)
 
     with pytest.raises(ValueError, match=r"acceptance_score must be a number"):
         TranslationSettings(acceptance_score=None)  # type: ignore
@@ -165,10 +165,10 @@ def test_translation_settings_post_init_validation() -> None:
 
     # bool is a subclass of int in Python — guard against it passing as 1.0/0 silently.
     with pytest.raises(ValueError, match="max_attempts must be an integer"):
-        TranslationSettings(max_attempts=True)  # type: ignore
+        TranslationSettings(max_attempts=True)
 
     with pytest.raises(ValueError, match="min_length_ratio must be a number"):
-        TranslationSettings(min_length_ratio=False)  # type: ignore
+        TranslationSettings(min_length_ratio=False)
 
 
 def test_translation_settings_from_mapping_validation() -> None:

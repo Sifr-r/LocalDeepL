@@ -57,7 +57,7 @@ async def test_prune_once_delegates_to_state_backend() -> None:
     ctx, service = await _mount()
     fake = _FakeState()
     ctx.service(StateBackend, fake)
-    await service.prune_once()
+    await service.prune_once()  # type: ignore[attr-defined]
     assert len(fake.artifact_prunes) == 1
     assert len(fake.channel_prunes) == 1
     await ctx.dispose()
@@ -65,7 +65,8 @@ async def test_prune_once_delegates_to_state_backend() -> None:
 
 async def test_prune_once_without_backend_is_a_skip() -> None:
     ctx, service = await _mount()
-    await service.prune_once()  # no StateBackend registered — must not raise
+    # no StateBackend registered — must not raise; ignored below
+    await service.prune_once()  # type: ignore[attr-defined]
     await ctx.dispose()
 
 

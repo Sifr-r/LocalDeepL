@@ -113,7 +113,7 @@ def test_embedder_font_probe_logs_warning(
         with patch.object(
             embedder.fitz, "open", side_effect=RuntimeError("simulated probe failure")
         ):
-            result = embedder_helpers._font_preserves_codepoints(_StubFont())
+            result = embedder_helpers._font_preserves_codepoints(_StubFont())  # type: ignore[arg-type]
 
     assert result is True, "font probe fallback should return True on probe failure"
     assert any(

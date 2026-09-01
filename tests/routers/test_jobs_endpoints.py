@@ -80,9 +80,7 @@ def test_result_failures_are_indistinguishable(
     submit = api_client.post("/api/process/async", **upload())
     job_id = submit.json()["job_id"]
     wait_status(api_client, job_id, "complete")
-    bad_token = api_client.get(
-        f"/api/jobs/{job_id}/result", params={"token": "nope"}
-    )
+    bad_token = api_client.get(f"/api/jobs/{job_id}/result", params={"token": "nope"})
     assert (bad_token.status_code, bad_token.json()["detail"]) == expected
 
     # 3. No token at all against a real, complete job.

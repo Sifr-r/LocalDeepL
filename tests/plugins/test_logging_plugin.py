@@ -41,4 +41,4 @@ async def test_logging_plugin_registers_no_service() -> None:
 
 async def test_bad_format_fails_schema() -> None:
     with pytest.raises(ValueError):
-        logging_plugin.LoggingSchema(format="yaml")
+        logging_plugin.LoggingSchema(format="yaml")  # type: ignore[arg-type]

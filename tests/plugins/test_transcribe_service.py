@@ -33,8 +33,8 @@ class _FakeStore:
             pass
 
         handle = _Handle()
-        handle.id = artifact_id
-        handle.token = token
+        handle.id = artifact_id  # type: ignore[attr-defined]
+        handle.token = token  # type: ignore[attr-defined]
         return handle
 
     async def get(self, artifact_id: str, token: str) -> Any:
@@ -43,8 +43,8 @@ class _FakeStore:
             return None
 
         class _Blob:
-            blob = entry[1]
-            content_type = entry[2]
+            blob = entry[1]  # type: ignore[index]
+            content_type = entry[2]  # type: ignore[index]
             record = None
 
         return _Blob()
@@ -103,7 +103,7 @@ async def test_transcribe_happy_path_stores_artifacts(
         file_bytes=b"fake-audio",
         filename="clip.wav",
         content_type="audio/wav",
-        store=store,
+        store=store,  # type: ignore[arg-type]
         config=_config(),
     )
     assert result["text"] == "hello world"
@@ -145,7 +145,7 @@ async def test_transcribe_resolves_form_over_config_over_defaults(
         file_bytes=b"x",
         filename="a.mp3",
         content_type="audio/mpeg",
-        store=_FakeStore(),
+        store=_FakeStore(),  # type: ignore[arg-type]
         config={"transcription_model": "config-model"},
     )
     assert factory_calls[0]["model"] == "custom-model"
@@ -164,7 +164,7 @@ async def test_transcribe_ssrf_checks_override_only(
             file_bytes=b"x",
             filename="a.wav",
             content_type="audio/wav",
-            store=_FakeStore(),
+            store=_FakeStore(),  # type: ignore[arg-type]
             config=_config(),
         )
     assert excinfo.value.status_code == 403
@@ -180,7 +180,7 @@ async def test_transcribe_bad_extension_maps_to_400(
             file_bytes=b"%PDF-1.4",
             filename="doc.pdf",
             content_type="application/pdf",
-            store=_FakeStore(),
+            store=_FakeStore(),  # type: ignore[arg-type]
             config=_config(),
         )
     assert excinfo.value.status_code == 400
@@ -208,7 +208,7 @@ async def test_transcribe_engine_error_maps_to_503(
             file_bytes=b"x",
             filename="a.wav",
             content_type="audio/wav",
-            store=_FakeStore(),
+            store=_FakeStore(),  # type: ignore[arg-type]
             config=_config(),
         )
     assert excinfo.value.status_code == 503
@@ -232,7 +232,7 @@ async def test_transcribe_unexpected_error_maps_to_502(
             file_bytes=b"x",
             filename="a.wav",
             content_type="audio/wav",
-            store=_FakeStore(),
+            store=_FakeStore(),  # type: ignore[arg-type]
             config=_config(),
         )
     assert excinfo.value.status_code == 502

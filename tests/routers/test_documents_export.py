@@ -29,7 +29,7 @@ def _seed_artifact(
     content_type: str = "application/json",
 ) -> tuple[str, str]:
     """Seed one artifact through the app's StateBackend (no events emitted)."""
-    backend = api_client.app.state.context.inject(StateBackend)
+    backend = api_client.app.state.context.inject(StateBackend)  # type: ignore[attr-defined]
     artifact_id = uuid.uuid4().hex
     token = secrets.token_urlsafe(32)
     asyncio.run(

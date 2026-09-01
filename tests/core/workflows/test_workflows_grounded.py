@@ -218,7 +218,7 @@ class TestGroundedExecute:
                 ]
             )
         )
-        engine = _engine(backend=backend, document_processors=[_TaggingProcessor()])
+        engine = _engine(backend=backend, document_processors=[_TaggingProcessor()])  # type: ignore[abstract]
 
         await engine.execute("in.pdf", "out.pdf", dpi=150)
 

@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 
 def _open_session(api_client: TestClient) -> dict[str, str]:
-    return api_client.post("/api/progress/session", json={}).json()
+    return api_client.post("/api/progress/session", json={}).json()  # type: ignore[no-any-return]
 
 
 def test_ws_first_frame_auth_receives_connected(api_client: TestClient) -> None:

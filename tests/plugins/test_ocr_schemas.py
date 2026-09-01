@@ -35,7 +35,7 @@ def _frontend_form_fields() -> dict[str, str]:
 
 
 def test_parses_frontend_form_data_field_set() -> None:
-    request = OCRRequest(**_frontend_form_fields())
+    request = OCRRequest(**_frontend_form_fields())  # type: ignore[arg-type]
     assert request.model == "allenai/olmocr-2-7b"
     assert request.pipeline_mode == "hybrid"
     assert request.document_processors == ["reading_order", "table_extraction"]
@@ -59,31 +59,33 @@ def test_dense_mode_aliases_map_onto_core_spellings() -> None:
 
 def test_unknown_document_processor_is_rejected() -> None:
     with pytest.raises(ValidationError, match="unknown document processor"):
-        OCRRequest(document_processors="reading_order,bogus_processor")
+        OCRRequest(document_processors="reading_order,bogus_processor")  # type: ignore[arg-type]
 
 
 def test_quality_loop_bounds_are_enforced() -> None:
     request = OCRRequest(
-        quality_loop_enabled="false", quality_target="0.9", quality_max_retries="4"
+        quality_loop_enabled="false",  # type: ignore[arg-type]
+        quality_target="0.9",  # type: ignore[arg-type]
+        quality_max_retries="4",  # type: ignore[arg-type]
     )
     assert request.quality_loop_enabled is False
     assert request.quality_target == pytest.approx(0.9)
     assert request.quality_max_retries == 4
     with pytest.raises(ValidationError):
-        OCRRequest(quality_target="1.5")
+        OCRRequest(quality_target="1.5")  # type: ignore[arg-type]
     with pytest.raises(ValidationError):
-        OCRRequest(quality_target="0.4")
+        OCRRequest(quality_target="0.4")  # type: ignore[arg-type]
     with pytest.raises(ValidationError):
-        OCRRequest(quality_max_retries="6")
+        OCRRequest(quality_max_retries="6")  # type: ignore[arg-type]
 
 
 def test_preprocessing_enabled_master_flag_wins() -> None:
-    assert OCRRequest(preprocess_pages="true").preprocessing_enabled is True
+    assert OCRRequest(preprocess_pages="true").preprocessing_enabled is True  # type: ignore[arg-type]
     assert (
-        OCRRequest(preprocess_pages="false", denoise="true").preprocessing_enabled
+        OCRRequest(preprocess_pages="false", denoise="true").preprocessing_enabled  # type: ignore[arg-type]
         is False
     )
-    assert OCRRequest(denoise="true").preprocessing_enabled is True
+    assert OCRRequest(denoise="true").preprocessing_enabled is True  # type: ignore[arg-type]
     assert OCRRequest().preprocessing_enabled is False
 
 

@@ -109,7 +109,7 @@ class TestQualityRepairLoop:
         )
         page_blocks = [((0.0, 0.0, 1.0, 1.0), "Text needing repair")]
         re_ocr = AsyncMock(
-            side_effect=CircuitOpenError("Circuit open for endpoint", retry_after=30.0)
+            side_effect=CircuitOpenError("Circuit open for endpoint", retry_after=30.0)  # type: ignore[arg-type]
         )
 
         with pytest.raises(CircuitOpenError):

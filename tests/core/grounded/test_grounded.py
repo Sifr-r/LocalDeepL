@@ -197,7 +197,7 @@ async def test_grounded_path_preserves_bbox_position(
         wr = fitz.Rect(w[0], w[1], w[2], w[3])
         inter = wr & expected_rect
         assert not inter.is_empty, (
-            f"grounded marker at {list(wr)} outside {list(expected_rect)}"
+            f"grounded marker at {list(wr)} outside {list(expected_rect)}"  # type: ignore[call-overload]
         )
         overlap = inter.get_area() / max(1e-6, wr.get_area())
         assert overlap >= 0.5, f"overlap too low: {overlap:.2f}"

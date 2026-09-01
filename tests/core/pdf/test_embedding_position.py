@@ -49,7 +49,7 @@ def _overlap_ratio(inner: fitz.Rect, outer: fitz.Rect) -> float:
     inter = inner & outer
     if inter.is_empty:
         return 0.0
-    return inter.get_area() / max(1e-6, inner.get_area())
+    return inter.get_area() / max(1e-6, inner.get_area())  # type: ignore[no-any-return]
 
 
 @pytest.fixture
@@ -89,7 +89,7 @@ class TestSingleBoxPosition:
             wr = fitz.Rect(w[0], w[1], w[2], w[3])
             overlap = _overlap_ratio(wr, rect)
             assert overlap >= 0.5, (
-                f"{marker} at {list(wr)} poorly overlaps bbox {list(rect)} "
+                f"{marker} at {list(wr)} poorly overlaps bbox {list(rect)} "  # type: ignore[call-overload]
                 f"(overlap={overlap:.2f})"
             )
 
@@ -104,9 +104,9 @@ class TestMultiBoxIsolation:
         output_pdf = str(tmp_path / "three_box.pdf")
 
         layout = [
-            ([0.10, 0.10, 0.40, 0.14], "ALPHAWORD"),
-            ([0.10, 0.30, 0.40, 0.34], "BETAWORD"),
-            ([0.10, 0.60, 0.40, 0.64], "GAMMAWORD"),
+            ((0.10, 0.10, 0.40, 0.14), "ALPHAWORD"),
+            ((0.10, 0.30, 0.40, 0.34), "BETAWORD"),
+            ((0.10, 0.60, 0.40, 0.64), "GAMMAWORD"),
         ]
         pdf_handler.embed_structured_text(
             input_pdf,
@@ -474,7 +474,7 @@ class TestFullBboxCoverage:
         pdf_handler.embed_structured_text(
             input_pdf,
             output_pdf,
-            {0: [([0.0, 0.0, 1.0, 1.0], joined)]},
+            {0: [((0.0, 0.0, 1.0, 1.0), joined)]},
             dpi=150,
         )
 

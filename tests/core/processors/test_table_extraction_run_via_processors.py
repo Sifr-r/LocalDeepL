@@ -24,11 +24,11 @@ from omniscribe.core.processors.base import _bbox_area
 # `row_tolerance=0.018` (default) buckets them correctly.
 _GRID_BLOCKS = {
     0: [
-        ([0.1, 0.02, 0.8, 0.08], "Report Header"),  # header, not a cell
-        ([0.1, 0.2, 0.3, 0.24], "Name"),
-        ([0.4, 0.2, 0.6, 0.24], "Total"),
-        ([0.1, 0.3, 0.3, 0.34], "A"),
-        ([0.4, 0.3, 0.6, 0.34], "$1"),
+        ((0.1, 0.02, 0.8, 0.08), "Report Header"),  # header, not a cell
+        ((0.1, 0.2, 0.3, 0.24), "Name"),
+        ((0.4, 0.2, 0.6, 0.24), "Total"),
+        ((0.1, 0.3, 0.3, 0.34), "A"),
+        ((0.4, 0.3, 0.6, 0.34), "$1"),
     ],
 }
 
@@ -64,7 +64,7 @@ async def test_table_extraction_skips_pages_without_grid():
     over-constructs TableNode for sparse pages.
     """
     document = DocumentResult.from_pages_data(
-        {0: [([0.1, 0.1, 0.5, 0.2], "Just a paragraph.")]}
+        {0: [((0.1, 0.1, 0.5, 0.2), "Just a paragraph.")]}
     )
 
     result = await run_document_processors(document, [TableExtractionProcessor()])
@@ -84,12 +84,12 @@ async def test_table_extraction_handles_tree_with_fewer_pages_than_document():
     """
     document = DocumentResult.from_pages_data(
         {
-            0: [([0.1, 0.1, 0.5, 0.2], "Header")],
+            0: [((0.1, 0.1, 0.5, 0.2), "Header")],
             1: [
-                ([0.1, 0.2, 0.3, 0.24], "A"),
-                ([0.4, 0.2, 0.6, 0.24], "B"),
-                ([0.1, 0.3, 0.3, 0.34], "1"),
-                ([0.4, 0.3, 0.6, 0.34], "2"),
+                ((0.1, 0.2, 0.3, 0.24), "A"),
+                ((0.4, 0.2, 0.6, 0.24), "B"),
+                ((0.1, 0.3, 0.3, 0.34), "1"),
+                ((0.4, 0.3, 0.6, 0.34), "2"),
             ],
         }
     )

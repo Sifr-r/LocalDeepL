@@ -49,7 +49,7 @@ class TestFitPlattIdentityBaseline:
         # Sanity — the function returns ``(a, b)`` floats, never NaN.
         raw = [0.1, 0.5, 0.9]
         targets = [0.1, 0.5, 0.9]
-        a, b = fit_platt(raw, targets)
+        a, b = fit_platt(raw, targets)  # type: ignore[misc]
         assert isinstance(a, float)
         assert isinstance(b, float)
         assert math.isfinite(a)
@@ -64,7 +64,7 @@ class TestFitPlattIdentityBaseline:
         # 0.5 (the identity-calibrated midpoint).
         raw = [0.0, 0.25, 0.5, 0.75, 1.0]
         targets = list(raw)
-        a, b = fit_platt(raw, targets)
+        a, b = fit_platt(raw, targets)  # type: ignore[misc]
         calibrated = [sigmoid(a * r + b) for r in raw]
         # Monotonic in raw.
         for prev, cur in zip(calibrated, calibrated[1:], strict=False):
@@ -89,7 +89,7 @@ class TestFitPlattImprovesOverIdentity:
         targets = [
             max(0.0, min(1.0, 0.6 * r + 0.2 + 0.02 * math.sin(37 * r))) for r in raw
         ]
-        a, b = fit_platt(raw, targets)
+        a, b = fit_platt(raw, targets)  # type: ignore[misc]
 
         def calibrated(values: list[float]) -> list[float]:
             return [sigmoid(a * v + b) for v in values]
@@ -128,14 +128,14 @@ class TestFitPlattEdgeCases:
         # A single ``(raw, target)`` pair is degenerate but must not
         # crash — gradient descent with no curvature just returns the
         # initialisation.
-        a, b = fit_platt([0.5], [0.5])
+        a, b = fit_platt([0.5], [0.5])  # type: ignore[misc]
         assert math.isfinite(a) and math.isfinite(b)
 
     def test_empty_inputs(self):
         # Empty input is also degenerate — we accept any finite pair
         # rather than raising, since callers may filter records before
         # calling us.
-        a, b = fit_platt([], [])
+        a, b = fit_platt([], [])  # type: ignore[misc]
         assert math.isfinite(a) and math.isfinite(b)
 
     def test_extreme_target_distribution(self):
@@ -143,7 +143,7 @@ class TestFitPlattEdgeCases:
         # on positive raw. The fit must converge without NaN.
         raw = [0.0, 0.5, 1.0]
         targets = [1.0, 1.0, 1.0]
-        a, b = fit_platt(raw, targets)
+        a, b = fit_platt(raw, targets)  # type: ignore[misc]
         assert math.isfinite(a) and math.isfinite(b)
         for v in [0.1, 0.5, 0.9]:
             assert 0.0 <= sigmoid(a * v + b) <= 1.0

@@ -225,8 +225,8 @@ class _FakeStore:
             return None
 
         class _Blob:
-            blob = entry[1]
-            content_type = entry[2]
+            blob = entry[1]  # type: ignore[index]
+            content_type = entry[2]  # type: ignore[index]
 
         return _Blob()
 

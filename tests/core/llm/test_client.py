@@ -258,7 +258,7 @@ class TestCallVlm:
 
             assert result == "OCR result text"
             mock_complete.assert_awaited_once()
-            call_kwargs = mock_complete.await_args.kwargs
+            call_kwargs = mock_complete.await_args.kwargs  # type: ignore[union-attr]
             assert call_kwargs["prompt"] == "Read this crop"
             assert call_kwargs["image_base64"] == "b64data"
             assert call_kwargs["model"] == "qwen-vl"
@@ -292,7 +292,7 @@ class TestCallVlm:
                 model="claude-3-5-sonnet",
             )
             assert result == "Transcribed document"
-            call_kwargs = mock_complete.await_args.kwargs
+            call_kwargs = mock_complete.await_args.kwargs  # type: ignore[union-attr]
             assert call_kwargs["provider_config"] is cfg
 
     async def test_call_vlm_without_config_or_api_base_raises(self) -> None:
@@ -325,7 +325,7 @@ class TestCallLlm:
 
             assert result == "Chat response text"
             mock_complete.assert_awaited_once()
-            call_kwargs = mock_complete.await_args.kwargs
+            call_kwargs = mock_complete.await_args.kwargs  # type: ignore[union-attr]
             assert call_kwargs["prompt"] == "Translate this sentence"
             assert call_kwargs["image_base64"] is None
             assert call_kwargs["model"] == "llama-3.1-8b"
@@ -348,7 +348,7 @@ class TestCallLlm:
             )
 
             assert result == "Vision response"
-            call_kwargs = mock_complete.await_args.kwargs
+            call_kwargs = mock_complete.await_args.kwargs  # type: ignore[union-attr]
             assert call_kwargs["prompt"] == "Describe image"
             assert call_kwargs["image_base64"] == "img123"
             assert call_kwargs["max_tokens"] == 1024
@@ -372,7 +372,7 @@ class TestCallLlm:
                 provider_config=cfg,
             )
             assert result == "Local response"
-            call_kwargs = mock_complete.await_args.kwargs
+            call_kwargs = mock_complete.await_args.kwargs  # type: ignore[union-attr]
             assert call_kwargs["provider_config"] is cfg
 
     async def test_call_llm_without_config_or_api_base_raises(self) -> None:

@@ -34,7 +34,7 @@ def _make_processor(**env: str) -> OCRProcessor:
             os.environ[key] = value
         return OCRProcessor(api_base="http://test.local/v1", api_key="x", model="mock")
     finally:
-        for key, value in previous.items():
+        for key, value in previous.items():  # type: ignore[assignment]
             if value is None:
                 os.environ.pop(key, None)
             else:

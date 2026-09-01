@@ -37,7 +37,7 @@ def _build_tree_with_n_blocks(n: int, text_prefix: str = "block") -> DocumentTre
         page.children.append(
             BlockNode(
                 block_type=BlockType.PARAGRAPH,
-                bbox=[0.0, 0.0, 1.0, 0.1],
+                bbox=(0.0, 0.0, 1.0, 0.1),
                 text=f"{text_prefix} {i}",
                 page_idx=0,
             )
@@ -110,25 +110,25 @@ async def test_translate_tree_skips_emit_for_empty_text_blocks():
                 children=[
                     BlockNode(
                         block_type=BlockType.PARAGRAPH,
-                        bbox=[0.0, 0.0, 1.0, 0.1],
+                        bbox=(0.0, 0.0, 1.0, 0.1),
                         text="real text",
                         page_idx=0,
                     ),
                     BlockNode(
                         block_type=BlockType.PARAGRAPH,
-                        bbox=[0.0, 0.0, 1.0, 0.1],
+                        bbox=(0.0, 0.0, 1.0, 0.1),
                         text="   ",  # whitespace only — skip
                         page_idx=0,
                     ),
                     BlockNode(
                         block_type=BlockType.PAGE_HEADER,
-                        bbox=[0.0, 0.0, 1.0, 0.1],
+                        bbox=(0.0, 0.0, 1.0, 0.1),
                         text="page header",
                         page_idx=0,
                     ),
                     BlockNode(
                         block_type=BlockType.PARAGRAPH,
-                        bbox=[0.0, 0.0, 1.0, 0.1],
+                        bbox=(0.0, 0.0, 1.0, 0.1),
                         text="second real text",
                         page_idx=0,
                     ),
@@ -169,7 +169,7 @@ async def test_translate_tree_with_no_callback_is_a_noop():
     )
 
     # The tree got translated.
-    assert tree.pages[0].children[0].text == "fixed"
-    assert tree.pages[0].children[1].text == "fixed"
+    assert tree.pages[0].children[0].text == "fixed"  # type: ignore[union-attr]
+    assert tree.pages[0].children[1].text == "fixed"  # type: ignore[union-attr]
     # The metadata side-effect is also present.
-    assert tree.pages[0].children[0].metadata["translation"] == "fixed"
+    assert tree.pages[0].children[0].metadata["translation"] == "fixed"  # type: ignore[union-attr]

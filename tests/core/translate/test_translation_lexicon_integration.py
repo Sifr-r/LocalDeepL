@@ -58,7 +58,7 @@ def fake_model() -> EmbeddingModel:
 
 
 @pytest.fixture(autouse=True)
-def _reset_store_cache() -> None:
+def _reset_store_cache() -> None:  # type: ignore[misc]
     """Each test gets a fresh default store cache."""
     reset_default_store()
     yield
@@ -80,7 +80,7 @@ def test_retrieve_returns_empty_when_no_store() -> None:
             "source_chunk": "Translate this.",
             "target_language": "French",
         }
-        result = retrieve_lexicon_context(state)  # type: ignore[arg-type]
+        result = retrieve_lexicon_context(state)
     assert result == {"rag_context": []}
 
 
@@ -97,7 +97,7 @@ def test_retrieve_works_with_empty_store(
             "source_chunk": "Hello world.",
             "target_language": "French",
         }
-        result = retrieve_lexicon_context(state)  # type: ignore[arg-type]
+        result = retrieve_lexicon_context(state)
     assert result == {"rag_context": []}
 
 
@@ -135,7 +135,7 @@ def test_retrieve_returns_hits_when_store_has_data(
             "source_chunk": "dog",
             "target_language": "fr",
         }
-        result = retrieve_lexicon_context(state)  # type: ignore[arg-type]
+        result = retrieve_lexicon_context(state)
     assert len(result["rag_context"]) >= 1
     # The first hit should be the exact "dog" entry
     assert result["rag_context"][0] == "- dog -> chien"
@@ -181,7 +181,7 @@ def test_retrieve_filters_by_language_pair(
             "source_lang": "en",
             "target_lang": "fr",
         }
-        result = retrieve_lexicon_context(state)  # type: ignore[arg-type]
+        result = retrieve_lexicon_context(state)
     # Should have a hit, and it should be the EN-FR one (not ES-PT).
     assert all("chien" in line for line in result["rag_context"])
 

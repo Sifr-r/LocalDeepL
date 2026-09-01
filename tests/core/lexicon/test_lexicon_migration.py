@@ -319,7 +319,7 @@ def test_auto_migrate_if_needed_fail_open(tmp_path: Path) -> None:
         def embed_batch(self, texts: list[str]) -> list[list[float]]:
             raise RuntimeError("nope")
 
-    report = auto_migrate_if_needed(tmp_path, embedding_model=_Broken())  # type: ignore[arg-type]
+    report = auto_migrate_if_needed(tmp_path, embedding_model=_Broken())
     assert report.error is not None
     # Should NOT raise — the hook is fail-open.
 

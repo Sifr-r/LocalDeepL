@@ -227,7 +227,7 @@ def test_convert_batches_peak_memory_is_bounded_by_batch_size(
     tracemalloc.start()
     batched: list[list[tuple[int, object, str]]] = []
     for batch in convert_batches(input_pdf, batch_size=1, dpi=150, max_image_dim=512):
-        batched.append(batch)
+        batched.append(batch)  # type: ignore[arg-type]
     batched_snapshot = tracemalloc.take_snapshot()
     batched_peak = sum(stat.size for stat in batched_snapshot.statistics("filename"))
     del batched
@@ -258,7 +258,7 @@ async def test_hybrid_engine_convert_pages_uses_batched_streaming(
             self.batch_calls = 0
             self.eager_calls = 0
 
-        def convert_batches(self, source, **kwargs):  # type: ignore[override]
+        def convert_batches(self, source, **kwargs):
             self.batch_calls += 1
             return super().convert_batches(source, **kwargs)
 

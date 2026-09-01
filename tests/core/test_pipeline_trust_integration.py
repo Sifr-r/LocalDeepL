@@ -78,7 +78,7 @@ class _StubPDF:
         return {i: _make_tiny_b64_image() for i in range(self.n_pages)}
 
     def embed_structured_text(self, inp, out, pages, dpi):
-        self.last_pages = dict(pages)
+        self.last_pages = dict(pages)  # type: ignore[assignment]
 
 
 class _StubGroundedBackend:
@@ -92,7 +92,7 @@ class _StubGroundedBackend:
             blocks.append(
                 GroundedBlock(
                     page_index=page_index,
-                    bbox=[0.1, 0.1, 0.9, 0.2],
+                    bbox=(0.1, 0.1, 0.9, 0.2),  # type: ignore[arg-type]
                     text="stub grounded line",
                     label="text",
                     image_bytes=None,
@@ -159,7 +159,7 @@ def test_build_trust_orchestrator_returns_default_impl():
     orch = build_trust_orchestrator(settings)
     assert isinstance(orch, TrustOrchestrator)
     # Bound settings should be reachable for inspection.
-    assert orch.settings is settings
+    assert orch.settings is settings  # type: ignore[attr-defined]
 
 
 # ---------------------------------------------------------------------------
@@ -250,7 +250,7 @@ class TestGroundedEngineTrustWiring:
             aligner=None,
             ocr_processor=None,
             pdf_handler=_StubPDF(n_pages=2),
-            grounded_backend=backend,
+            grounded_backend=backend,  # type: ignore[arg-type]
         )
         await pipe.run("in.pdf", "out.pdf")
         for page in pipe.last_document_result.pages:
@@ -265,7 +265,7 @@ class TestGroundedEngineTrustWiring:
             aligner=None,
             ocr_processor=None,
             pdf_handler=_StubPDF(n_pages=2),
-            grounded_backend=backend,
+            grounded_backend=backend,  # type: ignore[arg-type]
             trust_orchestrator=orchestrator,
         )
         await pipe.run("in.pdf", "out.pdf", trust_model_id="grounded-model")
@@ -321,7 +321,7 @@ class TestEngineBaseTrustField:
                     page_index=0,
                     blocks=[
                         DocumentBlock(
-                            bbox=[0.1, 0.1, 0.9, 0.2],
+                            bbox=(0.1, 0.1, 0.9, 0.2),
                             text="hello",
                         )
                     ],

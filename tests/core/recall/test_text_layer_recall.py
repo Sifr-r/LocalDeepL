@@ -280,9 +280,9 @@ class TestHybridTextLayerRecall:
         source = _TLStub(extras_by_page={0: [(0.1, 0.5, 0.9, 0.55)]})
         aligner = _StubAligner(boxes_per_page=[(0.1, 0.1, 0.9, 0.2)])
         engine = HybridEngine(
-            aligner=aligner,
-            ocr_processor=_StubOCR(),
-            pdf_handler=_StubPDF(),
+            aligner=aligner,  # type: ignore[arg-type]
+            ocr_processor=_StubOCR(),  # type: ignore[arg-type]
+            pdf_handler=_StubPDF(),  # type: ignore[arg-type]
             output_writer=_noop_writer,
             text_layer_recall=source,  # type: ignore[arg-type]
         )
@@ -314,9 +314,9 @@ class TestHybridTextLayerRecall:
         source = _TLStub(extras_by_page={0: [(0.1, 0.5, 0.9, 0.55)]}, enabled=False)
         aligner = _StubAligner(boxes_per_page=[(0.1, 0.1, 0.9, 0.2)])
         engine = HybridEngine(
-            aligner=aligner,
-            ocr_processor=_StubOCR(),
-            pdf_handler=_StubPDF(),
+            aligner=aligner,  # type: ignore[arg-type]
+            ocr_processor=_StubOCR(),  # type: ignore[arg-type]
+            pdf_handler=_StubPDF(),  # type: ignore[arg-type]
             output_writer=_noop_writer,
             text_layer_recall=source,  # type: ignore[arg-type]
         )
@@ -366,9 +366,9 @@ class TestHybridTextLayerRecall:
             boxes_per_page=[(0.1, 0.1, 0.9, 0.2), (0.1, 0.3, 0.9, 0.4)]
         )
         engine = HybridEngine(
-            aligner=aligner,
-            ocr_processor=_StubOCR(),
-            pdf_handler=_StubPDF(n_pages=2),
+            aligner=aligner,  # type: ignore[arg-type]
+            ocr_processor=_StubOCR(),  # type: ignore[arg-type]
+            pdf_handler=_StubPDF(n_pages=2),  # type: ignore[arg-type]
             output_writer=_noop_writer,
             text_layer_recall=source,  # type: ignore[arg-type]
         )
@@ -401,9 +401,9 @@ class TestHybridTextLayerRecall:
         source = _TLStub()
         aligner = _StubAligner(boxes_per_page=[(0.1, 0.1, 0.9, 0.2)])
         engine = HybridEngine(
-            aligner=aligner,
-            ocr_processor=_StubOCR(),
-            pdf_handler=_StubPDF(),
+            aligner=aligner,  # type: ignore[arg-type]
+            ocr_processor=_StubOCR(),  # type: ignore[arg-type]
+            pdf_handler=_StubPDF(),  # type: ignore[arg-type]
             output_writer=_noop_writer,
             recall_booster=_BoosterStubTL(booster_extra),  # type: ignore[arg-type]
             text_layer_recall=source,  # type: ignore[arg-type]
@@ -439,8 +439,8 @@ class TestHybridTextLayerRecall:
 
         engine = HybridEngine(
             aligner=_EmptyAligner(),  # type: ignore[arg-type]
-            ocr_processor=_StubOCR(),
-            pdf_handler=_StubPDF(),
+            ocr_processor=_StubOCR(),  # type: ignore[arg-type]
+            pdf_handler=_StubPDF(),  # type: ignore[arg-type]
             output_writer=_noop_writer,
             text_layer_recall=PdfTextLayerRecall(),
         )

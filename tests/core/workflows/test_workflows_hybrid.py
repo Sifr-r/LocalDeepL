@@ -32,9 +32,9 @@ def _engine(
 ) -> HybridEngine:
     """Construct a HybridEngine wired to the standard stubs."""
     return HybridEngine(
-        aligner=aligner or _StubAligner(),
-        ocr_processor=ocr or _StubOCR(),
-        pdf_handler=pdf or _StubPDF(),
+        aligner=aligner or _StubAligner(),  # type: ignore[arg-type]
+        ocr_processor=ocr or _StubOCR(),  # type: ignore[arg-type]
+        pdf_handler=pdf or _StubPDF(),  # type: ignore[arg-type]
         output_writer=_noop_writer,
     )
 
@@ -89,11 +89,11 @@ class TestHybridConvertPages:
         from omniscribe.core.imaging.page_preprocess import PagePreprocessingOptions
 
         engine = HybridEngine(
-            aligner=_StubAligner(),
-            ocr_processor=_StubOCR(),
-            pdf_handler=_StubPDF(n_pages=2),
+            aligner=_StubAligner(),  # type: ignore[arg-type]
+            ocr_processor=_StubOCR(),  # type: ignore[arg-type]
+            pdf_handler=_StubPDF(n_pages=2),  # type: ignore[arg-type]
             output_writer=_noop_writer,
-            page_preprocessor=preprocessor,  # type: ignore[arg-type]
+            page_preprocessor=preprocessor,
         )
         _, _, metadata = await engine._convert_pages(
             input_path="in.pdf",
@@ -141,7 +141,7 @@ class TestHybridDetectLayout:
         pages_structured = await engine._detect_layout(
             images_dict=images, page_nums=[0], progress=None
         )
-        assert pages_structured == {
+        assert pages_structured == {  # type: ignore[comparison-overlap]
             0: [([0.1, 0.1, 0.9, 0.2], ""), ([0.1, 0.3, 0.9, 0.4], "")]
         }
 
@@ -280,7 +280,7 @@ class TestHybridDecodedCache:
 
         await engine._ocr_pages(
             images_dict=images,
-            pages_structured=pages_structured,
+            pages_structured=pages_structured,  # type: ignore[arg-type]
             page_nums=[0, 1],
             per_box_pages={0, 1},
             concurrency=2,
@@ -332,7 +332,7 @@ class TestHybridDecodedCache:
         pages_structured = {0: [([0.1, 0.1, 0.5, 0.2], "")] * 2}
 
         await engine._refine_pages(
-            pages_structured=pages_structured,
+            pages_structured=pages_structured,  # type: ignore[arg-type]
             images_dict=images,
             page_nums=[0],
             per_box_pages=set(),
@@ -464,7 +464,7 @@ class TestHybridSelectDensePages:
         engine = _engine()
         structured = self._structured({0: 5, 1: 2})
         result = engine._select_dense_pages(
-            pages_structured=structured,
+            pages_structured=structured,  # type: ignore[arg-type]
             page_nums=[0, 1],
             dense_mode="auto",
             dense_threshold=3,
@@ -475,7 +475,7 @@ class TestHybridSelectDensePages:
         engine = _engine()
         structured = self._structured({0: 3, 1: 1})
         result = engine._select_dense_pages(
-            pages_structured=structured,
+            pages_structured=structured,  # type: ignore[arg-type]
             page_nums=[0, 1],
             dense_mode="auto",
             dense_threshold=3,
@@ -486,7 +486,7 @@ class TestHybridSelectDensePages:
         engine = _engine()
         structured = self._structured({0: 1, 1: 2})
         result = engine._select_dense_pages(
-            pages_structured=structured,
+            pages_structured=structured,  # type: ignore[arg-type]
             page_nums=[0, 1],
             dense_mode="always",
             dense_threshold=999,
@@ -509,7 +509,7 @@ class TestHybridOCRPages:
 
         await engine._ocr_pages(
             images_dict=images,
-            pages_structured=pages_structured,
+            pages_structured=pages_structured,  # type: ignore[arg-type]
             page_nums=[0],
             per_box_pages=set(),
             concurrency=1,
@@ -533,7 +533,7 @@ class TestHybridOCRPages:
 
         await engine._ocr_pages(
             images_dict=images,
-            pages_structured=pages_structured,
+            pages_structured=pages_structured,  # type: ignore[arg-type]
             page_nums=[0],
             per_box_pages={0},
             concurrency=2,
@@ -564,7 +564,7 @@ class TestHybridOCRPages:
 
         await engine._ocr_pages(
             images_dict=images,
-            pages_structured=pages_structured,
+            pages_structured=pages_structured,  # type: ignore[arg-type]
             page_nums=[0],
             per_box_pages=set(),
             concurrency=1,
@@ -595,7 +595,7 @@ class TestHybridOCRPages:
 
         await engine._ocr_pages(
             images_dict=images,
-            pages_structured=pages_structured,
+            pages_structured=pages_structured,  # type: ignore[arg-type]
             page_nums=[0],
             per_box_pages=set(),
             concurrency=1,
@@ -627,7 +627,7 @@ class TestHybridOCRPages:
         with pytest.raises(CircuitOpenError):
             await engine._ocr_pages(
                 images_dict=images,
-                pages_structured=pages_structured,
+                pages_structured=pages_structured,  # type: ignore[arg-type]
                 page_nums=[0],
                 per_box_pages=set(),
                 concurrency=2,
@@ -655,7 +655,7 @@ class TestHybridOCRPages:
         with pytest.raises(CircuitOpenError):
             await engine._ocr_pages(
                 images_dict=images,
-                pages_structured=pages_structured,
+                pages_structured=pages_structured,  # type: ignore[arg-type]
                 page_nums=[0],
                 per_box_pages={0},
                 concurrency=2,
@@ -680,7 +680,7 @@ class TestHybridRefinePages:
         pages_structured = {0: [([0.1, 0.1, 0.9, 0.2], "")] * 3}
 
         await engine._refine_pages(
-            pages_structured=pages_structured,
+            pages_structured=pages_structured,  # type: ignore[arg-type]
             images_dict=images,
             page_nums=[0],
             per_box_pages={0},
@@ -702,7 +702,7 @@ class TestHybridRefinePages:
         pages_structured = {0: [([0.1, 0.1, 0.9, 0.2], "")] * 3}
 
         await engine._refine_pages(
-            pages_structured=pages_structured,
+            pages_structured=pages_structured,  # type: ignore[arg-type]
             images_dict=images,
             page_nums=[0],
             per_box_pages=set(),
@@ -730,7 +730,7 @@ class TestHybridRefinePages:
 
         with pytest.raises(CircuitOpenError):
             await engine._refine_pages(
-                pages_structured=pages_structured,
+                pages_structured=pages_structured,  # type: ignore[arg-type]
                 images_dict=images,
                 page_nums=[0],
                 per_box_pages=set(),
@@ -755,7 +755,7 @@ class TestHybridRefinePages:
         }
 
         await engine._refine_pages(
-            pages_structured=pages_structured,
+            pages_structured=pages_structured,  # type: ignore[arg-type]
             images_dict=images,
             page_nums=[0],
             per_box_pages=set(),
@@ -782,10 +782,10 @@ class TestHybridFinalize:
         await engine._finalize(
             input_path="in.pdf",
             output_path="out.pdf",
-            pages_structured=pages_structured,
+            pages_structured=pages_structured,  # type: ignore[arg-type]
             page_nums=[0],
             preprocessing_metadata={},
-            spellcheck="none",
+            spellcheck="none",  # type: ignore[arg-type]
             cross_page=False,
             quality_routing_options=QualityRoutingOptions(enabled=True),
             dpi=150,
@@ -795,7 +795,7 @@ class TestHybridFinalize:
         assert engine.last_document_result is not None
         routing = engine.last_document_result.pages[0].metadata.get("routing")
         assert routing is not None
-        assert routing["enabled"] is True
+        assert routing["enabled"] is True  # type: ignore[index]
 
     async def test_quality_routing_skipped_when_disabled(self) -> None:
         engine = _engine()
@@ -804,17 +804,17 @@ class TestHybridFinalize:
         await engine._finalize(
             input_path="in.pdf",
             output_path="out.pdf",
-            pages_structured=pages_structured,
+            pages_structured=pages_structured,  # type: ignore[arg-type]
             page_nums=[0],
             preprocessing_metadata={},
-            spellcheck="none",
+            spellcheck="none",  # type: ignore[arg-type]
             cross_page=False,
             quality_routing_options=QualityRoutingOptions(enabled=False),
             dpi=150,
             progress=None,
         )
 
-        routing = engine.last_document_result.pages[0].metadata.get("routing")
+        routing = engine.last_document_result.pages[0].metadata.get("routing")  # type: ignore[union-attr]
         assert routing is None
 
     async def test_quality_routing_skipped_when_options_none(self) -> None:
@@ -825,17 +825,17 @@ class TestHybridFinalize:
         await engine._finalize(
             input_path="in.pdf",
             output_path="out.pdf",
-            pages_structured=pages_structured,
+            pages_structured=pages_structured,  # type: ignore[arg-type]
             page_nums=[0],
             preprocessing_metadata={},
-            spellcheck="none",
+            spellcheck="none",  # type: ignore[arg-type]
             cross_page=False,
             quality_routing_options=None,
             dpi=150,
             progress=None,
         )
 
-        routing = engine.last_document_result.pages[0].metadata.get("routing")
+        routing = engine.last_document_result.pages[0].metadata.get("routing")  # type: ignore[union-attr]
         assert routing is None
         # Writer was still called.
         assert engine.last_document_result is not None

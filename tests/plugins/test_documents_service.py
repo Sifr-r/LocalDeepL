@@ -158,14 +158,14 @@ async def test_run_extraction_valid_json(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr(documents_service, "call_llm", fake_call_llm)
     result = await documents_service.run_extraction(
-        ExtractionRequest(text="Invoice from Acme, total 10 USD.", template="invoice"),
+        ExtractionRequest(text="Invoice from Acme, total 10 USD.", template="invoice"),  # type: ignore[arg-type]
         _settings(),
     )
     assert result == {"vendor_name": "Acme"}
     assert captured["model"] == "test-model"
     assert captured["api_base"] == "http://localhost:1234/v1"
     assert captured["system_prompt"] == documents_service.EXTRACTION_SYSTEM_MESSAGE
-    prompt = captured["messages"][0]["content"]
+    prompt = captured["messages"][0]["content"]  # type: ignore[index]
     assert "'invoice_number'" in prompt
     assert "Invoice from Acme" in prompt
 
