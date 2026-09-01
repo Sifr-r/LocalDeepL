@@ -1,6 +1,7 @@
 # OmniScribe — Outstanding Work
 
 **Consolidated:** 2026-08-31
+**Updated:** 2026-09-01 (Wave 1 + CI gate)
 **Sources:** `docs/audits/2026-08-30-pedantic-review.md` (rev. 2026-08-31),
 `docs/superpowers/specs/2026-08-31-ocr-upload-content-type-bypass-fix-design.md`,
 the deferred Medium/Low backlog of the 2026-08-29 five-domain audit, and
@@ -13,10 +14,13 @@ remain recoverable in git history (last present at `0dd79aa`).
 
 ---
 
-## 1. Immediate: commit the in-progress Wave 1 remediation
+## 1. ~~Immediate: commit the in-progress Wave 1 remediation~~ — **CLOSED (51fa7fa, 2026-08-31)**
 
-The working tree (uncommitted as of consolidation) contains fixes closing
-six pedantic findings, plus their tests and doc reconciliation:
+The working tree (uncommitted as of consolidation) contained fixes closing
+six pedantic findings, plus their tests and doc reconciliation. All six
+landed in commit `51fa7fa` ("plugin", Mon 2026-08-31 21:56) but the doc
+was never updated to mark them closed. Fixed as part of the 2026-09-01
+CI-gate pass.
 
 | Closes | Change | Files |
 |---|---|---|
