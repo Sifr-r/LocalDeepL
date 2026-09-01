@@ -23,6 +23,14 @@ from unittest.mock import patch
 
 import pytest
 
+# The translation graph's lexicon integration pulls in the LanceDB-backed
+# LexiconStore, which transitively imports ``pyarrow`` and ``lancedb`` at
+# module load. Both are optional extras; skip the whole module when the
+# CI environment doesn't have them (matches the pattern in
+# ``tests/core/lexicon/test_lexicon_*.py``).
+pytest.importorskip("pyarrow")
+pytest.importorskip("lancedb")
+
 from omniscribe.core.lexicon import (
     LanceDBLexiconStore,
     reset_default_store,
