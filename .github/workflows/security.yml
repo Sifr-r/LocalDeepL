@@ -55,7 +55,7 @@ jobs:
     steps:
       # Action refs are SHA-pinned (audit P3-12); bump with
       # `gh api repos/<owner>/<repo>/git/ref/tags/<tag>`.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Run Semgrep
         # `--error` makes the exit code non-zero on any finding so
