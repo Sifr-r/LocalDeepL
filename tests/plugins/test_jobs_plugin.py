@@ -243,6 +243,43 @@ async def test_shutdown_cancels_queued_jobs_beyond_one_page(
         await ctx.dispose()
 
 
+async def test_shutdown_cancels_thousands_of_queued_jobs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Audit 5.5: shutdown must walk the full queued list, not just the
+    visible page. With 1500 queued jobs (well past the previous 1000-job
+    stress) the paginated walk must cancel every record in a bounded
+    time budget.
+    """
+    ctx = await _boot()
+    try:
+        queue = ctx.inject(JobQueue)
+        backend = ctx.inject(sb.StateBackend)
+        total = 1500
+        for i in range(total):
+            await backend.upsert_job(JobRecord(job_id=f"j{i}", status="queued"))
+
+        real_list = backend.list_jobs
+
+        async def small_page(**kwargs: Any) -> list[JobRecord]:
+            kwargs["limit"] = 100  # tiny page so we exercise many iterations
+            return await real_list(**kwargs)  # type: ignore[no-any-return]
+
+        monkeypatch.setattr(backend, "list_jobs", small_page)
+
+        start = time.monotonic()
+        await queue.shutdown()
+        elapsed = time.monotonic() - start
+
+        records = await real_list(limit=total + 10)
+        statuses = {r.status for r in records}
+        assert statuses == {"cancelled"}, f"expected all cancelled, got {statuses}"
+        # 15 small pages of 100 rows; generous bound to keep CI stable.
+        assert elapsed < 10.0, f"shutdown took {elapsed:.2f}s for {total} jobs"
+    finally:
+        await ctx.dispose()
+
+
 async def test_missing_artifact_store_fails_loud() -> None:
     ctx = Context()
     await ctx.plugin(sb.StateBackendPlugin(), config={"backend": "memory"})

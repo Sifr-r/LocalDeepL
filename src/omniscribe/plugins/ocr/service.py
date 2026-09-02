@@ -143,10 +143,19 @@ def _sanitize_job_error(error: str | None) -> str | None:
 
 @dataclass(frozen=True)
 class _OcrPayload:
-    """Everything the async worker needs for one queued upload."""
+    """Everything the async worker needs for one queued upload.
+
+    Audit 2.8: the previous version held the full upload ``file_bytes`` in
+    the dataclass, so the queue and the in-flight job kept the original
+    upload AND the result PDF in heap memory for the whole job lifetime.
+    The bytes are now streamed to a per-job ``input_path`` at submit time
+    and the path is what the worker reads. Memory is bounded by the
+    concurrent on-disk upload count, not by the queue depth times the
+    average upload size.
+    """
 
     submission_id: str
-    file_bytes: bytes
+    input_path: Path
     filename: str
     request: OCRRequest
 
@@ -281,7 +290,16 @@ class OCRServiceImpl:
     async def run_sync(
         self, options: OCRRequest, blob: bytes, filename: str
     ) -> Response:
-        pdf_bytes, pages_data = await self._execute(options, blob, filename, job_id="")
+        # Audit 2.8: the sync path also streams the upload to disk before
+        # calling ``_execute`` so the worker reuses one file-write instead
+        # of holding the bytes on the heap for the OCR duration.
+        suffix = Path(filename).suffix or ".pdf"
+        work_dir = Path(tempfile.mkdtemp(prefix="omniscribe-ocr-"))
+        input_path = work_dir / f"input{suffix}"
+        input_path.write_bytes(blob)
+        pdf_bytes, pages_data = await self._execute(
+            options, input_path, filename, job_id=""
+        )
         text_handle = await self._artifacts.put(
             json.dumps(
                 {str(idx): "\n".join(lines) for idx, lines in pages_data.items()}
@@ -302,9 +320,17 @@ class OCRServiceImpl:
         self, options: OCRRequest, blob: bytes, filename: str
     ) -> AsyncSubmitResponse:
         submission_id = secrets.token_hex(16)
+        # Audit 2.8: stream the upload to a per-job tempfile so the queue
+        # payload only carries a path, not the bytes. ``run_job`` reads
+        # the file and ``run_sync`` shares the same per-job directory so
+        # the worker can re-use the already-written bytes.
+        suffix = Path(filename).suffix or ".pdf"
+        work_dir = Path(tempfile.mkdtemp(prefix="omniscribe-ocr-"))
+        input_path = work_dir / f"input{suffix}"
+        input_path.write_bytes(blob)
         payload = _OcrPayload(
             submission_id=submission_id,
-            file_bytes=blob,
+            input_path=input_path,
             filename=filename,
             request=options,
         )
@@ -319,8 +345,17 @@ class OCRServiceImpl:
             },
         )
         self._submission_to_job[submission_id] = handle.job_id
-        while len(self._submission_to_job) > self._max_buffered_jobs:
-            self._submission_to_job.pop(next(iter(self._submission_to_job)), None)
+        # Audit 2.6: the inline insertion-order trim on every submit
+        # duplicated the ``prune()`` eviction policy with conflicting
+        # timing. ``prune()`` is the single source of truth for bounding
+        # ``_submission_to_job`` alongside the other per-job state, and it
+        # is invoked explicitly at shutdown. Drop the inline trim and let
+        # ``prune()`` (called from ``record_event`` on terminal events via
+        # ``_prune_events_if_needed`` and from ``shutdown``) handle the
+        # bound. ``max_buffered_jobs`` therefore bounds all per-job maps
+        # uniformly; ``_submission_to_job`` may briefly exceed the cap
+        # between submits, but the next terminal event / shutdown closes
+        # the gap.
         return AsyncSubmitResponse(
             job_id=handle.job_id, status="pending", status_url=handle.status_url
         )
@@ -332,7 +367,7 @@ class OCRServiceImpl:
         job_id = self._submission_to_job.get(payload.submission_id, "")
         cancel_check = self._cancel_check(job_id, payload.request.progress_channel)
         pdf_bytes, _ = await self._execute(
-            payload.request, payload.file_bytes, payload.filename, job_id=job_id
+            payload.request, payload.input_path, payload.filename, job_id=job_id
         )
         if cancel_check is not None and cancel_check():
             raise OCRCancelled(f"job {job_id} cancelled")
@@ -341,16 +376,17 @@ class OCRServiceImpl:
     async def _execute(
         self,
         options: OCRRequest,
-        blob: bytes,
+        input_path: Path,
         filename: str,
         *,
         job_id: str,
     ) -> tuple[bytes, dict[int, list[str]]]:
-        work_dir = Path(tempfile.mkdtemp(prefix="omniscribe-ocr-"))
-        input_path = work_dir / f"input{Path(filename).suffix or '.pdf'}"
+        # Audit 2.8: input_path is the already-written per-job tempfile
+        # (see ``submit`` and ``run_sync``). The worker re-uses the same
+        # directory; the output PDF is written alongside it.
+        work_dir = input_path.parent
         output_path = work_dir / "output.pdf"
         try:
-            input_path.write_bytes(blob)
             channel = options.progress_channel
             pipeline = build_pipeline(self._settings, options)
             pages_data = await run_pipeline(

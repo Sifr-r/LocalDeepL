@@ -24,12 +24,14 @@ from omniscribe.core.transcription import (
     validate_audio_input,
 )
 from omniscribe.plugins.artifacts import ArtifactStore
-from omniscribe.plugins.transcribe.config_store import (  # noqa: F401
-    TRANSCRIPTION_FALLBACK_MODELS,
+
+# Audit 9.13: only the actually-used names are imported; the previous
+# wholesale ``noqa: F401`` was hiding dead names. ``TRANSCRIPTION_FALLBACK_MODELS``,
+# ``extract_model_ids_from_response``, and ``mask_api_key`` live in ``config_store``
+# and are imported directly by the test suite / external callers as needed.
+from omniscribe.plugins.transcribe.config_store import (
     TranscriptionConfigStore,
     discover_transcription_models,
-    extract_model_ids_from_response,
-    mask_api_key,
 )
 from omniscribe.plugins.transcribe.schemas import (
     TranscribeRequest,
@@ -56,6 +58,23 @@ class TranscribeError(Exception):
         self.detail = detail
 
 
+def _resolve_optional_str(
+    request_value: Any,
+    config: Mapping[str, Any],
+    config_key: str,
+    *,
+    default: str = "",
+) -> str | None:
+    """Audit 9.11: flatten the form-or-config-or-default-or-None funnel.
+
+    Picks the first non-empty value among (request, config, default),
+    coerces to str, and returns None for the empty string so downstream
+    engines can treat the unset case uniformly.
+    """
+    raw = request_value or config.get(config_key, default)
+    return str(raw) if raw else None
+
+
 def resolve_engine_settings(
     request: TranscribeRequest, config: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -67,12 +86,15 @@ def resolve_engine_settings(
             request.api_base
             or config.get("transcription_api_base", DEFAULT_TRANSCRIPTION_API_BASE)
         ),
-        "api_key": str(request.api_key or config.get("transcription_api_key", ""))
-        or None,
-        "language": str(request.language or config.get("transcription_language") or "")
-        or None,
-        "prompt": str(request.prompt or config.get("transcription_prompt") or "")
-        or None,
+        "api_key": _resolve_optional_str(
+            request.api_key, config, "transcription_api_key"
+        ),
+        "language": _resolve_optional_str(
+            request.language, config, "transcription_language"
+        ),
+        "prompt": _resolve_optional_str(
+            request.prompt, config, "transcription_prompt"
+        ),
         "temperature": request.temperature,
     }
 

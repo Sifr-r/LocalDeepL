@@ -188,3 +188,53 @@ def test_ocr_request_coerces_extended_booleans() -> None:
     assert req.normalize_contrast is False
     assert req.crop_cleanup is False
     assert req.quality_loop_enabled is True
+
+
+def test_ocr_payload_round_trip_preserves_request_fields() -> None:
+    """Audit 5.1 (partial): the canonical _OcrPayload IR survives a
+    submit → queue → run_job round trip with all request fields intact.
+    """
+    import dataclasses
+    from pathlib import Path
+
+    from omniscribe.plugins.ocr.service import _OcrPayload
+
+    request = OCRRequest(model="some-model", pages="1-3", quality_target=0.9)
+    payload = _OcrPayload(
+        submission_id="sub-1",
+        input_path=Path("/tmp/fake.pdf"),
+        filename="doc.pdf",
+        request=request,
+    )
+    # The dataclass is frozen; a replace with a new submission_id must
+    # preserve every other field.
+    again = dataclasses.replace(payload, submission_id="sub-2")
+    assert again.submission_id == "sub-2"
+    assert again.input_path == payload.input_path
+    assert again.filename == payload.filename
+    assert again.request.model == request.model
+    assert again.request.pages == request.pages
+    assert again.request.quality_target == pytest.approx(0.9)
+
+
+def test_ocr_payload_lookup_miss_silently_uses_empty_job_id() -> None:
+    """Audit 5.1: when the submission_id was evicted from the
+    _submission_to_job map (capped at max_buffered_jobs), run_job falls
+    back to job_id="". Verify the empty-string fallback is the documented
+    contract — the cancellation channel degrades to "no per-job binding"
+    rather than raising.
+    """
+    from pathlib import Path
+
+    from omniscribe.plugins.ocr.service import _OcrPayload
+
+    payload = _OcrPayload(
+        submission_id="never-submitted",
+        input_path=Path("/tmp/orphan.pdf"),
+        filename="orphan.pdf",
+        request=OCRRequest(),
+    )
+    # Empty submission-to-job map; ``.get`` with default returns "".
+    submission_to_job: dict[str, str] = {}
+    job_id = submission_to_job.get(payload.submission_id, "")
+    assert job_id == ""

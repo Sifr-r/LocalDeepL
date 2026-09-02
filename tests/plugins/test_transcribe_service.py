@@ -246,11 +246,11 @@ async def test_transcribe_unexpected_error_maps_to_502(
 
 
 def test_mask_api_key_matches_old_behavior() -> None:
-    assert transcribe_service.mask_api_key(None) is None
-    assert transcribe_service.mask_api_key("") == ""
-    assert transcribe_service.mask_api_key("lm-studio") == "lm-studio"
-    assert transcribe_service.mask_api_key("short") == "********"
-    assert transcribe_service.mask_api_key("abcd1234wxyz") == "abcd...wxyz"
+    assert config_store.mask_api_key(None) is None
+    assert config_store.mask_api_key("") == ""
+    assert config_store.mask_api_key("lm-studio") == "lm-studio"
+    assert config_store.mask_api_key("short") == "********"
+    assert config_store.mask_api_key("abcd1234wxyz") == "abcd...wxyz"
 
 
 def test_config_store_defaults_and_write_through() -> None:
@@ -296,15 +296,15 @@ async def test_discover_models_falls_back_on_bad_endpoint(
     models = await transcribe_service.discover_transcription_models(
         "http://localhost:1234/v1", None
     )
-    assert models == transcribe_service.TRANSCRIPTION_FALLBACK_MODELS
+    assert models == config_store.TRANSCRIPTION_FALLBACK_MODELS
 
 
 def test_extract_model_ids_handles_openai_and_ollama() -> None:
     openai = {"data": [{"id": "gpt-4o"}, {"id": "gpt-4o-mini"}]}
     ollama = {"models": [{"name": "llama3"}]}
-    assert transcribe_service.extract_model_ids_from_response(openai) == [
+    assert config_store.extract_model_ids_from_response(openai) == [
         "gpt-4o",
         "gpt-4o-mini",
     ]
-    assert transcribe_service.extract_model_ids_from_response(ollama) == ["llama3"]
-    assert transcribe_service.extract_model_ids_from_response(None) == []
+    assert config_store.extract_model_ids_from_response(ollama) == ["llama3"]
+    assert config_store.extract_model_ids_from_response(None) == []
