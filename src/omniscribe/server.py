@@ -172,6 +172,18 @@ def create_app() -> ASGIApplication:
         max_age=600,
     )
 
+    # Audit 6.1a: ASGI bearer-token auth on the rebuilt harness route
+    # surface. The startup guard in ``_validate_runtime_settings`` is
+    # the operator-facing backstop (refuses placeholder tokens on
+    # non-loopback binds); this middleware is the request-time gate.
+    # The middleware is a no-op when ``auth_token`` is unset so local
+    # dev and CI keep working without a token.
+    from omniscribe.middleware.auth import BearerAuthMiddleware
+
+    web_app.add_middleware(
+        BearerAuthMiddleware, expected_token=settings.auth_token
+    )
+
     if _STATIC_DIR.is_dir():
         web_app.mount(
             "/static",
