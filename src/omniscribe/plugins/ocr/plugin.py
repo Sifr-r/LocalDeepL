@@ -151,13 +151,22 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
         upload = form.get("file")
         if upload is None or not hasattr(upload, "read"):
             raise HTTPException(status_code=400, detail="missing 'file' field")
-        blob: bytes = await upload.read()
         cap = service._max_upload_mb * 1024 * 1024
-        if len(blob) > cap:
-            raise HTTPException(
-                status_code=413,
-                detail=f"upload exceeds {service._max_upload_mb} MB limit",
-            )
+        chunks: list[bytes] = []
+        total_read = 0
+        chunk_size = 1024 * 1024
+        while True:
+            chunk = await upload.read(chunk_size)
+            if not chunk:
+                break
+            total_read += len(chunk)
+            if total_read > cap:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"upload exceeds {service._max_upload_mb} MB limit",
+                )
+            chunks.append(chunk)
+        blob = b"".join(chunks)
         # H-5 audit fix: validate the upload's content type against
         # the allowlist. FastAPI's ``request.form()`` accepts the
         # multipart ``content_type`` field, which is the per-file
@@ -193,7 +202,7 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
         #     the tempdir is written.
         #   * Typed upload: declared MIME must match the sniffed format.
         head = blob[:12]
-        if content_type == "application/octet-stream":
+        if not content_type or content_type == "application/octet-stream":
             if _sniff_format(head) is None:
                 raise HTTPException(
                     status_code=415,
@@ -342,6 +351,8 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
         )
         if not loaded and detail and "must be configured" in detail:
             return _envelope(400, "bad_request", detail)
+        if not loaded and detail and "SSRF blocked" in detail:
+            return _envelope(403, "ssrf_blocked", detail)
         return PreflightResponse(
             loaded=loaded,
             requested_model=requested,

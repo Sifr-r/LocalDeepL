@@ -591,6 +591,19 @@ class OCRServiceImpl:
                 "api_base and model must be configured before pre-flight",
             )
 
+        if api_base and api_base.strip():
+            from omniscribe.utils.security import check_ssrf_target_sync
+
+            check = check_ssrf_target_sync(api_base.strip())
+            if not check.allowed:
+                return (
+                    False,
+                    resolved_model,
+                    resolved_api_base,
+                    [],
+                    f"SSRF blocked: {check.reason}",
+                )
+
         probe = OCRProcessor(
             api_base=resolved_api_base,
             api_key=resolved_api_key,
@@ -609,14 +622,31 @@ class OCRServiceImpl:
                 )
             # Walk the same listing the processor used so we can echo the
             # server-side model list back to the UI without a second call.
+            from openai import AsyncOpenAI
+
+            list_client = getattr(probe, "client", None)
+            ephemeral_client = False
+            if list_client is None or not isinstance(list_client, AsyncOpenAI):
+                list_client = AsyncOpenAI(
+                    base_url=resolved_api_base,
+                    api_key=resolved_api_key or "lm-studio",
+                )
+                ephemeral_client = True
             try:
                 from omniscribe.core.ocr.client import _list_loaded_model_ids
 
                 loaded_models = list(
-                    await _list_loaded_model_ids(probe.client, resolved_api_base)
+                    await _list_loaded_model_ids(list_client, resolved_api_base)
                 )
             except Exception:
                 loaded_models = []
+            finally:
+                if ephemeral_client:
+                    close_method = getattr(list_client, "close", None)
+                    if callable(close_method):
+                        res = close_method()
+                        if asyncio.iscoroutine(res):
+                            await res
             return (True, resolved_model, resolved_api_base, loaded_models, "")
         finally:
             await probe.aclose()

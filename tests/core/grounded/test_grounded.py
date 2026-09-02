@@ -405,6 +405,38 @@ class TestPromptedGroundedResilience:
         assert "p2" in texts
         assert "p1" not in texts  # page 1 failed silently
 
+    async def test_prompted_grounded_cancels_pending_tasks_on_circuit_break(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import asyncio
+
+        from omniscribe.core.ocr.resilience import CircuitOpenError
+
+        inst = PromptedGroundedOCR(model="fake-model")
+        monkeypatch.setattr(
+            "omniscribe.core.grounded.prompted._rasterize_to_jpeg_pages",
+            lambda *a, **kw: [("img0", 100, 100), ("img1", 100, 100)],
+        )
+
+        cancelled_pages: list[str] = []
+
+        async def fake_call(b64: str, prompt: str | None = None) -> str:
+            if b64 == "img0":
+                raise CircuitOpenError(3, 5.0)
+            try:
+                await asyncio.sleep(5)
+            except asyncio.CancelledError:
+                cancelled_pages.append(b64)
+                raise
+            return "[]"
+
+        monkeypatch.setattr(inst, "_call_with_retry", fake_call)
+
+        with pytest.raises(CircuitOpenError):
+            await inst.ocr_document("fake.pdf")
+
+        assert "img1" in cancelled_pages
+
 
 # --- prompted grounded JSON parser (Qwen2.5-VL / Qwen3-VL response shapes) --
 

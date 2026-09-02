@@ -142,6 +142,22 @@ class TestDropRefinedDuplicates:
         _drop_refined_duplicates(boxes, refined_indices={1})  # type: ignore[arg-type]
         assert boxes[1][1] == ""
 
+    def test_token_boundary_word_matching_preserves_short_words(self):
+        # Short words like "in", "on", "1" must not be blanked out when adjacent to "training", "station"
+        boxes = [
+            (self._box(0), "staff training course"),
+            (self._box(1), "in"),
+        ]
+        _drop_refined_duplicates(boxes, refined_indices={1})  # type: ignore[arg-type]
+        assert boxes[1][1] == "in"
+
+        boxes2 = [
+            (self._box(0), "metro station stop"),
+            (self._box(1), "on"),
+        ]
+        _drop_refined_duplicates(boxes2, refined_indices={1})  # type: ignore[arg-type]
+        assert boxes2[1][1] == "on"
+
     def test_does_not_compare_two_refined_against_each_other(self):
         # Both boxes are refined: each could be a real recovery, even if
         # they happen to OCR identically. Don't drop either — that's the

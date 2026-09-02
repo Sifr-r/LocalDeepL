@@ -82,6 +82,9 @@ def test_extract_query_token_returns_none_for_empty() -> None:
 def test_is_exempt_lists_exact_paths() -> None:
     for path in EXEMPT_EXACT_PATHS:
         assert _is_exempt(path, "GET"), path
+    for path in ("/ready", "/readyz", "/api/healthz"):
+        assert _is_exempt(path, "GET")
+
 
 
 def test_is_exempt_lists_prefix_paths() -> None:
@@ -191,6 +194,14 @@ async def test_middleware_passes_exempt_health_without_token() -> None:
         recorder = await _drive("secret-123", _scope(path=path, method="GET"))
         assert recorder.upstream_called is True, path
         assert recorder.sent_start is None, path
+
+
+async def test_middleware_passes_probes_without_bearer_token() -> None:
+    for path in ("/ready", "/readyz", "/api/healthz"):
+        recorder = await _drive("secret-123", _scope(path=path, method="GET"))
+        assert recorder.upstream_called is True, path
+        assert recorder.sent_start is None, path
+
 
 
 async def test_middleware_passes_static_assets_without_token() -> None:

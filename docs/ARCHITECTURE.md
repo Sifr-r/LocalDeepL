@@ -1022,6 +1022,30 @@ Clean server module logging and settings instantiation, preflight client isolati
 | `src/omniscribe/core/ocr/processor.py` | Isolate `ensure_model_loaded()` client lifecycle using an ephemeral client closed in `finally` without mutating or closing `self.client`; update references to `TestPromptConstants`. |
 | `docs/AGENTS.md` | Reconcile model pre-flight documentation with in-core `ensure_model_loaded()`; document `OMNISCRIBE_VLM_PAGE_MAX_TOKENS` and `OMNISCRIBE_VLM_CROP_MAX_TOKENS` tunables; list `tests/core/ocr/test_ocr.py` in test inventory. |
 
+### 2026-09-02: Wave 12 — Comprehensive Bug Fixes & Architectural Hardening
+
+Comprehensive remediation across authentication, upload streaming, SSRF prevention, network isolation, core pipeline accuracy, and client export/health monitoring:
+
+| File | Responsibility |
+| --- | --- |
+| `src/omniscribe/middleware/auth.py` | Add `/ready`, `/readyz`, and `/api/healthz` to `EXEMPT_EXACT_PATHS` to prevent Kubernetes container readiness/liveness lockout under `OMNISCRIBE_AUTH_TOKEN`. |
+| `src/omniscribe/plugins/ocr/service.py` | Enforce SSRF validation on user-supplied `api_base` in `preflight_check`; safely manage ephemeral client in model listing. |
+| `src/omniscribe/plugins/ocr/plugin.py` | Return HTTP 403 `ssrf_blocked` on blocked preflight requests; stream uploads in 1 MB chunks to bound memory against limits; enforce format sniffing on empty or octet-stream `Content-Type`. |
+| `src/omniscribe/plugins/glossary/http_fetch.py` | Replace process-wide `socket.getaddrinfo` mutation with an isolated `_PinnedNetworkBackend` (`httpcore.AsyncNetworkBackend`) and `_PinnedIPTransport`. |
+| `src/omniscribe/core/workflows/utils.py` | Replace naive substring containment with token boundary word matching in `_drop_refined_duplicates` to prevent erroneous deletion of short tokens. |
+| `src/omniscribe/core/grounded/prompted.py` | Explicitly cancel uncompleted background tasks in `finally` before `asyncio.gather` in `PromptedGroundedOCR.ocr_document`. |
+| `src/omniscribe/core/ocr/processor.py` | Initialize `self.client = None` to avoid creating an unused `AsyncOpenAI` connection pool on each request. |
+| `src/omniscribe/core/ocr/chat_client.py` | Align data URI MIME scheme to `data:image/jpeg;base64,{image_base64}` matching rasterizer output. |
+| `client/lib/presentation/workstation/modals/export_modal.dart` | Decouple `ExportFormat.docxTree` from `ExportFormat.html` and wire to `repo.exportDocxTree`; support saving for `ExportFormat.searchablePdf`. |
+| `client/lib/presentation/shell/shell_state.dart` | Implement `checkHealth()` on `ServerHealthNotifier` to ping `/api/health` via `ApiClient` and measure latency. |
+| `client/lib/presentation/shell/server_health_badge.dart` | Replace simulated timer in badge `onTap` with real `checkHealth()` trigger. |
+| `tests/middleware/test_auth.py` | Add regression tests for container health probe exemptions. |
+| `tests/plugins/test_ocr_schemas.py` | Add tests for preflight SSRF blocking and empty content-type format sniffing. |
+| `tests/core/grounded/test_grounded.py` | Add unit test for task cancellation on grounded failure. |
+| `tests/core/ocr/test_ocr_processor.py` | Add test verifying lazy client initialization and safe `aclose()`. |
+| `tests/core/ocr/test_ocr.py` | Add test verifying JPEG data URI in chat client. |
+| `tests/core/test_pipeline.py` | Add regression test verifying preservation of short words during refine deduplication. |
+
 ## See Also
 
 - [README.md](README.md) — feature overview, install, web workspace
@@ -1031,4 +1055,4 @@ Clean server module logging and settings instantiation, preflight client isolati
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var reference
 - `audits/` — historical and comprehensive domain audit logs
 
-_Last updated: 2026-09-01_
+_Last updated: 2026-09-02_

@@ -10,48 +10,58 @@ via `GlossaryError`.
 
 from __future__ import annotations
 
-import asyncio
-import socket
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
+import httpcore
 import httpx
+from httpcore._backends.auto import AutoBackend
 
 from omniscribe.plugins.glossary.service import GlossaryError
 from omniscribe.utils.security import is_ssrf_target
 
 _MAX_REDIRECTS = 5
 MAX_GLOSSARY_BYTES: int = 50 * 1024 * 1024
-_PIN_LOCK = asyncio.Lock()
+
+
+class _PinnedNetworkBackend(httpcore.AsyncNetworkBackend):
+    """Network backend that redirects TCP connections for a specific host to a pinned IP."""
+
+    def __init__(self, target_host: str, resolved_ip: str) -> None:
+        self._target_host = target_host
+        self._resolved_ip = resolved_ip
+        self._backend: httpcore.AsyncNetworkBackend = AutoBackend()
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Any = None,
+    ) -> httpcore.AsyncNetworkStream:
+        target = self._resolved_ip if host == self._target_host else host
+        return await self._backend.connect_tcp(
+            target,
+            port,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
 
 
 class _PinnedIPTransport(httpx.AsyncHTTPTransport):
-    """httpx transport pinning connections to the SSRF-resolved IP.
+    """httpx transport pinning connections to the SSRF-resolved IP without global socket mutation."""
 
-    The scoped ``getaddrinfo`` swap maps the target host to its validated
-    IP for the duration of one request. A module-level lock serializes
-    pinned fetches so overlapping requests can never restore a stale pin
-    process-wide.
-    """
-
-    def __init__(self, resolved_ip: str) -> None:
-        super().__init__()
-        self._resolved_ip = resolved_ip
-
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        original_getaddrinfo = socket.getaddrinfo
-
-        def _pinned_getaddrinfo(host: Any, *args: Any, **kwargs: Any) -> Any:
-            if host == request.url.host:
-                return original_getaddrinfo(self._resolved_ip, *args, **kwargs)
-            return original_getaddrinfo(host, *args, **kwargs)
-
-        async with _PIN_LOCK:
-            socket.getaddrinfo = _pinned_getaddrinfo
-            try:
-                return await super().handle_async_request(request)
-            finally:
-                socket.getaddrinfo = original_getaddrinfo
+    def __init__(self, target_host: str, resolved_ip: str, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        backend = _PinnedNetworkBackend(target_host, resolved_ip)
+        self._pool = httpcore.AsyncConnectionPool(
+            ssl_context=self._pool._ssl_context,
+            network_backend=backend,
+            http2=self._pool._http2,
+            retries=self._pool._retries,
+        )
 
 
 async def fetch_url_bytes(url: str, *, timeout: float = 30.0) -> bytes:
@@ -69,7 +79,9 @@ async def fetch_url_bytes(url: str, *, timeout: float = 30.0) -> bytes:
         if check.resolved_ip is None:
             raise GlossaryError(403, "ssrf_blocked", "URL resolved to no address.")
 
-        transport = _PinnedIPTransport(resolved_ip=check.resolved_ip)
+        parsed_target = urlparse(current_url)
+        target_host = parsed_target.hostname or ""
+        transport = _PinnedIPTransport(target_host=target_host, resolved_ip=check.resolved_ip)
         client = httpx.AsyncClient(
             transport=transport,
             timeout=timeout,

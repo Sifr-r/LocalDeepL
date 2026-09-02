@@ -264,6 +264,14 @@ class TestProcessorAclose:
         await proc.aclose()  # must not raise
         assert getattr(proc, "client", None) is None
 
+    async def test_init_client_is_none_and_aclose_is_noop(self) -> None:
+        proc = OCRProcessor(
+            api_base="http://test.local/v1", api_key="x", model="mock"
+        )
+        assert proc.client is None
+        await proc.aclose()
+        assert proc.client is None
+
     async def test_aclose_falls_back_to_close(self) -> None:
         from unittest.mock import AsyncMock
 

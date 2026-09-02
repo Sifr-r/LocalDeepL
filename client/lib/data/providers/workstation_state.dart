@@ -42,6 +42,8 @@ class WorkstationState {
     this.scoredBlocks = 0,
     this.trustSummary,
     this.error,
+    this.textArtifactId,
+    this.textArtifactToken,
     // Keyboard shortcut plumbing: bumped each time the AppShell fires
     // Ctrl+O (or any other trigger) so listeners (e.g. the upload dropzone)
     // can react by opening the native file picker. A monotonically
@@ -90,6 +92,8 @@ class WorkstationState {
   final int scoredBlocks;
   final TrustSummary? trustSummary;
   final String? error;
+  final String? textArtifactId;
+  final String? textArtifactToken;
 
   /// Monotonically increasing counter incremented whenever the workstation
   /// should open its native file picker (Ctrl+O shortcut, "Open" toolbar
@@ -229,6 +233,10 @@ class WorkstationState {
     bool clearTrustSummary = false,
     String? error,
     bool clearError = false,
+    String? textArtifactId,
+    bool clearTextArtifactId = false,
+    String? textArtifactToken,
+    bool clearTextArtifactToken = false,
     // Keyboard shortcut plumbing
     int? filePickSignal,
   }) {
@@ -269,6 +277,11 @@ class WorkstationState {
       trustSummary:
           clearTrustSummary ? null : (trustSummary ?? this.trustSummary),
       error: clearError ? null : (error ?? this.error),
+      textArtifactId:
+          clearTextArtifactId ? null : (textArtifactId ?? this.textArtifactId),
+      textArtifactToken: clearTextArtifactToken
+          ? null
+          : (textArtifactToken ?? this.textArtifactToken),
       filePickSignal: filePickSignal ?? this.filePickSignal,
     );
   }
@@ -306,6 +319,8 @@ class WorkstationState {
           scoredBlocks == other.scoredBlocks &&
           trustSummary == other.trustSummary &&
           error == other.error &&
+          textArtifactId == other.textArtifactId &&
+          textArtifactToken == other.textArtifactToken &&
           filePickSignal == other.filePickSignal;
 
   @override
@@ -347,6 +362,8 @@ class WorkstationState {
         scoredBlocks,
         trustSummary,
         error,
+        textArtifactId,
+        textArtifactToken,
         filePickSignal,
       ]);
 }

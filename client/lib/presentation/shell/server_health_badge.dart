@@ -70,15 +70,7 @@ class _ServerHealthBadgeState extends ConsumerState<ServerHealthBadge>
         onExit: (_) => setState(() => _isHovered = false),
         child: GestureDetector(
           onTap: () {
-            // Trigger health check animation
-            ref.read(serverHealthProvider.notifier).setChecking();
-            Future.delayed(const Duration(milliseconds: 600), () {
-              if (mounted) {
-                ref
-                    .read(serverHealthProvider.notifier)
-                    .setOnline(latencyMs: 34);
-              }
-            });
+            ref.read(serverHealthProvider.notifier).checkHealth();
           },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),

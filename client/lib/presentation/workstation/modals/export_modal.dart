@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -69,17 +70,34 @@ class _ExportModalState extends ConsumerState<ExportModal> {
       switch (_selectedFormat) {
         case ExportFormat.searchablePdf:
           if (wsState.loadedBytes != null) {
-            _statusMessage = 'Searchable PDF ready (${(wsState.loadedBytes!.length / 1024).round()} KB).';
+            try {
+              final savePath = await FilePicker.platform.saveFile(
+                fileName: wsState.filename ?? 'searchable_document.pdf',
+                bytes: wsState.loadedBytes,
+              );
+              if (savePath != null) {
+                _statusMessage = 'Searchable PDF saved to $savePath.';
+              } else {
+                _statusMessage =
+                    'Searchable PDF ready (${(wsState.loadedBytes!.length / 1024).round()} KB).';
+              }
+            } catch (_) {
+              _statusMessage =
+                  'Searchable PDF ready (${(wsState.loadedBytes!.length / 1024).round()} KB).';
+            }
             _isSuccess = true;
           } else {
-            _statusMessage = 'PDF not available. Please run OCR processing first.';
+            _statusMessage =
+                'PDF not available. Please run OCR processing first.';
           }
           break;
 
         case ExportFormat.docx:
           final bytes = await repo.exportDocx(
             ExportDocxRequest(
-              text: docText.isNotEmpty ? docText : (wsState.filename ?? 'Document text'),
+              text: docText.isNotEmpty
+                  ? docText
+                  : (wsState.filename ?? 'Document text'),
             ),
           );
           _statusMessage = 'Exported DOCX successfully (${bytes.length} bytes).';
@@ -87,6 +105,24 @@ class _ExportModalState extends ConsumerState<ExportModal> {
           break;
 
         case ExportFormat.docxTree:
+          if (wsState.textArtifactId != null &&
+              wsState.textArtifactToken != null) {
+            final bytes = await repo.exportDocxTree(
+              ExportBlockTreeRequest(
+                textArtifactId: wsState.textArtifactId!,
+                textArtifactToken: wsState.textArtifactToken!,
+              ),
+            );
+            _statusMessage =
+                'Exported DOCX Tree successfully (${bytes.length} bytes).';
+            _isSuccess = true;
+          } else {
+            _statusMessage =
+                'Text artifact not available. Please run OCR processing first.';
+            _isSuccess = false;
+          }
+          break;
+
         case ExportFormat.html:
           // Build self-contained HTML representation of recognized pages and bboxes
           final rawTitle = wsState.filename ?? 'OmniScribe Export';
@@ -164,39 +200,43 @@ class _ExportModalState extends ConsumerState<ExportModal> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: colors.brand.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Center(
-                        child: Icon(Icons.file_download_outlined,
-                            size: 18, color: colors.brand),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Export Document',
-                          style: AppTypography.titleMedium(
-                            color: colors.textPrimary,
-                          ),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: colors.brand.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
                         ),
-                        Text(
-                          'Convert and download recognized document data',
-                          style: AppTypography.bodySmall(
-                            color: colors.textMuted,
-                          ),
+                        child: Center(
+                          child: Icon(Icons.file_download_outlined,
+                              size: 18, color: colors.brand),
                         ),
-                      ],
-                    ),
-                  ],
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Export Document',
+                              style: AppTypography.titleMedium(
+                                color: colors.textPrimary,
+                              ),
+                            ),
+                            Text(
+                              'Convert and download recognized document data',
+                              style: AppTypography.bodySmall(
+                                color: colors.textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 IconButton(
                   icon: Icon(Icons.close_rounded, size: 20, color: colors.textMuted),

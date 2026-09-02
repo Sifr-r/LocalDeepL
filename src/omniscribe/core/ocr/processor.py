@@ -175,7 +175,7 @@ class OCRProcessor:
         )
         self.api_key: str = api_key or settings.llm_api_key or "lm-studio"
         self.model: str = model or settings.llm_model or "allenai/olmocr-2-7b"
-        self.client = AsyncOpenAI(base_url=self.api_base, api_key=self.api_key)
+        self.client: AsyncOpenAI | None = None
         # Optional TrOCR specialist (lazy-loaded). When set, low-confidence
         # crops are re-OCR'd with TrOCR and the higher-confidence candidate wins.
         self.trocr_engine = trocr_engine
@@ -297,22 +297,20 @@ class OCRProcessor:
         ``client`` attribute; ``getattr`` with a default keeps the
         call free.
         """
-        client = getattr(self, "client", None)
-        if client is None:
-            return
-        try:
-            close_method = getattr(client, "aclose", None) or getattr(
-                client, "close", None
-            )
-            if close_method is None:
-                return
-            result = close_method()
-            if asyncio.iscoroutine(result):
-                await result
-        finally:
-            # Drop the reference so a follow-up aclose() call is a no-op
-            # even if the close itself raised.
-            self.client = None  # type: ignore[assignment]
+        if getattr(self, "client", None) is not None:
+            client = self.client
+            try:
+                close_method = getattr(client, "aclose", None) or getattr(
+                    client, "close", None
+                )
+                if close_method is not None:
+                    result = close_method()
+                    if asyncio.iscoroutine(result):
+                        await result
+            finally:
+                # Drop the reference so a follow-up aclose() call is a no-op
+                # even if the close itself raised.
+                self.client = None
 
     async def __aenter__(self) -> OCRProcessor:
         """Enter the async context manager; returns ``self``."""

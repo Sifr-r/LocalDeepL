@@ -244,6 +244,16 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
     );
   }
 
+  /// Sets the text artifact handle for downstream export operations.
+  void setTextArtifact({String? textArtifactId, String? textArtifactToken}) {
+    state = state.copyWith(
+      textArtifactId: textArtifactId,
+      clearTextArtifactId: textArtifactId == null,
+      textArtifactToken: textArtifactToken,
+      clearTextArtifactToken: textArtifactToken == null,
+    );
+  }
+
   /// Sets raster preview bytes for a specific page.
   void setPagePreview(int page, Uint8List previewBytes) {
     final updatedPages = List<PageResult>.from(state.pages);
@@ -438,6 +448,8 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
         statusMessage: 'Document OCR complete',
         trustSummary: result.trustSummary,
         loadedBytes: result.pdfBytes,
+        textArtifactId: result.textArtifactId,
+        textArtifactToken: result.textArtifactToken,
       );
     } catch (e) {
       state = state.copyWith(

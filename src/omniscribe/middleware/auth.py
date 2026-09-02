@@ -36,7 +36,10 @@ EXEMPT_EXACT_PATHS: frozenset[str] = frozenset(
     {
         "/",
         "/api/health",
+        "/api/healthz",
         "/api/ready",
+        "/ready",
+        "/readyz",
     }
 )
 

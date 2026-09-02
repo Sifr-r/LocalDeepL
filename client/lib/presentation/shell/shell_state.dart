@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omniscribe_client/core/enums/app_tab.dart';
 import 'package:omniscribe_client/core/enums/server_health.dart';
+import 'package:omniscribe_client/core/network/api_client.dart';
+import 'package:omniscribe_client/data/providers/repository_providers.dart';
 
 /// Active navigation tab in OmniScribe.
 final activeTabProvider = StateProvider<AppTab>((ref) => AppTab.workstation);
@@ -35,30 +37,47 @@ class ServerHealthState {
   ServerHealthState copyWith({
     ServerHealth? status,
     int? latencyMs,
+    bool clearLatencyMs = false,
     String? endpoint,
     String? version,
     DateTime? lastChecked,
     String? error,
+    bool clearError = false,
   }) {
     return ServerHealthState(
       status: status ?? this.status,
-      latencyMs: latencyMs ?? this.latencyMs,
+      latencyMs: clearLatencyMs ? null : (latencyMs ?? this.latencyMs),
       endpoint: endpoint ?? this.endpoint,
       version: version ?? this.version,
       lastChecked: lastChecked ?? this.lastChecked,
-      error: error ?? this.error,
+      error: clearError ? null : (error ?? this.error),
     );
   }
 }
 
 /// Riverpod StateNotifier for Server Health monitoring.
 class ServerHealthNotifier extends StateNotifier<ServerHealthState> {
-  ServerHealthNotifier()
+  ServerHealthNotifier([this._apiClient])
       : super(ServerHealthState(
           status: ServerHealth.online,
           latencyMs: 38,
           lastChecked: DateTime.now(),
         ));
+
+  final ApiClient? _apiClient;
+
+  Future<void> checkHealth() async {
+    if (_apiClient == null) return;
+    setChecking();
+    final stopwatch = Stopwatch()..start();
+    try {
+      await _apiClient.get<dynamic>('/api/health');
+      stopwatch.stop();
+      setOnline(latencyMs: stopwatch.elapsedMilliseconds);
+    } catch (e) {
+      setOffline(error: e.toString());
+    }
+  }
 
   void setChecking() {
     state = state.copyWith(status: ServerHealth.checking);
@@ -77,7 +96,7 @@ class ServerHealthNotifier extends StateNotifier<ServerHealthState> {
   void setOffline({String? error}) {
     state = state.copyWith(
       status: ServerHealth.offline,
-      latencyMs: null,
+      clearLatencyMs: true,
       lastChecked: DateTime.now(),
       error: error,
     );
@@ -87,5 +106,6 @@ class ServerHealthNotifier extends StateNotifier<ServerHealthState> {
 /// Provider for server health state.
 final serverHealthProvider =
     StateNotifierProvider<ServerHealthNotifier, ServerHealthState>((ref) {
-  return ServerHealthNotifier();
+  final apiClient = ref.watch(apiClientProvider);
+  return ServerHealthNotifier(apiClient);
 });

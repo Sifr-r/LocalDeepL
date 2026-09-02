@@ -486,6 +486,9 @@ class PromptedGroundedOCR:
             # gather() now lets pending tasks actually wind down so
             # the event loop doesn't log
             # "Task was destroyed but it is pending" on shutdown.
+            for t in tasks:
+                if not t.done():
+                    t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
 
         # Flatten in page order for a stable, deterministic output.

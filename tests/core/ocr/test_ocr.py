@@ -101,7 +101,7 @@ class TestHallucinationFilter:
         # auto mode (configured in pyproject.toml) drives the
         # coroutine without an explicit marker.
         ocr = OCRProcessor.__new__(OCRProcessor)  # skip real init
-        ocr.client = None  # type: ignore[assignment]  # never used; we override _chat below
+        ocr.client = None  # never used; we override _chat below
         ocr.model = "qwen/qwen3-vl-8b"  # non-OlmOCR — exercise the system message path
 
         async def _fake_pangram(*a, **kw):
@@ -115,7 +115,7 @@ class TestHallucinationFilter:
 
     async def test_normal_crop_response_passes_through(self):
         ocr = OCRProcessor.__new__(OCRProcessor)
-        ocr.client = None  # type: ignore[assignment]
+        ocr.client = None
         ocr.model = "qwen/qwen3-vl-8b"
 
         async def _fake(*a, **kw):
@@ -131,7 +131,7 @@ class TestHallucinationFilter:
         # exercise) must NOT be silently dropped. The filter only fires
         # when the response IS the pangram, not when it merely contains it.
         ocr = OCRProcessor.__new__(OCRProcessor)
-        ocr.client = None  # type: ignore[assignment]
+        ocr.client = None
         ocr.model = "qwen/qwen3-vl-8b"
 
         sentence = (
@@ -151,7 +151,7 @@ class TestHallucinationFilter:
         # OlmOCR sometimes wraps the pangram in quotes or appends ! / ? —
         # normalization must still recognise it as the fallback.
         ocr = OCRProcessor.__new__(OCRProcessor)
-        ocr.client = None  # type: ignore[assignment]
+        ocr.client = None
         ocr.model = "qwen/qwen3-vl-8b"
 
         def _make_fake(response: str):
@@ -166,7 +166,7 @@ class TestHallucinationFilter:
             "the quick brown fox jumps over the lazy dog",
         ):
             ocr = OCRProcessor.__new__(OCRProcessor)
-            ocr.client = None  # type: ignore[assignment]
+            ocr.client = None
             ocr.model = "qwen/qwen3-vl-8b"
             ocr._chat = _make_fake(variant)  # type: ignore[method-assign]
             ocr.CROP_TIMEOUT_S = 60.0
@@ -593,3 +593,37 @@ class TestChatRetrySingleLayer:
             f"Layered retries between _chat and complete_vlm_prompt "
             f"multiplied attempts (CWE-400)."
         )
+
+    async def test_chat_sends_jpeg_data_url(self) -> None:
+        from unittest.mock import AsyncMock, patch
+
+        from omniscribe.core.ocr.chat_client import ChatClient
+        from omniscribe.core.ocr.resilience import CircuitBreaker
+
+        client = ChatClient(
+            model="test-model",
+            api_base="http://localhost:1234/v1",
+            api_key="test-key",
+            max_retries=1,
+            retry_base_delay_s=0.01,
+            retry_max_delay_s=0.1,
+            circuit_breaker=CircuitBreaker(),
+        )
+        with patch(
+            "omniscribe.core.ocr.chat_client.call_llm", new_callable=AsyncMock
+        ) as mock_call:
+            mock_call.return_value = "extracted text"
+            res = await client.chat(
+                prompt="read this",
+                image_base64="fakeb64data",
+                timeout=30.0,
+                max_tokens=1000,
+            )
+            assert res == "extracted text"
+            mock_call.assert_awaited_once()
+            messages = mock_call.call_args.kwargs["messages"]
+            user_content = messages[0]["content"]
+            image_part = next(
+                part for part in user_content if part["type"] == "image_url"
+            )
+            assert image_part["image_url"]["url"] == "data:image/jpeg;base64,fakeb64data"

@@ -147,7 +147,17 @@ def _drop_refined_duplicates(
             if not o_text:
                 continue
             o_norm = _normalize_for_dedup(o_text)
-            if r_norm in o_norm:
+            o_tokens = o_norm.split()
+            r_tokens = r_norm.split()
+            if (
+                r_norm == o_norm
+                or (
+                    r_tokens
+                    and len(r_tokens) >= 2
+                    and all(tok in o_tokens for tok in r_tokens)
+                )
+                or (len(r_tokens) == 1 and r_tokens[0] in o_tokens)
+            ):
                 page_boxes[r_idx] = (r_bbox, "")
                 break
 

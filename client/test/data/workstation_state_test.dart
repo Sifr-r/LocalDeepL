@@ -49,6 +49,8 @@ void main() {
       expect(state.scoredBlocks, 0);
       expect(state.trustSummary, isNull);
       expect(state.error, isNull);
+      expect(state.textArtifactId, isNull);
+      expect(state.textArtifactToken, isNull);
 
       expect(state.hasDocument, isFalse);
       expect(state.currentPage, isNull);
@@ -375,6 +377,8 @@ void main() {
           average: 0.95,
         ),
         error: 'Some error',
+        textArtifactId: 'art-1',
+        textArtifactToken: 'tok-1',
       );
 
       final cleared = initial.copyWith(
@@ -390,6 +394,8 @@ void main() {
         clearAvgConfidence: true,
         clearTrustSummary: true,
         clearError: true,
+        clearTextArtifactId: true,
+        clearTextArtifactToken: true,
       );
 
       expect(cleared.loadedBytes, isNull);
@@ -404,6 +410,8 @@ void main() {
       expect(cleared.avgConfidence, isNull);
       expect(cleared.trustSummary, isNull);
       expect(cleared.error, isNull);
+      expect(cleared.textArtifactId, isNull);
+      expect(cleared.textArtifactToken, isNull);
     });
   });
 

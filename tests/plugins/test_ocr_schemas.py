@@ -349,3 +349,98 @@ async def test_preflight_check_closes_ephemeral_processor(
     assert models == []
     assert detail == ""
     assert closed, "ephemeral processor must be closed after preflight"
+
+
+async def test_preflight_post_rejects_ssrf() -> None:
+    """Audit 6.3: POST /api/process/preflight with an SSRF target is rejected
+    with 403 and error code 'ssrf_blocked'.
+    """
+    from unittest.mock import MagicMock
+
+    import httpx
+    from fastapi import FastAPI
+
+    from omniscribe.plugins.ocr.plugin import build_ocr_router
+    from omniscribe.plugins.ocr.service import OCRServiceImpl
+
+    service = OCRServiceImpl.__new__(OCRServiceImpl)
+    service._config = {
+        "api_base": "http://localhost:1234/v1",
+        "api_key": "lm-studio",
+        "model": "allenai/olmocr-2-7b",
+    }
+    service._settings = MagicMock()
+    service._max_upload_mb = 100
+
+    # Verify service method directly
+    loaded, _req, _base, _models, detail = await service.preflight_check(
+        api_base="http://169.254.169.254/v1"
+    )
+    assert loaded is False
+    assert "SSRF blocked" in detail
+
+    # Verify POST /api/process/preflight route
+    app = FastAPI()
+    app.include_router(build_ocr_router(service))
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.post(
+            "/api/process/preflight",
+            json={"api_base": "http://169.254.169.254/v1"},
+        )
+        assert resp.status_code == 403
+        body = resp.json()
+        assert body["error"] == "ssrf_blocked"
+        assert "SSRF blocked" in body["detail"]
+
+
+async def test_empty_content_type_format_validation() -> None:
+    """Empty Content-Type uploads must be validated via magic-byte sniffing:
+    garbage contents are rejected with 415, while valid signatures pass.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    import httpx
+    from fastapi import FastAPI, Response
+
+    from omniscribe.plugins.ocr.plugin import build_ocr_router
+    from omniscribe.plugins.ocr.service import OCRServiceImpl
+
+    service = OCRServiceImpl.__new__(OCRServiceImpl)
+    service._config = {}
+    service._settings = MagicMock()
+    service._max_upload_mb = 100
+    service._quality_defaults = {}
+    # ``run_sync`` is a method on the class; assigning an AsyncMock to
+    # an instance attribute is the canonical test pattern but mypy
+    # flags it as a method-assign. Suppress locally for this stub.
+    service.run_sync = AsyncMock(  # type: ignore[method-assign]
+        return_value=Response(content=b"ok", media_type="application/pdf")
+    )
+
+    app = FastAPI()
+    app.include_router(build_ocr_router(service))
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        # Empty Content-Type with invalid/garbage bytes -> 415
+        resp_invalid = await client.post(
+            "/api/process",
+            files={"file": ("doc", b"not a supported document", "")},
+        )
+        assert resp_invalid.status_code == 415
+        assert (
+            "could not detect a supported document format"
+            in resp_invalid.json().get("detail", "")
+        )
+
+        # Empty Content-Type with valid PDF bytes -> 200 (format sniffing succeeds)
+        resp_valid = await client.post(
+            "/api/process",
+            files={"file": ("doc", b"%PDF-1.4 sample content", "")},
+        )
+        assert resp_valid.status_code == 200
+        service.run_sync.assert_awaited_once()
