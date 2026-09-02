@@ -27,6 +27,8 @@ from fastapi import HTTPException
 from fastapi.responses import Response
 
 from omniscribe.config import RuntimeSettings
+from omniscribe.core.ocr.exceptions import ModelNotLoadedError
+from omniscribe.core.ocr.processor import OCRProcessor
 from omniscribe.core.workflows.base import OCRCancelled
 from omniscribe.harness.events import Event
 from omniscribe.plugins.artifacts import ArtifactStore
@@ -555,6 +557,69 @@ class OCRServiceImpl:
         if key and key != "lm-studio":
             cfg["api_key"] = "******"
         return cfg
+
+    # -- preflight (audit 6.3) ----------------------------------------------------
+
+    async def preflight_check(
+        self,
+        api_base: str | None = None,
+        api_key: str | None = None,
+        model: str | None = None,
+    ) -> tuple[bool, str, str, list[str], str]:
+        """Audit 6.3: verify the requested model is loaded on the VLM server.
+
+        Constructs an ephemeral :class:`OCRProcessor` against the resolved
+        coordinates (overrides → current ``/api/config``) and invokes its
+        ``ensure_model_loaded``. The long-lived per-request processor is
+        untouched; the ephemeral one is closed via its ``aclose`` so the
+        connection pool is released after the probe.
+
+        Returns ``(loaded, requested_model, api_base, loaded_models, detail)``.
+        On connection failure the detail is a human-readable diagnostic;
+        the caller can decide whether to surface a 200 with ``loaded=False``
+        (UI badge "model mismatch") or a 502 (server unreachable).
+        """
+        resolved_api_base = (api_base or self._config.get("api_base") or "").strip()
+        resolved_api_key = api_key or self._config.get("api_key") or ""
+        resolved_model = (model or self._config.get("model") or "").strip()
+        if not resolved_api_base or not resolved_model:
+            return (
+                False,
+                resolved_model,
+                resolved_api_base,
+                [],
+                "api_base and model must be configured before pre-flight",
+            )
+
+        probe = OCRProcessor(
+            api_base=resolved_api_base,
+            api_key=resolved_api_key,
+            model=resolved_model,
+        )
+        try:
+            try:
+                await probe.ensure_model_loaded()
+            except ModelNotLoadedError as exc:
+                return (
+                    False,
+                    resolved_model,
+                    resolved_api_base,
+                    list(getattr(exc, "loaded_models", []) or []),
+                    str(exc),
+                )
+            # Walk the same listing the processor used so we can echo the
+            # server-side model list back to the UI without a second call.
+            try:
+                from omniscribe.core.ocr.client import _list_loaded_model_ids
+
+                loaded_models = list(
+                    await _list_loaded_model_ids(probe.client, resolved_api_base)
+                )
+            except Exception:
+                loaded_models = []
+            return (True, resolved_model, resolved_api_base, loaded_models, "")
+        finally:
+            await probe.aclose()
 
     def update_config(self, updates: Mapping[str, Any]) -> dict[str, Any]:
         if "api_base" in updates and updates["api_base"] is not None:

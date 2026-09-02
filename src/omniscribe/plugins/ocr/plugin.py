@@ -31,7 +31,7 @@ from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
 from fastapi import APIRouter, Body, Header, HTTPException, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from omniscribe.harness.context import Context
@@ -51,6 +51,8 @@ from omniscribe.plugins.ocr.schemas import (
     JobListItemResponse,
     JobStatusResponse,
     OCRRequest,
+    PreflightRequest,
+    PreflightResponse,
 )
 from omniscribe.plugins.progress import ProgressFrame, ProgressService
 
@@ -76,6 +78,15 @@ class OCRService(Protocol):
 
 
 # -- routes -------------------------------------------------------------------
+
+
+def _envelope(status_code: int, error: str, detail: str) -> JSONResponse:
+    """Stable error envelope the Flutter client parses (matches the
+    translate / transcribe / glossary plugins).
+    """
+    return JSONResponse(
+        status_code=status_code, content={"error": error, "detail": detail}
+    )
 
 
 #: Document-format signatures the route sniffs out of an upload's first
@@ -307,6 +318,37 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
             return service.update_config(updates)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @router.get("/api/process/preflight", response_model=None)
+    @router.post("/api/process/preflight", response_model=None)
+    async def preflight(
+        body: PreflightRequest | None = None,
+    ) -> PreflightResponse | JSONResponse:
+        """Audit 6.3: verify the requested model is loaded on the VLM server.
+
+        GET (no body) prefights the active ``/api/config`` coordinates;
+        POST a ``PreflightRequest`` to override ``api_base`` / ``api_key``
+        / ``model`` for the probe. Returns 200 with ``loaded=False`` when
+        the model is missing (the UI badge shows "model mismatch") and
+        502 with an envelope when the server is unreachable.
+        """
+        body = body or PreflightRequest()
+        loaded, requested, base, loaded_models, detail = (
+            await service.preflight_check(
+                api_base=body.api_base,
+                api_key=body.api_key,
+                model=body.model,
+            )
+        )
+        if not loaded and detail and "must be configured" in detail:
+            return _envelope(400, "bad_request", detail)
+        return PreflightResponse(
+            loaded=loaded,
+            requested_model=requested,
+            api_base=base,
+            loaded_models=loaded_models,
+            detail=detail,
+        )
 
     return router
 

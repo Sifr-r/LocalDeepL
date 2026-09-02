@@ -158,10 +158,41 @@ class JobListItemResponse(BaseModel):
     failed_pages: list[int] = Field(default_factory=list)
 
 
+class PreflightRequest(BaseModel):
+    """Audit 6.3: optional overrides for the model pre-flight route.
+
+    All fields default to the current ``/api/config`` value, so a bare
+    ``GET /api/process/preflight`` preflights the active LLM endpoint.
+    Pass overrides (e.g. for a multi-tenant install where the operator
+    wants to probe a candidate model before swapping the live one).
+    """
+
+    api_base: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+
+
+class PreflightResponse(BaseModel):
+    """Result of :meth:`OCRService.preflight_check`.
+
+    ``loaded`` is the single source of truth for the UI badge; the
+    ``requested_model`` / ``loaded_models`` pair lets the operator see
+    exactly which models are present on the server.
+    """
+
+    loaded: bool
+    requested_model: str
+    api_base: str
+    loaded_models: list[str] = Field(default_factory=list)
+    detail: str = ""
+
+
 __all__ = [
     "AsyncSubmitResponse",
     "JobListItemResponse",
     "JobStatusResponse",
     "OCRRequest",
     "PipelineMode",
+    "PreflightRequest",
+    "PreflightResponse",
 ]

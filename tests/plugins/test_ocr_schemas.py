@@ -238,3 +238,114 @@ def test_ocr_payload_lookup_miss_silently_uses_empty_job_id() -> None:
     submission_to_job: dict[str, str] = {}
     job_id = submission_to_job.get(payload.submission_id, "")
     assert job_id == ""
+
+
+# ---------------------------------------------------------------------------
+# Audit 6.3: Model Pre-flight Route
+# ---------------------------------------------------------------------------
+
+
+def test_preflight_request_accepts_partial_overrides() -> None:
+    """The pre-flight request body is optional; each field defaults to
+    None and the route falls back to the current /api/config value.
+    """
+    from omniscribe.plugins.ocr.schemas import PreflightRequest
+
+    bare = PreflightRequest()
+    assert bare.api_base is None
+    assert bare.api_key is None
+    assert bare.model is None
+
+    override = PreflightRequest(api_base="http://localhost:9999/v1", model="m")
+    assert override.api_base == "http://localhost:9999/v1"
+    assert override.api_key is None
+    assert override.model == "m"
+
+
+def test_preflight_response_loads_false_carries_loaded_models() -> None:
+    """The response shape lets the UI show "model mismatch: server has X,
+    you asked for Y" without the caller parsing the detail string.
+    """
+    from omniscribe.plugins.ocr.schemas import PreflightResponse
+
+    resp = PreflightResponse(
+        loaded=False,
+        requested_model="missing",
+        api_base="http://x",
+        loaded_models=["olmocr-2-7b"],
+        detail="model 'missing' is not loaded",
+    )
+    assert resp.loaded is False
+    assert resp.requested_model == "missing"
+    assert resp.loaded_models == ["olmocr-2-7b"]
+
+
+async def test_preflight_check_returns_misconfigured_when_coords_empty() -> None:
+    """Calling preflight with no overrides on a fresh service whose
+    /api/config has no api_base must return a structured 'must be
+    configured' detail, not raise.
+    """
+    from unittest.mock import MagicMock
+
+    from omniscribe.plugins.ocr.service import OCRServiceImpl
+
+    service = OCRServiceImpl.__new__(OCRServiceImpl)
+    service._config = {}
+    service._settings = MagicMock()
+
+    loaded, _requested, _base, models, detail = await service.preflight_check()
+    assert loaded is False
+    assert detail == "api_base and model must be configured before pre-flight"
+    assert models == []
+
+
+async def test_preflight_check_closes_ephemeral_processor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On a clean probe (the requested model is loaded) the ephemeral
+    OCRProcessor must be closed via aclose so the connection pool is
+    released — otherwise every preflight leaks an AsyncOpenAI client.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    from omniscribe.plugins.ocr.service import OCRServiceImpl
+
+    service = OCRServiceImpl.__new__(OCRServiceImpl)
+    service._config = {
+        "api_base": "http://localhost:1234/v1",
+        "api_key": "lm-studio",
+        "model": "allenai/olmocr-2-7b",
+    }
+    service._settings = MagicMock()
+
+    closed = []
+
+    class _StubProcessor:
+        def __init__(self, *, api_base, api_key, model):
+            self.api_base = api_base
+            self.api_key = api_key
+            self.model = model
+            self.client = MagicMock()
+
+        async def ensure_model_loaded(self) -> None:
+            return None
+
+        async def aclose(self) -> None:
+            closed.append(self)
+
+    monkeypatch.setattr(
+        "omniscribe.plugins.ocr.service.OCRProcessor", _StubProcessor
+    )
+    # _list_loaded_model_ids is called after ensure; stub it to return [].
+    monkeypatch.setattr(
+        "omniscribe.core.ocr.client._list_loaded_model_ids",
+        AsyncMock(return_value=[]),
+    )
+
+    loaded, requested, base, models, detail = await service.preflight_check()
+    assert loaded is True
+    assert requested == "allenai/olmocr-2-7b"
+    assert base == "http://localhost:1234/v1"
+    assert models == []
+    assert detail == ""
+    assert closed, "ephemeral processor must be closed after preflight"
