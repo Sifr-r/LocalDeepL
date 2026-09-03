@@ -84,6 +84,14 @@ class OCRService(Protocol):
         content_type: str | None = None,
     ) -> AsyncSubmitResponse: ...
 
+    def get_page_preview(
+        self,
+        job_id: str,
+        page_index: int,
+        *,
+        dpi: int = 150,
+    ) -> bytes | None: ...
+
 
 # -- routes -------------------------------------------------------------------
 
@@ -328,6 +336,27 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
         if not bearer and authorization and authorization.startswith("Bearer "):
             bearer = authorization.removeprefix("Bearer ").strip()
         return await service.fetch_result(job_id, bearer)
+
+    @router.get("/api/jobs/{job_id}/pages/{page_index}/preview", response_model=None)
+    async def page_preview(
+        job_id: str, page_index: int
+    ) -> Response:
+        """Render a page of the original upload as PNG bytes.
+
+        Used by the workstation viewport to show the underlying page
+        beneath the bounding-box / heatmap overlays. Returns 404 when
+        the job has no recorded source path (e.g. submitted before this
+        route landed, or whose source has already been cleaned up).
+        """
+        if page_index < 0:
+            raise HTTPException(status_code=400, detail="page_index must be >= 0")
+        png_bytes = await service.get_page_preview(job_id, page_index)
+        if png_bytes is None:
+            raise HTTPException(
+                status_code=404,
+                detail="page preview unavailable for this job",
+            )
+        return Response(content=png_bytes, media_type="image/png")
 
     @router.post("/api/jobs/{job_id}/cancel")
     async def cancel_job(job_id: str) -> dict[str, Any]:

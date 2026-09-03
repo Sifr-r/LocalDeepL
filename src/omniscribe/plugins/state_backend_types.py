@@ -60,6 +60,11 @@ class JobRecord:
     request_meta: dict[str, Any] = field(default_factory=dict)
     result_artifact_id: str | None = None
     result_artifact_token: str | None = None
+    # Path to the original upload (set by the OCR service at submit time).
+    # Used by the per-page preview route to render the source PDF/image
+    # without re-uploading. ``None`` for jobs whose original has been
+    # cleaned up or that were submitted before this field existed.
+    input_path: str | None = None
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     error: str | None = None

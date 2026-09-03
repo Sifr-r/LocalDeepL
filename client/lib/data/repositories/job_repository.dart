@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:omniscribe_client/core/constants/api_constants.dart';
 import 'package:omniscribe_client/core/network/api_client.dart';
+import 'package:omniscribe_client/core/network/api_exceptions.dart';
 import 'package:omniscribe_client/data/models/job_record.dart';
 import 'package:omniscribe_client/data/repositories/ocr_repository.dart';
 
@@ -21,6 +22,12 @@ abstract class JobRepository {
   /// the unauthenticated ``/api/process/status/{jobId}`` route no
   /// longer returns it (2026-08-29 audit C-3 / H-3).
   Future<Uint8List> downloadResult(String jobId);
+
+  /// Render one page of the original upload as PNG bytes for the
+  /// workstation viewport. Returns ``null`` when the server has no
+  /// recorded source for the job (e.g. submitted before the preview
+  /// route landed, or whose source was cleaned up after completion).
+  Future<Uint8List?> fetchPagePreview(String jobId, int pageIndex);
 }
 
 class JobRepositoryImpl implements JobRepository {
@@ -69,5 +76,20 @@ class JobRepositoryImpl implements JobRepository {
       ApiConstants.jobResult(jobId),
       headers: {'Authorization': 'Bearer $token'},
     );
+  }
+
+  @override
+  Future<Uint8List?> fetchPagePreview(String jobId, int pageIndex) async {
+    try {
+      return await _apiClient.getBytes(
+        ApiConstants.jobPagePreview(jobId, pageIndex),
+      );
+    } on ApiException catch (e) {
+      // 404 is the documented "no preview available" path (older job,
+      // missing input path, or out-of-range page). Surface null so the
+      // viewport falls back to its placeholder.
+      if (e.statusCode == 404) return null;
+      rethrow;
+    }
   }
 }

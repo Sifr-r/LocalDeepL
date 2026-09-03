@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     request_meta TEXT NOT NULL,
     result_artifact_id TEXT,
     result_artifact_token TEXT,
+    input_path TEXT,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL,
     error TEXT
@@ -80,6 +81,9 @@ def _job_from_row(row: Any) -> JobRecord:
         request_meta=req_meta,
         result_artifact_id=row["result_artifact_id"],
         result_artifact_token=row["result_artifact_token"],
+        # ``input_path`` was added in a later schema bump; tolerate
+        # older callers / synthetic rows that don't include it.
+        input_path=row["input_path"] if "input_path" in row else None,
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         error=row["error"],
@@ -266,14 +270,15 @@ class SQLiteStateBackend:
                 conn.execute(
                     "INSERT OR REPLACE INTO jobs "
                     "(job_id, status, request_meta, result_artifact_id, "
-                    "result_artifact_token, created_at, updated_at, error) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "result_artifact_token, input_path, created_at, updated_at, error) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         record.job_id,
                         record.status,
                         json.dumps(record.request_meta),
                         record.result_artifact_id,
                         record.result_artifact_token,
+                        record.input_path,
                         record.created_at,
                         record.updated_at,
                         record.error,
@@ -291,7 +296,7 @@ class SQLiteStateBackend:
                     self._require_conn()
                     .execute(
                         "SELECT job_id, status, request_meta, result_artifact_id, "
-                        "result_artifact_token, created_at, updated_at, error "
+                        "result_artifact_token, input_path, created_at, updated_at, error "
                         "FROM jobs WHERE job_id = ?",
                         (job_id,),
                     )
@@ -309,7 +314,7 @@ class SQLiteStateBackend:
                     self._require_conn()
                     .execute(
                         "SELECT job_id, status, request_meta, result_artifact_id, "
-                        "result_artifact_token, created_at, updated_at, error "
+                        "result_artifact_token, input_path, created_at, updated_at, error "
                         "FROM jobs ORDER BY created_at DESC, job_id DESC "
                         "LIMIT ? OFFSET ?",
                         (limit, offset),

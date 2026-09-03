@@ -29,6 +29,7 @@ class WorkstationState {
     // OCR & Progress
     this.isProcessing = false,
     this.activeJobId,
+    this.lastSubmittedJobId,
     this.channelId,
     this.percent = 0,
     this.stage = 'Idle',
@@ -79,6 +80,7 @@ class WorkstationState {
   // OCR & Progress
   final bool isProcessing;
   final String? activeJobId;
+  final String? lastSubmittedJobId;
   final String? channelId;
   final int percent;
   final String stage;
@@ -214,6 +216,8 @@ class WorkstationState {
     bool? isProcessing,
     String? activeJobId,
     bool clearActiveJobId = false,
+    String? lastSubmittedJobId,
+    bool clearLastSubmittedJobId = false,
     String? channelId,
     bool clearChannelId = false,
     int? percent,
@@ -257,6 +261,9 @@ class WorkstationState {
       filterKind: clearFilterKind ? null : (filterKind ?? this.filterKind),
       isProcessing: isProcessing ?? this.isProcessing,
       activeJobId: clearActiveJobId ? null : (activeJobId ?? this.activeJobId),
+      lastSubmittedJobId: clearLastSubmittedJobId
+          ? null
+          : (lastSubmittedJobId ?? this.lastSubmittedJobId),
       channelId: clearChannelId ? null : (channelId ?? this.channelId),
       percent: percent ?? this.percent,
       stage: stage ?? this.stage,
@@ -306,6 +313,7 @@ class WorkstationState {
           filterKind == other.filterKind &&
           isProcessing == other.isProcessing &&
           activeJobId == other.activeJobId &&
+          lastSubmittedJobId == other.lastSubmittedJobId &&
           channelId == other.channelId &&
           percent == other.percent &&
           stage == other.stage &&
@@ -340,6 +348,7 @@ class WorkstationState {
         filterKind,
         isProcessing,
         activeJobId,
+        lastSubmittedJobId,
         channelId,
         percent,
         stage,

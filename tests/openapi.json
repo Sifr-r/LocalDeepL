@@ -2131,6 +2131,56 @@
         ]
       }
     },
+    "/api/jobs/{job_id}/pages/{page_index}/preview": {
+      "get": {
+        "description": "Render a page of the original upload as PNG bytes.\n\nUsed by the workstation viewport to show the underlying page\nbeneath the bounding-box / heatmap overlays. Returns 404 when\nthe job has no recorded source path (e.g. submitted before this\nroute landed, or whose source has already been cleaned up).",
+        "operationId": "page_preview_api_jobs__job_id__pages__page_index__preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "page_index",
+            "required": true,
+            "schema": {
+              "title": "Page Index",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Page Preview",
+        "tags": [
+          "ocr"
+        ]
+      }
+    },
     "/api/jobs/{job_id}/result": {
       "get": {
         "operationId": "job_result_api_jobs__job_id__result_get",

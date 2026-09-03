@@ -30,6 +30,8 @@ abstract final class ApiConstants {
   // Jobs Endpoints
   static const String jobs = '/api/jobs';
   static String jobResult(String jobId) => '/api/jobs/$jobId/result';
+  static String jobPagePreview(String jobId, int pageIndex) =>
+      '/api/jobs/$jobId/pages/$pageIndex/preview';
   static String cancelJob(String jobId) => '/api/jobs/$jobId/cancel';
 
   // Progress & WebSocket Endpoints

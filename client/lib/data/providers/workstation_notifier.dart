@@ -11,6 +11,7 @@ import 'package:omniscribe_client/data/models/process_settings.dart';
 import 'package:omniscribe_client/data/models/ws_frames.dart';
 import 'package:omniscribe_client/data/providers/repository_providers.dart';
 import 'package:omniscribe_client/data/providers/workstation_state.dart';
+import 'package:omniscribe_client/data/repositories/job_repository.dart';
 import 'package:omniscribe_client/data/repositories/ocr_repository.dart';
 
 /// Global provider for the OmniScribe Document Workstation.
@@ -23,12 +24,14 @@ final workstationProvider =
 /// real-time OCR streaming, and quality repair loops.
 class WorkstationNotifier extends Notifier<WorkstationState> {
   late OcrRepository _ocrRepo;
+  late JobRepository _jobRepo;
   late WsClient _wsClient;
   StreamSubscription<WsEnvelope>? _wsSubscription;
 
   @override
   WorkstationState build() {
     _ocrRepo = ref.watch(ocrRepositoryProvider);
+    _jobRepo = ref.watch(jobRepositoryProvider);
     _wsClient = ref.watch(wsClientProvider);
 
     ref.onDispose(_cleanup);
@@ -106,7 +109,10 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
     );
   }
 
-  /// Sets the currently active page index (0-indexed).
+  /// Sets the currently active page index (0-indexed). Triggers a
+  /// background fetch for the page preview bytes so the viewport shows
+  /// the underlying raster (not just a placeholder) as soon as the
+  /// server returns it.
   void selectPage(int pageIndex) {
     if (pageIndex < 0 || pageIndex >= state.pageCount) {
       return;
@@ -116,6 +122,43 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
       clearSelectedBBox: true,
       clearHoveredBBox: true,
     );
+    _loadPagePreviewIfMissing(pageIndex);
+  }
+
+  Future<void> _loadPagePreviewIfMissing(int pageIndex) async {
+    final pages = state.pages;
+    if (pageIndex < 0 || pageIndex >= pages.length) {
+      return;
+    }
+    if (pages[pageIndex].previewBytes != null) {
+      return;
+    }
+    final jobId = _activeJobId();
+    if (jobId == null) {
+      return;
+    }
+    try {
+      final bytes = await _jobRepo.fetchPagePreview(jobId, pageIndex);
+      if (bytes == null) {
+        return;
+      }
+      setPagePreview(pageIndex, bytes);
+    } catch (e, st) {
+      // Network/404 paths are normal (older job, no source). Anything
+      // else is logged but never blocks the user.
+      FlutterError.reportError(
+        FlutterErrorDetails(exception: e, stack: st, library: 'workstation'),
+      );
+    }
+  }
+
+  /// Returns the job id whose preview we should request — the active
+  /// job if one is in flight, otherwise the most recently submitted one.
+  /// Returns ``null`` when no job has been seen in this session.
+  String? _activeJobId() {
+    final active = state.activeJobId;
+    if (active != null && active.isNotEmpty) return active;
+    return state.lastSubmittedJobId;
   }
 
   /// Replaces all bounding boxes for a specific page.
@@ -531,6 +574,7 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
         isProcessing: true,
         stage: 'Queued',
         activeJobId: submitResponse.jobId,
+        lastSubmittedJobId: submitResponse.jobId,
         statusMessage: 'Job queued: ${submitResponse.jobId}',
       );
     } catch (e) {

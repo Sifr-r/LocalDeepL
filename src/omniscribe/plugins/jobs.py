@@ -149,7 +149,11 @@ class JobQueue(Protocol):
     """Async OCR job queue seam."""
 
     async def submit(
-        self, request: Any, *, request_meta: dict[str, Any] | None = None
+        self,
+        request: Any,
+        *,
+        request_meta: dict[str, Any] | None = None,
+        input_path: str | None = None,
     ) -> JobHandle: ...
 
     async def status(self, job_id: str) -> JobRecord | None: ...
@@ -193,7 +197,11 @@ class InMemoryJobQueue:
     # -- public seam -------------------------------------------------------
 
     async def submit(
-        self, request: Any, *, request_meta: dict[str, Any] | None = None
+        self,
+        request: Any,
+        *,
+        request_meta: dict[str, Any] | None = None,
+        input_path: str | None = None,
     ) -> JobHandle:
         job_id = uuid.uuid4().hex
         now = time.time()
@@ -202,6 +210,7 @@ class InMemoryJobQueue:
                 job_id=job_id,
                 status="queued",
                 request_meta=dict(request_meta or {}),
+                input_path=input_path,
                 created_at=now,
                 updated_at=now,
             )

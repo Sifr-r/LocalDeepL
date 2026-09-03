@@ -388,6 +388,7 @@ class OCRServiceImpl:
                 "pipeline_mode": options.pipeline_mode,
                 "pages": options.pages,
             },
+            input_path=str(input_path),
         )
         self._submission_to_job[submission_id] = handle.job_id
         # Audit 2.6: the inline insertion-order trim on every submit
@@ -593,6 +594,63 @@ class OCRServiceImpl:
         if await self._queue.status(job_id) is None:
             return None
         return await self._queue.cancel(job_id)
+
+    # -- per-page preview (workstation viewport) --------------------------------
+
+    async def get_page_preview(
+        self,
+        job_id: str,
+        page_index: int,
+        *,
+        dpi: int = 150,
+    ) -> bytes | None:
+        """Render one page of the original upload as a PNG.
+
+        Returns ``None`` when the job has no recorded input path (older
+        jobs, jobs whose source was never written to disk, or jobs from
+        an in-memory backend that has been wiped on restart). The route
+        surfaces a 404 in that case so the client can fall back to its
+        placeholder.
+        """
+        record = await self._queue.status(job_id)
+        if record is None:
+            return None
+        input_path_str = record.input_path
+        if not input_path_str:
+            return None
+        input_path = Path(input_path_str)
+        if not input_path.is_file():
+            return None
+
+        # Off-load PyMuPDF (a C extension) to a worker thread so the event
+        # loop stays responsive while the page rasterizes.
+        def _render() -> bytes | None:
+            import pymupdf as fitz  # local: not every test env has it
+
+            suffix = input_path.suffix.lower()
+            if suffix in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"}:
+                # Single-image input: there's only one page; ignore the
+                # caller-supplied index and render the file as-is.
+                if page_index != 0:
+                    return None
+                img_doc = fitz.open(input_path)
+                try:
+                    page = img_doc[0]
+                    pix = page.get_pixmap(dpi=dpi, alpha=False)
+                    return bytes(pix.tobytes("png"))
+                finally:
+                    img_doc.close()
+            doc = fitz.open(input_path)
+            try:
+                if page_index < 0 or page_index >= doc.page_count:
+                    return None
+                page = doc[page_index]
+                pix = page.get_pixmap(dpi=dpi, alpha=False)
+                return bytes(pix.tobytes("png"))
+            finally:
+                doc.close()
+
+        return await asyncio.to_thread(_render)
 
     # -- config store -------------------------------------------------------------
 
