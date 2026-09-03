@@ -167,7 +167,6 @@ def test_recall_constants_promoted_and_consistent() -> None:
         STRADDLE_MIN_OVERLAP,
     )
     from omniscribe.core.recall.text_layer import (
-        _MAX_RECALL_BOXES_PER_PAGE,
         _MAX_TEXT_LAYER_BOXES_PER_PAGE,
         _STRADDLE_MIN_OVERLAP,
     )
@@ -175,7 +174,6 @@ def test_recall_constants_promoted_and_consistent() -> None:
 
     assert _STRADDLE_MIN_OVERLAP == STRADDLE_MIN_OVERLAP == 0.15
     assert _MAX_TEXT_LAYER_BOXES_PER_PAGE == MAX_RECALL_BOXES_PER_PAGE == 10
-    assert _MAX_RECALL_BOXES_PER_PAGE == 10
     assert "0" in DISABLE_STRINGS
     assert "disabled" in DISABLE_STRINGS
 

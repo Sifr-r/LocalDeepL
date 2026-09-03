@@ -7,11 +7,8 @@ from omniscribe.utils.env import (
     env_int,
     env_list_csv,
     env_str,
-    load_dotenv,
     parse_bool,
-    update_dotenv,
 )
-from omniscribe.utils.file import write_atomic
 from omniscribe.utils.security import check_ssrf_target_sync, is_ssrf_target
 from omniscribe.utils.structured_logging import (
     DEFAULT_LOG_FORMAT,
@@ -40,9 +37,6 @@ __all__ = [
     "env_str",
     "is_configured",
     "is_ssrf_target",
-    "load_dotenv",
     "merge_extras",
     "parse_bool",
-    "update_dotenv",
-    "write_atomic",
 ]

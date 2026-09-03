@@ -58,7 +58,6 @@ _STRADDLE_MIN_OVERLAP = STRADDLE_MIN_OVERLAP
 # text-layer boxes per page, kept in extraction (reading) order. Bounds
 # n_boxes inflation toward dense_threshold on pathological text layers.
 _MAX_TEXT_LAYER_BOXES_PER_PAGE = MAX_RECALL_BOXES_PER_PAGE
-_MAX_RECALL_BOXES_PER_PAGE = _MAX_TEXT_LAYER_BOXES_PER_PAGE
 
 
 @dataclass(frozen=True, slots=True)

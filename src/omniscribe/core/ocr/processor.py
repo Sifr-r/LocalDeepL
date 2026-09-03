@@ -30,10 +30,8 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
-import os
 from typing import TYPE_CHECKING, Any
 
-from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
 from omniscribe.config import load_settings
@@ -70,7 +68,6 @@ from omniscribe.utils.env import env_int
 if TYPE_CHECKING:
     from omniscribe.core.ocr.trocr import TrOCREngine
 
-_ENV_LOADED: bool = False
 logger = logging.getLogger(__name__)
 
 
@@ -154,11 +151,6 @@ class OCRProcessor:
         # next ``OCRProcessor()``. Importing the module no longer
         # touches ``load_settings()`` at all, so subprocesses and test
         # runners that lack the full env set can import freely.
-        global _ENV_LOADED
-        if not _ENV_LOADED and not os.environ.get("OMNISCRIBE_ENV_LOADED"):
-            load_dotenv()
-            _ENV_LOADED = True
-
         settings = load_settings()
         self.page_timeout_s: float = settings.vlm_page_timeout
         self.crop_timeout_s: float = settings.vlm_crop_timeout
