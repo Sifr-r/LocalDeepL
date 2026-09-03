@@ -288,6 +288,7 @@ class GroundedEngine(EngineBase):
 
         summaries: list[PageRepairSummary] = []
         completed = 0
+        obj_to_idx = {id(b): idx for idx, b in enumerate(response.blocks)}
         for page_idx in sorted(by_page):
             page_blocks_objs = by_page[page_idx]
             page_blocks: list[tuple[tuple[float, float, float, float], str]] = [
@@ -349,10 +350,10 @@ class GroundedEngine(EngineBase):
             ):
                 new_obj = dataclasses.replace(obj, text=text)
                 page_blocks_objs[i] = new_obj
-                for j, b in enumerate(response.blocks):
-                    if b is obj:
-                        response.blocks[j] = new_obj
-                        break
+                idx = obj_to_idx.get(id(obj))
+                if idx is not None:
+                    response.blocks[idx] = new_obj
+                    obj_to_idx[id(new_obj)] = idx
             summaries.append(summary)
             if cb.on_quality_summary is not None:
                 await cb.on_quality_summary(

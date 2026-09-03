@@ -62,6 +62,20 @@ class TranscribeRequest(BaseModel):
         return _coerce_float(value)
 
 
+def unpack_transcribe_options(request: TranscribeRequest) -> dict[str, Any]:
+    """Unpack a TranscribeRequest into keyword arguments for engine/service calls."""
+    return {
+        "model": request.model,
+        "engine": request.engine,
+        "api_base": request.api_base,
+        "api_key": request.api_key,
+        "language": request.language,
+        "prompt": request.prompt,
+        "temperature": request.temperature,
+        "channel_id": request.channel_id,
+    }
+
+
 class TranscriptionEngineType(StrEnum):
     API = "api"
     WHISPER_API = "whisper_api"

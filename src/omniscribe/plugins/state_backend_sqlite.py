@@ -12,14 +12,24 @@ from ``omniscribe.plugins.state_backend``.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
+import logging
+import os
 import secrets
 import sqlite3
 import time
 from pathlib import Path
 from typing import Any
 
-from .state_backend import ArtifactBlob, ArtifactRecord, ChannelRecord, JobRecord
+from .state_backend_types import (
+    ArtifactBlob,
+    ArtifactRecord,
+    ChannelRecord,
+    JobRecord,
+)
+
+_LOGGER = logging.getLogger("omniscribe.plugins.state_backend_sqlite")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS artifacts (
@@ -52,27 +62,49 @@ CREATE TABLE IF NOT EXISTS progress_channels (
 """
 
 
+def _rowcount(cursor: sqlite3.Cursor) -> int:
+    return max(cursor.rowcount, 0)
+
+
 def _job_from_row(row: Any) -> JobRecord:
+    raw_meta = row["request_meta"]
+    if isinstance(raw_meta, dict):
+        req_meta = raw_meta
+    elif raw_meta:
+        req_meta = json.loads(raw_meta)
+    else:
+        req_meta = {}
     return JobRecord(
-        job_id=row[0],
-        status=row[1],
-        request_meta=json.loads(row[2]) if row[2] else {},
-        result_artifact_id=row[3],
-        result_artifact_token=row[4],
-        created_at=row[5],
-        updated_at=row[6],
-        error=row[7],
+        job_id=row["job_id"],
+        status=row["status"],
+        request_meta=req_meta,
+        result_artifact_id=row["result_artifact_id"],
+        result_artifact_token=row["result_artifact_token"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        error=row["error"],
     )
 
 
 def _channel_from_row(row: Any) -> ChannelRecord:
     return ChannelRecord(
-        channel_id=row[0],
-        session_token=row[1],
-        job_id=row[2],
-        created_at=row[3],
-        ttl_seconds=row[4],
-        consumed=bool(row[5]),
+        channel_id=row["channel_id"],
+        session_token=row["session_token"],
+        job_id=row["job_id"],
+        created_at=row["created_at"],
+        ttl_seconds=row["ttl_seconds"],
+        consumed=bool(row["consumed"]),
+    )
+
+
+def _artifact_from_row(row: Any) -> ArtifactRecord:
+    return ArtifactRecord(
+        id=row["id"],
+        token=row["token"],
+        owner_job_id=row["owner_job_id"],
+        content_type=row["content_type"],
+        created_at=row["created_at"],
+        ttl_seconds=row["ttl_seconds"],
     )
 
 
@@ -96,8 +128,15 @@ class SQLiteStateBackend:
     def _open_sync(self) -> None:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._blob_dir.mkdir(parents=True, exist_ok=True)
+        if os.name != "nt":
+            for d in (self._db_path.parent, self._blob_dir):
+                with contextlib.suppress(OSError):
+                    os.chmod(d, 0o700)
         conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
-        conn.execute("PRAGMA journal_mode=WAL")
+        conn.row_factory = sqlite3.Row
+        res = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+        if res and str(res[0]).lower() != "wal":
+            _LOGGER.warning("SQLite journal_mode is '%s', expected 'wal'", res[0])
         conn.executescript(_SCHEMA)
         conn.commit()
         self._conn = conn
@@ -139,7 +178,7 @@ class SQLiteStateBackend:
                     "SELECT blob_path FROM artifacts WHERE id = ?", (id,)
                 ).fetchone()
                 if existing is not None:
-                    previous_path = Path(existing[0])
+                    previous_path = Path(existing["blob_path"])
                 new_path.write_bytes(blob)
                 conn.execute(
                     "INSERT OR REPLACE INTO artifacts "
@@ -171,17 +210,10 @@ class SQLiteStateBackend:
                     "created_at, ttl_seconds FROM artifacts WHERE id = ?",
                     (id,),
                 ).fetchone()
-                if row is None or row[1] != token:
+                if row is None or not secrets.compare_digest(str(row["token"]), token):
                     return None
-                record = ArtifactRecord(
-                    id=row[0],
-                    token=row[1],
-                    owner_job_id=row[2],
-                    content_type=row[3],
-                    created_at=row[5],
-                    ttl_seconds=row[6],
-                )
-                path = Path(row[4])
+                record = _artifact_from_row(row)
+                path = Path(row["blob_path"])
                 if not path.is_file():
                     return None
                 return ArtifactBlob(record=record, blob=path.read_bytes())
@@ -199,7 +231,7 @@ class SQLiteStateBackend:
                 conn.execute("DELETE FROM artifacts WHERE id = ?", (id,))
                 conn.commit()
                 if row is not None:
-                    Path(row[0]).unlink(missing_ok=True)
+                    Path(row["blob_path"]).unlink(missing_ok=True)
 
             await asyncio.to_thread(_delete)
 
@@ -295,7 +327,7 @@ class SQLiteStateBackend:
                 conn = self._require_conn()
                 cursor = conn.execute("DELETE FROM jobs")
                 conn.commit()
-                return cursor.rowcount if cursor.rowcount >= 0 else 0
+                return _rowcount(cursor)
 
             return await asyncio.to_thread(_clear)
 
@@ -360,8 +392,8 @@ class SQLiteStateBackend:
                 ).fetchone()
                 if (
                     row is None
-                    or row[5]
-                    or not secrets.compare_digest(row[1], session_token)
+                    or row["consumed"]
+                    or not secrets.compare_digest(str(row["session_token"]), session_token)
                 ):
                     return None
                 conn.execute(
@@ -395,7 +427,7 @@ class SQLiteStateBackend:
                     (now,),
                 )
                 conn.commit()
-                return cursor.rowcount if cursor.rowcount >= 0 else 0
+                return _rowcount(cursor)
 
             return await asyncio.to_thread(_prune)
 

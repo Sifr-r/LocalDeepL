@@ -152,6 +152,23 @@ def test_job_status_response_accepts_cancelled() -> None:
     assert status.error == "Job cancelled."
 
 
+def test_async_submit_response_status_validation() -> None:
+    for valid_status in ("pending", "processing", "complete", "error", "cancelled"):
+        resp = AsyncSubmitResponse(
+            job_id="j1",
+            status=valid_status,
+            status_url="/api/process/status/j1",
+        )
+        assert resp.status == valid_status
+
+    with pytest.raises(ValidationError):
+        AsyncSubmitResponse(
+            job_id="j1",
+            status="invalid_status",  # type: ignore[arg-type]
+            status_url="/api/process/status/j1",
+        )
+
+
 def test_parse_bool_uniform_vocabulary() -> None:
     from omniscribe.plugins.ocr.schemas import _parse_bool
 

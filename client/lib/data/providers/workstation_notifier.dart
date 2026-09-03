@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' show Offset;
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omniscribe_client/core/websocket/ws_client.dart';
 import 'package:omniscribe_client/data/models/bbox_item.dart';
@@ -511,7 +512,10 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
       );
 
       await _wsSubscription?.cancel();
-      _wsSubscription = _wsClient.stream.listen(handleWsFrame);
+      _wsSubscription = _wsClient.stream.listen(
+        handleWsFrame,
+        onDone: () => _handleWsClosed(),
+      );
 
       // 2. Submit async OCR request
       final submitResponse = await _ocrRepo.processOcrAsync(
@@ -540,6 +544,54 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
       rethrow;
     }
   }
+
+  /// Handles unexpected WebSocket closure during active asynchronous OCR processing.
+  Future<void> _handleWsClosed() async {
+    if (!state.isProcessing || state.activeJobId == null) {
+      return;
+    }
+
+    final jobId = state.activeJobId!;
+    try {
+      final status = await _ocrRepo.getJobStatus(jobId);
+      if (status.isComplete) {
+        final pdfBytes = await _ocrRepo.downloadResult(jobId);
+        state = state.copyWith(
+          isProcessing: false,
+          percent: 100,
+          stage: 'Complete',
+          statusMessage: 'Document OCR complete',
+          loadedBytes: pdfBytes,
+          textArtifactId: status.textArtifactId,
+        );
+      } else if (status.isCancelled) {
+        state = state.copyWith(
+          isProcessing: false,
+          stage: 'Cancelled',
+          statusMessage: 'Job was cancelled',
+        );
+      } else if (status.isError) {
+        state = state.copyWith(
+          isProcessing: false,
+          stage: 'Error',
+          statusMessage: status.error?.isNotEmpty == true
+              ? status.error!
+              : 'Processing failed',
+          error: status.error ?? 'Job failed with error status',
+        );
+      }
+    } catch (e) {
+      state = state.copyWith(
+        isProcessing: false,
+        stage: 'Error',
+        statusMessage: 'Job status check failed: $e',
+        error: e.toString(),
+      );
+    }
+  }
+
+  @visibleForTesting
+  Future<void> handleWsClosed() => _handleWsClosed();
 
   /// Cancels an active OCR job or streaming progress session.
   Future<void> cancelOcr() async {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import AsyncMock
 
 import httpx
 from fastapi import FastAPI
@@ -279,6 +280,98 @@ def test_router_catalog_details_and_models() -> None:
         models = client.get("/api/providers/openai/models")
         assert models.status_code == 200
         assert models.json() == {"models": ["model-a", "model-b"], "error": None}
+
+
+def test_provider_models_accepts_x_provider_api_key_header() -> None:
+    manager, http = _manager(
+        FakeHttpClient({"data": [{"id": "model-a"}]})
+    )
+    app = FastAPI()
+    app.include_router(build_providers_router(manager))
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/providers/openai/models",
+            headers={"X-Provider-Api-Key": "sk-header-key"},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"models": ["model-a"], "error": None}
+        assert len(http.calls) == 1
+        _, headers = http.calls[0]
+        assert headers["Authorization"] == "Bearer sk-header-key"
+
+
+def test_provider_models_accepts_authorization_bearer_header() -> None:
+    manager, http = _manager(
+        FakeHttpClient({"data": [{"id": "model-a"}]})
+    )
+    app = FastAPI()
+    app.include_router(build_providers_router(manager))
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/providers/openai/models",
+            headers={"Authorization": "Bearer sk-bearer-key"},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"models": ["model-a"], "error": None}
+        assert len(http.calls) == 1
+        _, headers = http.calls[0]
+        assert headers["Authorization"] == "Bearer sk-bearer-key"
+
+
+def test_provider_models_passes_resolved_key_to_discover_models() -> None:
+    manager, _ = _manager()
+    manager.discover_models = AsyncMock(return_value={"models": ["mock-m"], "error": None})  # type: ignore[method-assign]
+    app = FastAPI()
+    app.include_router(build_providers_router(manager))
+    with TestClient(app) as client:
+        # 1. X-Provider-Api-Key header takes highest precedence
+        resp1 = client.get(
+            "/api/providers/openai/models?api_key=query-key",
+            headers={
+                "X-Provider-Api-Key": "header-x-key",
+                "Authorization": "Bearer header-bearer-key",
+            },
+        )
+        assert resp1.status_code == 200
+        manager.discover_models.assert_awaited_with(
+            "openai", api_base=None, api_key="header-x-key"
+        )
+
+        # 2. Authorization: Bearer takes precedence over query param
+        resp2 = client.get(
+            "/api/providers/openai/models?api_key=query-key",
+            headers={"Authorization": "Bearer header-bearer-key"},
+        )
+        assert resp2.status_code == 200
+        manager.discover_models.assert_awaited_with(
+            "openai", api_base=None, api_key="header-bearer-key"
+        )
+
+        # 3. Non-Bearer Authorization falls back to query param
+        resp3 = client.get(
+            "/api/providers/openai/models?api_key=query-key",
+            headers={"Authorization": "Basic dXNlcjpwYXNz"},
+        )
+        assert resp3.status_code == 200
+        manager.discover_models.assert_awaited_with(
+            "openai", api_base=None, api_key="query-key"
+        )
+
+        # 4. Query param used when no headers provided
+        resp4 = client.get("/api/providers/openai/models?api_key=query-key")
+        assert resp4.status_code == 200
+        manager.discover_models.assert_awaited_with(
+            "openai", api_base=None, api_key="query-key"
+        )
+
+
+def test_bearer_token_helper() -> None:
+    assert prov._bearer_token("Bearer sk-test-token") == "sk-test-token"
+    assert prov._bearer_token("Bearer   sk-test-token  ") == "sk-test-token"
+    assert prov._bearer_token("Bearer ") == ""
+    assert prov._bearer_token("Basic dXNlcjpwYXNz") is None
+    assert prov._bearer_token(None) is None
+    assert prov._bearer_token("") is None
 
 
 async def test_plugin_registers_provider_manager_service() -> None:

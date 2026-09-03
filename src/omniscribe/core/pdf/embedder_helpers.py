@@ -1,18 +1,7 @@
 """Underscored helpers for the sandwich-PDF embedder.
 
-Audit catalog (Sprint 6 long-file split): the file at
-``omniscribe/core/pdf/embedder.py`` (578 LOC) had 470 LOC of
-underscored helper functions + module-level state
-interleaved with the public ``embed_structured_text``.
-Pulled the helpers into this module so the main file is just
-the public entry point + the embed-side worker pool that
-calls into them.
-
-Public surface (``embed_structured_text`` in
-``omniscribe.core.pdf.embedder``) is unchanged. Tests +
-``handler.py`` + the package ``__init__`` all import the
-public function, not the helpers, so the split is
-behavior-preserving.
+Contains helper functions, font caching/probing, and rasterization
+support used by ``omniscribe.core.pdf.embedder``.
 """
 
 from __future__ import annotations

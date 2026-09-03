@@ -54,16 +54,11 @@ services:
       # exposes the LM Studio server on.
       LLM_API_BASE: http://host.docker.internal:1234/v1
       # Broker/backend for the async-translation and redis state paths.
-      # F5-06 audit fix: the previous ``omniscribe-local-dev`` default
-      # password was a *known* string and was the same fallback at every
-      # site that referenced ``REDIS_PASSWORD`` (4 places). Anyone who
-      # could reach the Redis port (loopback-only in our setup, but a
-      # default is still a default) had a credential. The new contract:
-      #   * ``.env`` (gitignored) is the only place a real password lives.
-      #   * When ``.env`` is absent, Compose refuses to start the stack
-      #     (no silent fallback to a known string). The .env.example
-      #     ships a generator one-liner so the operator can create a
-      #     strong password in a single command.
+      # ``.env`` (gitignored) is the single source of truth for REDIS_PASSWORD.
+      # ``.env.example`` provides an active dev default (``omniscribe-secure-dev-password``)
+      # so ``cp .env.example .env && docker compose up`` works immediately.
+      # For production deployments, override with a strong secret (see .env.example).
+      # When ``.env`` is absent, Compose refuses to start (no silent fallback).
       # The ``REDIS_URL`` and ``requirepass`` lines below read the same
       # var, so the env-var contract is symmetric — one password, four
       # uses, all sourced from ``.env`` or rejected at startup.

@@ -31,7 +31,6 @@ void main() {
           .thenAnswer((_) async => 'tok-99');
       when(() => apiClient.getBytes(
             ApiConstants.jobResult('job-42'),
-            queryParameters: {'token': 'tok-99'},
             headers: {'Authorization': 'Bearer tok-99'},
           )).thenAnswer((_) async => expectedBytes);
 
@@ -41,7 +40,6 @@ void main() {
       verify(() => ocrRepo.getJobArtifactToken('job-42')).called(1);
       verify(() => apiClient.getBytes(
             ApiConstants.jobResult('job-42'),
-            queryParameters: {'token': 'tok-99'},
             headers: {'Authorization': 'Bearer tok-99'},
           )).called(1);
     });

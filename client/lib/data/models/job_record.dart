@@ -107,7 +107,8 @@ class OcrJobStatusResponse {
   bool get isPending => status == 'pending' || status == 'queued';
   bool get isProcessing => status == 'processing' || status == 'running';
   bool get isComplete => status == 'complete';
-  bool get isError => status == 'error' || status == 'cancelled';
+  bool get isCancelled => status == 'cancelled';
+  bool get isError => status == 'error';
 
   factory OcrJobStatusResponse.fromJson(Map<String, dynamic> json) {
     final failed = <int>[];

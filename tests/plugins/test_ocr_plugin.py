@@ -235,7 +235,20 @@ async def test_async_submit_status_result_and_job_list(fake_pipeline) -> None:
             assert items[0]["status"] == "complete"
             assert items[0]["timestamp"]
 
-            cleared = await client.delete("/api/jobs")
+            # DELETE without confirm=true returns 400
+            unconfirmed = await client.delete("/api/jobs")
+            assert unconfirmed.status_code == 400
+            assert unconfirmed.json() == {
+                "error": "confirmation_required",
+                "detail": (
+                    "DELETE /api/jobs requires confirm=true query parameter "
+                    "to prevent accidental wipe"
+                ),
+            }
+            assert len((await client.get("/api/jobs")).json()) == 1
+
+            # DELETE with confirm=true succeeds
+            cleared = await client.delete("/api/jobs", params={"confirm": "true"})
             assert cleared.status_code == 200
             assert cleared.json()["cleared"] == 1
             assert (await client.get("/api/jobs")).json() == []
@@ -300,12 +313,18 @@ async def test_cancel_queued_job(fake_pipeline) -> None:
             assert cancelled["status"] == "cancelled"
             assert cancelled["error"] == "Job cancelled."
 
-            # terminal cancel is a no-op
+            # terminal cancel returns {"cancelled": True, "status": record.status}
             again = await client.post(f"/api/jobs/{second_id}/cancel")
-            assert again.json() == {"cancelled": False}
+            assert again.status_code == 200
+            assert again.json() == {"cancelled": True, "status": "cancelled"}
 
             fake_pipeline["gate"].set()
             await _wait_status(client, first_id, "complete")
+
+            # cancel on completed job also returns {"cancelled": True, "status": "complete"}
+            cancel_complete = await client.post(f"/api/jobs/{first_id}/cancel")
+            assert cancel_complete.status_code == 200
+            assert cancel_complete.json() == {"cancelled": True, "status": "complete"}
     finally:
         await ctx.dispose()
 
@@ -579,3 +598,115 @@ async def test_typed_avif_upload_with_variable_ftyp_is_accepted(fake_pipeline) -
         assert response.content == PDF_BYTES
     finally:
         await ctx.dispose()
+
+
+async def test_delete_jobs_confirmation_required(fake_pipeline) -> None:
+    """DELETE /api/jobs requires confirm=true query parameter."""
+    ctx, app = await _boot()
+    try:
+        async with _client(app) as client:
+            # 1. No confirm param -> 400
+            res = await client.delete("/api/jobs")
+            assert res.status_code == 400
+            assert res.json() == {
+                "error": "confirmation_required",
+                "detail": (
+                    "DELETE /api/jobs requires confirm=true query parameter "
+                    "to prevent accidental wipe"
+                ),
+            }
+
+            # 2. confirm=false -> 400
+            res_false = await client.delete("/api/jobs", params={"confirm": "false"})
+            assert res_false.status_code == 400
+            assert res_false.json()["error"] == "confirmation_required"
+
+            # 3. confirm=true -> 200
+            res_true = await client.delete("/api/jobs", params={"confirm": "true"})
+            assert res_true.status_code == 200
+            assert res_true.json() == {"status": "ok", "cleared": 0}
+    finally:
+        await ctx.dispose()
+
+
+async def test_cancel_job_terminal_status_behavior(fake_pipeline) -> None:
+    """POST /api/jobs/{job_id}/cancel returns status on terminal jobs."""
+    ctx, app = await _boot()
+    try:
+        async with _client(app) as client:
+            # 404 for unknown job
+            res_404 = await client.post("/api/jobs/unknown-id/cancel")
+            assert res_404.status_code == 404
+
+            # Submit and wait for completion
+            submit = await client.post("/api/process/async", **_upload())
+            job_id = submit.json()["job_id"]
+            await _wait_status(client, job_id, "complete")
+
+            # Cancelling complete job returns cancelled=True and status=complete
+            res_cancel = await client.post(f"/api/jobs/{job_id}/cancel")
+            assert res_cancel.status_code == 200
+            assert res_cancel.json() == {"cancelled": True, "status": "complete"}
+    finally:
+        await ctx.dispose()
+
+
+def test_guess_suffix_helper() -> None:
+    """_guess_suffix helper inspects filename and MIME type correctly."""
+    from omniscribe.plugins.ocr.service import _guess_suffix
+
+    # Preserves filename extension when present
+    assert _guess_suffix("doc.pdf") == ".pdf"
+    assert _guess_suffix("doc.PDF") == ".PDF"
+    assert _guess_suffix("photo.png", "image/jpeg") == ".png"
+    assert _guess_suffix("scan.tiff") == ".tiff"
+
+    # Sniffs MIME when filename has no extension
+    assert _guess_suffix("extensionless", "image/png") == ".png"
+    assert _guess_suffix("extensionless", "image/jpeg") == ".jpeg"
+    assert _guess_suffix("extensionless", "image/jpg") == ".jpg"
+    assert _guess_suffix("extensionless", "image/webp") == ".webp"
+    assert _guess_suffix("extensionless", "image/avif") == ".avif"
+    assert _guess_suffix("extensionless", "image/png; charset=utf-8") == ".png"
+
+    # Fallback to .pdf when unknown or octet-stream
+    assert _guess_suffix("extensionless", None) == ".pdf"
+    assert _guess_suffix("extensionless", "application/octet-stream") == ".pdf"
+    assert _guess_suffix("extensionless", "unknown/type") == ".pdf"
+
+
+async def test_update_config_change_detection() -> None:
+    """update_config avoids mutating settings when values are unchanged."""
+    from omniscribe.config import load_settings
+    from omniscribe.plugins.ocr.service import OCRServiceImpl
+
+    settings = load_settings()
+    settings.llm_api_base = "http://initial.base"
+    settings.llm_api_key = "initial-key"
+    settings.llm_model = "initial-model"
+
+    class _DummyQueue:
+        pass
+
+    class _DummyArtifacts:
+        pass
+
+    service = OCRServiceImpl(
+        settings=settings,
+        queue=_DummyQueue(),  # type: ignore[arg-type]
+        artifacts=_DummyArtifacts(),  # type: ignore[arg-type]
+        progress=None,
+        max_upload_mb=10,
+    )
+
+    # Calling update_config with identical coordinates doesn't mutate settings
+    res = service.update_config({
+        "api_base": "http://initial.base",
+        "api_key": "******",
+        "model": "initial-model",
+    })
+    assert res["model"] == "initial-model"
+
+    # Updating with changed model mutates settings
+    service.update_config({"model": "new-model"})
+    assert settings.llm_model == "new-model"

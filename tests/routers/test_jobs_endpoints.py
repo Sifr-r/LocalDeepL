@@ -24,7 +24,17 @@ def test_jobs_list_is_bare_array_and_clear_works(
     assert items[0]["status"] == "complete"
     assert items[0]["timestamp"]
 
-    cleared = api_client.delete("/api/jobs")
+    unconfirmed = api_client.delete("/api/jobs")
+    assert unconfirmed.status_code == 400
+    assert unconfirmed.json() == {
+        "error": "confirmation_required",
+        "detail": (
+            "DELETE /api/jobs requires confirm=true query parameter "
+            "to prevent accidental wipe"
+        ),
+    }
+
+    cleared = api_client.delete("/api/jobs?confirm=true")
     assert cleared.status_code == 200
     assert cleared.json() == {"status": "ok", "cleared": 1}
     assert api_client.get("/api/jobs").json() == []

@@ -145,3 +145,19 @@ class TestTranscriptionFactory:
         with patch.dict("sys.modules", {"faster_whisper": None}):
             engine = get_transcription_engine(engine_type="auto")
             assert isinstance(engine, GenericAudioAPIEngine)
+
+
+class TestWhisperLocalEngine:
+    def test_whisper_local_engine_lock_and_caching(self) -> None:
+        import threading
+
+        from omniscribe.core.transcription.local_engine import WhisperLocalEngine
+
+        engine = WhisperLocalEngine()
+        assert isinstance(engine._lock, type(threading.Lock()))
+        assert engine._model is None
+
+        # Simulate model already loaded
+        fake_model = object()
+        engine._model = fake_model
+        assert engine._get_model() is fake_model

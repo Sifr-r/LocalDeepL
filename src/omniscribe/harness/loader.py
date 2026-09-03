@@ -190,6 +190,7 @@ class Loader:
                         "Cordis patch file specified but not found: %s", path
                     )
                 continue
+            _LOGGER.info("Applying cordis patch: %s", path)
             rows = deep_merge(rows, parse_rows(path.read_text(encoding="utf-8")))
         rows = _apply_env_overrides(rows)
 

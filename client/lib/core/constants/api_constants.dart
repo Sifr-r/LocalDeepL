@@ -10,12 +10,9 @@ abstract final class ApiConstants {
   static const Duration defaultSendTimeout = Duration(minutes: 5);
 
   // Health Endpoints
-  static const String health = '/health';
-  static const String healthz = '/healthz';
   static const String apiHealth = '/api/health';
   static const String ready = '/ready';
   static const String readyz = '/readyz';
-  static const String apiReady = '/api/ready';
 
   // Config Endpoints
   static const String config = '/api/config';

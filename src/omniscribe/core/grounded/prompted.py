@@ -406,7 +406,8 @@ class PromptedGroundedOCR:
                     )
                     await asyncio.sleep(delay)
 
-        assert last_exc is not None
+        if last_exc is None:
+            raise RuntimeError("Exhausted retries without exception")
         raise last_exc
 
     async def ocr_document(

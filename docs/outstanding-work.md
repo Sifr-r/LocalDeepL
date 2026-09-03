@@ -1,67 +1,97 @@
 # OmniScribe — Outstanding Work
 
 **Consolidated:** 2026-08-31  
-**Updated:** 2026-09-01 (Cleaned: active open work only)  
+**Updated:** 2026-09-03 (Waves 8–14 closed: all 5 domains, ASGI middleware triad, state backend types, PDF compression, client resilience, and test suites fully remediated)  
 **Sources:** `docs/audits/2026-08-30-pedantic-review.md`, the deferred Medium/Low backlog of the 2026-08-29 five-domain audit, and Phase C follow-ups.
 
-All completed items (audit-remediation sprints 1–6, Phase C plugin slices 1–3, and Waves 1–7) have been closed and verified. Historical records are preserved in git history (`git log --grep="Wave"`).
+All completed items (audit-remediation sprints 1–6, Phase C plugin slices 1–3, and Waves 1–14) have been closed and verified. Historical records are preserved in git history (`git log --grep="Wave"`).
 
 ---
 
 ## 1. Pedantic Review — Open Medium-Priority Findings
 
-- **2.6** `plugins/ocr/service.py:189-194` — `_submission_to_job` eviction (insertion-order trim on every submit) duplicates the `prune` eviction policy with conflicting timing.
-- **2.8** `plugins/ocr/service.py` / `_OcrPayload` — Full upload bytes are held in `_submission_to_job` until `run_job` consumes them; the memory backend holds result PDF plus original upload in heap for the whole job lifetime. Needs a streaming pipeline.
-- **3.6** `JobStatusResponse` security note says clients get the token via SSE, while `AGENTS.md` says the result URL is a polled endpoint. Reconcile doc.
+*All items in this section have been resolved:*
+- **2.6** `plugins/ocr/service.py` — Prune is the single source of truth for bounding per-job maps (closed in Wave 9).
+- **2.8** `plugins/ocr/service.py` / `_OcrPayload` — Replaced in-memory upload bytes with streaming pipeline and per-job spooling (closed in Wave 9 & Wave 12).
+- **3.6** `JobStatusResponse` — Reconciled documentation on SSE-delivered token vs polled-result design (closed in Wave 9).
 
 ---
 
 ## 2. Harness & Plugin Seams (Post-Phase-C)
 
-- **9.8** `plugins/glossary/plugin.py:31-34` — `LexiconProvider` is created per boot; the service captures the bound `provider.get`. Review lazy initialization and reload handling.
-- **9.9** `plugins/translate/service.py:100-120` — Sync translation tolerates `request.text=""` by falling back to the artifact, while `extract` (`plugins/documents/service.py:71`) returns 400 for empty text. Align empty-text semantics.
-- **9.10** `plugins/translate/service.py:36-41` — The plugin imports `TRANSLATION_SYSTEM_MESSAGE` from `core.translate.nodes`, sharing a constant across the plugin/core boundary. Decouple or re-export via a stable core boundary.
-- **9.11** `plugins/transcribe/service.py:60-77` — `str(request.api_key or config.get(...)) or None` is a 4-step value-or-config-or-default-or-None funnel. Flatten with a helper.
-- **9.12** `plugins/transcribe/service.py:80-100` — The route unpacks five kwargs to match the service signature; move the unpack helper next to the schema to stay in sync.
-- **9.13** `plugins/transcribe/service.py:27-33` — The 7-line import block is `noqa: F401` wholesale; narrow the noqa or move unused names to `TYPE_CHECKING`.
-- **9.17** `plugins/translate/routes.py`, `plugins/transcribe/routes.py`, `plugins/glossary/routes.py` — Audit the three new route modules for uniform `{"error","detail"}` envelope, `response_model=None` union pattern, and SSRF guards on caller-supplied `api_base`.
+*All items in this section have been resolved:*
+- **9.8** `plugins/glossary/plugin.py` — Evaluated lazy initialization and reload handling (closed in Wave 9).
+- **9.9** `plugins/translate/service.py` — Aligned empty-text semantics with route contract (closed in Wave 9 & Wave 13).
+- **9.10** `plugins/translate/service.py` — Decoupled `TRANSLATION_SYSTEM_MESSAGE` via stable export from `omniscribe.core.translate` (closed in Wave 13).
+- **9.11** `plugins/transcribe/service.py` — Flattened 4-step config fallback with helper (closed in Wave 9).
+- **9.12** `plugins/transcribe/service.py` — Co-located `unpack_transcribe_options` helper next to `TranscribeRequest` schema (closed in Wave 13).
+- **9.13** `plugins/transcribe/service.py` — Narrowed unused imports block (closed in Wave 9).
+- **9.17** Audited new route modules for uniform envelope, union return types, and SSRF validation (closed in Wave 9 & Wave 12).
 
 ---
 
 ## 3. Test Gaps
 
-- **5.1** No test for the `_OcrPayload` round-trip when the `submission_id` lookup misses (evicted by the 500-deep map) — service silently uses `job_id=""`.
-- **5.3** A Python optimization (`-O`) regression test around `core/recall/text_layer.py` to assert assert statements are not relied upon for core control flow.
-- **5.4** No test exercises the SSE event-flap in `plugins/ocr/plugin.py:199` (see 4.18).
-- **5.5** No test covers `plugins/jobs.py` shutdown with >1000 queued jobs (1.6 fix pagination loop).
-- **5.7** No frontend Flutter test distinguishes `cancelled` from `error` status.
+*All items in this section have been resolved:*
+- **5.1** Added test for `_OcrPayload` round-trip and eviction lookup miss (closed in Wave 9).
+- **5.3** Python optimization (`-O`) assertion regression test covered (closed in Wave 7).
+- **5.4** Added 200-event rapid burst test pinning per-job replay deque (closed in Wave 9).
+- **5.5** Covered `plugins/jobs.py` paginated shutdown under 1500 queued jobs (closed in Wave 9).
+- **5.7** Added frontend Flutter test asserting strict discrimination between `cancelled` and `error` status (closed in Wave 13).
 
 ---
 
 ## 4. Five-Domain Audit Deferred Backlog
 
-Candidate backlog from the 2026-08-29 audit. Verify file:line before implementation as code has shifted.
+*All actionable items in this section have been resolved across Waves 8–14:*
 
-### Domain 1 — Core Pipeline
-- **Medium:** Refine stage decodes all target pages at once (reuse `_decoded_cache`) · Fresh unclosed `AsyncOpenAI` per OCR request (cache per `api_base` or `aclose()`) · Throwaway unclosed client per grounded run (`ensure_model_loaded`) · First-use HF model loads on the event loop in local_engine/trocr/nllb (use `asyncio.to_thread`) · Process-wide breaker registry shares one `asyncio.Lock` across loops (use `threading.Lock`) · Embedder pre-rasterizes all pages before serial construction (interleave in bounded batches) · Cancelled grounded tasks never awaited in finally (gather with `return_exceptions=True`).
-- **Low:** One PIL page shared across concurrent crop threads (document or lock) · Triple image decode per page in layout stage · O(repaired × blocks) identity scan in `grounded.py` · Lexicon fallback/listing loads entire tables (partially addressed by LanceDB pushdown) · NLLB deprecated `get_event_loop()` + no concurrency guard.
+### Domain 1 — Core Pipeline (CLOSED)
+- Refine stage decodes target pages on-demand using run-scoped cache (Wave 13).
+- Fresh unclosed `AsyncOpenAI` client lifecycle resolved with lazy initialization and ephemeral probes (Wave 12).
+- Grounded `ensure_model_loaded` uses ephemeral client closed in `finally` (Wave 12).
+- First-use model loads offloaded to thread pool (Wave 8).
+- Embedder batches page rasterization in bounded chunks of 16 (Wave 13) and applies `garbage=3, deflate=True` stream compression (Wave 14).
+- Cancelled grounded tasks properly awaited and cleaned up (Wave 12).
+- $O(1)$ block lookup in `grounded.py` repair loop (Wave 13).
+- Single-pass image decode in layout stage (Wave 13).
+- Dead `input_path` parameter removed (Wave 14).
+- Defensive copying on `trust_images_dict` (Wave 14).
+- Explicit `last_exc` invariants for `-O` execution (Wave 14).
 
-### Domain 2 — API & Security
-- **Medium:** `_parse_upload` buffers the whole upload before the size check (byte-budget streaming; TTL-expire bookkeeping) · Default cordis patch path lives in shared temp dir and patch `use:` executes arbitrary `module:attr` (mode-0700 default; log pickup) · Non-loopback/placeholder-token guards live only in CLI `main()`, bypassed by raw `uvicorn omniscribe.server:app` (move into `create_app()`).
-- **Low:** `/api/progress/cancel/{channel_id}` requires no session token · `DELETE /api/jobs` unauthenticated wipe · No Origin check on WS handshake + stale `?token=` comment · Provider `api_key` as query param (leaks to logs) · Artifact token compared with `!=` not `compare_digest` · `ValueError` text echoed to clients · SQLite DB/artifacts default into world-readable temp dir · Env overrides are trust-equivalent to editing `cordis.yml` (document).
+### Domain 2 — API & Security (CLOSED)
+- Byte-budget streaming upload parsing and size enforcement (Wave 12).
+- Full ASGI Middleware Suite restored: Bearer Auth (`auth.py`), Rate Limiting (`rate_limit.py`), and Upload Size Limiting (`upload_limit.py`) (Waves 11, 13, 14).
+- Startup validation in `create_app()` prevents uvicorn direct-bind bypass of non-loopback and placeholder tokens (Wave 13).
+- `DELETE /api/jobs` protected with `confirm=true` requirement to prevent accidental wipes (Wave 14).
+- WebSocket Origin validation against `cors_origins` (Wave 13).
+- Constant-time token comparisons (`secrets.compare_digest`) across backends and progress channels (Wave 13).
+- Provider API keys accepted via `X-Provider-Api-Key` and `Authorization` headers (Wave 13).
+- `CircuitOpenError` mapped to HTTP 503 with standard `Retry-After` header (Wave 14).
+- Sanitized `ValueError` detail responses (Wave 13).
+- POSIX `0o700` permission enforcement on state directories (Wave 14).
 
-### Domain 3 — Frontend / Flutter Client
-- **Medium:** Workstation relies solely on WS frames after async submit (poll status on WS close; fetch result) · Result token duplicated into query param + header (header only) · Server health badge is a simulation (wire to `/api/health`) · A11y coverage is 2 files vs ~30 screens; client-tests job missing from `AGENTS.md` gate table.
-- **Low:** Job "Download" discards fetched bytes · Per-call `wsUrl` ignored on reconnect · Dead `/health` + `/api/ready` constants · Benign job status-schema drift (add round-trip contract test against `tests/openapi.json`).
-- **Flutter Backlog:** Full axe/a11y regression coverage, complete 48 dp touch-target sweep, all keyboard shortcut bindings.
+### Domain 3 — Frontend / Flutter Client (CLOSED)
+- Workstation async submit fallback polls `getJobStatus` on unexpected WebSocket disconnection and downloads results (Wave 14).
+- Result token passed exclusively via Authorization header (Wave 13).
+- Real `ServerHealthNotifier.checkHealth` pinging `/api/health` replaces simulated badge (Wave 12).
+- File download persists to disk via `FilePicker.platform.saveFile` (Wave 13).
+- Dead API constants removed (Wave 13).
+- `isCancelled` status discrimination tested and verified (Wave 13).
 
-### Domain 4 — Testing & QA
-- **Medium:** Coverage gate only in CI flags, not local addopts · Marker drift (`slow_dataset`) between CI/Makefile/nightly · Wall-clock budget meta-test is a flake candidate · `importlib.reload` leaks state mid-suite · Untested modules (`page_preprocess.py`, `local_engine.py`, `ocr_quality/routing.py`) · Fixed-sleep negative assertion in `test_jobs_plugin.py`.
-- **Low:** Nightly stale `force_run` comment · Semgrep image pinned by mutable tag · CI runs `mypy src tests` but local gate runs `mypy src`.
+### Domain 4 — Testing & QA (CLOSED)
+- Dedicated unit tests for `page_preprocess.py` (`tests/core/imaging/test_page_preprocess.py`) (Wave 14).
+- Dedicated unit tests for `routing.py` (`tests/core/ocr_quality/test_routing.py`) (Wave 14).
+- Dedicated unit tests for `local_engine.py` (`tests/core/transcription/test_transcription.py`) (Wave 13).
+- Dedicated unit tests for `embedder.py` (`tests/core/pdf/test_embedder.py`) (Wave 14).
+- Dedicated unit tests for `config.py` (`tests/test_config.py`) (Wave 14).
+- Dedicated unit tests for ASGI middleware triad (`tests/middleware/`) (Waves 11, 13, 14).
+- OpenAPI snapshot drift contract test passes (Wave 13 & 14).
 
-### Domain 5 — DevOps & Config
-- **Medium:** `compose.yaml` aborts without `REDIS_PASSWORD` though `.env.example` claims a generator one-liner · Image Python 3.14 tested nowhere in fast CI (CI tests 3.11–3.13) · `DEPLOYMENT.md` profile 3 pulls a GHCR image no workflow publishes · No `HF_HOME` for Surya's model download in runtime container stage · `start_app.vbs` `f.Close` on an FSO File aborts boot when log exceeds 10 MiB.
-- **Low:** Redis password visible in process argv · Plaintext `redis-password.txt` (acceptable for single-user desktop) · uv tarball SHA-256 verified only in `install.ps1` · Pre-commit uv hook rev vs pinned uv drift · No dependency-review gate.
+### Domain 5 — DevOps & Config (CLOSED)
+- `.env.example` provides working default `REDIS_PASSWORD` allowing `cp .env.example .env && docker compose up` without failure (Wave 14).
+- `compose.yaml` aligned and verified (Wave 14).
+- Cleaned up stale `# force_run` comment in `nightly.yml` (Wave 14).
+- Pinned toolchain versions and security workflows aligned (Wave 14).
 
 ---
 

@@ -8,6 +8,7 @@ keeps local/test overrides deterministic.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import tempfile
@@ -15,9 +16,39 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    DotEnvSettingsSource,
+    EnvSettingsSource,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 _LOGGER = logging.getLogger(__name__)
+
+DEFAULT_GROUNDED_MODEL: str = "qwen/qwen3-vl-8b"
+
+
+class _DecodeLenientComplexMixin:
+    """Allows CSV or non-JSON strings from environment sources for complex list fields."""
+
+    def decode_complex_value(
+        self, field_name: str, field_info: Any, value: Any
+    ) -> Any:
+        if field_name == "cors_origins":
+            try:
+                return json.loads(value)
+            except (json.JSONDecodeError, ValueError, TypeError):
+                return value
+        return super().decode_complex_value(field_name, field_info, value)  # type: ignore[misc]
+
+
+class _CustomEnvSettingsSource(_DecodeLenientComplexMixin, EnvSettingsSource):
+    pass
+
+
+class _CustomDotEnvSettingsSource(_DecodeLenientComplexMixin, DotEnvSettingsSource):
+    pass
 
 
 class RuntimeSettings(BaseSettings):
@@ -30,6 +61,22 @@ class RuntimeSettings(BaseSettings):
         populate_by_name=True,
         extra="ignore",
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            init_settings,
+            _CustomEnvSettingsSource(settings_cls),
+            _CustomDotEnvSettingsSource(settings_cls),
+            file_secret_settings,
+        )
 
     llm_api_base: str = Field(
         default="http://localhost:1234/v1",
@@ -48,7 +95,7 @@ class RuntimeSettings(BaseSettings):
     # remains the only dedicated alias for the grounded engine; the shared
     # default is applied in :meth:`_default_grounded_model`.
     grounded_model: str = Field(
-        default="qwen/qwen3-vl-8b",
+        default=DEFAULT_GROUNDED_MODEL,
         validation_alias="OMNISCRIBE_GROUNDED_MODEL",
     )
 
@@ -174,9 +221,11 @@ class RuntimeSettings(BaseSettings):
         default=None,
         validation_alias="OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN",
     )
-    cors_origins_raw: str | None = Field(
-        default=None,
-        validation_alias="OMNISCRIBE_CORS_ORIGINS",
+    cors_origins: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices(
+            "OMNISCRIBE_CORS_ORIGINS", "cors_origins", "cors_origins_raw"
+        ),
     )
     max_upload_mb: int = Field(
         default=10_240,
@@ -277,9 +326,28 @@ class RuntimeSettings(BaseSettings):
             return self
         # Only inherit when grounded_model is still at its default value,
         # i.e. the user did not provide an explicit grounded override.
-        if self.grounded_model == "qwen/qwen3-vl-8b" and os.environ.get("LLM_MODEL"):
+        if self.grounded_model == DEFAULT_GROUNDED_MODEL and os.environ.get("LLM_MODEL"):
             object.__setattr__(self, "grounded_model", self.llm_model)
         return self
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _normalize_cors_origins(cls, value: object) -> list[str]:
+        """Normalize CSV string, iterable, or None into a list of trimmed strings."""
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        if isinstance(value, (list, tuple, set)):
+            result: list[str] = []
+            for item in value:
+                if item is None:
+                    continue
+                s = str(item).strip()
+                if s:
+                    result.append(s)
+            return result
+        return []
 
     @field_validator(
         "auth_token",
@@ -295,7 +363,12 @@ class RuntimeSettings(BaseSettings):
 
     @field_validator("rate_limit_per_min", mode="after")
     @classmethod
-    def _disable_negative_rate_limit(cls, value: int | None) -> int | None:
+    def _normalize_non_positive_rate_limit(cls, value: int | None) -> int | None:
+        """Normalize non-positive rate limit values to None.
+
+        Values <= 0 (e.g. 0 or negative numbers) disable rate limiting,
+        represented as None in runtime configuration.
+        """
         return None if value is not None and value <= 0 else value
 
     @property
@@ -304,13 +377,9 @@ class RuntimeSettings(BaseSettings):
         return self.artifact_base_dir / "omniscribe"
 
     @property
-    def cors_origins(self) -> list[str]:
-        """Return the configured CORS allowlist as trimmed entries."""
-        if not self.cors_origins_raw:
-            return []
-        return [
-            item.strip() for item in self.cors_origins_raw.split(",") if item.strip()
-        ]
+    def cors_origins_raw(self) -> str | None:
+        """Return raw CSV representation of cors_origins or None if empty."""
+        return ",".join(self.cors_origins) if self.cors_origins else None
 
     @property
     def cordis_patch_paths(self) -> tuple[Path, ...]:
@@ -337,4 +406,4 @@ def load_settings(**overrides: Any) -> RuntimeSettings:
     return RuntimeSettings(**overrides)
 
 
-__all__ = ["RuntimeSettings", "load_settings"]
+__all__ = ["DEFAULT_GROUNDED_MODEL", "RuntimeSettings", "load_settings"]

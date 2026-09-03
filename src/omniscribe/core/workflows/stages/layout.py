@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import io
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING
@@ -51,7 +52,7 @@ def decode_chunk_bytes(
         result.append(raw)
         if on_decoded is not None:
             with contextlib.suppress(Exception):
-                on_decoded(p, _decode_page_image(b64))
+                on_decoded(p, Image.open(io.BytesIO(raw)).convert("RGB"))
     return result
 
 
@@ -74,7 +75,6 @@ class HybridLayoutDetector:
         images_dict: dict[int, str],
         page_nums: Sequence[int],
         progress: ProgressCallback | None,
-        input_path: str = "",
         decoded_put: Callable[[int, Image.Image], None] | None = None,
         decoded_get: Callable[[int], Image.Image | None] | None = None,
     ) -> dict[int, PageBoxes]:
@@ -93,9 +93,18 @@ class HybridLayoutDetector:
         tl_boxes_added = 0
         tl_dropped_before = getattr(text_layer, "candidates_dropped", 0)
 
-        tl_open = False
-        if text_layer is not None:
-            tl_open = await asyncio.to_thread(text_layer.open, input_path)
+        tl_open = (
+            text_layer is not None
+            and (
+                getattr(text_layer, "_doc", None) is not None
+                or getattr(text_layer, "opened", False)
+                or (
+                    getattr(text_layer, "opened_with", None) is not None
+                    and not getattr(text_layer, "closed", False)
+                )
+            )
+            and getattr(text_layer, "enabled", True)
+        )
         try:
             for i in range(0, len(page_nums), DETECT_CHUNK_SIZE):
                 chunk_pages = page_nums[i : i + DETECT_CHUNK_SIZE]

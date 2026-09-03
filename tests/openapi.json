@@ -10,6 +10,13 @@
           },
           "status": {
             "default": "pending",
+            "enum": [
+              "pending",
+              "processing",
+              "complete",
+              "error",
+              "cancelled"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -2017,18 +2024,38 @@
     "/api/jobs": {
       "delete": {
         "operationId": "clear_jobs_api_jobs_delete",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Confirm",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Clear Jobs Api Jobs Delete",
-                  "type": "object"
+                  "title": "Response Clear Jobs Api Jobs Delete"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Clear Jobs",
@@ -2079,9 +2106,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "boolean"
-                  },
+                  "additionalProperties": true,
                   "title": "Response Cancel Job Api Jobs  Job Id  Cancel Post",
                   "type": "object"
                 }
@@ -2479,6 +2504,38 @@
               "title": "Channel Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "session_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Session Token"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Token"
+            }
           }
         ],
         "responses": {
@@ -2756,6 +2813,38 @@
                 }
               ],
               "title": "Api Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Provider-Api-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Provider-Api-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],

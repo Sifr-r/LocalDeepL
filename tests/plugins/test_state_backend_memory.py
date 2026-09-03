@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import secrets
 import time
+from typing import Any
 
 import pytest
 
@@ -126,3 +128,27 @@ async def test_channel_put_get_consume_delete_prune(
 
 async def test_aclose_is_noop(backend: MemoryStateBackend) -> None:
     await backend.aclose()
+
+
+async def test_get_artifact_constant_time_compare(
+    backend: MemoryStateBackend, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _put_artifact(backend, artifact_id="sec-art")
+    calls: list[tuple[str, str]] = []
+    real_compare = secrets.compare_digest
+
+    def spy_compare(a: Any, b: Any) -> bool:
+        calls.append((str(a), str(b)))
+        return real_compare(a, b)
+
+    monkeypatch.setattr(
+        "omniscribe.plugins.state_backend_memory.secrets.compare_digest",
+        spy_compare,
+    )
+    result = await backend.get_artifact("sec-art", "tok")
+    assert result is not None
+    assert ("tok", "tok") in calls
+
+    calls.clear()
+    assert await backend.get_artifact("sec-art", "wrong") is None
+    assert ("tok", "wrong") in calls

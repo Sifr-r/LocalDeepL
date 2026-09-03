@@ -721,7 +721,7 @@ class TestHybridWhitespaceRecallGuardRails:
         assert (touched, added) == (1, 1)
         assert len(merged[0]) == 2
         # The fallback decode repopulated the cache for later stages.
-        assert 0 in engine._decoded_cache
+        assert (engine._current_run_id, 0) in engine._decoded_cache
 
     async def test_recall_boxes_normalized_to_bbox_tuples(self) -> None:
         # CQ-3: whatever container a duck-typed booster returns, the merge

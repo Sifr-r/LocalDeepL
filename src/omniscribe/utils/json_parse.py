@@ -26,7 +26,7 @@ def extract_json(text: str) -> Any:
     decoder = json.JSONDecoder()
     for start in (i for i, ch in enumerate(stripped) if ch in "{["):
         try:
-            parsed, _end = decoder.raw_decode(stripped[start:])
+            parsed, _end = decoder.raw_decode(stripped, idx=start)
             if isinstance(parsed, (dict, list)):
                 return parsed
         except json.JSONDecodeError:

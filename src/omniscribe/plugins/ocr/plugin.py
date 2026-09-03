@@ -30,7 +30,7 @@ import logging
 from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
-from fastapi import APIRouter, Body, Header, HTTPException, Request
+from fastapi import APIRouter, Body, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
@@ -69,11 +69,19 @@ class OCRService(Protocol):
     """Sync/async OCR execution seam over the core pipeline."""
 
     async def run_sync(
-        self, options: OCRRequest, blob: bytes, filename: str
+        self,
+        options: OCRRequest,
+        blob: bytes,
+        filename: str,
+        content_type: str | None = None,
     ) -> Response: ...
 
     async def submit(
-        self, options: OCRRequest, blob: bytes, filename: str
+        self,
+        options: OCRRequest,
+        blob: bytes,
+        filename: str,
+        content_type: str | None = None,
     ) -> AsyncSubmitResponse: ...
 
 
@@ -146,7 +154,7 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
 
     async def _parse_upload(
         request: Request,
-    ) -> tuple[OCRRequest, bytes, str]:
+    ) -> tuple[OCRRequest, bytes, str, str]:
         form = await request.form()
         upload = form.get("file")
         if upload is None or not hasattr(upload, "read"):
@@ -236,17 +244,21 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
         except ValidationError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         filename = str(getattr(upload, "filename", "") or "") or "upload.pdf"
-        return options, blob, filename
+        return options, blob, filename, content_type
 
     @router.post("/api/process")
     async def process_sync(request: Request) -> Response:
-        options, blob, filename = await _parse_upload(request)
-        return await service.run_sync(options, blob, filename)
+        options, blob, filename, content_type = await _parse_upload(request)
+        return await service.run_sync(
+            options, blob, filename, content_type=content_type
+        )
 
     @router.post("/api/process/async", status_code=202)
     async def process_async(request: Request) -> AsyncSubmitResponse:
-        options, blob, filename = await _parse_upload(request)
-        return await service.submit(options, blob, filename)
+        options, blob, filename, content_type = await _parse_upload(request)
+        return await service.submit(
+            options, blob, filename, content_type=content_type
+        )
 
     @router.get("/api/process/status/{job_id}")
     async def process_status(job_id: str) -> JobStatusResponse:
@@ -291,7 +303,18 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
         return [service.job_list_item(record) for record in records]
 
     @router.delete("/api/jobs")
-    async def clear_jobs() -> dict[str, Any]:
+    async def clear_jobs(confirm: bool = Query(default=False)) -> Any:
+        if not confirm:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "confirmation_required",
+                    "detail": (
+                        "DELETE /api/jobs requires confirm=true query parameter "
+                        "to prevent accidental wipe"
+                    ),
+                },
+            )
         cleared = await service._queue.clear()
         return {"status": "ok", "cleared": cleared}
 
@@ -307,7 +330,12 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
         return await service.fetch_result(job_id, bearer)
 
     @router.post("/api/jobs/{job_id}/cancel")
-    async def cancel_job(job_id: str) -> dict[str, bool]:
+    async def cancel_job(job_id: str) -> dict[str, Any]:
+        record = await service.job_record(job_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="unknown job")
+        if record.status in ("cancelled", "complete"):
+            return {"cancelled": True, "status": record.status}
         outcome = await service.cancel_job(job_id)
         if outcome is None:
             raise HTTPException(status_code=404, detail="unknown job")

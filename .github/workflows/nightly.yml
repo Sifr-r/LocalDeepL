@@ -57,9 +57,7 @@ jobs:
             hf-surya-
 
       - name: Run slow tests
-        # `force_run: slow` overrides the default skip of slow markers
-        # so the nightly run picks them up. Live-LLM is still skipped
-        # since CI has no model server.
+        # Live-LLM is still skipped since CI has no model server.
         run: uv run pytest -m slow --no-header -v
 
       - name: Upload results on failure

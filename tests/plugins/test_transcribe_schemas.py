@@ -63,3 +63,29 @@ def test_config_update_strips_strings() -> None:
 def test_config_update_rejects_unknown_fields() -> None:
     with pytest.raises(pydantic.ValidationError):
         TranscriptionConfigUpdate.model_validate({"nope": 1})
+
+
+def test_unpack_transcribe_options() -> None:
+    from omniscribe.plugins.transcribe.schemas import unpack_transcribe_options
+
+    req = TranscribeRequest(
+        model="whisper-large-v3",
+        engine="faster_whisper",
+        api_base="https://api.example.com",
+        api_key="secret",
+        language="fr",
+        prompt="Bonjour",
+        temperature=0.7,
+        channel_id="ch1",
+    )
+    unpacked = unpack_transcribe_options(req)
+    assert unpacked == {
+        "model": "whisper-large-v3",
+        "engine": "faster_whisper",
+        "api_base": "https://api.example.com",
+        "api_key": "secret",
+        "language": "fr",
+        "prompt": "Bonjour",
+        "temperature": 0.7,
+        "channel_id": "ch1",
+    }

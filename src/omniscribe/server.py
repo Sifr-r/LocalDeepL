@@ -1,4 +1,3 @@
-# ruff: noqa: E402
 """
 FastAPI web server for OmniScribe.
 
@@ -14,6 +13,10 @@ from __future__ import annotations
 import argparse
 import importlib
 import logging
+import math
+import os
+import re
+import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -21,8 +24,6 @@ from types import ModuleType
 from typing import Any, Protocol, cast
 
 from dotenv import load_dotenv
-
-load_dotenv()
 
 from omniscribe.config import RuntimeSettings, load_settings
 from omniscribe.utils import configure_logging  # noqa: F401  -- re-exported for tests
@@ -121,7 +122,9 @@ async def _load_harness(settings: RuntimeSettings) -> Any:
 
 def create_app() -> ASGIApplication:
     """Create the FastAPI app with the plugin-harness lifespan."""
+    load_dotenv()
     settings = load_settings()
+    _validate_runtime_settings(settings)
     fastapi = _load_optional_module("fastapi")
     staticfiles = _load_optional_module("fastapi.staticfiles")
     responses = _load_optional_module("fastapi.responses")
@@ -184,6 +187,20 @@ def create_app() -> ASGIApplication:
         BearerAuthMiddleware, expected_token=settings.auth_token
     )
 
+    # Wave 13: ASGI rate-limiting middleware.
+    if settings.rate_limit_per_min is not None:
+        from omniscribe.middleware.rate_limit import RateLimitMiddleware
+
+        web_app.add_middleware(
+            RateLimitMiddleware, rate_limit_per_min=settings.rate_limit_per_min
+        )
+
+    # Wave 14: ASGI upload size limit middleware.
+    from omniscribe.middleware.upload_limit import UploadSizeLimitMiddleware
+
+    max_bytes = max(1, settings.max_upload_mb) * 1024 * 1024
+    web_app.add_middleware(UploadSizeLimitMiddleware, max_bytes=max_bytes)
+
     if _STATIC_DIR.is_dir():
         web_app.mount(
             "/static",
@@ -202,9 +219,27 @@ def create_app() -> ASGIApplication:
 
     @web_app.exception_handler(ValueError)
     async def value_error_handler(request: Any, exc: ValueError) -> Any:
+        _log.warning(
+            "ValueError in %s %s: %s",
+            getattr(request, "method", "UNKNOWN"),
+            getattr(getattr(request, "url", None), "path", "UNKNOWN"),
+            exc,
+        )
         return responses.JSONResponse(
             status_code=400,
-            content={"error": "bad_request", "detail": str(exc)},
+            content={"error": "bad_request", "detail": _sanitize_value_error(exc)},
+        )
+
+    from omniscribe.core.ocr.resilience import CircuitOpenError
+
+    @web_app.exception_handler(CircuitOpenError)
+    async def _circuit_open_handler(request: Any, exc: CircuitOpenError) -> Any:
+        retry_after = getattr(exc, "retry_after", 30.0)
+        seconds = max(1, math.ceil(retry_after))
+        return responses.JSONResponse(
+            status_code=503,
+            content={"error": "service_unavailable", "detail": "Model circuit breaker is open; retry later"},
+            headers={"Retry-After": str(seconds)},
         )
 
     # M-3 audit fix: catch-all handler logs the traceback (so genuine
@@ -254,8 +289,47 @@ app = LazyASGIApp(create_app)
 # --- Startup validation ---
 
 
+def _sanitize_value_error(exc: Exception | str) -> str:
+    """Sanitize ValueError detail to prevent leaking tracebacks or system paths.
+
+    If the error message is multiline, contains traceback markers, or matches
+    filesystem path patterns (e.g. Windows drive letters, UNC paths, or absolute
+    Unix paths), a generic "Invalid input" detail is returned. Otherwise, clean
+    user-facing validation messages are preserved.
+    """
+    raw = str(exc).strip()
+    if not raw or "\n" in raw or "\r" in raw:
+        return "Invalid input"
+    raw_lower = raw.lower()
+    if "traceback" in raw_lower or ("line " in raw_lower and "file " in raw_lower):
+        return "Invalid input"
+    if re.search(r"[a-zA-Z]:[\\/]|\\\\[^\\/]+[\\/]", raw):
+        return "Invalid input"
+    if re.search(r"/(?:home|usr|var|etc|tmp|opt|root|bin|sbin|Users|app|private)/", raw):
+        return "Invalid input"
+    if ".." in raw and ("../" in raw or "..\\" in raw):
+        return "Invalid input"
+    return raw
+
+
+def _detect_bind_host() -> str:
+    """Detect the configured bind host from environment or command-line arguments."""
+    for env_var in ("OMNISCRIBE_HOST", "UVICORN_HOST", "HOST"):
+        val = os.environ.get(env_var)
+        if val and val.strip():
+            return val.strip()
+    for idx, arg in enumerate(sys.argv):
+        if arg == "--host" and idx + 1 < len(sys.argv):
+            return sys.argv[idx + 1].strip()
+        if arg.startswith("--host="):
+            return arg.split("=", 1)[1].strip()
+    return "127.0.0.1"
+
+
 def _validate_runtime_settings(
     settings: RuntimeSettings | None = None,
+    host: str | None = None,
+    allow_placeholder_token: bool | None = None,
 ) -> RuntimeSettings:
     """Load, validate, and log startup-time settings.
 
@@ -264,6 +338,12 @@ def _validate_runtime_settings(
     * ``OMNISCRIBE_LOG_FORMAT`` is a known format (raises ``ValueError``).
     * ``OMNISCRIBE_ARTIFACT_DIR`` is a directory when it exists (raises
       ``RuntimeError`` if a file is in the way).
+    * Non-loopback bind check: refuses to start bound to a non-loopback host
+      without ``OMNISCRIBE_AUTH_TOKEN`` (raises ``SystemExit``).
+    * Placeholder token check: refuses placeholder tokens on non-loopback binds
+      unless ``OMNISCRIBE_ALLOW_PLACEHOLDER_TOKEN`` is set or
+      ``allow_placeholder_token`` is True (raises ``SystemExit``).
+    * Warns when ``ALLOW_SSRF_LOCAL=true`` on non-loopback bind.
 
     Logs a single ``info`` record with the non-secret settings so an
     operator can confirm the process started with the expected backend
@@ -281,6 +361,45 @@ def _validate_runtime_settings(
         raise RuntimeError(
             f"OMNISCRIBE_ARTIFACT_DIR={artifact_base} must point to a "
             "directory, but it is an existing file."
+        )
+
+    # Security check: bind host and auth token validation
+    target_host = (host or _detect_bind_host()).strip()
+    is_loopback = target_host in {"127.0.0.1", "::1", "localhost"}
+
+    env_allow = os.environ.get(
+        "OMNISCRIBE_ALLOW_PLACEHOLDER_TOKEN", ""
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    allow_placeholder = bool(allow_placeholder_token) or env_allow
+
+    if not is_loopback and not settings.auth_token:
+        raise SystemExit(
+            f"Refusing to start: --host {target_host} is non-loopback and "
+            "OMNISCRIBE_AUTH_TOKEN is unset. Set OMNISCRIBE_AUTH_TOKEN "
+            "(32+ chars) or bind to 127.0.0.1 / ::1 / localhost. See "
+            "SECURITY.md."
+        )
+
+    if (
+        not is_loopback
+        and settings.auth_token
+        and settings.auth_token.lower() in _PLACEHOLDER_AUTH_TOKENS
+        and not allow_placeholder
+    ):
+        raise SystemExit(
+            "Refusing to start: OMNISCRIBE_AUTH_TOKEN is a known "
+            "placeholder value. Replace it with a random secret "
+            "(e.g. `python -c 'import secrets; print(secrets.token_urlsafe(32))'`) "
+            "or pass --allow-placeholder-token if you understand the risk. "
+            "See SECURITY.md."
+        )
+
+    if not is_loopback and getattr(settings, "allow_ssrf_local", False):
+        _log.warning(
+            "ALLOW_SSRF_LOCAL=true with non-loopback bind %s: SSRF guard "
+            "permits private / loopback URLs from any LAN caller. "
+            "Set ALLOW_SSRF_LOCAL=false on public / LAN deployments.",
+            target_host,
         )
 
     log_extras = {
@@ -337,6 +456,7 @@ def _parse_workers(value: str) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> None:
+    load_dotenv()
     parser = argparse.ArgumentParser(
         description="Local LLM PDF OCR web server (FastAPI + WebSocket progress).",
     )
@@ -378,54 +498,13 @@ def main(argv: Sequence[str] | None = None) -> None:
             f"(got --workers {args.workers})"
         )
 
-    # C-1 audit fix: refuse to start bound to a non-loopback host
-    # without ``OMNISCRIBE_AUTH_TOKEN``. The rebuilt route surface is
-    # currently unauthenticated (deferred per AGENTS.md); exposing
-    # that surface to any network is unsafe. Loopback binds are the
-    # documented local-trusted mode and remain allowed without a
-    # token.
+    # C-1 / M-10 audit fix: validate bind-host and auth token settings.
     _settings_for_guard = load_settings()
-    is_loopback = args.host in {"127.0.0.1", "::1", "localhost"}
-    if not is_loopback and not _settings_for_guard.auth_token:
-        raise SystemExit(
-            f"Refusing to start: --host {args.host} is non-loopback and "
-            "OMNISCRIBE_AUTH_TOKEN is unset. Set OMNISCRIBE_AUTH_TOKEN "
-            "(32+ chars) or bind to 127.0.0.1 / ::1 / localhost. See "
-            "SECURITY.md."
-        )
-    # M-10 audit fix: refuse placeholder tokens on non-loopback binds.
-    # A common operator mistake is to copy ``.env.example`` and forget
-    # to replace the placeholder. The check is opt-out via the same
-    # ``--allow-placeholder-token`` flag, defaulting to refusal, so
-    # the surface-area of accepting a placeholder is one CLI flag
-    # rather than a config-file knob. ``change-me-in-prod`` is the
-    # documented placeholder per ``.env.example``; the lowercase
-    # comparison catches accidental case swaps.
-    if (
-        not is_loopback
-        and _settings_for_guard.auth_token
-        and _settings_for_guard.auth_token.lower() in _PLACEHOLDER_AUTH_TOKENS
-        and not getattr(args, "allow_placeholder_token", False)
-    ):
-        raise SystemExit(
-            "Refusing to start: OMNISCRIBE_AUTH_TOKEN is a known "
-            "placeholder value. Replace it with a random secret "
-            "(e.g. `python -c 'import secrets; print(secrets.token_urlsafe(32))'`) "
-            "or pass --allow-placeholder-token if you understand the risk. "
-            "See SECURITY.md."
-        )
-    # C-2 audit fix: when ``ALLOW_SSRF_LOCAL=true`` AND the bind host is
-    # non-loopback, log a loud WARNING that any LAN caller can reach the
-    # SSRF-disabled private-network endpoints via ``/api/providers/*``.
-    # The default is preserved for local dev; operators who expose the
-    # server to a LAN should set ``ALLOW_SSRF_LOCAL=false``.
-    if not is_loopback and getattr(_settings_for_guard, "allow_ssrf_local", False):
-        _log.warning(
-            "ALLOW_SSRF_LOCAL=true with non-loopback bind %s: SSRF guard "
-            "permits private / loopback URLs from any LAN caller. "
-            "Set ALLOW_SSRF_LOCAL=false on public / LAN deployments.",
-            args.host,
-        )
+    _validate_runtime_settings(
+        _settings_for_guard,
+        host=args.host,
+        allow_placeholder_token=args.allow_placeholder_token,
+    )
 
     try:
         uvicorn = _load_optional_module("uvicorn")

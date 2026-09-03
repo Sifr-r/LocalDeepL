@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 
 from omniscribe.config import load_settings
 from omniscribe.harness.context import Context
@@ -47,6 +47,12 @@ __all__ = [
 ]
 
 
+def _bearer_token(authorization: str | None) -> str | None:
+    if authorization and authorization.startswith("Bearer "):
+        return authorization.removeprefix("Bearer ").strip()
+    return None
+
+
 def build_providers_router(manager: ProviderManagerImpl) -> APIRouter:
     """Catalog, details, and live model discovery routes."""
     router = APIRouter(prefix="/api/providers", tags=["providers"])
@@ -67,11 +73,16 @@ def build_providers_router(manager: ProviderManagerImpl) -> APIRouter:
         provider_id: str,
         api_base: str | None = None,
         api_key: str | None = None,
+        x_provider_api_key: str | None = Header(None, alias="X-Provider-Api-Key"),
+        authorization: str | None = Header(None),
     ) -> dict[str, Any]:
         if manager.get_provider(provider_id) is None:
             raise HTTPException(status_code=404, detail="unknown provider")
+        resolved_api_key = (
+            x_provider_api_key or _bearer_token(authorization) or api_key
+        )
         return await manager.discover_models(
-            provider_id, api_base=api_base, api_key=api_key
+            provider_id, api_base=api_base, api_key=resolved_api_key
         )
 
     @router.post("/active", status_code=200)

@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+import logging
+import secrets
 import sqlite3
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from omniscribe.plugins.state_backend import JobRecord, SQLiteStateBackend
+from omniscribe.plugins.state_backend_sqlite import (
+    _artifact_from_row,
+    _channel_from_row,
+    _job_from_row,
+    _rowcount,
+)
 
 
 @pytest.fixture
@@ -219,3 +228,209 @@ async def test_operations_before_open_raise(tmp_path: Path) -> None:
     impl = SQLiteStateBackend(db_path=tmp_path / "x.db", blob_dir=tmp_path)
     with pytest.raises(RuntimeError):
         await impl.get_job("j")
+
+
+async def test_wal_mode_logs_warning_when_not_wal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    from unittest.mock import MagicMock
+
+    mock_conn = MagicMock(spec=sqlite3.Connection)
+    mock_cursor = MagicMock()
+    mock_cursor.fetchone.return_value = ("delete",)
+    mock_conn.execute.return_value = mock_cursor
+
+    monkeypatch.setattr(sqlite3, "connect", lambda *args, **kwargs: mock_conn)
+    impl = SQLiteStateBackend(
+        db_path=tmp_path / "warn.db", blob_dir=tmp_path / "blobs"
+    )
+    with caplog.at_level(
+        logging.WARNING, logger="omniscribe.plugins.state_backend_sqlite"
+    ):
+        await impl.open()
+    assert "SQLite journal_mode is 'delete', expected 'wal'" in caplog.text
+    await impl.aclose()
+
+
+def test_named_row_mapping_helpers_with_sqlite_row_and_dict() -> None:
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+
+    # 1. _job_from_row with sqlite3.Row
+    job_row = conn.execute(
+        "SELECT 'job-123' AS job_id, 'running' AS status, '{\"model\": \"test\"}' AS request_meta, "
+        "'art-1' AS result_artifact_id, 'tok-1' AS result_artifact_token, "
+        "100.0 AS created_at, 105.0 AS updated_at, NULL AS error"
+    ).fetchone()
+    job_rec = _job_from_row(job_row)
+    assert job_rec.job_id == "job-123"
+    assert job_rec.status == "running"
+    assert job_rec.request_meta == {"model": "test"}
+    assert job_rec.result_artifact_id == "art-1"
+    assert job_rec.result_artifact_token == "tok-1"
+    assert job_rec.created_at == 100.0
+    assert job_rec.updated_at == 105.0
+    assert job_rec.error is None
+
+    # _job_from_row with dict
+    job_dict = {
+        "job_id": "job-dict",
+        "status": "complete",
+        "request_meta": {"custom": 42},
+        "result_artifact_id": None,
+        "result_artifact_token": None,
+        "created_at": 200.0,
+        "updated_at": 210.0,
+        "error": "some-error",
+    }
+    job_rec_dict = _job_from_row(job_dict)
+    assert job_rec_dict.job_id == "job-dict"
+    assert job_rec_dict.status == "complete"
+    assert job_rec_dict.request_meta == {"custom": 42}
+    assert job_rec_dict.error == "some-error"
+
+    # 2. _channel_from_row with sqlite3.Row
+    channel_row = conn.execute(
+        "SELECT 'ch-1' AS channel_id, 'sess-tok-1' AS session_token, 'job-123' AS job_id, "
+        "150.0 AS created_at, 300 AS ttl_seconds, 1 AS consumed"
+    ).fetchone()
+    ch_rec = _channel_from_row(channel_row)
+    assert ch_rec.channel_id == "ch-1"
+    assert ch_rec.session_token == "sess-tok-1"
+    assert ch_rec.job_id == "job-123"
+    assert ch_rec.created_at == 150.0
+    assert ch_rec.ttl_seconds == 300
+    assert ch_rec.consumed is True
+
+    # _channel_from_row with dict
+    channel_dict = {
+        "channel_id": "ch-2",
+        "session_token": "sess-tok-2",
+        "job_id": "job-456",
+        "created_at": 250.0,
+        "ttl_seconds": 600,
+        "consumed": 0,
+    }
+    ch_rec_dict = _channel_from_row(channel_dict)
+    assert ch_rec_dict.channel_id == "ch-2"
+    assert ch_rec_dict.session_token == "sess-tok-2"
+    assert ch_rec_dict.job_id == "job-456"
+    assert ch_rec_dict.created_at == 250.0
+    assert ch_rec_dict.ttl_seconds == 600
+    assert ch_rec_dict.consumed is False
+
+    # 3. _artifact_from_row with sqlite3.Row
+    art_row = conn.execute(
+        "SELECT 'art-99' AS id, 'token-xyz' AS token, 'job-123' AS owner_job_id, "
+        "'image/png' AS content_type, 300.0 AS created_at, 1800 AS ttl_seconds"
+    ).fetchone()
+    art_rec = _artifact_from_row(art_row)
+    assert art_rec.id == "art-99"
+    assert art_rec.token == "token-xyz"
+    assert art_rec.owner_job_id == "job-123"
+    assert art_rec.content_type == "image/png"
+    assert art_rec.created_at == 300.0
+    assert art_rec.ttl_seconds == 1800
+
+    # _artifact_from_row with dict
+    art_dict = {
+        "id": "art-100",
+        "token": "token-abc",
+        "owner_job_id": "job-789",
+        "content_type": "application/json",
+        "created_at": 400.0,
+        "ttl_seconds": 3600,
+    }
+    art_rec_dict = _artifact_from_row(art_dict)
+    assert art_rec_dict.id == "art-100"
+    assert art_rec_dict.token == "token-abc"
+    assert art_rec_dict.owner_job_id == "job-789"
+    assert art_rec_dict.content_type == "application/json"
+    assert art_rec_dict.created_at == 400.0
+    assert art_rec_dict.ttl_seconds == 3600
+
+    conn.close()
+
+
+async def test_get_artifact_constant_time_compare_digest(
+    backend: SQLiteStateBackend, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await backend.put_artifact(
+        id="art-compare",
+        token="super-secret-token",
+        owner_job_id="job-sec",
+        content_type="text/plain",
+        blob=b"secret-data",
+        ttl_seconds=3600,
+    )
+    compare_calls: list[tuple[str, str]] = []
+    real_compare = secrets.compare_digest
+
+    def spy_compare(a: Any, b: Any) -> bool:
+        compare_calls.append((str(a), str(b)))
+        return real_compare(a, b)
+
+    monkeypatch.setattr(
+        "omniscribe.plugins.state_backend_sqlite.secrets.compare_digest",
+        spy_compare,
+    )
+
+    found = await backend.get_artifact("art-compare", "super-secret-token")
+    assert found is not None
+    assert found.blob == b"secret-data"
+    assert ("super-secret-token", "super-secret-token") in compare_calls
+
+    compare_calls.clear()
+    not_found = await backend.get_artifact("art-compare", "wrong-secret-token")
+    assert not_found is None
+    assert ("super-secret-token", "wrong-secret-token") in compare_calls
+
+
+def test_rowcount_helper() -> None:
+    class DummyCursor:
+        def __init__(self, rowcount: int) -> None:
+            self.rowcount = rowcount
+
+    assert _rowcount(DummyCursor(10)) == 10  # type: ignore[arg-type]
+    assert _rowcount(DummyCursor(1)) == 1  # type: ignore[arg-type]
+    assert _rowcount(DummyCursor(0)) == 0  # type: ignore[arg-type]
+    assert _rowcount(DummyCursor(-1)) == 0  # type: ignore[arg-type]
+    assert _rowcount(DummyCursor(-999)) == 0  # type: ignore[arg-type]
+
+    conn = sqlite3.connect(":memory:")
+    cur = conn.cursor()
+    # In sqlite3, unexecuted cursor rowcount is -1
+    assert cur.rowcount == -1
+    assert _rowcount(cur) == 0
+    cur.execute("CREATE TABLE items (id INT)")
+    assert _rowcount(cur) == 0
+    cur.execute("INSERT INTO items VALUES (1), (2)")
+    assert _rowcount(cur) == 2
+    conn.close()
+
+
+def test_job_record_frozen_and_unhashable() -> None:
+    from dataclasses import FrozenInstanceError
+
+    rec = JobRecord(job_id="test-job", status="queued")
+    assert rec.__hash__ is None
+    with pytest.raises(TypeError, match="unhashable type"):
+        hash(rec)
+
+    with pytest.raises(FrozenInstanceError):
+        rec.status = "running"  # type: ignore[misc]
+
+
+def test_state_backend_types_reexports(backend: SQLiteStateBackend) -> None:
+    import omniscribe.plugins.state_backend as sb
+    import omniscribe.plugins.state_backend_types as sbt
+
+    assert sb.ArtifactBlob is sbt.ArtifactBlob
+    assert sb.ArtifactRecord is sbt.ArtifactRecord
+    assert sb.ChannelRecord is sbt.ChannelRecord
+    assert sb.JobRecord is sbt.JobRecord
+    assert sb.StateBackend is sbt.StateBackend
+    assert sb.TERMINAL_JOB_STATUSES is sbt.TERMINAL_JOB_STATUSES
+
+    assert isinstance(backend, sbt.StateBackend)
+    assert isinstance(backend, sb.StateBackend)

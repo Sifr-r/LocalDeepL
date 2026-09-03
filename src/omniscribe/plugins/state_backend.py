@@ -5,25 +5,17 @@ blobs), jobs (async OCR job records), and progress channels (one-shot WS
 handshake records). Selection is via the plugin row config
 (``OMNISCRIBE_STATE_BACKEND=memory|sqlite``); redis is deferred.
 
-Audit catalog (Sprint 6 long-file split): the two implementations
-now live in sibling modules:
-
-- ``state_backend_memory.py`` — :class:`MemoryStateBackend`
-- ``state_backend_sqlite.py`` — :class:`SQLiteStateBackend`
-
-This file holds the Protocol, dataclasses, plugin, and the re-exports
-that preserve the public surface (``from
-omniscribe.plugins.state_backend import MemoryStateBackend``,
-``SQLiteStateBackend``).
+Audit catalog:
+- Domain types, dataclasses, and the Protocol live in ``state_backend_types.py``.
+- Concrete implementations live in ``state_backend_memory.py`` and ``state_backend_sqlite.py``.
+- This module configures the plugin and re-exports the public API for backwards compatibility.
 """
 
 from __future__ import annotations
 
 import logging
-import time
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Protocol, get_args, runtime_checkable
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -31,122 +23,20 @@ from omniscribe.config import load_settings
 from omniscribe.harness.context import Context
 from omniscribe.harness.plugin import Plugin
 
-_LOGGER = logging.getLogger("omniscribe.plugins.state")
-
-JobStatus = Literal["queued", "running", "complete", "error", "cancelled"]
-
-# Pedantic 9.16: the canonical terminal-state set, derived from
-# ``JobStatus``. ``plugins/jobs.py`` and ``plugins/ocr/service.py``
-# both use this; a new terminal status (e.g. ``"superseded"``) needs
-# only one edit on this module. The "non-terminal" statuses
-# (``queued``, ``running``) are listed explicitly so a literal
-# annotation reading is enough; everything else in the union is
-# terminal by construction.
-_NON_TERMINAL_JOB_STATUSES: frozenset[str] = frozenset({"queued", "running"})
-TERMINAL_JOB_STATUSES: frozenset[str] = frozenset(
-    set(get_args(JobStatus)) - _NON_TERMINAL_JOB_STATUSES
+from .state_backend_memory import MemoryStateBackend
+from .state_backend_sqlite import SQLiteStateBackend
+from .state_backend_types import (
+    TERMINAL_JOB_STATUSES,
+    ArtifactBlob,
+    ArtifactRecord,
+    ChannelRecord,
+    JobRecord,
+    JobStatus,
+    StateBackend,
+    get_args,
 )
-del _NON_TERMINAL_JOB_STATUSES
 
-
-@dataclass(frozen=True)
-class ArtifactRecord:
-    """Metadata for one stored artifact; blob bytes live elsewhere."""
-
-    id: str
-    token: str
-    owner_job_id: str
-    content_type: str
-    created_at: float
-    ttl_seconds: int
-
-
-@dataclass(frozen=True)
-class ArtifactBlob:
-    """Artifact metadata plus its raw bytes."""
-
-    record: ArtifactRecord
-    blob: bytes
-
-
-@dataclass(frozen=True)
-class JobRecord:
-    """One async OCR job's lifecycle state."""
-
-    job_id: str
-    status: JobStatus
-    request_meta: dict[str, Any] = field(default_factory=dict)
-    result_artifact_id: str | None = None
-    result_artifact_token: str | None = None
-    created_at: float = field(default_factory=time.time)
-    updated_at: float = field(default_factory=time.time)
-    error: str | None = None
-
-
-@dataclass(frozen=True)
-class ChannelRecord:
-    """One progress channel handshake; ``consume_channel`` is one-shot."""
-
-    channel_id: str
-    session_token: str
-    job_id: str
-    created_at: float
-    ttl_seconds: int
-    consumed: bool = False
-
-
-@runtime_checkable
-class StateBackend(Protocol):
-    """Persistence seam for artifacts, jobs, and progress channels."""
-
-    # Artifacts
-    async def put_artifact(
-        self,
-        *,
-        id: str,
-        token: str,
-        owner_job_id: str,
-        content_type: str,
-        blob: bytes,
-        ttl_seconds: int,
-    ) -> None: ...
-
-    async def get_artifact(self, id: str, token: str) -> ArtifactBlob | None: ...
-
-    async def delete_artifact(self, id: str) -> None: ...
-
-    async def prune_expired_artifacts(self, now: float) -> int: ...
-
-    # Jobs
-    async def upsert_job(self, record: JobRecord) -> None: ...
-
-    async def get_job(self, job_id: str) -> JobRecord | None: ...
-
-    async def list_jobs(
-        self, *, limit: int = 100, offset: int = 0
-    ) -> list[JobRecord]: ...
-
-    async def clear_jobs(self) -> int: ...
-
-    async def delete_job(self, job_id: str) -> None: ...
-
-    # Progress channels
-    async def put_channel(
-        self, channel_id: str, session_token: str, job_id: str, ttl_seconds: int
-    ) -> None: ...
-
-    async def get_channel(self, channel_id: str) -> ChannelRecord | None: ...
-
-    async def consume_channel(
-        self, channel_id: str, session_token: str
-    ) -> ChannelRecord | None: ...
-
-    async def delete_channel(self, channel_id: str) -> None: ...
-
-    async def prune_expired_channels(self, now: float) -> int: ...
-
-    async def aclose(self) -> None: ...
-
+_LOGGER = logging.getLogger("omniscribe.plugins.state")
 
 _ALLOWED_BACKENDS = {"memory", "sqlite"}
 
@@ -211,15 +101,6 @@ class StateBackendPlugin(Plugin):
 
 plugin = StateBackendPlugin()
 
-
-# Re-export the implementations for the existing public surface.
-# Done after the dataclasses + plugin class are defined so the
-# sibling modules can import their dependencies (ArtifactBlob,
-# ChannelRecord, JobRecord) from this module's already-populated
-# namespace without a circular-import ImportError.
-from .state_backend_memory import MemoryStateBackend  # noqa: E402
-from .state_backend_sqlite import SQLiteStateBackend  # noqa: E402
-
 __all__ = [
     "TERMINAL_JOB_STATUSES",
     "ArtifactBlob",
@@ -232,4 +113,6 @@ __all__ = [
     "StateBackend",
     "StateBackendPlugin",
     "StateBackendSchema",
+    "get_args",
+    "plugin",
 ]

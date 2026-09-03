@@ -28,7 +28,9 @@ for single-box OCR.
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
+import os
 from typing import TYPE_CHECKING, Any
 
 from dotenv import load_dotenv
@@ -68,8 +70,7 @@ from omniscribe.utils.env import env_int
 if TYPE_CHECKING:
     from omniscribe.core.ocr.trocr import TrOCREngine
 
-load_dotenv()
-
+_ENV_LOADED: bool = False
 logger = logging.getLogger(__name__)
 
 
@@ -153,6 +154,11 @@ class OCRProcessor:
         # next ``OCRProcessor()``. Importing the module no longer
         # touches ``load_settings()`` at all, so subprocesses and test
         # runners that lack the full env set can import freely.
+        global _ENV_LOADED
+        if not _ENV_LOADED and not os.environ.get("OMNISCRIBE_ENV_LOADED"):
+            load_dotenv()
+            _ENV_LOADED = True
+
         settings = load_settings()
         self.page_timeout_s: float = settings.vlm_page_timeout
         self.crop_timeout_s: float = settings.vlm_crop_timeout
@@ -422,8 +428,6 @@ class OCRProcessor:
             return vlm_result
 
         try:
-            import base64
-
             from omniscribe.core.ocr.trocr import _heuristic_confidence
 
             image_bytes = base64.b64decode(image_base64)
@@ -568,7 +572,6 @@ class OCRProcessor:
 
     def _get_tesseract_draft(self, image_base64: str) -> str:
         try:
-            import base64
             import io
 
             import pytesseract
@@ -656,7 +659,6 @@ class OCRProcessor:
         binarization at block_size=21.
         """
         try:
-            import base64
             import io
 
             import numpy as np

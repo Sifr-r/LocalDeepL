@@ -24,11 +24,11 @@ from omniscribe.core.llm.temperatures import (
     TEMPERATURE_TRANSLATION,
     TEMPERATURE_TRANSLATION_TREE,
 )
+from omniscribe.core.translate import TRANSLATION_SYSTEM_MESSAGE
 from omniscribe.core.translate.config import AsyncTranslationUnavailable
 from omniscribe.core.translate.entity_memory import EntityMemory
 from omniscribe.core.translate.glossary import Glossary
 from omniscribe.core.translate.nllb import NLLBEngine
-from omniscribe.core.translate.nodes import TRANSLATION_SYSTEM_MESSAGE
 from omniscribe.core.translate.tree import TranslatorFn, translate_tree
 from omniscribe.core.translate.workflow import get_translation_app
 from omniscribe.plugins.artifacts import ArtifactStore

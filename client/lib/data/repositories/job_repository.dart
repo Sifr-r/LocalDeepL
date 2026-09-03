@@ -67,7 +67,6 @@ class JobRepositoryImpl implements JobRepository {
     final token = await _ocrRepository.getJobArtifactToken(jobId);
     return _apiClient.getBytes(
       ApiConstants.jobResult(jobId),
-      queryParameters: {'token': token},
       headers: {'Authorization': 'Bearer $token'},
     );
   }

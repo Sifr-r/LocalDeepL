@@ -22,9 +22,17 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple, Protocol, runtime_checkable
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Header,
+    HTTPException,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from pydantic import BaseModel
 
+from omniscribe.config import RuntimeSettings, load_settings
 from omniscribe.harness.context import Context
 from omniscribe.harness.events import AgentEvent
 from omniscribe.harness.plugin import Plugin
@@ -266,9 +274,14 @@ class _SessionRequest(BaseModel):
     client_id: str = ""
 
 
-def build_progress_router(service: ProgressServiceImpl) -> APIRouter:
+def build_progress_router(
+    service: ProgressServiceImpl,
+    settings: RuntimeSettings | None = None,
+) -> APIRouter:
     """Routes for the progress session, cancel mirror, and WS attach."""
     router = APIRouter(tags=["progress"])
+    if settings is None:
+        settings = load_settings()
 
     @router.post("/api/progress/session")
     async def open_session(body: _SessionRequest) -> dict[str, str]:
@@ -279,11 +292,32 @@ def build_progress_router(service: ProgressServiceImpl) -> APIRouter:
         }
 
     @router.post("/api/progress/cancel/{channel_id}")
-    async def cancel_channel(channel_id: str) -> dict[str, bool]:
+    async def cancel_channel(
+        channel_id: str,
+        session_token: str | None = Query(None),
+        x_session_token: str | None = Header(None, alias="X-Session-Token"),
+    ) -> dict[str, bool]:
+        if token := x_session_token or session_token:
+            record = await service.get_channel(channel_id)
+            if record is not None and not secrets.compare_digest(
+                record.session_token, token
+            ):
+                raise HTTPException(status_code=403, detail="invalid session token")
         cancelled = await service.cancel(channel_id)
         return {"cancelled": cancelled}
 
     async def _handle_ws(websocket: WebSocket, channel_id: str) -> None:
+        origin = websocket.headers.get("origin")
+        cors_origins = settings.cors_origins
+        if (
+            origin
+            and cors_origins
+            and "*" not in cors_origins
+            and origin not in cors_origins
+        ):
+            await websocket.close(code=4403, reason="origin not allowed")
+            return
+
         query_token = websocket.query_params.get("token") or ""
         await websocket.accept()
         if query_token:
@@ -370,7 +404,15 @@ class ProgressPlugin(Plugin):
             channel_ttl_seconds=int(self.config.get("channel_ttl_seconds", 600)),
         )
         ctx.service(ProgressService, service)
-        ctx.mount_router(build_progress_router(service))
+        try:
+            from omniscribe.plugins.runtime import RuntimeService
+
+            runtime_settings = (
+                ctx.inject(RuntimeService).settings if ctx.has(RuntimeService) else None
+            )
+        except Exception:
+            runtime_settings = None
+        ctx.mount_router(build_progress_router(service, settings=runtime_settings))
         _LOGGER.info(
             "progress plugin mounted (frame_cap=%d)",
             int(self.config.get("frame_cap", 1000)),

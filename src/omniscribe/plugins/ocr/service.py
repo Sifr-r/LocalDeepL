@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import mimetypes
 import re
 import secrets
 import shutil
@@ -256,6 +257,40 @@ def _seed_config(settings: RuntimeSettings) -> dict[str, Any]:
     }
 
 
+_CONTENT_TYPE_TO_SUFFIX: dict[str, str] = {
+    "application/pdf": ".pdf",
+    "image/png": ".png",
+    "image/jpeg": ".jpeg",
+    "image/jpg": ".jpg",
+    "image/webp": ".webp",
+    "image/avif": ".avif",
+    "image/tiff": ".tiff",
+    "image/bmp": ".bmp",
+    "image/gif": ".gif",
+}
+
+
+def _guess_suffix(filename: str, content_type: str | None = None) -> str:
+    """Determine the file extension for an upload.
+
+    Prefers the extension from ``filename`` if present. For extensionless
+    uploads, inspects ``content_type`` (MIME type sniffing) before falling
+    back to ``.pdf``.
+    """
+    suffix = Path(filename).suffix
+    if suffix:
+        return suffix
+    if content_type:
+        mime = content_type.split(";")[0].strip().lower()
+        if mime in _CONTENT_TYPE_TO_SUFFIX:
+            return _CONTENT_TYPE_TO_SUFFIX[mime]
+        if mime not in ("application/octet-stream", "binary/octet-stream"):
+            guessed = mimetypes.guess_extension(mime)
+            if guessed and guessed != ".bin":
+                return guessed
+    return ".pdf"
+
+
 class OCRServiceImpl:
     """Concrete OCRService: bridges HTTP onto ``OCRPipeline``."""
 
@@ -290,12 +325,16 @@ class OCRServiceImpl:
     # -- execution ------------------------------------------------------------
 
     async def run_sync(
-        self, options: OCRRequest, blob: bytes, filename: str
+        self,
+        options: OCRRequest,
+        blob: bytes,
+        filename: str,
+        content_type: str | None = None,
     ) -> Response:
         # Audit 2.8: the sync path also streams the upload to disk before
         # calling ``_execute`` so the worker reuses one file-write instead
         # of holding the bytes on the heap for the OCR duration.
-        suffix = Path(filename).suffix or ".pdf"
+        suffix = _guess_suffix(filename, content_type)
         work_dir = Path(tempfile.mkdtemp(prefix="omniscribe-ocr-"))
         input_path = work_dir / f"input{suffix}"
         input_path.write_bytes(blob)
@@ -319,14 +358,18 @@ class OCRServiceImpl:
         )
 
     async def submit(
-        self, options: OCRRequest, blob: bytes, filename: str
+        self,
+        options: OCRRequest,
+        blob: bytes,
+        filename: str,
+        content_type: str | None = None,
     ) -> AsyncSubmitResponse:
         submission_id = secrets.token_hex(16)
         # Audit 2.8: stream the upload to a per-job tempfile so the queue
         # payload only carries a path, not the bytes. ``run_job`` reads
         # the file and ``run_sync`` shares the same per-job directory so
         # the worker can re-use the already-written bytes.
-        suffix = Path(filename).suffix or ".pdf"
+        suffix = _guess_suffix(filename, content_type)
         work_dir = Path(tempfile.mkdtemp(prefix="omniscribe-ocr-"))
         input_path = work_dir / f"input{suffix}"
         input_path.write_bytes(blob)
@@ -409,10 +452,11 @@ class OCRServiceImpl:
         if self._progress is None or not channel:
             return None
 
+        progress = self._progress
+
         async def on_progress(percent: int, stage: str, message: str) -> None:
-            assert self._progress is not None
             # Legacy progress frame shape: no ``type`` discriminator.
-            await self._progress.emit_progress(
+            await progress.emit_progress(
                 job_id,
                 channel,
                 {"status": message, "percent": percent, "stage": stage},
@@ -424,9 +468,10 @@ class OCRServiceImpl:
         if self._progress is None or not channel:
             return None
 
+        progress = self._progress
+
         async def on_warning(text: str) -> None:
-            assert self._progress is not None
-            await self._progress.emit_progress(
+            await progress.emit_progress(
                 job_id,
                 channel,
                 {"status": text, "percent": 0, "stage": "warning", "warning": True},
@@ -654,24 +699,34 @@ class OCRServiceImpl:
     def update_config(self, updates: Mapping[str, Any]) -> dict[str, Any]:
         if "api_base" in updates and updates["api_base"] is not None:
             new_base = str(updates["api_base"]).strip()
-            if new_base:
+            if new_base and new_base != self._config.get("api_base"):
                 check = check_ssrf_target_sync(new_base)
                 if not check.allowed:
                     raise HTTPException(
                         status_code=400,
                         detail=f"Invalid api_base URL (SSRF blocked: {check.reason})",
                     )
+        changed_keys: set[str] = set()
         for key, value in updates.items():
             if value is None or key not in self._config:
                 continue
             if key == "api_key" and value == "******":
                 continue
-            self._config[key] = value
+            if self._config[key] != value:
+                self._config[key] = value
+                changed_keys.add(key)
+
+        if not changed_keys:
+            return self.get_config()
+
         # LLM coordinates write through to settings so the pipeline bridge
         # and the providers plugin observe the same active provider.
-        self._settings.llm_api_base = str(self._config["api_base"])
-        self._settings.llm_api_key = str(self._config["api_key"])
-        self._settings.llm_model = str(self._config["model"])
+        if "api_base" in changed_keys:
+            self._settings.llm_api_base = str(self._config["api_base"])
+        if "api_key" in changed_keys:
+            self._settings.llm_api_key = str(self._config["api_key"])
+        if "model" in changed_keys:
+            self._settings.llm_model = str(self._config["model"])
         return self.get_config()
 
     # -- SSE replay -----------------------------------------------------------------
@@ -768,6 +823,7 @@ __all__ = [
     "_CONFIG_KEY_SET",
     "OCRService",
     "OCRServiceImpl",
+    "_guess_suffix",
     "_sanitize_job_error",
     "event_entry",
 ]

@@ -75,39 +75,48 @@ def embed_structured_text(
     new_doc = fitz.open()
 
     try:
-        if page_nums is not None:
-            page_nums = [pn for pn in page_nums if 0 <= pn < len(doc)]
-        else:
-            page_nums = list(range(len(doc)))
+        page_nums = (
+            [pn for pn in page_nums if 0 <= pn < len(doc)]
+            if page_nums is not None
+            else list(range(len(doc)))
+        )
         if not page_nums:
-            new_doc.save(output_pdf_path)
+            new_doc.save(output_pdf_path, garbage=3, deflate=True)
             return
 
-        # Pre-rasterize every page in parallel. ``Page.get_pixmap`` is
-        # thread-safe so we can call it concurrently on different pages
-        # of the same document.
-        if parallelism <= 1 or len(page_nums) == 1:
-            rasterized = [_rasterize_embed_page(doc[pn], dpi) for pn in page_nums]
-        else:
-            workers = min(parallelism, len(page_nums))
-            with ThreadPoolExecutor(
-                max_workers=workers, thread_name_prefix="embed-raster"
-            ) as pool:
-                rasterized = list(
-                    pool.map(lambda pn: _rasterize_embed_page(doc[pn], dpi), page_nums)
-                )
+        # Batch page_nums in chunks to avoid holding all uncompressed page
+        # raster images in memory simultaneously (e.g. on 500-page inputs).
+        batch_size = max(parallelism * 2, 8)
+        workers = min(parallelism, len(page_nums))
+        pool = (
+            ThreadPoolExecutor(max_workers=workers, thread_name_prefix="embed-raster")
+            if parallelism > 1 and len(page_nums) > 1
+            else None
+        )
+        try:
+            for batch_start in range(0, len(page_nums), batch_size):
+                chunk = page_nums[batch_start : batch_start + batch_size]
+                if pool is not None and len(chunk) > 1:
+                    rasterized = list(
+                        pool.map(lambda pn: _rasterize_embed_page(doc[pn], dpi), chunk)
+                    )
+                else:
+                    rasterized = [_rasterize_embed_page(doc[pn], dpi) for pn in chunk]
 
-        # Page construction and text insertion run serially — both touch
-        # the single ``new_doc`` and aren't thread-safe.
-        for page_num, (width, height, img_data) in zip(
-            page_nums, rasterized, strict=True
-        ):
-            new_page = new_doc.new_page(width=width, height=height)
-            new_page.insert_image(new_page.rect, stream=img_data)
-            for rect_coords, text in pages_data.get(page_num, []):
-                _draw_invisible_text(new_page, rect_coords, text, width, height)
+                # Page construction and text insertion run serially — both touch
+                # the single ``new_doc`` and aren't thread-safe.
+                for page_num, (width, height, img_data) in zip(
+                    chunk, rasterized, strict=True
+                ):
+                    new_page = new_doc.new_page(width=width, height=height)
+                    new_page.insert_image(new_page.rect, stream=img_data)
+                    for rect_coords, text in pages_data.get(page_num, []):
+                        _draw_invisible_text(new_page, rect_coords, text, width, height)
+        finally:
+            if pool is not None:
+                pool.shutdown(wait=True)
 
-        new_doc.save(output_pdf_path)
+        new_doc.save(output_pdf_path, garbage=3, deflate=True)
     finally:
         new_doc.close()
         doc.close()

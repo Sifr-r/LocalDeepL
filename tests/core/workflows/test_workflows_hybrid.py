@@ -197,7 +197,11 @@ class TestHybridDecodedCache:
             images_dict=images, page_nums=[0, 1, 2], progress=None
         )
         # Every page in page_nums should have a decoded PIL.Image cached.
-        assert set(engine._decoded_cache.keys()) == {0, 1, 2}
+        assert set(engine._decoded_cache.keys()) == {
+            (engine._current_run_id, 0),
+            (engine._current_run_id, 1),
+            (engine._current_run_id, 2),
+        }
         from PIL import Image  # local import — PIL type checks
 
         for img in engine._decoded_cache.values():
@@ -209,20 +213,20 @@ class TestHybridDecodedCache:
         engine = _engine()
         images = {0: _make_tiny_b64_image()}
         await engine._detect_layout(images_dict=images, page_nums=[0], progress=None)
-        cached_image = engine._decoded_cache.get(0)
+        cached_image = engine._decoded_cache.get((engine._current_run_id, 0))
         assert cached_image is not None
         # The cache key survives a second ``_detect_layout`` call *only if*
         # the same page is still requested. (Simulates downstream
         # ``_ocr_pages`` / ``_refine_uncertain`` reading the cache.)
-        assert engine._decoded_cache[0] is cached_image
+        assert engine._decoded_cache[(engine._current_run_id, 0)] is cached_image
 
     def test_reset_run_state_clears_decoded_cache(self) -> None:
         engine = _engine()
         # Manually populate the cache to simulate a populated state.
         from PIL import Image
 
-        engine._decoded_cache[0] = Image.new("RGB", (1, 1))
-        engine._decoded_cache[1] = Image.new("RGB", (1, 1))
+        engine._decoded_cache[(engine._current_run_id, 0)] = Image.new("RGB", (1, 1))
+        engine._decoded_cache[(engine._current_run_id, 1)] = Image.new("RGB", (1, 1))
         assert len(engine._decoded_cache) == 2
 
         engine._reset_run_state()
@@ -271,7 +275,7 @@ class TestHybridDecodedCache:
         # Pre-populate the cache for page 0 with the decoded striped image
         # (so crops have enough pixel variance to pass the blank-crop guard).
         cached_for_0 = real_decode(_make_tiny_b64_image())
-        engine._decoded_cache[0] = cached_for_0
+        engine._decoded_cache[(engine._current_run_id, 0)] = cached_for_0
         images = {0: _make_tiny_b64_image(), 1: _make_tiny_b64_image()}
         pages_structured = {
             0: [([0.1, 0.1, 0.9, 0.2], "")] * 2,
@@ -300,7 +304,7 @@ class TestHybridDecodedCache:
         # ``_ocr_per_box`` calls ``_decode_page_image`` itself on a miss.
         assert ocr.crop_calls == 4
         # Cache still holds the pre-populated entry for page 0.
-        assert engine._decoded_cache[0] is cached_for_0
+        assert engine._decoded_cache[(engine._current_run_id, 0)] is cached_for_0
 
     async def test_refine_uncertain_reuses_decoded_cache_when_present(
         self, monkeypatch
@@ -327,7 +331,7 @@ class TestHybridDecodedCache:
         engine = _engine(aligner=aligner, ocr=ocr)
         # Pre-populate the cache with the decoded striped image (so crops
         # have variance to pass the blank-crop guard).
-        engine._decoded_cache[0] = real_decode(_make_tiny_b64_image())
+        engine._decoded_cache[(engine._current_run_id, 0)] = real_decode(_make_tiny_b64_image())
         images = {0: _make_tiny_b64_image()}
         pages_structured = {0: [([0.1, 0.1, 0.5, 0.2], "")] * 2}
 
@@ -420,15 +424,15 @@ class TestHybridDecodedCache:
         for p in range(max_entries):
             engine._decoded_put(p, Image.new("RGB", (1, 1)))
         assert len(engine._decoded_cache) == max_entries
-        assert list(engine._decoded_cache.keys())[0] == 0
+        assert list(engine._decoded_cache.keys())[0] == (engine._current_run_id, 0)
 
         # Reading entry 1 promotes it to most-recently-used. The new
         # oldest is now entry 0.
         promoted_marker = engine._decoded_get(1)
         assert promoted_marker is not None
-        assert list(engine._decoded_cache.keys())[0] == 0
+        assert list(engine._decoded_cache.keys())[0] == (engine._current_run_id, 0)
         # And entry 1 is now at the tail (most-recently-used).
-        assert list(engine._decoded_cache.keys())[-1] == 1
+        assert list(engine._decoded_cache.keys())[-1] == (engine._current_run_id, 1)
 
         # Push (max_entries - 1) fresh pages. Each push evicts the
         # current oldest (head of the OrderedDict). The first push evicts
@@ -443,6 +447,22 @@ class TestHybridDecodedCache:
         assert engine._decoded_get(1) is promoted_marker
         # Entry 0 was the oldest-unread entry and should be gone.
         assert engine._decoded_get(0) is None
+
+    def test_decoded_cache_keys_include_run_id_for_concurrent_safety(self) -> None:
+        """§4.39: _decoded_cache keys are (run_id, page_num) preventing cross-run collisions."""
+        from PIL import Image
+
+        engine = _engine()
+        run_1 = "run_1"
+        run_2 = "run_2"
+        img_1 = Image.new("RGB", (10, 10))
+        img_2 = Image.new("RGB", (20, 20))
+        engine._decoded_put(0, img_1, run_id=run_1)
+        engine._decoded_put(0, img_2, run_id=run_2)
+        assert (run_1, 0) in engine._decoded_cache
+        assert (run_2, 0) in engine._decoded_cache
+        assert engine._decoded_get(0, run_id=run_1) is img_1
+        assert engine._decoded_get(0, run_id=run_2) is img_2
 
 
 # ---------------------------------------------------------------------------

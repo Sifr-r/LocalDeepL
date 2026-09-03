@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omniscribe_client/core/theme/app_colors.dart';
@@ -65,10 +66,29 @@ class _JobHistoryScreenState extends ConsumerState<JobHistoryScreen> {
       final Uint8List bytes =
           await ref.read(jobsProvider.notifier).downloadResult(job.id);
       if (mounted) {
-        setState(() {
-          _statusBanner =
-              'Downloaded searchable PDF for ${job.filename} (${bytes.lengthInBytes} bytes)';
-        });
+        try {
+          final savePath = await FilePicker.platform.saveFile(
+            fileName: job.filename,
+            bytes: bytes,
+          );
+          if (mounted) {
+            setState(() {
+              if (savePath != null) {
+                _statusBanner = 'Saved ${job.filename} to $savePath.';
+              } else {
+                _statusBanner =
+                    'Downloaded searchable PDF for ${job.filename} (${bytes.lengthInBytes} bytes)';
+              }
+            });
+          }
+        } catch (_) {
+          if (mounted) {
+            setState(() {
+              _statusBanner =
+                  'Downloaded searchable PDF for ${job.filename} (${bytes.lengthInBytes} bytes)';
+            });
+          }
+        }
       }
     } catch (e) {
       if (mounted) {

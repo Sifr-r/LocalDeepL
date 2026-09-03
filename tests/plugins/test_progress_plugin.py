@@ -14,6 +14,7 @@ import pytest
 from fastapi import FastAPI, WebSocketDisconnect
 from fastapi.testclient import TestClient
 
+from omniscribe.config import RuntimeSettings
 from omniscribe.harness.context import Context
 from omniscribe.plugins import progress
 from omniscribe.plugins import state_backend as sb
@@ -46,9 +47,12 @@ def _service(
     )
 
 
-def _make_app(service: ProgressServiceImpl) -> FastAPI:
+def _make_app(
+    service: ProgressServiceImpl,
+    settings: RuntimeSettings | None = None,
+) -> FastAPI:
     app = FastAPI()
-    app.include_router(build_progress_router(service))
+    app.include_router(build_progress_router(service, settings=settings))
     return app
 
 
@@ -152,6 +156,63 @@ def test_http_cancel_endpoint_flips_flag() -> None:
     assert service.is_cancelled(body["channel_id"]) is True
 
 
+def test_http_cancel_with_query_param_token_succeeds() -> None:
+    service = _service()
+    client = TestClient(_make_app(service))
+    body = client.post("/api/progress/session", json={}).json()
+    response = client.post(
+        f"/api/progress/cancel/{body['channel_id']}?session_token={body['session_token']}"
+    )
+    assert response.status_code == 200
+    assert response.json() == {"cancelled": True}
+    assert service.is_cancelled(body["channel_id"]) is True
+
+
+def test_http_cancel_with_header_token_succeeds() -> None:
+    service = _service()
+    client = TestClient(_make_app(service))
+    body = client.post("/api/progress/session", json={}).json()
+    response = client.post(
+        f"/api/progress/cancel/{body['channel_id']}",
+        headers={"X-Session-Token": body["session_token"]},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"cancelled": True}
+    assert service.is_cancelled(body["channel_id"]) is True
+
+
+def test_http_cancel_with_invalid_token_raises_403() -> None:
+    service = _service()
+    client = TestClient(_make_app(service))
+    body = client.post("/api/progress/session", json={}).json()
+    # Invalid query param token
+    response_query = client.post(
+        f"/api/progress/cancel/{body['channel_id']}?session_token=wrong-token"
+    )
+    assert response_query.status_code == 403
+    assert response_query.json() == {"detail": "invalid session token"}
+    assert service.is_cancelled(body["channel_id"]) is False
+
+    # Invalid header token
+    response_header = client.post(
+        f"/api/progress/cancel/{body['channel_id']}",
+        headers={"X-Session-Token": "wrong-token"},
+    )
+    assert response_header.status_code == 403
+    assert response_header.json() == {"detail": "invalid session token"}
+    assert service.is_cancelled(body["channel_id"]) is False
+
+
+def test_http_cancel_without_token_succeeds_for_backward_compatibility() -> None:
+    service = _service()
+    client = TestClient(_make_app(service))
+    body = client.post("/api/progress/session", json={}).json()
+    response = client.post(f"/api/progress/cancel/{body['channel_id']}")
+    assert response.status_code == 200
+    assert response.json() == {"cancelled": True}
+    assert service.is_cancelled(body["channel_id"]) is True
+
+
 # -- WebSocket handler ----------------------------------------------------------------
 
 
@@ -239,12 +300,91 @@ def test_ws_ping_frame_receives_pong_response() -> None:
             assert pong_frame["type"] == "pong"
 
 
+def test_ws_disallowed_origin_closes_4403() -> None:
+    service = _service()
+    settings = RuntimeSettings(cors_origins=["http://allowed.example.com"])
+    client = TestClient(_make_app(service, settings=settings))
+    with client:
+        body = client.post("/api/progress/session", json={}).json()
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            with client.websocket_connect(
+                f"/ws/{body['channel_id']}",
+                headers={"Origin": "http://evil.example.com"},
+            ) as ws:
+                ws.receive_text()
+        assert excinfo.value.code == 4403
+        assert excinfo.value.reason == "origin not allowed"
+
+
+def test_ws_allowed_origin_succeeds() -> None:
+    service = _service()
+    settings = RuntimeSettings(cors_origins=["http://allowed.example.com"])
+    client = TestClient(_make_app(service, settings=settings))
+    with client:
+        body = client.post("/api/progress/session", json={}).json()
+        with client.websocket_connect(
+            f"/ws/{body['channel_id']}",
+            headers={"Origin": "http://allowed.example.com"},
+        ) as ws:
+            ws.send_text(
+                json.dumps({"type": "auth", "session_token": body["session_token"]})
+            )
+            frame = json.loads(ws.receive_text())
+            assert frame["type"] == "connected"
+            assert frame["channel_id"] == body["channel_id"]
+
+
+def test_ws_wildcard_cors_origins_permits_any_origin() -> None:
+    service = _service()
+    settings = RuntimeSettings(cors_origins=["*"])
+    client = TestClient(_make_app(service, settings=settings))
+    with client:
+        body = client.post("/api/progress/session", json={}).json()
+        with client.websocket_connect(
+            f"/ws/{body['channel_id']}",
+            headers={"Origin": "http://random.example.org"},
+        ) as ws:
+            ws.send_text(
+                json.dumps({"type": "auth", "session_token": body["session_token"]})
+            )
+            frame = json.loads(ws.receive_text())
+            assert frame["type"] == "connected"
+            assert frame["channel_id"] == body["channel_id"]
+
+
+def test_ws_missing_origin_header_permits_connection() -> None:
+    service = _service()
+    settings = RuntimeSettings(cors_origins=["http://allowed.example.com"])
+    client = TestClient(_make_app(service, settings=settings))
+    with client:
+        body = client.post("/api/progress/session", json={}).json()
+        with client.websocket_connect(f"/ws/{body['channel_id']}") as ws:
+            ws.send_text(
+                json.dumps({"type": "auth", "session_token": body["session_token"]})
+            )
+            frame = json.loads(ws.receive_text())
+            assert frame["type"] == "connected"
+            assert frame["channel_id"] == body["channel_id"]
+
+
 # -- plugin ---------------------------------------------------------------------------
 
 
 async def test_plugin_registers_service_and_mounts_router() -> None:
     ctx = Context()
     await ctx.plugin(sb.StateBackendPlugin(), config={"backend": "memory"})
+    await ctx.plugin(progress.ProgressPlugin(), config={"frame_cap": 5})
+    assert ctx.has(ProgressService)
+    assert len(ctx.routes()) == 1
+    await ctx.dispose()
+
+
+async def test_plugin_passes_runtime_settings_when_available() -> None:
+    from omniscribe.plugins.runtime import RuntimePlugin
+
+    ctx = Context()
+    await ctx.plugin(sb.StateBackendPlugin(), config={"backend": "memory"})
+    await ctx.plugin(RuntimePlugin())
     await ctx.plugin(progress.ProgressPlugin(), config={"frame_cap": 5})
     assert ctx.has(ProgressService)
     assert len(ctx.routes()) == 1

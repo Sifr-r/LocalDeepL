@@ -943,6 +943,157 @@ void main() {
       expect(state.channelId, 'ch-fresh-async');
       expect(state.activeJobId, 'job-fresh');
     });
+
+    group('WebSocket Closure Handling (_handleWsClosed)', () {
+      test('when job is complete, downloads result and updates state to complete', () async {
+        final container = makeContainer();
+        addTearDown(container.dispose);
+        final notifier = container.read(workstationProvider.notifier);
+
+        notifier.loadDocument(Uint8List.fromList([1, 2, 3]), 'doc.pdf');
+
+        when(() => ocrRepo.openProgressSession(clientId: any(named: 'clientId')))
+            .thenAnswer((_) async => const ProgressSessionHandle(
+                  channelId: 'ch-async',
+                  sessionToken: 'tok-async',
+                ));
+        when(() => ocrRepo.processOcrAsync(
+              fileBytes: any(named: 'fileBytes'),
+              filename: any(named: 'filename'),
+              settings: any(named: 'settings'),
+              progressChannel: any(named: 'progressChannel'),
+              progressToken: any(named: 'progressToken'),
+              onSendProgress: any(named: 'onSendProgress'),
+            )).thenAnswer((_) async => const AsyncSubmitResponse(
+              jobId: 'job-done-1',
+              status: 'queued',
+            ));
+
+        await notifier.processOcrAsync();
+        expect(container.read(workstationProvider).isProcessing, isTrue);
+
+        final expectedBytes = Uint8List.fromList([99, 100, 101]);
+        when(() => ocrRepo.getJobStatus('job-done-1')).thenAnswer(
+          (_) async => const OcrJobStatusResponse(
+            jobId: 'job-done-1',
+            filename: 'doc.pdf',
+            status: 'complete',
+            createdAt: 1000.0,
+            textArtifactId: 'art-xyz',
+          ),
+        );
+        when(() => ocrRepo.downloadResult('job-done-1'))
+            .thenAnswer((_) async => expectedBytes);
+
+        await notifier.handleWsClosed();
+
+        final state = container.read(workstationProvider);
+        expect(state.isProcessing, isFalse);
+        expect(state.stage, 'Complete');
+        expect(state.percent, 100);
+        expect(state.loadedBytes, expectedBytes);
+        expect(state.textArtifactId, 'art-xyz');
+      });
+
+      test('when job is cancelled, updates state to cancelled', () async {
+        final container = makeContainer();
+        addTearDown(container.dispose);
+        final notifier = container.read(workstationProvider.notifier);
+
+        notifier.loadDocument(Uint8List.fromList([1, 2, 3]), 'doc.pdf');
+
+        when(() => ocrRepo.openProgressSession(clientId: any(named: 'clientId')))
+            .thenAnswer((_) async => const ProgressSessionHandle(
+                  channelId: 'ch-async',
+                  sessionToken: 'tok-async',
+                ));
+        when(() => ocrRepo.processOcrAsync(
+              fileBytes: any(named: 'fileBytes'),
+              filename: any(named: 'filename'),
+              settings: any(named: 'settings'),
+              progressChannel: any(named: 'progressChannel'),
+              progressToken: any(named: 'progressToken'),
+              onSendProgress: any(named: 'onSendProgress'),
+            )).thenAnswer((_) async => const AsyncSubmitResponse(
+              jobId: 'job-cancel-1',
+              status: 'queued',
+            ));
+
+        await notifier.processOcrAsync();
+
+        when(() => ocrRepo.getJobStatus('job-cancel-1')).thenAnswer(
+          (_) async => const OcrJobStatusResponse(
+            jobId: 'job-cancel-1',
+            filename: 'doc.pdf',
+            status: 'cancelled',
+            createdAt: 1000.0,
+          ),
+        );
+
+        await notifier.handleWsClosed();
+
+        final state = container.read(workstationProvider);
+        expect(state.isProcessing, isFalse);
+        expect(state.stage, 'Cancelled');
+        expect(state.statusMessage, 'Job was cancelled');
+      });
+
+      test('when job is error, updates state to error with message', () async {
+        final container = makeContainer();
+        addTearDown(container.dispose);
+        final notifier = container.read(workstationProvider.notifier);
+
+        notifier.loadDocument(Uint8List.fromList([1, 2, 3]), 'doc.pdf');
+
+        when(() => ocrRepo.openProgressSession(clientId: any(named: 'clientId')))
+            .thenAnswer((_) async => const ProgressSessionHandle(
+                  channelId: 'ch-async',
+                  sessionToken: 'tok-async',
+                ));
+        when(() => ocrRepo.processOcrAsync(
+              fileBytes: any(named: 'fileBytes'),
+              filename: any(named: 'filename'),
+              settings: any(named: 'settings'),
+              progressChannel: any(named: 'progressChannel'),
+              progressToken: any(named: 'progressToken'),
+              onSendProgress: any(named: 'onSendProgress'),
+            )).thenAnswer((_) async => const AsyncSubmitResponse(
+              jobId: 'job-err-1',
+              status: 'queued',
+            ));
+
+        await notifier.processOcrAsync();
+
+        when(() => ocrRepo.getJobStatus('job-err-1')).thenAnswer(
+          (_) async => const OcrJobStatusResponse(
+            jobId: 'job-err-1',
+            filename: 'doc.pdf',
+            status: 'error',
+            error: 'Out of VRAM',
+            createdAt: 1000.0,
+          ),
+        );
+
+        await notifier.handleWsClosed();
+
+        final state = container.read(workstationProvider);
+        expect(state.isProcessing, isFalse);
+        expect(state.stage, 'Error');
+        expect(state.error, 'Out of VRAM');
+        expect(state.statusMessage, 'Out of VRAM');
+      });
+
+      test('does nothing if not actively processing or activeJobId is null', () async {
+        final container = makeContainer();
+        addTearDown(container.dispose);
+        final notifier = container.read(workstationProvider.notifier);
+
+        await notifier.handleWsClosed();
+
+        verifyNever(() => ocrRepo.getJobStatus(any()));
+        verifyNever(() => ocrRepo.downloadResult(any()));
+      });
+    });
   });
 
   group('Keyboard Shortcut Plumbing', () {

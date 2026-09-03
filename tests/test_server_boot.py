@@ -83,3 +83,22 @@ def test_bad_state_backend_fails_boot_loud(
     with pytest.raises((PluginLoadError, ValidationError)):
         with TestClient(create_app()):  # type: ignore[arg-type]
             pass
+
+
+def test_circuit_open_error_handler(boot_env: None) -> None:
+    from omniscribe.core.ocr.resilience import CircuitOpenError
+
+    app = create_app()
+
+    @app.get("/test-circuit-open")  # type: ignore[attr-defined]
+    async def _fail_circuit() -> None:
+        raise CircuitOpenError(failures=5, retry_after=45.2)
+
+    with TestClient(app) as client:  # type: ignore[arg-type]
+        res = client.get("/test-circuit-open")
+        assert res.status_code == 503
+        assert res.headers["retry-after"] == "46"
+        assert res.json() == {
+            "error": "service_unavailable",
+            "detail": "Model circuit breaker is open; retry later",
+        }

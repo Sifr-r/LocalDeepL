@@ -100,5 +100,40 @@ void main() {
       // No public surface for the removed fields. The runtime check
       // below uses reflection-free assertions on the JSON shape.
     });
+
+    test('status getters distinguish isCancelled, isError, and isComplete', () {
+      // When status == 'cancelled', isCancelled is true and isComplete is false.
+      const cancelledJob = OcrJobStatusResponse(
+        jobId: 'j-cancelled',
+        filename: 'test.pdf',
+        status: 'cancelled',
+        createdAt: 1.0,
+      );
+      expect(cancelledJob.isCancelled, isTrue);
+      expect(cancelledJob.isComplete, isFalse);
+      expect(cancelledJob.isError, isFalse);
+
+      // When status == 'error', isError is true and isCancelled is false.
+      const errorJob = OcrJobStatusResponse(
+        jobId: 'j-error',
+        filename: 'test.pdf',
+        status: 'error',
+        createdAt: 1.0,
+      );
+      expect(errorJob.isError, isTrue);
+      expect(errorJob.isCancelled, isFalse);
+      expect(errorJob.isComplete, isFalse);
+
+      // When status == 'complete', isComplete is true.
+      const completeJob = OcrJobStatusResponse(
+        jobId: 'j-complete',
+        filename: 'test.pdf',
+        status: 'complete',
+        createdAt: 1.0,
+      );
+      expect(completeJob.isComplete, isTrue);
+      expect(completeJob.isCancelled, isFalse);
+      expect(completeJob.isError, isFalse);
+    });
   });
 }

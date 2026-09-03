@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
 from PIL import Image
@@ -104,7 +105,8 @@ class HybridEngine(EngineBase):
         self.page_preprocessor = page_preprocessor
         self.recall_booster = recall_booster
         self.text_layer_recall = text_layer_recall
-        self._decoded_cache: OrderedDict[int, Image.Image] = OrderedDict()
+        self._current_run_id: str = uuid.uuid4().hex
+        self._decoded_cache: OrderedDict[tuple[str, int], Image.Image] = OrderedDict()
 
         self.converter = HybridConverter(
             pdf_handler=self.pdf_handler,
@@ -125,24 +127,54 @@ class HybridEngine(EngineBase):
             ocr_processor=self.ocr_processor,
         )
 
-    def _decoded_get(self, page_num: int) -> Image.Image | None:
-        """Return the cached image for ``page_num`` and mark it most-recently-used."""
-        cached = self._decoded_cache.get(page_num)
+    def _decoded_get(
+        self,
+        page_num: int | tuple[str, int],
+        *,
+        run_id: str | None = None,
+    ) -> Image.Image | None:
+        """Return the cached image for ``(run_id, page_num)`` and mark it most-recently-used."""
+        if isinstance(page_num, tuple):
+            key = page_num
+        else:
+            rid = run_id if run_id is not None else self._current_run_id
+            key = (rid, page_num)
+        cached = self._decoded_cache.get(key)
         if cached is not None:
-            self._decoded_cache.move_to_end(page_num)
+            self._decoded_cache.move_to_end(key)
         return cached
 
-    def _decoded_put(self, page_num: int, image: Image.Image) -> None:
-        """Cache ``image`` for ``page_num`` and evict the LRU entry if over capacity."""
-        self._decoded_cache[page_num] = image
-        self._decoded_cache.move_to_end(page_num)
+    def _decoded_put(
+        self,
+        page_num: int | tuple[str, int],
+        image: Image.Image,
+        *,
+        run_id: str | None = None,
+    ) -> None:
+        """Cache ``image`` for ``(run_id, page_num)`` and evict the LRU entry if over capacity."""
+        if isinstance(page_num, tuple):
+            key = page_num
+        else:
+            rid = run_id if run_id is not None else self._current_run_id
+            key = (rid, page_num)
+        self._decoded_cache[key] = image
+        self._decoded_cache.move_to_end(key)
         if len(self._decoded_cache) > _DECODED_CACHE_MAX_ENTRIES:
             self._decoded_cache.popitem(last=False)
 
     def _reset_run_state(self) -> None:
-        """Clear run-scoped state. Call at the top of every ``execute``."""
+        """Clear run-scoped state. Call at the top of every ``execute``.
+
+        Sub-stage handlers (converter: ``HybridConverter``,
+        layout: ``HybridLayoutDetector``, runner: ``HybridOcrRunner``,
+        refiner: ``HybridRefiner``) maintain no unreset mutable state
+        across executions (§4.38); stage dependencies are stateless or
+        re-injected per run, and runner page failure tracking is reset via
+        ``ocr_runner.last_failed_pages``.
+        """
         super()._reset_run_state()
         self._decoded_cache = OrderedDict()
+        self._current_run_id = uuid.uuid4().hex
         self.ocr_runner.last_failed_pages = self.last_failed_pages
 
     async def execute(
@@ -177,6 +209,14 @@ class HybridEngine(EngineBase):
             )
 
         self._reset_run_state()
+        run_id = uuid.uuid4().hex
+        self._current_run_id = run_id
+
+        def decoded_get(p_num: int) -> Image.Image | None:
+            return self._decoded_get(p_num, run_id=run_id)
+
+        def decoded_put(p_num: int, image: Image.Image) -> None:
+            self._decoded_put(p_num, image, run_id=run_id)
 
         # --- Phase 1: convert + optional preprocessing ---
         images_dict, page_nums, preprocessing_metadata = await self._convert_pages(
@@ -195,6 +235,8 @@ class HybridEngine(EngineBase):
             progress=progress,
             input_path=input_path,
             cancel_check=cancel_check,
+            decoded_put=decoded_put,
+            decoded_get=decoded_get,
         )
 
         per_box_pages = self._select_dense_pages(
@@ -217,6 +259,8 @@ class HybridEngine(EngineBase):
             progress=progress,
             on_warning=on_warning,
             cancel_check=cancel_check,
+            decoded_get=decoded_get,
+            trust_images_dict=images_dict.copy() if images_dict is not None else None,
         )
 
         # --- Phase 4: refine empty boxes on the sparse pages ---
@@ -232,6 +276,7 @@ class HybridEngine(EngineBase):
                 dual_engine=dual_engine,
                 progress=progress,
                 cancel_check=cancel_check,
+                decoded_get=decoded_get,
             )
 
         # --- Phase 4b: quality repair of below-target blocks (spec §3.2) ---
@@ -245,7 +290,7 @@ class HybridEngine(EngineBase):
                 concurrency=concurrency,
                 progress=progress,
                 on_warning=on_warning,
-                decoded_get=self._decoded_get,
+                decoded_get=decoded_get,
             )
             await emit_job_repair_summary(self.block_callbacks, repair_summaries)
 
@@ -262,7 +307,7 @@ class HybridEngine(EngineBase):
             dpi=dpi,
             progress=progress,
             trust_model_id=trust_model_id,
-            trust_images_dict=images_dict,
+            trust_images_dict=images_dict.copy() if images_dict is not None else None,
             cancel_check=cancel_check,
         )
 
@@ -297,6 +342,8 @@ class HybridEngine(EngineBase):
         progress: ProgressCallback | None,
         input_path: str = "",
         cancel_check: CancelCheck | None = None,
+        decoded_put: Callable[[int, Image.Image], None] | None = None,
+        decoded_get: Callable[[int], Image.Image | None] | None = None,
     ) -> dict[int, PageBoxes]:
         # Audit catalog: between-phase cancel checks used to live in
         # execute(); folded into the next-phase helper so execute() is
@@ -306,14 +353,21 @@ class HybridEngine(EngineBase):
         self.layout_detector.aligner = self.aligner
         self.layout_detector.recall_booster = self.recall_booster
         self.layout_detector.text_layer_recall = self.text_layer_recall
-        return await self.layout_detector.detect_layout(
-            images_dict=images_dict,
-            page_nums=page_nums,
-            progress=progress,
-            input_path=input_path,
-            decoded_put=self._decoded_put,
-            decoded_get=self._decoded_get,
-        )
+        tl = self.text_layer_recall
+        tl_open = False
+        if tl is not None and input_path:
+            tl_open = await asyncio.to_thread(tl.open, input_path)
+        try:
+            return await self.layout_detector.detect_layout(
+                images_dict=images_dict,
+                page_nums=page_nums,
+                progress=progress,
+                decoded_put=decoded_put or self._decoded_put,
+                decoded_get=decoded_get or self._decoded_get,
+            )
+        finally:
+            if tl_open and tl is not None:
+                await asyncio.to_thread(tl.close)
 
     async def _apply_recall(
         self,
@@ -321,14 +375,16 @@ class HybridEngine(EngineBase):
         chunk_pages: Sequence[int],
         images_dict: dict[int, str],
         chunk_boxes: list[list[BBox]],
+        decoded_get: Callable[[int], Image.Image | None] | None = None,
+        decoded_put: Callable[[int, Image.Image], None] | None = None,
     ) -> tuple[list[list[BBox]], int, int]:
         self.layout_detector.recall_booster = self.recall_booster
         return await self.layout_detector.apply_recall(
             chunk_pages=chunk_pages,
             images_dict=images_dict,
             chunk_boxes=chunk_boxes,
-            decoded_get=self._decoded_get,
-            decoded_put=self._decoded_put,
+            decoded_get=decoded_get or self._decoded_get,
+            decoded_put=decoded_put or self._decoded_put,
         )
 
     async def _apply_text_layer_recall(
@@ -372,13 +428,16 @@ class HybridEngine(EngineBase):
         progress: ProgressCallback | None,
         on_warning: WarningCallback | None,
         cancel_check: CancelCheck | None = None,
+        decoded_get: Callable[[int], Image.Image | None] | None = None,
+        trust_images_dict: dict[int, str] | None = None,
     ) -> None:
         self.ocr_runner.aligner = self.aligner
         self.ocr_runner.ocr_processor = self.ocr_processor
         self.ocr_runner.block_callbacks = self.block_callbacks
         self.ocr_runner.last_failed_pages = self.last_failed_pages
+        _ = trust_images_dict
         return await self.ocr_runner.ocr_pages(
-            images_dict=images_dict,
+            images_dict=images_dict.copy() if images_dict is not None else {},
             pages_structured=pages_structured,
             page_nums=page_nums,
             per_box_pages=per_box_pages,
@@ -389,7 +448,7 @@ class HybridEngine(EngineBase):
             progress=progress,
             on_warning=on_warning,
             cancel_check=cancel_check,
-            decoded_get=self._decoded_get,
+            decoded_get=decoded_get or self._decoded_get,
             emit_page_callbacks=self._emit_page_callbacks,
         )
 
@@ -427,6 +486,7 @@ class HybridEngine(EngineBase):
         dual_engine: bool,
         progress: ProgressCallback | None,
         cancel_check: CancelCheck | None = None,
+        decoded_get: Callable[[int], Image.Image | None] | None = None,
     ) -> None:
         self.refiner.ocr_processor = self.ocr_processor
         return await self.refiner.refine_pages(
@@ -440,7 +500,7 @@ class HybridEngine(EngineBase):
             dual_engine=dual_engine,
             progress=progress,
             cancel_check=cancel_check,
-            decoded_get=self._decoded_get,
+            decoded_get=decoded_get or self._decoded_get,
         )
 
     async def _refine_uncertain(
@@ -453,6 +513,7 @@ class HybridEngine(EngineBase):
         binarize: bool = False,
         dual_engine: bool = False,
         cancel_check: CancelCheck | None = None,
+        decoded_get: Callable[[int], Image.Image | None] | None = None,
     ) -> None:
         self.refiner.ocr_processor = self.ocr_processor
         return await self.refiner.refine_uncertain(
@@ -464,7 +525,7 @@ class HybridEngine(EngineBase):
             binarize=binarize,
             dual_engine=dual_engine,
             cancel_check=cancel_check,
-            decoded_get=self._decoded_get,
+            decoded_get=decoded_get or self._decoded_get,
         )
 
     async def _finalize(

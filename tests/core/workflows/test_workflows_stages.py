@@ -223,6 +223,7 @@ class TestHybridLayoutDetector:
                 return [(0.01, 0.01, 0.5, 0.05)]
 
         tl = _TextLayer()
+        tl.open("test.pdf")
         aligner = _StubAligner(boxes_per_page=[(0.1, 0.1, 0.9, 0.2)])
         detector = HybridLayoutDetector(aligner=aligner, text_layer_recall=tl)  # type: ignore[arg-type]
         images = {0: _make_tiny_b64_image()}
@@ -230,7 +231,6 @@ class TestHybridLayoutDetector:
             images_dict=images,
             page_nums=[0],
             progress=None,
-            input_path="test.pdf",
         )
         assert tl.opened is True
         assert tl.closed is True

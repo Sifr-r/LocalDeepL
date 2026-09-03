@@ -39,6 +39,9 @@ from omniscribe.plugins.transcribe.schemas import (
     TranscriptionConfigUpdate,
     TranscriptionJobResponse,
 )
+from omniscribe.plugins.transcribe.schemas import (
+    unpack_transcribe_options as unpack_transcribe_options,
+)
 from omniscribe.utils.security import check_ssrf_target_sync
 
 _LOGGER = logging.getLogger("omniscribe.plugins.transcribe")

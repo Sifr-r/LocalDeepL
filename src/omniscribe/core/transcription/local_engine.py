@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -29,30 +30,35 @@ class WhisperLocalEngine:
         self.model_size_or_path = model_size_or_path
         self.device = device
         self._model: Any = None
+        self._lock = threading.Lock()
 
     def _get_model(self) -> Any:
         if self._model is not None:
             return self._model
 
-        try:
-            from faster_whisper import WhisperModel
-        except ImportError as exc:
-            raise TranscriptionError(
-                _FASTER_WHISPER_MISSING_MSG, status_code=503
-            ) from exc
+        with self._lock:
+            if self._model is not None:
+                return self._model
 
-        try:
-            self._model = WhisperModel(
-                self.model_size_or_path,
-                device=self.device,
-                compute_type="default",
-            )
-            return self._model
-        except Exception as exc:
-            raise TranscriptionError(
-                f"Failed to load local Whisper model '{self.model_size_or_path}': {exc}",
-                status_code=500,
-            ) from exc
+            try:
+                from faster_whisper import WhisperModel
+            except ImportError as exc:
+                raise TranscriptionError(
+                    _FASTER_WHISPER_MISSING_MSG, status_code=503
+                ) from exc
+
+            try:
+                self._model = WhisperModel(
+                    self.model_size_or_path,
+                    device=self.device,
+                    compute_type="default",
+                )
+                return self._model
+            except Exception as exc:
+                raise TranscriptionError(
+                    f"Failed to load local Whisper model '{self.model_size_or_path}': {exc}",
+                    status_code=500,
+                ) from exc
 
     async def transcribe(
         self,

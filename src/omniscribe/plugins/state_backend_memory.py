@@ -17,7 +17,7 @@ import secrets
 import time
 from dataclasses import replace
 
-from .state_backend import (
+from .state_backend_types import (
     ArtifactBlob,
     ArtifactRecord,
     ChannelRecord,
@@ -68,7 +68,7 @@ class MemoryStateBackend:
     async def get_artifact(self, id: str, token: str) -> ArtifactBlob | None:
         async with self._lock:
             record = self._artifacts.get(id)
-            if record is None or record.token != token:
+            if record is None or not secrets.compare_digest(record.token, token):
                 return None
             return ArtifactBlob(record=record, blob=self._blobs[id])
 

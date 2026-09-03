@@ -45,8 +45,15 @@ abstract class OcrRepository {
   /// Query the status of an active or completed OCR job.
   Future<OcrJobStatusResponse> getOcrStatus(String jobId);
 
+  /// Query the status of an active or completed OCR job (alias for [getOcrStatus]).
+  Future<OcrJobStatusResponse> getJobStatus(String jobId);
+
   /// Download the PDF output for a completed asynchronous OCR job.
   Future<Uint8List> getOcrResultBytes(String jobId, String token);
+
+  /// Download the PDF output for a completed asynchronous OCR job by resolving
+  /// its artifact token via SSE and fetching the result bytes.
+  Future<Uint8List> downloadResult(String jobId);
 
   /// Cancel a running or queued job.
   Future<bool> cancelJob(String jobId);
@@ -196,12 +203,21 @@ class OcrRepositoryImpl implements OcrRepository {
   }
 
   @override
+  Future<OcrJobStatusResponse> getJobStatus(String jobId) => getOcrStatus(jobId);
+
+  @override
   Future<Uint8List> getOcrResultBytes(String jobId, String token) async {
     return _apiClient.getBytes(
       ApiConstants.jobResult(jobId),
       queryParameters: {'token': token},
       headers: {'Authorization': 'Bearer $token'},
     );
+  }
+
+  @override
+  Future<Uint8List> downloadResult(String jobId) async {
+    final token = await getJobArtifactToken(jobId);
+    return getOcrResultBytes(jobId, token);
   }
 
   @override
