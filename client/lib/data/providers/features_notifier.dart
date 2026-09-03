@@ -250,7 +250,15 @@ class TranscriptionNotifier extends Notifier<TranscriptionState> {
   @override
   TranscriptionState build() {
     _repo = ref.watch(featureRepositoryProvider);
-    ref.onDispose(stopPlayback);
+    // Wave 16 / flutter_riverpod 3.4: the ref is already disposed when
+    // ``ref.onDispose`` callbacks fire, so touching ``state`` from inside
+    // the callback raises ``UnmountedRefException``. We inline the
+    // timer-cancel here (no state mutation) and keep the stateful
+    // [stopPlayback] for in-method callers.
+    ref.onDispose(() {
+      _playbackTimer?.cancel();
+      _playbackTimer = null;
+    });
     return const TranscriptionState.initial();
   }
 

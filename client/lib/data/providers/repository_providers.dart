@@ -8,24 +8,57 @@ import 'package:omniscribe_client/data/repositories/job_repository.dart';
 import 'package:omniscribe_client/data/repositories/ocr_repository.dart';
 import 'package:omniscribe_client/data/repositories/provider_repository.dart';
 
+/// Riverpod 3 [Notifier] holding the OmniScribe backend base URL.
+///
+/// Migrated from ``StateProvider<String>`` in Wave 16. Callers mutate the
+/// value via ``ref.read(apiBaseUrlProvider.notifier).set(url)`` instead of
+/// the removed ``.state =`` setter pattern.
+class ApiBaseUrlNotifier extends Notifier<String> {
+  @override
+  String build() => 'http://127.0.0.1:8000';
+
+  void set(String value) => state = value;
+}
+
 /// Base URL provider for the OmniScribe backend server.
 final apiBaseUrlProvider =
-    StateProvider<String>((ref) => 'http://127.0.0.1:8000');
+    NotifierProvider<ApiBaseUrlNotifier, String>(ApiBaseUrlNotifier.new);
+
+/// Riverpod 3 [Notifier] holding the active bearer auth token.
+class AuthTokenNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void set(String? value) => state = value;
+}
 
 /// Global/active auth token provider.
-final authTokenProvider = StateProvider<String?>((ref) => null);
+final authTokenProvider =
+    NotifierProvider<AuthTokenNotifier, String?>(AuthTokenNotifier.new);
 
+/// Riverpod 3 [Notifier] holding the "auth required" banner flag.
+///
 /// True when the API client has observed a 401 since the last dismiss.
 /// Mounted as a banner by AppShell; flipping it does not auto-clear.
-final authRequiredProvider = StateProvider<bool>((ref) => false);
+class AuthRequiredNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void set(bool value) => state = value;
+}
+
+/// True when the API client has observed a 401 since the last dismiss.
+final authRequiredProvider =
+    NotifierProvider<AuthRequiredNotifier, bool>(AuthRequiredNotifier.new);
 
 /// Core ApiClient provider.
 final apiClientProvider = Provider<ApiClient>((ref) {
-  final baseUrl = ref.watch(apiBaseUrlProvider);
+  final baseUrl = ref.watch<String>(apiBaseUrlProvider);
   final client = ApiClient(
     baseUrl: baseUrl,
-    authTokenProvider: () => ref.read(authTokenProvider),
-    onUnauthorized: () => ref.read(authRequiredProvider.notifier).state = true,
+    authTokenProvider: () => ref.read<String?>(authTokenProvider),
+    onUnauthorized: () =>
+        ref.read(authRequiredProvider.notifier).set(true),
   );
   return client;
 });

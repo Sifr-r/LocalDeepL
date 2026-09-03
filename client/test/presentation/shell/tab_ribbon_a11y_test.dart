@@ -13,13 +13,23 @@
 // pill, and other decorative widgets remain unlabeled for now (they
 // are informational, not actionable).
 
+import 'dart:ui' show Tristate;
+
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscribe_client/core/enums/app_tab.dart';
 import 'package:omniscribe_client/presentation/shell/shell_state.dart';
 import 'package:omniscribe_client/presentation/shell/tab_ribbon.dart';
+
+/// Wave 16 / flutter_riverpod 3.4: ``NotifierProvider.overrideWith`` now
+/// requires a ``Notifier Function()`` — a Notifier subclass that overrides
+/// ``build()`` to produce the desired initial state — instead of the old
+/// ``StateProvider`` ``(ref) => value`` closure pattern.
+class _ActiveTabWorkstation extends ActiveTabNotifier {
+  @override
+  AppTab build() => AppTab.workstation;
+}
 
 void main() {
   testWidgets(
@@ -27,7 +37,7 @@ void main() {
       (tester) async {
     final container = ProviderContainer(
       overrides: [
-        activeTabProvider.overrideWith((ref) => AppTab.workstation),
+        activeTabProvider.overrideWith(_ActiveTabWorkstation.new),
       ],
     );
     addTearDown(container.dispose);
@@ -46,16 +56,22 @@ void main() {
 
     final handle = tester.getSemantics(find.text('Workstation'));
     final node = handle.getSemanticsData();
-    expect(node.hasFlag(SemanticsFlag.isButton), isTrue,
+    // Flutter 3.32 deprecation: ``hasFlag`` is replaced by reading the
+    // ``SemanticsFlags`` instance on ``flagsCollection`` directly. Each
+    // ``SemanticsFlag`` maps to a named field on ``SemanticsFlags`` —
+    // ``isButton`` is a ``bool`` but ``isSelected`` is a ``Tristate``
+    // (``isTrue`` / ``isFalse`` / ``none``), so we compare against the
+    // ``Tristate`` value rather than a plain ``bool``.
+    expect(node.flagsCollection.isButton, isTrue,
         reason:
             'tab button must be announced as a button to screen readers');
-    expect(node.hasFlag(SemanticsFlag.isSelected), isTrue,
+    expect(node.flagsCollection.isSelected, Tristate.isTrue,
         reason:
             'active tab must be announced with the selected state');
 
     final settingsHandle = tester.getSemantics(find.text('Settings'));
     final settingsNode = settingsHandle.getSemanticsData();
-    expect(settingsNode.hasFlag(SemanticsFlag.isButton), isTrue);
-    expect(settingsNode.hasFlag(SemanticsFlag.isSelected), isFalse);
+    expect(settingsNode.flagsCollection.isButton, isTrue);
+    expect(settingsNode.flagsCollection.isSelected, Tristate.isFalse);
   });
 }

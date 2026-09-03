@@ -67,7 +67,9 @@ class _JobHistoryScreenState extends ConsumerState<JobHistoryScreen> {
           await ref.read(jobsProvider.notifier).downloadResult(job.id);
       if (mounted) {
         try {
-          final savePath = await FilePicker.platform.saveFile(
+          // Wave 16 / file_picker 12: ``FilePicker.platform`` is gone;
+          // ``FilePicker.saveFile`` is now a static method returning ``Uri?``.
+          final savePath = await FilePicker.saveFile(
             fileName: job.filename,
             bytes: bytes,
           );

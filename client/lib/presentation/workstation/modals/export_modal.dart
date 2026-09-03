@@ -71,9 +71,13 @@ class _ExportModalState extends ConsumerState<ExportModal> {
         case ExportFormat.searchablePdf:
           if (wsState.loadedBytes != null) {
             try {
-              final savePath = await FilePicker.platform.saveFile(
+              // Wave 16 / file_picker 12: ``FilePicker.platform`` was removed
+              // in favor of static methods on ``FilePicker`` itself. The new
+              // ``saveFile`` returns a ``Uri?`` instead of a ``String?`` —
+              // ``toString()`` keeps the existing user-facing copy working.
+              final savePath = await FilePicker.saveFile(
                 fileName: wsState.filename ?? 'searchable_document.pdf',
-                bytes: wsState.loadedBytes,
+                bytes: wsState.loadedBytes!,
               );
               if (savePath != null) {
                 _statusMessage = 'Searchable PDF saved to $savePath.';

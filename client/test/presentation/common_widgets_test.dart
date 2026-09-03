@@ -175,23 +175,30 @@ void main() {
 
   group('ToastService Tests', () {
     test('ToastNotifier adds and dismisses toasts cleanly', () {
-      final notifier = ToastNotifier();
-      expect(notifier.state, isEmpty);
+      // Wave 16 / flutter_riverpod 3.4: ``Notifier.state`` is no longer
+      // exposed as a getter on the notifier instance. Read the value via
+      // the provider instead.
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(toastProvider.notifier);
+
+      expect(container.read(toastProvider), isEmpty);
 
       final id = notifier.success('Operation succeeded');
-      expect(notifier.state.length, 1);
-      expect(notifier.state.first.message, 'Operation succeeded');
-      expect(notifier.state.first.level, ToastLevel.success);
+      final afterAdd = container.read(toastProvider);
+      expect(afterAdd.length, 1);
+      expect(afterAdd.first.message, 'Operation succeeded');
+      expect(afterAdd.first.level, ToastLevel.success);
 
       notifier.dismissToast(id);
-      expect(notifier.state, isEmpty);
+      expect(container.read(toastProvider), isEmpty);
 
       notifier.info('First');
       notifier.warning('Second');
-      expect(notifier.state.length, 2);
+      expect(container.read(toastProvider).length, 2);
 
       notifier.clearAll();
-      expect(notifier.state, isEmpty);
+      expect(container.read(toastProvider), isEmpty);
     });
   });
 }

@@ -647,8 +647,11 @@ void main() {
       // Simulate an in-flight OCR run by directly stamping the state with
       // channelId, activeJobId, and isProcessing=true. (processOcrSync/Async
       // both flip isProcessing to false on success, which is the post-fix
-      // expected behavior.)
-      notifier.state = notifier.state.copyWith(
+      // expected behavior.) Wave 16: read the existing state via the
+      // provider since ``Notifier.state`` is no longer exposed as a getter
+      // on the notifier instance — only the setter is reachable from inside
+      // a method body, which is fine for ``notifier.state = ...``.
+      notifier.state = container.read(workstationProvider).copyWith(
         channelId: 'ch-1',
         activeJobId: 'job-1',
         isProcessing: true,

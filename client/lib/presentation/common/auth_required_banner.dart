@@ -21,12 +21,12 @@ class AuthRequiredBanner extends ConsumerWidget {
 
     final colors = context.colors;
     void openSettings() {
-      ref.read(authRequiredProvider.notifier).state = false;
-      ref.read(activeTabProvider.notifier).state = AppTab.settings;
+      ref.read(authRequiredProvider.notifier).set(false);
+      ref.read(activeTabProvider.notifier).set(AppTab.settings);
     }
 
     void dismiss() {
-      ref.read(authRequiredProvider.notifier).state = false;
+      ref.read(authRequiredProvider.notifier).set(false);
     }
 
     return Semantics(

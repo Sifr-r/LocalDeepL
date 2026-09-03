@@ -52,25 +52,25 @@ class AppShell extends ConsumerWidget {
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.digit1, control: true): () {
-          ref.read(activeTabProvider.notifier).state = AppTab.workstation;
+          ref.read(activeTabProvider.notifier).set(AppTab.workstation);
         },
         const SingleActivator(LogicalKeyboardKey.digit2, control: true): () {
-          ref.read(activeTabProvider.notifier).state = AppTab.translation;
+          ref.read(activeTabProvider.notifier).set(AppTab.translation);
         },
         const SingleActivator(LogicalKeyboardKey.digit3, control: true): () {
-          ref.read(activeTabProvider.notifier).state = AppTab.transcription;
+          ref.read(activeTabProvider.notifier).set(AppTab.transcription);
         },
         const SingleActivator(LogicalKeyboardKey.digit4, control: true): () {
-          ref.read(activeTabProvider.notifier).state = AppTab.extraction;
+          ref.read(activeTabProvider.notifier).set(AppTab.extraction);
         },
         const SingleActivator(LogicalKeyboardKey.digit5, control: true): () {
-          ref.read(activeTabProvider.notifier).state = AppTab.glossary;
+          ref.read(activeTabProvider.notifier).set(AppTab.glossary);
         },
         const SingleActivator(LogicalKeyboardKey.digit6, control: true): () {
-          ref.read(activeTabProvider.notifier).state = AppTab.jobs;
+          ref.read(activeTabProvider.notifier).set(AppTab.jobs);
         },
         const SingleActivator(LogicalKeyboardKey.digit7, control: true): () {
-          ref.read(activeTabProvider.notifier).state = AppTab.settings;
+          ref.read(activeTabProvider.notifier).set(AppTab.settings);
         },
         const SingleActivator(LogicalKeyboardKey.keyS, control: true): () {
           final wsState = ref.read(workstationProvider);

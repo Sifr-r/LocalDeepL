@@ -60,7 +60,7 @@ class TabRibbon extends ConsumerWidget {
                     tab: tab,
                     isSelected: isSelected,
                     onTap: () {
-                      ref.read(activeTabProvider.notifier).state = tab;
+                      ref.read(activeTabProvider.notifier).set(tab);
                     },
                   );
                 }).toList(),
@@ -92,8 +92,9 @@ class TabRibbon extends ConsumerWidget {
                 isDark: settings.isDarkMode,
                 onToggle: () {
                   final nextIsDark = !settings.isDarkMode;
-                  ref.read(themeModeProvider.notifier).state =
-                      nextIsDark ? ThemeMode.dark : ThemeMode.light;
+                  ref
+                      .read(themeModeProvider.notifier)
+                      .set(nextIsDark ? ThemeMode.dark : ThemeMode.light);
                   ref
                       .read(settingsStateProvider.notifier)
                       .toggleDarkMode(nextIsDark);
@@ -110,7 +111,7 @@ class TabRibbon extends ConsumerWidget {
       BuildContext context, AppColorScheme colors, WidgetRef ref) {
     return InkWell(
       onTap: () {
-        ref.read(activeTabProvider.notifier).state = AppTab.workstation;
+        ref.read(activeTabProvider.notifier).set(AppTab.workstation);
       },
       borderRadius: BorderRadius.circular(8),
       child: Row(

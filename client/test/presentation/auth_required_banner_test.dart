@@ -5,6 +5,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscribe_client/data/providers/repository_providers.dart';
 import 'package:omniscribe_client/presentation/common/auth_required_banner.dart';
 
+/// Wave 16 / flutter_riverpod 3.4: ``NotifierProvider.overrideWith`` now
+/// requires a ``Notifier Function()`` — a Notifier subclass that overrides
+/// ``build()`` — instead of the old ``StateProvider`` ``(ref) => value``
+/// closure pattern. We define a tiny [AuthRequiredNotifier] subclass for
+/// the "always true" test scenario and reuse it across the two tests.
+class _AuthRequiredTrue extends AuthRequiredNotifier {
+  @override
+  bool build() => true;
+}
+
 void main() {
   testWidgets('hides by default', (tester) async {
     await tester.pumpWidget(
@@ -19,7 +29,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          authRequiredProvider.overrideWith((ref) => true),
+          authRequiredProvider.overrideWith(_AuthRequiredTrue.new),
         ],
         child: const MaterialApp(
           home: Scaffold(body: AuthRequiredBanner()),
@@ -33,7 +43,7 @@ void main() {
 
   testWidgets('dismiss button clears the flag', (tester) async {
     final container = ProviderContainer(
-      overrides: [authRequiredProvider.overrideWith((ref) => true)],
+      overrides: [authRequiredProvider.overrideWith(_AuthRequiredTrue.new)],
     );
     addTearDown(container.dispose);
 

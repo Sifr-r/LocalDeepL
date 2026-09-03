@@ -5,15 +5,48 @@ import 'package:omniscribe_client/core/enums/server_health.dart';
 import 'package:omniscribe_client/core/network/api_client.dart';
 import 'package:omniscribe_client/data/providers/repository_providers.dart';
 
-/// Active navigation tab in OmniScribe.
-final activeTabProvider = StateProvider<AppTab>((ref) => AppTab.workstation);
+/// Riverpod 3 [Notifier] holding the currently-active top-level navigation tab.
+///
+/// Migrated from the Riverpod 2 ``StateProvider<AppTab>``. We keep a tiny
+/// ``set()`` shim so call sites read ``ref.read(activeTabProvider.notifier)
+/// .set(tab)`` instead of poking the removed ``.state =`` setter.
+class ActiveTabNotifier extends Notifier<AppTab> {
+  @override
+  AppTab build() => AppTab.workstation;
 
-/// Current theme mode (Dark is default in DocuVerse).
-final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.dark);
+  void set(AppTab value) => state = value;
+}
+
+/// Active navigation tab in OmniScribe.
+final activeTabProvider =
+    NotifierProvider<ActiveTabNotifier, AppTab>(ActiveTabNotifier.new);
+
+/// Riverpod 3 [Notifier] wrapping the current [ThemeMode] (Dark is default in
+/// OmniScribe). See [ActiveTabNotifier] for the migration rationale.
+class ThemeModeNotifier extends Notifier<ThemeMode> {
+  @override
+  ThemeMode build() => ThemeMode.dark;
+
+  void set(ThemeMode value) => state = value;
+}
+
+/// Current theme mode (Dark is default in OmniScribe).
+final themeModeProvider =
+    NotifierProvider<ThemeModeNotifier, ThemeMode>(ThemeModeNotifier.new);
+
+/// Riverpod 3 [Notifier] holding the selected LLM / OCR provider preset name.
+class ActiveProviderPresetNotifier extends Notifier<String> {
+  @override
+  String build() => 'Ollama (Local)';
+
+  void set(String value) => state = value;
+}
 
 /// Selected LLM / OCR provider preset name.
 final activeProviderPresetProvider =
-    StateProvider<String>((ref) => 'Ollama (Local)');
+    NotifierProvider<ActiveProviderPresetNotifier, String>(
+  ActiveProviderPresetNotifier.new,
+);
 
 /// Server health model.
 @immutable
@@ -55,23 +88,31 @@ class ServerHealthState {
   }
 }
 
-/// Riverpod StateNotifier for Server Health monitoring.
-class ServerHealthNotifier extends StateNotifier<ServerHealthState> {
-  ServerHealthNotifier([this._apiClient])
-      : super(ServerHealthState(
-          status: ServerHealth.online,
-          latencyMs: 38,
-          lastChecked: DateTime.now(),
-        ));
+/// Riverpod 3 [Notifier] for Server Health monitoring.
+///
+/// Migrated from ``StateNotifier<ServerHealthState>`` in Wave 16. The
+/// internal ``state =`` setter still works on the new ``Notifier`` class, so
+/// the body of [checkHealth] / [setChecking] / [setOnline] / [setOffline]
+/// is unchanged.
+class ServerHealthNotifier extends Notifier<ServerHealthState> {
+  ApiClient? _apiClient;
 
-  final ApiClient? _apiClient;
+  @override
+  ServerHealthState build() {
+    _apiClient = ref.watch(apiClientProvider);
+    return ServerHealthState(
+      status: ServerHealth.online,
+      latencyMs: 38,
+      lastChecked: DateTime.now(),
+    );
+  }
 
   Future<void> checkHealth() async {
     if (_apiClient == null) return;
     setChecking();
     final stopwatch = Stopwatch()..start();
     try {
-      await _apiClient.get<dynamic>('/api/health');
+      await _apiClient!.get<dynamic>('/api/health');
       stopwatch.stop();
       setOnline(latencyMs: stopwatch.elapsedMilliseconds);
     } catch (e) {
@@ -105,7 +146,6 @@ class ServerHealthNotifier extends StateNotifier<ServerHealthState> {
 
 /// Provider for server health state.
 final serverHealthProvider =
-    StateNotifierProvider<ServerHealthNotifier, ServerHealthState>((ref) {
-  final apiClient = ref.watch(apiClientProvider);
-  return ServerHealthNotifier(apiClient);
-});
+    NotifierProvider<ServerHealthNotifier, ServerHealthState>(
+  ServerHealthNotifier.new,
+);

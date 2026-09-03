@@ -64,12 +64,25 @@ class ToastModel {
   int get hashCode => id.hashCode;
 }
 
-/// Riverpod [StateNotifier] managing the stack of active toasts.
-class ToastNotifier extends StateNotifier<List<ToastModel>> {
-  ToastNotifier() : super(<ToastModel>[]);
-
+/// Riverpod 3 [Notifier] managing the stack of active toasts.
+///
+/// Migrated from ``StateNotifier<List<ToastModel>>`` in Wave 16. The new
+/// ``Notifier`` lifecycle hooks teardown via ``ref.onDispose`` from
+/// ``build()`` rather than the legacy ``override void dispose()``.
+class ToastNotifier extends Notifier<List<ToastModel>> {
   final Map<String, Timer> _dismissTimers = {};
   int _counter = 0;
+
+  @override
+  List<ToastModel> build() {
+    ref.onDispose(() {
+      for (final timer in _dismissTimers.values) {
+        timer.cancel();
+      }
+      _dismissTimers.clear();
+    });
+    return <ToastModel>[];
+  }
 
   /// Show a toast notification.
   String showToast(
@@ -157,19 +170,8 @@ class ToastNotifier extends StateNotifier<List<ToastModel>> {
     _dismissTimers.clear();
     state = <ToastModel>[];
   }
-
-  @override
-  void dispose() {
-    for (final timer in _dismissTimers.values) {
-      timer.cancel();
-    }
-    _dismissTimers.clear();
-    super.dispose();
-  }
 }
 
 /// Global provider for toast notifications.
 final toastProvider =
-    StateNotifierProvider<ToastNotifier, List<ToastModel>>((ref) {
-  return ToastNotifier();
-});
+    NotifierProvider<ToastNotifier, List<ToastModel>>(ToastNotifier.new);

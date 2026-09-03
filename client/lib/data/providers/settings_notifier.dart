@@ -86,7 +86,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
 
   void setServerBaseUrl(String url) {
     state = state.copyWith(serverBaseUrl: url);
-    ref.read(apiBaseUrlProvider.notifier).state = url;
+    ref.read(apiBaseUrlProvider.notifier).set(url);
     // Trigger a config refresh against the new URL.
     load();
   }

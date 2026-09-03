@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' show Offset;
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show visibleForTesting, FlutterError, FlutterErrorDetails;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omniscribe_client/core/websocket/ws_client.dart';
 import 'package:omniscribe_client/data/models/bbox_item.dart';
@@ -28,6 +28,14 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
   late WsClient _wsClient;
   StreamSubscription<WsEnvelope>? _wsSubscription;
 
+  /// Cached copy of [WorkstationState.channelId] for teardown.
+  ///
+  /// Wave 16 / flutter_riverpod 3.4: the ref is already disposed when
+  /// [ref.onDispose] callbacks fire, so reading ``state`` inside the cleanup
+  /// path raises ``UnmountedRefException``. We mirror the channelId into a
+  /// private field at every write site and read it from there in [_cleanup].
+  String? _lastChannelId;
+
   @override
   WorkstationState build() {
     _ocrRepo = ref.watch(ocrRepositoryProvider);
@@ -45,11 +53,11 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
     await _wsSubscription?.cancel();
     _wsSubscription = null;
 
-    // Only tear down the WebSocket + server-side progress channel if we actually
-    // opened one (i.e., state.channelId is set). This keeps dispose safe after a
-    // clearDocument() reset and prevents double-cancellation when state has been
-    // cleared by a subsequent reset block.
-    final channelId = state.channelId;
+    // Only tear down the WebSocket + server-side progress channel if we
+    // actually opened one. We read the cached [_lastChannelId] field instead
+    // of ``state.channelId`` because the ref has been disposed by the time
+    // this callback fires (Riverpod 3 lifecycle change).
+    final channelId = _lastChannelId;
     if (channelId != null && channelId.isNotEmpty) {
       try {
         await _wsClient.disconnect();
@@ -62,6 +70,7 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
         // Best-effort: server may already be done.
       }
     }
+    _lastChannelId = null;
   }
 
   // ---------------------------------------------------------------------------
@@ -311,6 +320,7 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
   /// Clears the loaded document and resets state to default.
   Future<void> clearDocument() async {
     await _cleanup();
+    _lastChannelId = null;
     state = WorkstationState();
   }
 
@@ -408,6 +418,7 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
         );
 
       case ConnectedFrame conn:
+        _lastChannelId = conn.channelId;
         state = state.copyWith(
           channelId: conn.channelId,
         );
@@ -456,12 +467,14 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
       totalBlocks: 0,
       clearError: true,
     );
+    _lastChannelId = null;
 
     ProgressSessionHandle? session;
     try {
       // 1. Open progress session & attach WebSocket
       try {
         session = await _ocrRepo.openProgressSession();
+        _lastChannelId = session.channelId;
         state = state.copyWith(channelId: session.channelId);
 
         await _wsClient.connect(
@@ -543,10 +556,12 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
       totalBlocks: 0,
       clearError: true,
     );
+    _lastChannelId = null;
 
     try {
       // 1. Open progress session
       final session = await _ocrRepo.openProgressSession();
+      _lastChannelId = session.channelId;
       state = state.copyWith(channelId: session.channelId);
 
       await _wsClient.connect(

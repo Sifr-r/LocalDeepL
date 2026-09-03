@@ -1,7 +1,12 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+// Wave 16 / flutter_riverpod 3.4: ``Override`` is no longer re-exported from
+// the top-level ``flutter_riverpod`` barrel; it lives in ``misc.dart`` now.
+// Importing it explicitly here keeps the ``List<Override> overrides = const []``
+// parameter type-annotatable for downstream consumers of this helper.
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:omniscribe_client/data/models/bbox_item.dart';

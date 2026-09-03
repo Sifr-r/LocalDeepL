@@ -23,6 +23,15 @@ import 'package:omniscribe_client/presentation/workstation/workstation_screen.da
 
 class _MockOcrRepository extends Mock implements OcrRepository {}
 
+/// Wave 16 / flutter_riverpod 3.4: ``NotifierProvider.overrideWith`` now
+/// requires a ``Notifier Function()`` — a Notifier subclass that overrides
+/// ``build()`` to produce the desired initial state — instead of the old
+/// ``StateProvider`` ``(ref) => value`` closure pattern.
+class _AuthRequiredTrue extends AuthRequiredNotifier {
+  @override
+  bool build() => true;
+}
+
 /// No-op WebSocket client for tests. The real [WsClient] tries to open a
 /// socket against the configured base URL, which never resolves in the
 /// widget-test harness (no real server). The workstation notifier awaits
@@ -318,7 +327,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            authRequiredProvider.overrideWith((ref) => true),
+            authRequiredProvider.overrideWith(_AuthRequiredTrue.new),
           ],
           child: const MaterialApp(home: AppShell()),
         ),

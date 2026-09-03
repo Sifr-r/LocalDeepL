@@ -47,20 +47,29 @@ class _UploadDropzoneState extends ConsumerState<UploadDropzone> {
     });
 
     try {
-      final result = await FilePicker.platform.pickFiles(
+      // Wave 16 / file_picker 12: ``FilePicker.platform`` was removed;
+      // ``FilePicker.pickFiles`` is now a static method returning
+      // ``List<PlatformFile>`` directly. ``withData: true`` is also
+      // deprecated — read the bytes lazily via ``PlatformFile.readAsBytes()``.
+      final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: supportedExtensions,
-        withData: true,
       );
 
-      if (result != null && result.files.isNotEmpty) {
-        final file = result.files.first;
-        final bytes = file.bytes;
+      if (result.isNotEmpty) {
+        final file = result.first;
         final name = file.name;
 
-        if (bytes != null) {
-          _processFile(bytes, name, file.path);
-        } else {
+        try {
+          final bytes = await file.readAsBytes();
+          if (bytes.isNotEmpty) {
+            _processFile(bytes, name, file.path);
+          } else {
+            setState(() {
+              _errorMessage = 'Could not read file data';
+            });
+          }
+        } catch (_) {
           setState(() {
             _errorMessage = 'Could not read file data';
           });

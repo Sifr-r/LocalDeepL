@@ -13,9 +13,23 @@ class _MockApiClient extends Mock implements ApiClient {}
 
 void main() {
   late _MockApiClient mockClient;
+  late ProviderContainer container;
 
   setUp(() {
     mockClient = _MockApiClient();
+    // Wave 16 / flutter_riverpod 3.4: ``ServerHealthNotifier`` no longer
+    // accepts a constructor argument; the api client is read from
+    // ``apiClientProvider`` inside ``build()``. Each test gets its own
+    // container with the mock client overridden.
+    container = ProviderContainer(
+      overrides: [
+        apiClientProvider.overrideWithValue(mockClient),
+      ],
+    );
+  });
+
+  tearDown(() {
+    container.dispose();
   });
 
   group('ServerHealthNotifier', () {
@@ -28,12 +42,13 @@ void main() {
         ),
       );
 
-      final notifier = ServerHealthNotifier(mockClient);
+      final notifier = container.read(serverHealthProvider.notifier);
       await notifier.checkHealth();
 
-      expect(notifier.state.status, ServerHealth.online);
-      expect(notifier.state.latencyMs, isNotNull);
-      expect(notifier.state.error, isNull);
+      final state = container.read(serverHealthProvider);
+      expect(state.status, ServerHealth.online);
+      expect(state.latencyMs, isNotNull);
+      expect(state.error, isNull);
     });
 
     test('checkHealth sets offline when API call fails', () async {
@@ -41,21 +56,27 @@ void main() {
         Exception('Connection refused'),
       );
 
-      final notifier = ServerHealthNotifier(mockClient);
+      final notifier = container.read(serverHealthProvider.notifier);
       await notifier.checkHealth();
 
-      expect(notifier.state.status, ServerHealth.offline);
-      expect(notifier.state.latencyMs, isNull);
-      expect(notifier.state.error, contains('Connection refused'));
+      final state = container.read(serverHealthProvider);
+      expect(state.status, ServerHealth.offline);
+      expect(state.latencyMs, isNull);
+      expect(state.error, contains('Connection refused'));
     });
 
-    test('checkHealth returns early when apiClient is null', () async {
-      final notifier = ServerHealthNotifier(null);
-      final beforeState = notifier.state;
-
-      await notifier.checkHealth();
-
-      expect(notifier.state.status, beforeState.status);
+    test('initial state is online with non-null latency', () {
+      // Wave 16: the old "null apiClient" test path is now dead code —
+      // ``apiClientProvider`` is a non-nullable ``Provider<ApiClient>`` and
+      // ``ServerHealthNotifier.build()`` always watches a real client. The
+      // defensive ``if (_apiClient == null) return;`` guard remains in
+      // ``checkHealth()`` for future-proofing, but cannot be exercised via
+      // a public constructor any more. Verify the initial build state here
+      // so the offline/success cases above have a sane baseline.
+      final state = container.read(serverHealthProvider);
+      expect(state.status, ServerHealth.online);
+      expect(state.latencyMs, isNotNull);
+      expect(state.endpoint, isNotEmpty);
     });
   });
 
