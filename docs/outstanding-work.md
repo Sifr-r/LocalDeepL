@@ -1,8 +1,8 @@
 # OmniScribe — Outstanding Work
 
 **Consolidated:** 2026-08-31  
-**Updated:** 2026-09-05 (Five-lens audit + remediation plan landed; Phases 0–3 in flight)  
-**Sources:** `docs/audits/2026-08-30-pedantic-review.md`, the deferred Medium/Low backlog of the 2026-08-29 five-domain audit, the 2026-09-04 [Five-Lens Audit](audits/2026-09-04-five-lens-audit.md) and [Remediation Plan](audits/2026-09-04-remediation-plan.md), and Phase C follow-ups.
+**Updated:** 2026-09-06 (Phase 6 closed at commit `983930f`; v0.3.0 RFC 002 approved)  
+**Sources:** `docs/audits/2026-08-30-pedantic-review.md`, the deferred Medium/Low backlog of the 2026-08-29 five-domain audit, the 2026-09-04 [Five-Lens Audit](audits/2026-09-04-five-lens-audit.md) and [Remediation Plan](audits/2026-09-04-remediation-plan.md), the 2026-09-06 [v0.3.0 RFC 002](rfcs/2026-09-v0.3.0-scope.md), and Phase C follow-ups.
 
 All completed items (audit-remediation sprints 1–6, Phase C plugin slices 1–3, and Waves 1–14) have been closed and verified. Historical records are preserved in git history (`git log --grep="Wave"`).
 
@@ -58,6 +58,26 @@ and effort.
   (`test_seed_actually_controls_the_platt_split`, asserting the `--seed` flag
   actually drives the Platt train/test split RNG and is byte-for-byte deterministic
   for repeated seeds).
+- **v0.3.0 (Phase 7) — Bundle retry + U12 + long-tail** 🟡
+  (in flight, started 2026-09-06; per
+  [RFC 002](rfcs/2026-09-v0.3.0-scope.md)):
+  - **Sprint 1 — Bundle Option (a) probe** (1-2 days): write a
+    minimal reproducer for the PyInstaller + anyio static-analysis
+    failure; file a new upstream pyinstaller/pyinstaller issue with
+    the reproducer + links to existing anyio-related issues.
+  - **Sprint 2 — Bundle fallback decision**: if upstream has
+    moved → ship Option A bundle (validate the
+    `scripts/build_windows.py --smoke` gate
+    `/api/health -> 200`); else → accept Option (c) and document
+    the "single binary deferred to v0.4+" path in the v0.3.0
+    release notes.
+  - **Sprint 3 — U12 "try with sample PDF"** (Option b,
+    FastAPI `/api/sample-pdf/{name}` route + Flutter Workstation
+    "Try sample PDF" button). Backend ~2 hours; Flutter ~2 hours.
+  - **Sprint 4 — Buffer / spillover**: pick up Redis state
+    backend (only if Profile 4 in flight), Q11 chaos test
+    first slice, or additional mypy strict areas, per user
+    direction.
 
 ---
 
