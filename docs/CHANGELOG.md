@@ -6,6 +6,22 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_Nothing yet. See [v0.2.0](#020--2026-09-05) for the most recent
+release and [docs/RELEASE-NOTES-v0.2.0.md](RELEASE-NOTES-v0.2.0.md)
+for the full v0.2.0 release report._
+
+## [0.2.0] — 2026-09-05
+
+> **Six-week workstream.** Closing release of the 2026-09-04
+> Five-Lens Audit remediation. Six phases shipped end-to-end
+> (Phases 0-3, 5, 6) with the single-binary distribution
+> (Phase 4) deferred to v0.3+ pending an upstream PyInstaller +
+> anyio bundling resolution. The full release report is at
+> [docs/RELEASE-NOTES-v0.2.0.md](RELEASE-NOTES-v0.2.0.md). The
+> audit + plan that drove this work are at
+> [docs/audits/2026-09-04-five-lens-audit.md](audits/2026-09-04-five-lens-audit.md)
+> and [docs/audits/2026-09-04-remediation-plan.md](audits/2026-09-04-remediation-plan.md).
+
 ### Audit & Remediation (2026-09-05 Five-Lens Audit Wave)
 
 - **Audit Completion & Verification**: Executed and validated all actions from the
@@ -1402,5 +1418,6 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 - Svelte 5 + Tailwind CSS v4 workstation UI.
 - Single-worker FastAPI server with optional Celery background jobs.
 
-[Unreleased]: https://github.com/Sifr-r/OmniScribe/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Sifr-r/OmniScribe/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Sifr-r/OmniScribe/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Sifr-r/OmniScribe/releases/tag/v0.1.0

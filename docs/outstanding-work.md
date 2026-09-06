@@ -38,7 +38,9 @@ and effort.
   §"Known build issue"). Bundle infrastructure kept in tree
   (`omniscribe_server.spec`, `scripts/build_windows.py`,
   `scripts/run_server.py`, `hooks/hook-anyio.py`); the smoke test gate
-  (`/api/health -> 200`) is unchanged when the build is unblocked.
+  (`/api/health -> 200`) is unchanged when the build is unblocked. The
+  full v0.2.0 release report is at
+  [docs/RELEASE-NOTES-v0.2.0.md](RELEASE-NOTES-v0.2.0.md).
 - **Phase 5 — Test hardening** ✅ (closed 2026-09-05). Added 5 property-based
   fuzzing test suites with `hypothesis` (`json_parse`, `prompt_safety`, `page_range`,
   `whitespace`, `filters`), direct unit & property tests for `core/translate/workflow.py`,
