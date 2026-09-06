@@ -18,6 +18,38 @@ defaults, security posture, removed APIs._
 
 ### Maintenance
 
+- **2026-09-06 — Bundle ships in v0.3.0** (Sprint 1 of
+  [RFC 002](rfcs/2026-09-v0.3.0-scope.md) §3). The 14-attempt
+  bundle failure record in `docs/deployment/windows-bundle.md`
+  was the predictable outcome of four local spec
+  misclassifications, not an upstream PyInstaller bug. Fix is
+  five lines:
+  - Remove `"anyio"` from `EXCLUDES` in `omniscribe_server.spec`
+    (was actively fighting `collect_submodules("anyio")` on the
+    same file).
+  - Add `collect_submodules("fastapi")` to `_RUNTIME_SUBMODULES`
+    (was missing — `fastapi.staticfiles` was in the bundle as
+    "not installed").
+  - Remove `"pydantic-settings"` from `EXCLUDES` and add
+    `collect_submodules("pydantic_settings")` to
+    `_RUNTIME_SUBMODULES`.
+  - Add `import anyio.abc  # noqa: F401` to
+    `scripts/run_server.py` so the static analyzer follows the
+    import edge.
+  - Add `"scipy._external.array_api_compat.numpy.fft"` to the
+    manual hiddenimports block (private submodule that
+    `collect_submodules` skips by default).
+  Verified 2026-09-06: 307 MB `omniscribe-server.exe` boots,
+  serves `/api/health -> 200`, `/api/jobs -> 200 []`, and
+  `/openapi.json -> 200` (45 KB) on a Windows 11 dev box. See
+  [Sprint 1 findings](rfcs/2026-09-bundle-sprint-1-findings.md)
+  for the full root-cause analysis. The minimal reproducer
+  (`repro/minimal_anyio.spec` + `repro/run_minimal.py` +
+  `repro/smoke.py`) proves the anyio part is local; the
+  other three are well-known PyInstaller static-analysis gaps
+  on deep ML stacks. New `scripts/iterative_bundle.py`
+  automates "catch the next missing module and add it" for
+  future maintenance.
 - **2026-09-06 — D9 mypy strict enabled for `omniscribe.plugins.*`
   and `omniscribe.harness.*`.** `pyproject.toml` adds a per-module
   override with `disallow_untyped_defs = true`,

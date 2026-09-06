@@ -36,6 +36,10 @@ MANIFEST
 # blanket ``*.spec`` rule above is overridden for this one file.
 *.spec
 !omniscribe_server.spec
+# Bundle reproducer (Sprint 1): proves the anyio bundling bug is
+# local, not upstream. Tracked alongside the main spec so the next
+# maintainer can re-run the minimal build if a regression hits.
+!repro/minimal_anyio.spec
 
 # Installer logs
 pip-log.txt

@@ -61,16 +61,24 @@ and effort.
 - **v0.3.0 (Phase 7) — Bundle retry + U12 + long-tail** 🟡
   (in flight, started 2026-09-06; per
   [RFC 002](rfcs/2026-09-v0.3.0-scope.md)):
-  - **Sprint 1 — Bundle Option (a) probe** (1-2 days): write a
-    minimal reproducer for the PyInstaller + anyio static-analysis
-    failure; file a new upstream pyinstaller/pyinstaller issue with
-    the reproducer + links to existing anyio-related issues.
-  - **Sprint 2 — Bundle fallback decision**: if upstream has
-    moved → ship Option A bundle (validate the
-    `scripts/build_windows.py --smoke` gate
-    `/api/health -> 200`); else → accept Option (c) and document
-    the "single binary deferred to v0.4+" path in the v0.3.0
-    release notes.
+  - **Sprint 1 — Bundle Option (a) probe** ✅ (closed 2026-09-06).
+    The anyio bundling bug was a local spec misclassification
+    (`"anyio"` in `EXCLUDES` fighting `collect_submodules("anyio")`),
+    not an upstream PyInstaller bug. The minimal reproducer at
+    `repro/minimal_anyio.spec` + `repro/run_minimal.py` +
+    `repro/smoke.py` proves PyInstaller 6.22.2 + anyio 3.7.1
+    bundle correctly in 30 lines of spec. The full bundle
+    (307 MB `omniscribe-server.exe`) now boots, serves
+    `/api/health -> 200`, `/api/jobs -> 200 []`, and
+    `/openapi.json -> 200` (45 KB) on a Windows 11 dev box.
+    See [Sprint 1 findings](rfcs/2026-09-bundle-sprint-1-findings.md)
+    for the full root-cause analysis and fix history.
+  - **Sprint 2 — v0.3.0 release prep** (next): Sprint 1
+    succeeded, so Sprint 2 collapses from "ship Option A or
+    fall back to Option (c)" to "ship Option A as written +
+    prep the v0.3.0 release." Build the bundle on a fresh
+    clone, write the v0.3.0 release notes, update CHANGELOG,
+    cut the tag, attach the binary to the GitHub release.
   - **Sprint 3 — U12 "try with sample PDF"** (Option b,
     FastAPI `/api/sample-pdf/{name}` route + Flutter Workstation
     "Try sample PDF" button). Backend ~2 hours; Flutter ~2 hours.

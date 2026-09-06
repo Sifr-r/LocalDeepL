@@ -1,17 +1,17 @@
 # OmniScribe on Windows — the bundled binary
 
-> **Status (2026-09-05): DEFERRED to v0.3+.** v0.2.0 ships the **source
-> install** path (12–16 steps) as the supported end-user install. The
-> single-binary PyInstaller bundle is **deferred** because the static
-> analyzer refuses to bundle `anyio` (see
-> [§"Known build issue"](#known-build-issue-anyio--pyinstaller-static-analysis)
-> below). The doc below describes the intended end-user flow **once the
-> bundle ships in v0.3+**; the spec, build script, and entry wrapper
-> (`omniscribe_server.spec`, `scripts/build_windows.py`,
-> `scripts/run_server.py`) are kept in tree so the next maintainer can
-> pick the work back up. See
-> [RFC 001 — End-User Install Path](../rfcs/2026-09-end-user-install.md)
-> for the design discussion and the v0.3+ decision.
+> **Status (2026-09-06): v0.3.0 SHIPS the single-binary Windows
+> distribution.** Sprint 1 of the [v0.3.0 RFC 002](../rfcs/2026-09-v0.3.0-scope.md)
+> identified the bundling failure as a local spec misclassification,
+> not an upstream PyInstaller bug. The fix was four lines in
+> `omniscribe_server.spec` + one force-import in
+> `scripts/run_server.py`; the full 307 MB bundle now boots, serves
+> `/api/health -> 200`, `/api/jobs -> 200 []`, and `/openapi.json -> 200`
+> (45 KB) on a Windows 11 dev box. See the
+> [Sprint 1 findings doc](../rfcs/2026-09-bundle-sprint-1-findings.md)
+> for the full root-cause analysis. v0.2.0 shipped the **source
+> install** as the supported end-user path; v0.3.0 adds the bundle
+> on top.
 
 ## What you get
 
@@ -176,82 +176,34 @@ wraps the spec + the smoke test (boots the binary, hits
 
 ### Known build issue: anyio + PyInstaller static analysis
 
-**Status (2026-09-05): BLOCKED — binary boots Python but exits
-immediately with `ModuleNotFoundError: No module named 'anyio'`
-before serving any requests.** The 14 build attempts documented
-in `docs/audits/2026-09-04-remediation-plan.md` and the chat
-session did not crack this.
+**Status (2026-09-06): RESOLVED.** The 14-attempt failure record
+above was the predictable outcome of a local spec misclassification
+in `omniscribe_server.spec`: the `"anyio"` entry in `EXCLUDES`
+actively fought `collect_submodules("anyio")` on the same file,
+and EXCLUDES wins. Plus three related gaps surfaced in the
+follow-on full-bundle boot (`fastapi.staticfiles`, `pydantic_settings`,
+and a private scipy submodule). The full fix is five lines:
 
-What the build produces today: a 270 MB `omniscribe-server.exe`
-that runs `--help` correctly and the `--port 8000` path reaches
-`from omniscribe.server import main` — but the `import anyio.abc`
-inside `run_server.py` raises `ModuleNotFoundError` because the
-PYZ archive has zero `anyio` entries.
+1. Remove `"anyio"` from `EXCLUDES` in `omniscribe_server.spec`.
+2. Add `collect_submodules("fastapi")` to `_RUNTIME_SUBMODULES`.
+3. Remove `"pydantic-settings"` from `EXCLUDES` and add
+   `collect_submodules("pydantic_settings")` to `_RUNTIME_SUBMODULES`.
+4. Add `import anyio.abc  # noqa: F401` to `scripts/run_server.py`
+   so the static analyzer follows the import edge.
+5. Add `"scipy._external.array_api_compat.numpy.fft"` to the manual
+   hiddenimports block (a private submodule that
+   `collect_submodules` skips by default).
 
-What was tried (in the spec, in this order):
+The full root-cause analysis, the minimal reproducer that proves
+the anyio part is local, and the chronological fix log are at
+[`docs/rfcs/2026-09-bundle-sprint-1-findings.md`](../rfcs/2026-09-bundle-sprint-1-findings.md).
 
-1. `collect_submodules("anyio")` with anyio 4.x — only sees the
-   top-level package (4.x's `_lazyimport` hides submodules).
-2. Explicit `hiddenimports` list with all anyio submodules — the
-   analyzer tries to import each by name; the lazy proxy doesn't
-   return a module file the analyzer can follow.
-3. `hooks/hook-anyio.py` walking the package directory to emit
-   hiddenimports — same root cause; the analyzer can't import
-   the names, so they don't get bundled.
-4. Downgrading to anyio 3.7.1 (``anyio>=3.7,<4`` in the `web`
-   extra). The 14 submodules import cleanly in the venv Python
-   with 3.7.1. PyInstaller still reports `ERROR: Hidden import
-   'anyio._backends' not found` for every entry, and the
-   resulting binary still has 0 anyio entries. 3.x fixes the
-   lazy-import problem but the static analyzer still can't find
-   the modules.
-5. `collect_all("anyio")` — same result.
-6. Force-importing `anyio.abc`, `anyio.streams`, etc. at the top
-   of the spec — the spec evaluates fine but the resulting
-   binary still ships with 0 anyio entries.
-7. Force-importing the same modules at the top of
-   `scripts/run_server.py` (the actual entry point the analyzer
-   walks) — the binary now boots and reaches the
-   `import anyio.abc` line, but the PYZ still has 0 anyio
-   entries. The error changes from "anyio is not installed"
-   to `ModuleNotFoundError: No module named 'anyio'`.
-
-The pattern is consistent: PyInstaller's static analyzer reports
-"not found" for modules that absolutely exist on disk and import
-without error in the same Python environment. This is independent
-of the anyio version.
-
-Paths forward (not yet implemented; pick one in a follow-up
-sprint):
-
-- **Wait for upstream fix.** Track
-  https://github.com/pyinstaller/pyinstaller/issues for anyio
-  bundling. The maintainer should consider filing a new issue
-  with the minimal reproducer in this spec + the venv state.
-- **Use a different bundler.** Nuitka has had fewer anyio
-  problems historically; the build script would call
-  `python -m nuitka ...` instead of `python -m PyInstaller ...`.
-  The spec would be replaced with a `nuitka_omniscribe.py`
-  driver.
-- **Ship source install only.** The 12-step install from the
-  main README is the actual user-facing path for v0.2.0. The
-  binary distribution was always a "nice to have" for
-  non-developers; the audit's U3 finding ("the 12-step install
-  is too much") is real, but the binary build has consumed more
-  engineering time than it would save end users. Pivot to
-  shipping better source-install docs (Phase 2's
-  `TROUBLESHOOTING.md` already does most of this work) and
-  defer the binary to a v0.3+ stretch.
-
-The `omniscribe_server.spec` and `scripts/build_windows.py` are
-left in the tree for the next maintainer who picks the bundle
-back up. They will work the moment PyInstaller's analysis
-recognises anyio; nothing on the venv side is blocking the
-build beyond that.
-
-When the build is unblocked, the smoke test in
-`scripts/build_windows.py --smoke` is the gate: it must report
-`/api/health -> 200` before a release tag can ship.
+The smoke test in `scripts/build_windows.py --smoke` (or the
+standalone `scripts/smoke_existing.py`) is the gate: it must report
+`/api/health -> 200` before a release tag can ship. **Verified
+2026-09-06 on Windows 11:** `/api/health -> 200 {"status":"ok"}`,
+`/api/jobs -> 200 []`, `/openapi.json -> 200` (45 KB) on a 307 MB
+`omniscribe-server.exe`.
 
 ## FAQ
 

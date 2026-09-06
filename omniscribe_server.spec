@@ -119,9 +119,12 @@ _RUNTIME_SUBMODULES = (
     + collect_submodules("pymupdf")
     + collect_submodules("omniscribe")
     + collect_submodules("starlette")
+    + collect_submodules("fastapi")
     + collect_submodules("uvicorn")
     + collect_submodules("sniffio")
     + collect_submodules("h11")
+    + collect_submodules("scipy")
+    + collect_submodules("pydantic_settings")
     # Phase 4.4 (2026-09-05, re-resolved): with anyio pinned to 3.x
     # (``anyio>=3.7,<4`` in the ``web`` extra), the lazy-import
     # dance that defeated ``collect_submodules`` in 4.x is gone, and
@@ -134,6 +137,7 @@ _RUNTIME_SUBMODULES = (
     # stdlib / third-party that PyInstaller's analysis under-detects
     # for the way the harness uses them (lazy imports, importlib).
     + [
+        "scipy._external.array_api_compat.numpy.fft",
         "torch._C",
         "torch.cuda",
         "surya.model.recognition",
@@ -171,7 +175,16 @@ EXCLUDES = [
     "pytest_asyncio",
     "pytest_cov",
     "hypothesis",
-    "anyio",
+    # NOTE: anyio is intentionally NOT excluded — it is a runtime
+    # dependency of FastAPI / Starlette / uvicorn, not a test dep.
+    # Excluding it here was a misclassification during the 14-attempt
+    # saga that fought ``collect_submodules("anyio")`` on line 133.
+    # With the anyio 3.x pin, ``collect_submodules`` returns all 37
+    # submodules cleanly; excluding it dropped them all again and
+    # the binary booted with ``ModuleNotFoundError: anyio`` at the
+    # first await. Verified 2026-09-06: removing this entry plus
+    # adding ``import anyio.abc`` to ``scripts/run_server.py`` lets
+    # the bundle serve ``/api/health`` -> 200.
     "mypy",
     "ruff",
     "pip",
@@ -184,7 +197,13 @@ EXCLUDES = [
     "jupyter",
     "notebook",
     "sphinx",
-    "pydantic-settings",
+    # NOTE: pydantic-settings is intentionally NOT excluded — it is a
+    # runtime dependency of omniscribe's RuntimeSettings (see
+    # pyproject.toml line 50, "pydantic-settings>=2.5"). Excluding it
+    # here was a misclassification; the bundled binary raised
+    # ``ImportError: pydantic_settings`` at startup. Verified
+    # 2026-09-06: removing this entry plus adding
+    # ``collect_submodules("pydantic_settings")`` below fixes the boot.
     # PyInstaller itself — accidentally self-including this in a
     # bundle is a known footgun.
     "PyInstaller",
