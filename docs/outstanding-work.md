@@ -49,9 +49,15 @@ and effort.
   hoisted `_DEFAULTS` in processor (D12), single-pass raw_decode `extract_json` (D11),
   hardened token masking (S8), exact-key sensitive logging redaction (S10),
   resolved Q8 (under-tested modules wave: 178+ tests covering transcription engines, prompted grounded OCR, glossary HTTP fetch/SSRF, library routes, and encoding/XLIFF),
-  resolved Q10 (merged `tests/ops/` into `tests/scripts/`), and closed P13 as
-  N/A (policy documented in `docs/SECURITY.md`: sensitive reports request
-  fingerprint out-of-band; no static PGP key published to avoid unmanaged key rot).
+  resolved Q10 (merged `tests/ops/` into `tests/scripts/`),
+  closed P13 as N/A (policy documented in `docs/SECURITY.md`: sensitive reports request
+  fingerprint out-of-band; no static PGP key published to avoid unmanaged key rot),
+  enabled D9 (mypy strict for `omniscribe.plugins.*` + `omniscribe.harness.*`:
+  14 errors → 0 via 4 return-type annotations and 9 `# type: ignore[no-untyped-call]`
+  for pymupdf), and added the Q9 calibration script determinism test
+  (`test_seed_actually_controls_the_platt_split`, asserting the `--seed` flag
+  actually drives the Platt train/test split RNG and is byte-for-byte deterministic
+  for repeated seeds).
 
 ---
 

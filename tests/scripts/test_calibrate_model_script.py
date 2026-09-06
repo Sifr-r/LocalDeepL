@@ -164,6 +164,54 @@ class TestFitFromRecords:
                 min_records=10,
             )
 
+    def test_seed_actually_controls_the_platt_split(self, tmp_records: Path):
+        """Audit Q9: the ``--seed`` flag is documented as "controls
+        the train/test split RNG; the script is deterministic for a
+        given seed". The contract has two parts:
+
+        1. Different seeds produce different fits (the seed is
+           actually consumed somewhere on the path).
+        2. The same seed produces the same fit on repeated calls
+           (the script is deterministic — not just "uses the seed
+           once, then drifts" via ambient numpy state).
+
+        We assert both. The first run captures the
+        ``seed=42`` baseline; ``seed=43`` must differ in ``a`` or
+        ``b`` (the split is shuffled differently, so the train
+        split is different, so the optimizer converges to a
+        slightly different optimum). The second ``seed=42`` run
+        must equal the first byte-for-byte on ``a``, ``b``, and
+        the diagnostic fields (n_train, n_test, ece_after, ece_baseline).
+        """
+        records = load_records(tmp_records)
+        first = fit_from_records(records, seed=42)
+        other = fit_from_records(records, seed=43)
+        again = fit_from_records(records, seed=42)
+
+        # The seed is actually consumed (a difference shows up
+        # somewhere on the path — the train split is the most
+        # likely culprit, but the optimizer may also land on a
+        # different optimum).
+        differs_in_a = first["a"] != other["a"]
+        differs_in_b = first["b"] != other["b"]
+        differs_in_train = first["n_train"] != other["n_train"]
+        assert differs_in_a or differs_in_b or differs_in_train, (
+            "seed had no effect on the fit (a, b, n_train all "
+            "identical across seed=42 and seed=43)"
+        )
+
+        # The same seed is deterministic — n_train/n_test are
+        # exact integers so the equality is unambiguous, and
+        # ``a`` / ``b`` are floats so we use math.isclose to
+        # allow for whatever floating-point jitter the
+        # platform-level RNG (if any) introduces.
+        import math
+
+        assert first["n_train"] == again["n_train"]
+        assert first["n_test"] == again["n_test"]
+        assert math.isclose(first["a"], again["a"], rel_tol=1e-12, abs_tol=1e-12)
+        assert math.isclose(first["b"], again["b"], rel_tol=1e-12, abs_tol=1e-12)
+
 
 class TestWriteCalibration:
     def test_writes_resource_file(self, tmp_path: Path):

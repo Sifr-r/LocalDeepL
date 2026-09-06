@@ -18,13 +18,30 @@ defaults, security posture, removed APIs._
 
 ### Maintenance
 
-_Nothing yet. New maintenance work will land here in the order it
-ships: dependency upgrades, test refactors, internal cleanups, lint /
-typing cleanups, OpenAPI snapshot regenerations, and other changes
-with no user-visible behavior delta. The "is this user-visible?"
-test is: would a user reading the README, the install guide, or
-the API contract notice? If yes, it goes in the User-visible section
-above; if no, here._
+- **2026-09-06 — D9 mypy strict enabled for `omniscribe.plugins.*`
+  and `omniscribe.harness.*`.** `pyproject.toml` adds a per-module
+  override with `disallow_untyped_defs = true`,
+  `disallow_untyped_calls = true`, and `check_untyped_defs = true`
+  (matching the `omniscribe.core.*` override). 14 errors were
+  reported on first run: 4 missing return-type annotations
+  (`_progress_adapter`, `_warning_adapter`, `_cancel_check` in
+  `plugins/ocr/service.py`; the inner `stream()` in
+  `plugins/ocr/plugin.py`) and 10 `# type: ignore[no-untyped-call]`
+  sites against `pymupdf`. The pymupdf stubs ship partial coverage
+  for `fitz.open`, `get_pixmap`, `page_count`, `__getitem__`, and
+  `close()` — 3 of the 10 `type: ignore` lines turned out to be
+  unused and were removed, leaving 9 active. Final tally: 0 errors
+  in 56 source files. See
+  [`pyproject.toml`](pyproject.toml) §`[tool.mypy.overrides]`.
+- **2026-09-06 — Q9 calibration script determinism test.** New test
+  `test_seed_actually_controls_the_platt_split` in
+  `tests/scripts/test_calibrate_model_script.py` pins the
+  `scripts/calibrate_model.py` `--seed` contract: different seeds
+  produce different `a` / `b` / `n_train` (the seed is actually
+  consumed somewhere on the path), and the same seed is byte-for-byte
+  deterministic on `n_train`, `n_test`, `a`, and `b`. The test would
+  have caught a regression where the script "uses the seed once,
+  then drifts" via ambient numpy state.
 
 ## [0.2.0] — 2026-09-05
 

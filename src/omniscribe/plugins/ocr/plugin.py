@@ -29,7 +29,7 @@ import hashlib
 import json
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -297,7 +297,7 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
         ):
             raise HTTPException(status_code=404, detail="unknown job")
 
-        async def stream():
+        async def stream() -> AsyncGenerator[str, None]:
             cursor = 0
             while True:
                 backlog = service.event_backlog(job_id)
@@ -476,7 +476,7 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
             import pymupdf as fitz
 
             try:
-                doc = fitz.open(stream=blob, filetype=filetype)
+                doc = fitz.open(stream=blob, filetype=filetype)  # type: ignore[no-untyped-call]
             except Exception as e:
                 raise HTTPException(
                     status_code=400, detail=f"Cannot open document: {e}"
@@ -491,10 +491,10 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
                 p = doc[page]
                 rect = p.rect
                 pix = p.get_pixmap(dpi=dpi, alpha=False)
-                png = bytes(pix.tobytes("png"))
+                png = bytes(pix.tobytes("png"))  # type: ignore[no-untyped-call]
                 return png, total_pages, float(rect.width), float(rect.height)
             finally:
-                doc.close()
+                doc.close()  # type: ignore[no-untyped-call]
 
         png_bytes, total_pages, w, h = await asyncio.to_thread(_render_page)
         return Response(

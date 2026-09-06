@@ -16,7 +16,7 @@ import secrets
 import shutil
 import tempfile
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -335,7 +335,9 @@ class OCRServiceImpl:
         finally:
             shutil.rmtree(work_dir, ignore_errors=True)
 
-    def _progress_adapter(self, job_id: str, channel: str | None):
+    def _progress_adapter(
+        self, job_id: str, channel: str | None
+    ) -> Callable[..., Awaitable[None]] | None:
         if self._progress is None or not channel:
             return None
 
@@ -351,7 +353,9 @@ class OCRServiceImpl:
 
         return on_progress
 
-    def _warning_adapter(self, job_id: str, channel: str | None):
+    def _warning_adapter(
+        self, job_id: str, channel: str | None
+    ) -> Callable[..., Awaitable[None]] | None:
         if self._progress is None or not channel:
             return None
 
@@ -366,7 +370,7 @@ class OCRServiceImpl:
 
         return on_warning
 
-    def _cancel_check(self, job_id: str, channel: str | None):
+    def _cancel_check(self, job_id: str, channel: str | None) -> Callable[[], bool] | None:
         if not job_id and not channel:
             return None
         queue, progress = self._queue, self._progress
@@ -524,22 +528,22 @@ class OCRServiceImpl:
                 # caller-supplied index and render the file as-is.
                 if page_index != 0:
                     return None
-                img_doc = fitz.open(input_path)
+                img_doc = fitz.open(input_path)  # type: ignore[no-untyped-call]
                 try:
                     page = img_doc[0]
                     pix = page.get_pixmap(dpi=dpi, alpha=False)
-                    return bytes(pix.tobytes("png"))
+                    return bytes(pix.tobytes("png"))  # type: ignore[no-untyped-call]
                 finally:
-                    img_doc.close()
-            doc = fitz.open(input_path)
+                    img_doc.close()  # type: ignore[no-untyped-call]
+            doc = fitz.open(input_path)  # type: ignore[no-untyped-call]
             try:
                 if page_index < 0 or page_index >= doc.page_count:
                     return None
                 page = doc[page_index]
                 pix = page.get_pixmap(dpi=dpi, alpha=False)
-                return bytes(pix.tobytes("png"))
+                return bytes(pix.tobytes("png"))  # type: ignore[no-untyped-call]
             finally:
-                doc.close()
+                doc.close()  # type: ignore[no-untyped-call]
 
         return await asyncio.to_thread(_render)
 

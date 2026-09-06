@@ -372,6 +372,18 @@ disallow_untyped_defs = true
 check_untyped_defs = true
 
 [[tool.mypy.overrides]]
+# `plugins/` and `harness/` are the harness and per-feature extension
+# surface (audit D9). v0.3.0 brought both into mypy strict: 4 missing
+# return-type annotations were added, and the 9 untyped-call sites into
+# ``pymupdf`` (which ships partial stubs) are now marked with
+# ``# type: ignore[no-untyped-call]`` on the lines mypy still flags.
+# ``0 errors in 56 source files`` with the strict flags on.
+module = ["omniscribe.plugins.*", "omniscribe.harness.*"]
+disallow_untyped_defs = true
+disallow_untyped_calls = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
 module = "tests.*"
 check_untyped_defs = true
 disallow_untyped_defs = false
