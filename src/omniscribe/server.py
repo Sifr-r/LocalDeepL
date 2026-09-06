@@ -165,11 +165,20 @@ def create_app() -> ASGIApplication:
     # but still allows the Flutter desktop client (no Origin header)
     # to call the API. A bare ``*`` opens the open wildcard.
     cors_origins = settings.cors_origins
+    # Audit S13: ``*`` + credentials is a CORS misconfiguration. The
+    # ``*`` wildcard is interpreted as "any origin"; combining it with
+    # ``Access-Control-Allow-Credentials: true`` would let a
+    # cross-origin attacker read authenticated responses. Browsers
+    # reject the combo in practice, but the CORS spec also
+    # discourages it. Force ``allow_credentials=False`` whenever
+    # ``*`` appears in the allowlist; explicit origins keep
+    # credentials on.
+    allow_credentials = bool(cors_origins) and "*" not in cors_origins
     cors_module = _load_optional_module("fastapi.middleware.cors")
     web_app.add_middleware(
         cors_module.CORSMiddleware,
         allow_origins=cors_origins,
-        allow_credentials=bool(cors_origins),
+        allow_credentials=allow_credentials,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
         expose_headers=[

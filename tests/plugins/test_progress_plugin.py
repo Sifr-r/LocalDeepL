@@ -146,14 +146,36 @@ def test_session_endpoint_returns_channel_and_token() -> None:
     assert body["channel_id"] and body["session_token"]
 
 
-def test_http_cancel_endpoint_flips_flag() -> None:
+def test_http_cancel_without_token_returns_401() -> None:
+    """Audit S6: the cancel handler is a denial-of-service surface
+    against an in-progress job. An unauthenticated request must NOT
+    cancel a channel — the previous behaviour (``200, cancelled=True``
+    when no token was provided) is closed by this test.
+    """
     service = _service()
     client = TestClient(_make_app(service))
     body = client.post("/api/progress/session", json={}).json()
     response = client.post(f"/api/progress/cancel/{body['channel_id']}")
-    assert response.status_code == 200
-    assert response.json() == {"cancelled": True}
-    assert service.is_cancelled(body["channel_id"]) is True
+    assert response.status_code == 401
+    assert "session token required" in response.json()["detail"]
+    assert service.is_cancelled(body["channel_id"]) is False
+
+
+def test_http_cancel_unknown_channel_returns_404() -> None:
+    """Audit S6: a token-only check would let an attacker probe the
+    channel-id space. A 404 (``channel not found``) leaks the same
+    information as a successful cancel (the channel_id doesn't
+    exist) but is a clearer contract — the original code returned
+    ``{"cancelled": false}`` for both "no such channel" and
+    "channel exists but not yet started", which conflated the two.
+    """
+    service = _service()
+    client = TestClient(_make_app(service))
+    response = client.post(
+        "/api/progress/cancel/this-channel-does-not-exist?session_token=any"
+    )
+    assert response.status_code == 404
+    assert response.json() == {"detail": "channel not found"}
 
 
 def test_http_cancel_with_query_param_token_succeeds() -> None:
@@ -201,16 +223,6 @@ def test_http_cancel_with_invalid_token_raises_403() -> None:
     assert response_header.status_code == 403
     assert response_header.json() == {"detail": "invalid session token"}
     assert service.is_cancelled(body["channel_id"]) is False
-
-
-def test_http_cancel_without_token_succeeds_for_backward_compatibility() -> None:
-    service = _service()
-    client = TestClient(_make_app(service))
-    body = client.post("/api/progress/session", json={}).json()
-    response = client.post(f"/api/progress/cancel/{body['channel_id']}")
-    assert response.status_code == 200
-    assert response.json() == {"cancelled": True}
-    assert service.is_cancelled(body["channel_id"]) is True
 
 
 # -- WebSocket handler ----------------------------------------------------------------

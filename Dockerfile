@@ -124,9 +124,14 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=30s \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')" || exit 1
 
-# Default: bind on all interfaces so the container is reachable from
-# the host on non-loopback adapters. Use ``--host 127.0.0.1`` when
-# running behind a reverse proxy that does not need LAN exposure.
-# ``tini`` forwards SIGTERM to the web server for a clean shutdown.
+# Default: bind on loopback only (audit S11). The container is
+# reachable from the host via Docker's port mapping
+# (``-p 127.0.0.1:8000:8000``) and from other containers on the same
+# Docker network via the container's IP. Operators who explicitly
+# need LAN exposure should run with ``--network host`` and override
+# the CMD (``docker run --network host omniscribe --host 0.0.0.0``)
+# — the default of 0.0.0.0 was a footgun for unauthenticated
+# deployments and is gone as of v0.2.0. ``tini`` forwards SIGTERM to
+# the web server for a clean shutdown.
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["omniscribe-server", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["omniscribe-server", "--host", "127.0.0.1", "--port", "8000"]

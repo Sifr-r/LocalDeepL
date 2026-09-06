@@ -47,9 +47,10 @@ class CircuitState(StrEnum):
 # rejects are safe to retry after a short backoff.
 RETRYABLE_STATUS_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
 
-# Python-level exception types that are never worth retrying — they
-# indicate a local programming bug rather than an upstream outage.
-# Listing them by type (not by message substring) catches the
+# Python-level exception types that are never worth retrying.
+#
+# The "definitely-a-bug" group: a local code defect, not an upstream
+# outage. Listing by type (not by message substring) catches the
 # "keyerror for missing dict key" / "typeerror on bad arg" cases
 # regardless of wording.
 _PYTHON_BUG_EXCEPTION_TYPES = (
@@ -58,9 +59,17 @@ _PYTHON_BUG_EXCEPTION_TYPES = (
     AttributeError,
     NameError,
     IndexError,
-    ValueError,
     AssertionError,
 )
+
+# ``ValueError`` is a separate category (audit D13): a ``ValueError``
+# in our call site almost always means "the request payload was
+# malformed" (bad image shape, bad page number string, bad JSON
+# field) — a permanent failure on the caller's side that retrying
+# cannot resolve. The retry behaviour is the same as the bug group
+# (don't retry), but the operator-facing log message is clearer when
+# the two are split.
+_VALUE_ERROR_FROM_CALLER = (ValueError,)
 
 # Substrings in error messages that indicate transient transport failures.
 _TRANSIENT_TERMS = (
@@ -113,11 +122,28 @@ def is_transient_error(exc: BaseException) -> bool:
     failures (rate limits, 5xx, connection drops, timeouts) return ``True``.
     Python-level bugs (KeyError, TypeError, AttributeError, ...) return
     ``False`` because retrying them only hides a real code defect.
-    Unknown errors default to retryable: the cost of one extra attempt
-    is small compared to silently degrading a page.
+    ``ValueError`` is also permanent (audit D13) — in our call site it
+    almost always means "the request payload was malformed", which
+    retrying cannot resolve.
+
+    Unknown errors default to retryable (audit D19): the cost of one
+    extra attempt is small compared to silently degrading a page. The
+    previous default treated bare ``RuntimeError`` as permanent, which
+    misclassified transport exceptions like ``httpx.ConnectError``
+    (``All connection attempts failed``) — a ``RuntimeError`` subclass
+    with a transient message — and silently dropped pages that would
+    have recovered on retry.
     """
     # Always-not-transient exception types (programming bugs).
     if isinstance(exc, _PYTHON_BUG_EXCEPTION_TYPES):
+        return False
+
+    # ValueError is a permanent caller-side error (audit D13) — the
+    # payload was malformed; retrying the same payload produces the
+    # same ValueError. This is the same retry decision as the bug
+    # group but the operator-facing log message is clearer when
+    # split.
+    if isinstance(exc, _VALUE_ERROR_FROM_CALLER):
         return False
 
     # Status code: try the common attribute names. httpx.HTTPStatusError
@@ -151,13 +177,13 @@ def is_transient_error(exc: BaseException) -> bool:
     if "timeout" in msg or "timed out" in msg:
         return True
 
-    # Bare generic exceptions (RuntimeError / Exception with no signal in
-    # the message) are NOT worth retrying: an unidentified RuntimeError
-    # is almost always a code bug or an upstream API edge case that
-    # retrying will not resolve. Treat as permanent.
-    # Default: retry unknown non-RuntimeError exceptions once rather
-    # than degrade silently.
-    return not isinstance(exc, RuntimeError)
+    # Default (audit D19): retry unknown exceptions. The previous
+    # ``return not isinstance(exc, RuntimeError)`` misclassified
+    # ``RuntimeError`` subclasses with custom messages (e.g.
+    # ``httpx.ConnectError``, asyncio.TimeoutError) as permanent even
+    # when the message check above missed them. Retrying once is
+    # cheaper than degrading a page.
+    return True
 
 
 class CircuitOpenError(RuntimeError):

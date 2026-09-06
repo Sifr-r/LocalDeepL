@@ -63,6 +63,49 @@ def test_permanent_errors_are_not_retryable(exc):
 
 
 # ---------------------------------------------------------------------------
+# Audit D13 (ValueError split) + D19 (RuntimeError default = retryable)
+# ---------------------------------------------------------------------------
+
+
+def test_value_error_is_permanent_caller_side_error():
+    """Audit D13: ValueError in our call site is caller-side (bad
+    payload shape, bad image format, bad page number). Retrying the
+    same payload produces the same ValueError; the operator should
+    see the failure, not a silent retry loop.
+    """
+    assert is_transient_error(ValueError("bad image format")) is False
+    assert is_transient_error(ValueError("page number must be a positive integer")) is False
+    assert is_transient_error(ValueError("invalid json field")) is False
+
+
+def test_unknown_runtime_error_defaults_to_retryable():
+    """Audit D19: a bare ``RuntimeError`` with a custom message (not
+    matching any transient/permanent term) should still be retried.
+    The previous default ``return not isinstance(exc, RuntimeError)``
+    misclassified transport errors like ``httpx.ConnectError`` (``All
+    connection attempts failed`` — a RuntimeError subclass with a
+    transient message that the substring check above may miss on
+    edge-case wording) as permanent. Retrying once is cheaper than
+    degrading a page.
+    """
+    # httpx.ConnectError is a RuntimeError subclass with a
+    # non-standard message; the previous default classified it as
+    # permanent. The new default retries it.
+    class _HttpxConnectError(RuntimeError):
+        pass
+
+    assert is_transient_error(_HttpxConnectError("All connection attempts failed")) is True
+    assert is_transient_error(RuntimeError("some vendor quirk")) is True
+    # The substring check still catches the common transport signals:
+    assert is_transient_error(RuntimeError("connection refused")) is True
+    assert is_transient_error(RuntimeError("ReadTimeout: timed out after 240s")) is True
+    # But permanent substrings still classify as permanent even on
+    # RuntimeError:
+    assert is_transient_error(RuntimeError("context_length_exceeded: 12000")) is False
+    assert is_transient_error(RuntimeError("Invalid API key provided")) is False
+
+
+# ---------------------------------------------------------------------------
 # CircuitBreaker state machine
 # ---------------------------------------------------------------------------
 

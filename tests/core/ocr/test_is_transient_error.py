@@ -24,8 +24,16 @@ def test_attribute_error_is_not_transient():
     assert is_transient_error(AttributeError("no such attr")) is False
 
 
-def test_runtime_error_unknown_message_is_not_transient():
-    assert is_transient_error(RuntimeError("totally unknown thing")) is False
+def test_runtime_error_unknown_message_is_transient():
+    """Audit D19: a bare ``RuntimeError`` with a custom message
+    (not matching any transient/permanent substring) should still
+    be retried. The previous behaviour (return False for unknown
+    RuntimeErrors) misclassified transport errors like
+    ``httpx.ConnectError`` as permanent — they're a RuntimeError
+    subclass whose message may not match the transient substring list
+    on edge-case wording. The default is now ``True``.
+    """
+    assert is_transient_error(RuntimeError("totally unknown thing")) is True
 
 
 def test_runtime_error_connection_reset_is_transient():

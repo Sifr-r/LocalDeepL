@@ -297,12 +297,30 @@ def build_progress_router(
         session_token: str | None = Query(None),
         x_session_token: str | None = Header(None, alias="X-Session-Token"),
     ) -> dict[str, bool]:
-        if token := x_session_token or session_token:
-            record = await service.get_channel(channel_id)
-            if record is not None and not secrets.compare_digest(
-                record.session_token, token
-            ):
-                raise HTTPException(status_code=403, detail="invalid session token")
+        # Audit S6: a cancel request is a denial-of-service surface
+        # against an in-progress job (an attacker who knows the
+        # ``channel_id`` can cancel a victim's job). The handler now
+        # requires a session token (X-Session-Token header or
+        # ``?session_token=`` query param, the latter accepted for
+        # parity with the SSE channel_id query-param convention)
+        # and validates it via ``secrets.compare_digest`` against the
+        # channel's session_token (the same token the legitimate
+        # client received in the ``job_started`` / ``process``
+        # response). The BearerAuthMiddleware covers the non-loopback
+        # deployments (Profiles 2 + 3); the session token covers the
+        # loopback dev profile (Profile 1) where bearer auth is not
+        # required.
+        token = x_session_token or session_token
+        if not token:
+            raise HTTPException(
+                status_code=401,
+                detail="session token required (X-Session-Token header or session_token query param)",
+            )
+        record = await service.get_channel(channel_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="channel not found")
+        if not secrets.compare_digest(record.session_token, token):
+            raise HTTPException(status_code=403, detail="invalid session token")
         cancelled = await service.cancel(channel_id)
         return {"cancelled": cancelled}
 

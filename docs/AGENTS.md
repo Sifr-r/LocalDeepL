@@ -121,6 +121,18 @@ If a change touches **any** core path, run the full fast gate. If it is peripher
     Glossary". After the migration the script is a no-op and
     should be considered deprecated alongside the underlying
     `chroma_db/` on-disk layout.
+- Git credentials (audit S12) — never pass a GitHub PAT or other
+  secret on the command line (`git clone https://user:token@…`,
+  `git push https://…@…`, etc.); argv is visible in `ps` /
+  `/proc/<pid>/cmdline` on every host the command touches. Use one of:
+  1. `~/.netrc` with `machine github.com login <user> password <pat>`
+     (chmod 600; `git` reads it automatically).
+  2. `GIT_ASKPASS=<path-to-script>` plus a credential helper
+     (`git config credential.helper store` for a session-scoped
+     cache, or a system keychain helper).
+  3. The `gh` CLI's built-in auth (`gh auth login` then `gh repo clone`).
+  No current script in this repo shells out to `git`, but the convention
+  applies to any future contribution.
 - Keep local document processors selectable through web/API `document_processors`. Current names are `reading_order`, `quality_analysis`, `structure_analysis`, `section_analysis`, `layout_enrichment`, and `table_extraction`; defaults run no processors.
 
 ## Pipeline Paths

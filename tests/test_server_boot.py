@@ -102,3 +102,65 @@ def test_circuit_open_error_handler(boot_env: None) -> None:
             "error": "service_unavailable",
             "detail": "Model circuit breaker is open; retry later",
         }
+
+
+# ---------------------------------------------------------------------------
+# Audit S13: CORS ``*`` + credentials
+# ---------------------------------------------------------------------------
+
+
+def test_cors_wildcard_strips_allow_credentials(
+    boot_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Audit S13: ``*`` in ``OMNISCRIBE_CORS_ORIGINS`` must NOT combine
+    with ``Access-Control-Allow-Credentials: true``. Browsers reject
+    the combo in practice, but the CORS spec discourages it and the
+    server-side misconfiguration is a footgun for authenticated
+    deployments. The handler forces ``allow_credentials=False`` when
+    ``*`` appears in the allowlist; explicit origins keep credentials
+    on.
+    """
+    monkeypatch.setenv("OMNISCRIBE_CORS_ORIGINS", "*")
+    with TestClient(create_app()) as client:  # type: ignore[arg-type]
+        # Preflight OPTIONS from a sample origin.
+        preflight = client.options(
+            "/api/health",
+            headers={
+                "Origin": "http://app.example.com",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        assert preflight.status_code == 200
+        # The wildcard permits the origin (good) but must NOT echo
+        # credentials (the audit's fix).
+        assert preflight.headers.get("access-control-allow-origin") == "*"
+        assert (
+            preflight.headers.get("access-control-allow-credentials") is None
+        )
+
+
+def test_cors_explicit_origins_allow_credentials(
+    boot_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The complement of the S13 test: explicit origins (no ``*``)
+    keep ``Access-Control-Allow-Credentials: true`` so the
+    authenticated single-tenant deployment (Profile 2) keeps
+    working.
+    """
+    monkeypatch.setenv("OMNISCRIBE_CORS_ORIGINS", "http://app.example.com")
+    with TestClient(create_app()) as client:  # type: ignore[arg-type]
+        preflight = client.options(
+            "/api/health",
+            headers={
+                "Origin": "http://app.example.com",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        assert preflight.status_code == 200
+        assert (
+            preflight.headers.get("access-control-allow-origin")
+            == "http://app.example.com"
+        )
+        assert (
+            preflight.headers.get("access-control-allow-credentials") == "true"
+        )
