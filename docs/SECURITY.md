@@ -43,11 +43,12 @@ strictness:
    responses.
 2. **LAN / trusted-network** — the workstation runs on a private LAN
    behind a firewall. The threat is a curious housemate. Guards:
-   planned bearer auth on every route (except `/health`, `/healthz`,
-   `/ready`, `/readyz`), per-route token scoping, rate limiting,
-   audit-friendly logs. *(Note: ASGI bearer auth and rate-limit
-   middlewares are currently deferred capabilities in the Cordis harness
-   rebuild; see AGENTS.md).*
+   bearer auth on every route (except `/health`, `/healthz`, `/ready`,
+   `/readyz`), per-route token scoping, rate limiting, audit-friendly
+   logs. The bearer/rate-limit/upload middlewares ship live in
+   `src/omniscribe/server.py:184-202`; see the [Security Features](#security-features)
+   table for the exact env-var contract and the [Deployment Guide](DEPLOYMENT.md)
+   for the three-profile walkthrough.
 3. **Public-internet** — the workstation runs behind a reverse proxy on
    a public IP. The threat is the open internet. **All LAN guards plus:**
    `ALLOW_SSRF_LOCAL=false`, strong random `OMNISCRIBE_AUTH_TOKEN`,
@@ -59,23 +60,25 @@ explicitly opt into profile (2) or (3) by setting the relevant env vars.
 
 ## Security Features
 
-> [!NOTE]
-> Following the Cordis plugin harness rebuild, ASGI bearer authentication
-> (`OMNISCRIBE_AUTH_TOKEN`), rate limiting, and `MaxUploadSizeMiddleware`
-> are currently deferred capabilities. The settings remain declared in
-> `config.py` as configuration scaffolding for the forthcoming middleware
-> plugins. The current active middleware is CORS.
+The bearer auth, rate limit, and upload-size middlewares are wired
+unconditionally in `src/omniscribe/server.py:184-202` (closed in
+Waves 11/13/14). A non-loopback bind without a real
+`OMNISCRIBE_AUTH_TOKEN` exits at startup with a clear `SystemExit`
+(`server.py:375-381`); placeholder tokens (e.g. `change-me-in-prod`)
+are rejected on LAN binds (`server.py:383-395`). The
+[Deployment Guide](DEPLOYMENT.md) walks through the three profiles
+with the exact env-var values per profile.
 
 | Layer                  | Guard                              | Default             | Override                                |
 | ---------------------- | ---------------------------------- | ------------------- | --------------------------------------- |
-| HTTP auth *(deferred)* | `OMNISCRIBE_AUTH_TOKEN`           | Unset (open)        | Set to a 32+ char random secret (scaffolding for deferred auth plugin) |
-| Transcription config auth | `OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN` | Unset | Currently surfaces as a masked preview in `/api/config/transcription`; will be enforced by the deferred auth middleware |
-| Upload size            | `OMNISCRIBE_MAX_UPLOAD_MB`        | 10 GB (10240 MB)    | Lower for public deployments (enforced at upload parse) |
-| Rate limit *(deferred)* | `OMNISCRIBE_RATE_LIMIT_PER_MIN`   | 60 req/min/IP       | Lower for public deployments (scaffolding for deferred rate-limit plugin) |
-| SSRF (URL fetcher)     | `ALLOW_SSRF_LOCAL`                 | `false` (code default) | Shipped `.env.example` sets `true` for local development; keep `false` for non-local exposure |
+| HTTP auth              | `OMNISCRIBE_AUTH_TOKEN`            | Unset (loopback bind: enforcement is a no-op; non-loopback bind: server refuses to start) | Set to a 32+ char random secret before any non-loopback bind |
+| Transcription config auth | `OMNISCRIBE_TRANSCRIPTION_AUTH_TOKEN` | Unset | Surfaces as a masked preview in `/api/config/transcription`; enforced by the live bearer middleware on the same routes |
+| Upload size            | `OMNISCRIBE_MAX_UPLOAD_MB`         | 1 GB (1024 MB) | Raise for batch hosts (enforced at upload parse + by `MaxUploadSizeMiddleware`); was 10 GB until 2026-09-05 |
+| Rate limit             | `OMNISCRIBE_RATE_LIMIT_PER_MIN`    | 60 req/min/IP       | Lower for public deployments (enforced by `RateLimitMiddleware`) |
+| SSRF (URL fetcher)     | `ALLOW_SSRF_LOCAL`                 | `false` (code default) | Shipped `.env.example` mirrors the code default (`false`); set to `true` only when pointing at a local VLM endpoint on loopback (e.g. LM Studio at `127.0.0.1:1234`) |
 | CORS                   | `OMNISCRIBE_CORS_ORIGINS`          | localhost-only      | Comma-separated allow-list for cross-origin browser clients |
 | VLM resilience         | `OMNISCRIBE_LLM_MAX_RETRIES`, `OMNISCRIBE_LLM_RETRY_BASE_DELAY`, `OMNISCRIBE_CB_FAILURE_THRESHOLD`, `OMNISCRIBE_CB_COOLDOWN` | retries=2, base=1.0s, failures=5, cooldown=30s | Higher to ride out a flaky provider; lower to fail fast |
-| Auth placeholder reject| startup `RuntimeError`             | n/a                 | Always on                               |
+| Auth placeholder reject| startup `SystemExit`               | n/a                 | Always on                               |
 | Token strength         | `min_length=32` Pydantic constraint | Always on          | n/a                                      |
 
 See [AGENTS.md](AGENTS.md) for the full env-var catalogue.
@@ -206,4 +209,4 @@ Before exposing OmniScribe beyond `localhost`:
 - [DEPLOYMENT.md](DEPLOYMENT.md) — local / LAN / public-internet deployment profiles
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var reference
 
-_Last updated: 2026-08-31_
+_Last updated: 2026-09-05_

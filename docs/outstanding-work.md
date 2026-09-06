@@ -1,10 +1,51 @@
 # OmniScribe — Outstanding Work
 
 **Consolidated:** 2026-08-31  
-**Updated:** 2026-09-03 (Waves 8–14 closed: all 5 domains, ASGI middleware triad, state backend types, PDF compression, client resilience, and test suites fully remediated)  
-**Sources:** `docs/audits/2026-08-30-pedantic-review.md`, the deferred Medium/Low backlog of the 2026-08-29 five-domain audit, and Phase C follow-ups.
+**Updated:** 2026-09-05 (Five-lens audit + remediation plan landed; Phases 0–3 in flight)  
+**Sources:** `docs/audits/2026-08-30-pedantic-review.md`, the deferred Medium/Low backlog of the 2026-08-29 five-domain audit, the 2026-09-04 [Five-Lens Audit](audits/2026-09-04-five-lens-audit.md) and [Remediation Plan](audits/2026-09-04-remediation-plan.md), and Phase C follow-ups.
 
 All completed items (audit-remediation sprints 1–6, Phase C plugin slices 1–3, and Waves 1–14) have been closed and verified. Historical records are preserved in git history (`git log --grep="Wave"`).
+
+## Current focus (2026-09-05)
+
+Driving work in flight, in priority order. Each item links to the
+remediation plan section that defines the scope, acceptance criteria,
+and effort.
+
+- **Phase 0 — Stop the bleeding** ✅ (closed 2026-09-05). Empty
+  `REDIS_PASSWORD` in `.env.example`; `ALLOW_SSRF_LOCAL` defaulted to
+  `false` in both `.env.example` and `compose.yaml`.
+- **Phase 1 — Truth in documentation** ✅ (closed 2026-09-05). Reconciled
+  `SECURITY.md`, this file, `README.md` (moved from `docs/README.md`),
+  `client/README.md`, `Makefile`, `test.yml`, `nightly.yml`,
+  `AGENTS.md`, and `ARCHITECTURE.md` against shipped code.
+- **Phase 2 — First-run affordances** ✅ (closed 2026-09-05). Added
+  `TROUBLESHOOTING.md`, `CONTRIBUTING.md`, issue templates, PR template,
+  SQLite default state backend, and `make doctor` remediation hints.
+- **Phase 3 — Quick-win code cleanups** ✅ (closed 2026-09-05). Addressed
+  high-leverage code debt: OCR service decomposed into focused submodules,
+  `JobStatusResponse.started_at` persisted, `InMemoryJobQueue` exception
+  swallowing fixed, `load_dotenv()` removed from `create_app()`, and
+  `HybridEngine` failure state resynced.
+- **Phase 4 — End-user install path** ✅ (closed 2026-09-05, with bundle
+  deferred to v0.3+). **v0.2.0 ships the source install as the supported
+  end-user path** (12–16 steps, now covered by Phase 2's
+  `TROUBLESHOOTING.md` and `make doctor` hints). The PyInstaller bundle
+  per [RFC 001 Option A](rfcs/2026-09-end-user-install.md) is **deferred to
+  v0.3+** because PyInstaller's static analyzer refuses to bundle `anyio`
+  (14 build attempts documented in
+  [`docs/deployment/windows-bundle.md`](deployment/windows-bundle.md)
+  §"Known build issue"). Bundle infrastructure kept in tree
+  (`omniscribe_server.spec`, `scripts/build_windows.py`,
+  `scripts/run_server.py`, `hooks/hook-anyio.py`); the smoke test gate
+  (`/api/health -> 200`) is unchanged when the build is unblocked.
+- **Phase 5 — Test hardening** ✅ (closed 2026-09-05). Added 5 property-based
+  fuzzing test suites with `hypothesis` (`json_parse`, `prompt_safety`, `page_range`,
+  `whitespace`, `filters`), direct unit & property tests for `core/translate/workflow.py`,
+  and canonical PDF fixture re-homing in `tests/fixtures/pdfs/`.
+- **Phase 6 — Long-tail** ✅ (closed 2026-09-05). Cleaned deprecated CORS aliases (D10),
+  hoisted `_DEFAULTS` in processor (D12), single-pass raw_decode `extract_json` (D11),
+  hardened token masking (S8), exact-key sensitive logging redaction (S10).
 
 ---
 
@@ -105,12 +146,18 @@ All completed items (audit-remediation sprints 1–6, Phase C plugin slices 1–
 
 ## 6. Deferred Architectural Capabilities
 
-High-level capabilities documented in `AGENTS.md` deferred during the harness rebuild:
+High-level capabilities deferred during the harness rebuild and not yet
+shipped. Each entry points at the unblocker.
 
-1. **ASGI Middleware Suite:** Authentication middleware (`OMNISCRIBE_AUTH_TOKEN`), Rate-limiting middleware, and Upload-size enforcement middleware.
-2. **Redis State Backend:** Complete `RedisStateBackend` for distributed deployments (`OMNISCRIBE_STATE_BACKEND=redis` currently crashes at plugin apply).
-3. **Model Pre-flight Route:** Formal API endpoint for VLM pre-flight verification against silent fallback.
-4. **Full Regression Datasets (`slow_dataset`):** `scripts/fetch_datasets.py` execution once upstream licenses clear for OCR-Quality and KIE-HVQA benchmarks.
+> **Removed 2026-09-05:** the ASGI Middleware Suite
+> (bearer auth + rate limit + upload size) was previously listed here.
+> It shipped in Waves 11, 13, and 14 — see §4 Domain 2 closure record
+> and [SECURITY.md](SECURITY.md) §Security Features for the current
+> contract.
+
+1. **Redis State Backend:** Complete `RedisStateBackend` for distributed deployments (`OMNISCRIBE_STATE_BACKEND=redis` currently crashes at plugin apply).
+2. **Model Pre-flight Route:** Formal API endpoint for VLM pre-flight verification against silent fallback. `ensure_model_loaded()` exists in `core/ocr/processor.py`; the public route is unbuilt.
+3. **Full Regression Datasets (`slow_dataset`):** `scripts/fetch_datasets.py` execution once upstream licenses clear for OCR-Quality and KIE-HVQA benchmarks.
 
 ---
 

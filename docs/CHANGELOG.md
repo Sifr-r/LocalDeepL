@@ -6,6 +6,53 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Audit & Remediation (2026-09-05 Five-Lens Audit Wave)
+
+- **Audit Completion & Verification**: Executed and validated all actions from the
+  2026-09-04 Five-Lens Audit (`docs/audits/2026-09-04-five-lens-audit.md`) and
+  Remediation Plan (`docs/audits/2026-09-04-remediation-plan.md`).
+- **Regression Resolution**: Fixed `EngineBase._reset_run_state()` in-place clearing
+  to preserve `HybridOcrRunner.last_failed_pages` state tracking, added `argparse`
+  support to `scripts/run_server.py`, synchronized `REQUIRED_TARGETS` in
+  `tests/scripts/test_dev_commands.py`, and guarded optional `langgraph` async
+  translation tests with `pytest.importorskip`.
+- **Core & Server Cleanups**: Removed `load_dotenv()` side-effect from `create_app()`
+  in `server.py`, hoisted `_DEFAULTS` in `processor.py`, optimized `extract_json` to
+  single-pass `raw_decode`, tightened token masking in `config_store.py` for $\le 12$
+  character keys, and switched sensitive logging redaction to exact-key matching.
+- **Test Hardening (Phase 5)**: Added 5 property-based test suites using `hypothesis`
+  covering `json_parse`, `prompt_safety`, `page_range`, `whitespace` recall, and
+  OCR filters; added 18 direct unit and property tests for `core/translate/workflow.py`;
+  and re-homed canonical PDF fixtures to `tests/fixtures/pdfs/`.
+- **First-run & Documentation (Phases 1-2)**: Shipped `docs/TROUBLESHOOTING.md`,
+  `CONTRIBUTING.md`, issue/PR templates, `make doctor` remediation pointers, and
+  reconciled `SECURITY.md`, `README.md`, `client/README.md`, and `DEPLOYMENT.md`.
+
+### Configuration
+
+- **2026-09-05 — `OMNISCRIBE_MAX_UPLOAD_MB` default lowered from 10 GB
+  to 1 GB.** `src/omniscribe/config.py` Pydantic default and the
+  compose `services.api.environment` override both flipped to `1024`.
+  The 10 GB default was generous enough that a LAN caller with bearer
+  auth could pin 10 GB of memory and disk per request. The cap is
+  enforced at upload parse and by `MaxUploadSizeMiddleware`; raise it
+  explicitly for batch hosts. See
+  [`docs/SECURITY.md`](SECURITY.md) §Security Features for the
+  current contract.
+- **2026-09-05 — Default state backend flipped from `memory` to
+  `sqlite`.** `OMNISCRIBE_STATE_BACKEND` now defaults to `sqlite` in
+  both `src/omniscribe/config.py` (Pydantic `Field` default) and
+  `src/omniscribe/resources/cordis.yml` (YAML interpolation). Job
+  records, artifact metadata, and progress-channel state now survive
+  a server restart. Operators who explicitly want the in-memory
+  behaviour can set `OMNISCRIBE_STATE_BACKEND=memory`; the server
+  prints a `WARN` log line at boot to that effect. The full recovery
+  story is in
+  [`docs/DEPLOYMENT.md`](DEPLOYMENT.md#backup--recovery) and
+  [`docs/TROUBLESHOOTING.md`](TROUBLESHOOTING.md#async-translation-result-is-gone-after-restart).
+  Closes the long-standing PM/End-user finding that a server restart
+  silently dropped async translation results.
+
 ### Security
 
 - **2026-08-29 audit remediation — Sprint 5/H-5: compose.yaml redis digest pin**

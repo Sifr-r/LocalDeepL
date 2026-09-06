@@ -46,8 +46,8 @@ cordis.yml
 ├─ runtime        RuntimeService: RuntimeSettings holder, readiness flag,
 │                 artifact/channel prune cadence (HarnessReady event)
 ├─ logging        structured logging (text|json format, level) — side effect only
-├─ state_backend  StateBackend service: memory (default) or sqlite
-│                 (OMNISCRIBE_STATE_BACKEND); single registration site
+├─ state_backend  StateBackend service: sqlite (default, durable persistence)
+│                 or memory (OMNISCRIBE_STATE_BACKEND); single registration site
 ├─ artifacts      ArtifactStore: opaque id/token blob store over the backend
 ├─ jobs           JobQueue: single-worker async queue + JobQueued/Started/
 │                 Completed/Failed/Cancelled events; resolves the JobRunner
@@ -180,7 +180,24 @@ Protocol (`ctx.inject(JobQueue)`), never by module singleton.
 | `client/lib/data/providers/features_notifier.dart` | Riverpod 2.x `Notifier` controllers (`translationProvider`, `transcriptionProvider`, `glossaryProvider`, `extractionProvider`) for feature operations |
 | `client/lib/data/models/smart_preset.dart` | Immutable `SmartPreset` models, presets catalog (Standard, Receipt, Handwriting, Historical, Fast, Deep), filename heuristics, and ProcessSettings bidirectional mapping |
 | `client/lib/presentation/workstation/controls/smart_preset_selector.dart` | Visual 1-click smart preset selector cards, active preset highlight, and filename auto-detect suggestion banner |
+| `client/lib/presentation/workstation/controls/page_strip.dart` | Interactive multi-page thumbnail rail with vertical/horizontal orientation, auto-scrolling, and bounded flex layout |
+| `client/lib/presentation/workstation/canvas/document_viewport.dart` | Full-height GPU interactive document canvas with zoom, pan, spatial grid, bounding box overlays, and floating viewport controls |
+| `client/lib/presentation/workstation/workstation_screen.dart` | Primary OCR workstation screen orchestrating unified top header bar, left vertical page strip rail, viewport canvas, BBox inspector, right controls dock, and progress dock |
 | `client/lib/presentation/providers/ai_setup_wizard_modal.dart` | 3-step beginner-friendly guided AI setup wizard for local (Ollama/LM Studio) and cloud (OpenAI/Gemini/Claude/Groq) engine configuration |
+| `src/omniscribe/plugins/ocr/services/` | Modular OCR service sub-components (`error_sanitization.py`, `content_sniff.py`, `config_seeding.py`) extracted from the former monolithic `service.py` to isolate concerns |
+| `scripts/build_windows.py` | PyInstaller build orchestrator generating standalone Windows server bundle with icon and spec integration |
+| `scripts/run_server.py` | Argument-parsing executable entrypoint wrapper for the server binary and source execution |
+| `tests/fixtures/pdfs/` | Canonical on-disk PDF test fixtures (`digital.pdf`, `hybrid.pdf`, `handwritten.pdf`, `dense.pdf`, `notes.pdf`) segregated from user-facing examples |
+| `tests/utils/test_json_parse_props.py` | Hypothesis property-based fuzzing tests for `extract_json` |
+| `tests/utils/test_prompt_safety_props.py` | Hypothesis property-based fuzzing tests for prompt sanitization |
+| `tests/core/pdf/test_page_range_props.py` | Hypothesis property-based tests for PDF page range parsing and `serialize_page_range` |
+| `tests/core/recall/test_whitespace_props.py` | Hypothesis property-based tests for `WhitespaceRecallBooster` invariants |
+| `tests/core/ocr/test_filters_props.py` | Hypothesis property-based tests for OCR output filters and repetition deduplication |
+| `tests/core/translate/test_workflow.py` | Direct unit and property tests for LangGraph translation workflow, chunker, and node transitions |
+| `tests/fixtures/test_pdf_fixtures.py` | Regression tests asserting integrity and accessibility of canonical PDF fixtures |
+| `docs/rfcs/2026-09-end-user-install.md` | RFC 001 evaluating end-user distribution architectures (Option A PyInstaller bundle, Option B Flutter desktop embed, Option C standalone CLI) |
+| `docs/deployment/windows-bundle.md` | Operator and user guide for running the standalone Windows PyInstaller bundle |
+| `docs/TROUBLESHOOTING.md` | Central first-run troubleshooting guide covering top 10 failure modes, cross-linked from `make doctor` and README |
 
 ## Extension Points
 
@@ -313,6 +330,14 @@ provider mutation routes (`POST/DELETE /api/providers*`) — see the design
 spec's out-of-scope list.
 
 ## Change Blueprint
+
+### 2026-09-06: Workstation UI/UX Consolidation & Left Page Strip Rail (Phase 2 Domain 1)
+
+Consolidated redundant document information and controls across the workstation interface:
+- **Unified Header Bar**: Centralized document metadata, multi-page chevron navigation, and layer toggles (`Boxes`, `Heatmap`) into a single 52px top bar in `WorkstationScreen`. Added responsive horizontal scrolling for action controls on narrow viewports (< 768px).
+- **Document Viewport Expansion**: Removed duplicate `_buildTopRibbon` header row from `DocumentViewport`, allowing the GPU-accelerated interactive canvas to occupy 100% of the viewport container height while retaining floating zoom/fit controls in the bottom-right corner.
+- **Left Vertical Page Strip Rail**: Refactored `PageStrip` into a `ConsumerStatefulWidget` supporting `Axis.vertical` with bounded width (`116px`) and explicit item heights (`116px`), eliminating unbounded flex layout exceptions. Added automatic thumbnail scrolling via `ScrollController` on `selectedPageIndex` change. Positioned `PageStrip` as a left vertical rail in wide desktop layouts (`maxWidth >= 768px`).
+- **Comprehensive Test Coverage**: Added dedicated widget tests in `workstation_screen_test.dart` for header navigation, layer toggling, vertical orientation mounting, and narrow viewport responsiveness.
 
 ### 2026-08-30: Codebase Hardening, SSRF Protection, WebSocket Stability & Multi-Domain Resilience
 
@@ -1119,11 +1144,77 @@ Wave 14 completes the remaining architectural, security, performance, and testin
 | `tests/core/pdf/test_embedder.py` | Unit tests for searchable PDF embedding with compression and unified page bounds. |
 | `tests/core/imaging/test_page_preprocess.py` | Comprehensive unit tests for `PagePreprocessingOptions`, `PagePreprocessingResult`, and `CompositePagePreprocessor` (orientation, deskew, contrast, crop cleanup). |
 | `tests/core/ocr_quality/test_routing.py` | Comprehensive unit tests for `QualityRoutingPolicy.apply` covering `empty_page`, `sparse_text`, and `empty_large_block` findings and decisions. |
-| `.env.example` | Active default `REDIS_PASSWORD=omniscribe-secure-dev-password` with instructions for production override so `cp .env.example .env && docker compose up` runs smoothly. |
-| `compose.yaml` | Aligned commentary on `.env.example` default dev credentials and production override requirements. |
+| `.env.example` | Active default `REDIS_PASSWORD=` (empty) so `cp .env.example .env && docker compose up` fails fast with Compose's `:?` substitution until the operator sets a real password. Active default `ALLOW_SSRF_LOCAL=false` mirroring the code default; compose.yaml pins the same value so the safe default holds without an `.env`. |
+| `compose.yaml` | Aligned commentary on the fail-fast env-var contract; `REDIS_PASSWORD:?` substitution in three sites (`REDIS_URL`, `requirepass`, redis healthcheck). |
 | `.github/workflows/nightly.yml` | Cleaned up stale `# force_run: slow overrides default skip` comment above `uv run pytest -m slow`. |
 
+### 2026-09-05: Cooperative OCR Cancellation ASGI Boundary Fix
+
+| File | Responsibility |
+| --- | --- |
+| `src/omniscribe/plugins/ocr/plugin.py` | Caught `OCRCancelled` in `process_sync` to return a structured HTTP 503 `JSONResponse` (`cancelled: true`, `error: "cancelled"`, `detail`) preventing `BaseException` escape to uvicorn. |
+| `src/omniscribe/server.py` | Added defense-in-depth cancellation `BaseException` handling in `LazyASGIApp.__call__` and aligned ASGI type signatures with `MutableMapping[str, Any]`. |
+| `tests/plugins/test_ocr_plugin.py` | Added `test_process_sync_returns_503_when_cancelled` verifying sync cancellation translation to HTTP 503. |
+| `tests/core/workflows/test_ocr_cancellation.py` | Reimplemented `test_route_returns_503_when_engine_raises_ocrcancelled` in `TestProcessRouteCancel` to test cancellation translation against the modern plugin harness. |
+
+### 2026-09-06: Client OCR Timeout Extension & Unhandled Exception Containment
+
+| File | Responsibility |
+| --- | --- |
+| `client/lib/core/constants/api_constants.dart` | Declared `defaultOcrReceiveTimeout = Duration(minutes: 30)` for long-running multi-page OCR jobs. |
+| `client/lib/core/network/api_client.dart` | Added `receiveTimeout`, `sendTimeout`, and `options` forwarding in `postMultipartBytes` merging with effective `RequestOptions`. |
+| `client/lib/data/repositories/ocr_repository.dart` | Updated `OcrRepository` interface and `OcrRepositoryImpl.processOcrSync` to default to 30-minute `defaultOcrReceiveTimeout`. |
+| `client/lib/data/providers/workstation_notifier.dart` | Added `receiveTimeout` support in `processOcrSync` and safe exception handling in `processCurrentDocument`. |
+| `client/lib/presentation/workstation/workstation_screen.dart` | Wrapped `_handleProcessDocument` in `try/catch` with floating error `SnackBar` and integrated `settingsStateProvider.useAsync`. |
+| `client/lib/presentation/workstation/controls/right_control_dock.dart` | Added `Background Queue (Async)` toggle in the advanced pipeline tuning card. |
+### 2026-09-06: Document Viewport Rendering, Auto-Fit Canvas & Responsive Workstation Layout
+
+| File | Responsibility |
+| --- | --- |
+| `src/omniscribe/plugins/ocr/plugin.py` | Added `POST /api/documents/preview` endpoint using PyMuPDF stream rendering via `asyncio.to_thread` returning image/png with `X-Total-Pages`, `X-Page-Width`, `X-Page-Height` headers. |
+| `tests/plugins/test_ocr_plugin.py` | Added `test_document_page_preview` verifying status 200, PNG byte response, and page geometry headers. |
+| `client/lib/core/constants/api_constants.dart` | Added `documentPreview = '/api/documents/preview'` and preview header constants. |
+| `client/lib/data/models/document_result.dart` | Added `PagePreviewResult` model, `previewBytes` property to `PageResult`, synchronous `parseImageDimensions` binary header parser for PNG/JPEG, and dynamic intrinsic aspect ratio fallback. |
+| `client/lib/data/repositories/ocr_repository.dart` | Added `renderDocumentPagePreview` to `OcrRepository` interface and implementation using `response.getHeader`. |
+| `client/lib/data/providers/workstation_state.dart` | Added `isPreviewLoading` and `previewError` fields to `WorkstationState` for deterministic UI state tracking. |
+| `client/lib/data/providers/workstation_notifier.dart` | Populated instant image preview bytes and dimensions in `loadDocument`, added asynchronous PyMuPDF preview rasterization with `isPreviewLoading` state transitions, error recording, dimension sniffing, and `retryPagePreview`. |
+| `client/lib/presentation/workstation/controls/page_strip.dart` | Rendered live page preview thumbnails in `PageStrip` with document icon fallback. |
+| `client/lib/presentation/workstation/canvas/document_viewport.dart` | Added `LayoutBuilder` viewport tracking, unconstrained canvas in `InteractiveViewer` (`constrained: false`) to prevent viewport height clamping distortion, dynamic aspect ratio auto-refit, centered zoom/reset translation math, `FittedBox` title row constraints, auto-fetch for missing previews, and high-fidelity fallback card with retry button. |
+| `client/lib/presentation/workstation/workstation_screen.dart` | Lowered `isWide` split-pane breakpoint from 1080px to 768px with adaptive dock and inspector sizing to preserve side-by-side workstation layout on desktop windows. |
+| `client/test/presentation/workstation_screen_test.dart` | Updated widget test suite with mock `renderDocumentPagePreview` stubbing and verified narrow layout branch at 600px width. |
+| `client/test/data/workstation_notifier_test.dart` | Added unit tests verifying binary PNG header dimension sniffing, `PageResult.aspectRatio` calculation, and image upload dimension inference. |
+
+### 2026-09-06: Workstation UI/UX Consolidation & Left Page Strip Rail (Phase 2 Domain 1)
+
+| File | Responsibility |
+| --- | --- |
+| `client/lib/presentation/workstation/workstation_screen.dart` | Consolidated the workstation header bar: unified document title/scanner icon, page navigation (`< Page X of Y >`), layer toggles (`Boxes`, `Heatmap`), export/clear buttons, and status badge into a single 52px top bar with overflow protection. Moved `PageStrip` (`Axis.vertical`) to the left rail of the workstation row layout, removing bottom horizontal strip and giving full vertical canvas space. |
+| `client/lib/presentation/workstation/canvas/document_viewport.dart` | Removed redundant inner ribbon `_buildTopRibbon` row from viewport, expanding GPU canvas to 100% of container height while preserving floating zoom/fit controls. |
+| `client/lib/presentation/workstation/controls/page_strip.dart` | Converted to `ConsumerStatefulWidget` managing `ScrollController`. Added bounded height (`116px`) per card in vertical `ListView.separated` to eliminate `RenderFlex` unbounded height exceptions, and implemented auto-scrolling to active page upon index change. |
+| `client/test/presentation/workstation_screen_test.dart` | Added tests for unified header controls, page navigation, layer toggle callbacks, and vertical `PageStrip` orientation. |
+
+### 2026-09-06: Workstation Preview Caching, Client Repository Updates & Progressive Background Preloader (Phase 2 Domain 2)
+
+| File | Responsibility |
+| --- | --- |
+| `src/omniscribe/plugins/ocr/plugin.py` | In-memory bounded LRU cache (`_preview_doc_cache`, capacity 10) for uploaded document blobs, `doc_id` reuse via form field or `X-Document-Id` header without requiring file re-upload, strict boundary validation (`page >= 0`, clamped `dpi` [50, 300]), deterministic SHA-256 16-hex `doc_id` generation, and `X-Document-Id` response header propagation. |
+| `src/omniscribe/server.py` | Exposes `X-Document-Id`, `X-Total-Pages`, `X-Page-Width`, `X-Page-Height` in CORS `expose_headers` list. |
+| `tests/plugins/test_ocr_plugin.py` | Added unit test coverage for preview caching, doc_id reuse without file upload, boundary validation, and LRU cache eviction at capacity. |
+| `client/lib/core/constants/api_constants.dart` | Added `headerDocumentId = 'x-document-id'` constant. |
+| `client/lib/data/models/document_result.dart` | Extended `PagePreviewResult` model with immutable `final String? docId` field and updated constructor. |
+| `client/lib/data/repositories/ocr_repository.dart` | Updated `renderDocumentPagePreview` interface and implementation to accept optional `Uint8List? fileBytes` and `String? docId`, conditionally omitting `'file'` multipart field when `fileBytes == null`, and parsing `X-Document-Id` response header. |
+| `client/test/data/ocr_repository_test.dart` | Unit tests verifying `OcrRepositoryImpl.renderDocumentPagePreview` form data construction, docId header parsing, file omission, and input validation. |
+| `client/lib/data/providers/workstation_notifier.dart` | Implemented progressive background preloader in `WorkstationNotifier`: tracking `_previewDocId` and `_preloadGeneration`, non-blocking queue prioritized by page distance with forward bias (`current + 1, current + 2, current - 1, current + 3...`), in-flight cancellation guards on `clearDocument` and new loads, 25ms event loop yields, and complete isolation of `isPreviewLoading` and `previewError` from background operations. |
+### 2026-09-06: Preview Cache Fallback & Preloader Concurrency Hardening
+
+| File | Responsibility |
+| --- | --- |
+| `client/lib/data/repositories/ocr_repository.dart` | Hardened `renderDocumentPagePreview` with two-tier transport: attempts lightweight `doc_id` form payload first without sending file bytes, and automatically catches failures (e.g. server restart / cache eviction) to fall back to `fileBytes` multipart upload and re-acquire session `docId`. |
+| `client/lib/data/providers/workstation_notifier.dart` | Protected `_loadDocumentPreview` race guard by resetting `isPreviewLoading: false` when generation changes, and prevented background preloader from duplicating requests for the active page while ensuring `isPreviewLoading` is cleared if preloader fulfills active page. |
+| `src/omniscribe/server.py` & `src/omniscribe/plugins/ocr/plugin.py` | Stabilized long-running uvicorn server daemon process for PyMuPDF rasterization endpoint on `http://127.0.0.1:8000`. |
+
 ## See Also
+
 
 - [README.md](README.md) — feature overview, install, web workspace
 - [CHANGELOG.md](CHANGELOG.md) — version history and breaking changes
@@ -1132,4 +1223,6 @@ Wave 14 completes the remaining architectural, security, performance, and testin
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var reference
 - `audits/` — historical and comprehensive domain audit logs
 
-_Last updated: 2026-09-03_
+_Last updated: 2026-09-06_
+
+
