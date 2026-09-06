@@ -1114,4 +1114,221 @@ void main() {
       expect(container.read(workstationProvider).filePickSignal, 2);
     });
   });
+
+  group('Image Dimension Sniffing & Aspect Ratio', () {
+    test('parseImageDimensions extracts PNG width and height', () {
+      final header = Uint8List(24);
+      header.setRange(0, 8, [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+      final bd = ByteData.sublistView(header);
+      bd.setUint32(16, 1032, Endian.big);
+      bd.setUint32(20, 1469, Endian.big);
+
+      final size = parseImageDimensions(header);
+      expect(size, isNotNull);
+      expect(size!.width, 1032);
+      expect(size.height, 1469);
+    });
+
+    test('PageResult computes aspectRatio from previewBytes when width/height are null', () {
+      final header = Uint8List(24);
+      header.setRange(0, 8, [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+      final bd = ByteData.sublistView(header);
+      bd.setUint32(16, 500, Endian.big);
+      bd.setUint32(20, 1000, Endian.big);
+
+      final page = PageResult(page: 0, previewBytes: header);
+      expect(page.aspectRatio, closeTo(0.5, 0.001));
+    });
+
+    test('loadDocument infers image dimensions from bytes', () {
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(workstationProvider.notifier);
+
+      final header = Uint8List(24);
+      header.setRange(0, 8, [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+      final bd = ByteData.sublistView(header);
+      bd.setUint32(16, 800, Endian.big);
+      bd.setUint32(20, 1200, Endian.big);
+
+      notifier.loadDocument(header, 'sample.png');
+
+      final state = container.read(workstationProvider);
+      expect(state.pages.first.width, 800);
+      expect(state.pages.first.height, 1200);
+      expect(state.currentPage?.aspectRatio, closeTo(800 / 1200, 0.001));
+    });
+  });
+
+  group('Document Preview Caching and Progressive Preloader', () {
+    test('loadDocument fetches page 0 preview, caches docId, and triggers preloader', () async {
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(workstationProvider.notifier);
+
+      final pdfBytes = Uint8List.fromList([0x25, 0x50, 0x44, 0x46]);
+      final fakePng0 = Uint8List.fromList([0x89, 0x50, 0x4E, 0x47, 0x00]);
+      final fakePng1 = Uint8List.fromList([0x89, 0x50, 0x4E, 0x47, 0x01]);
+      final fakePng2 = Uint8List.fromList([0x89, 0x50, 0x4E, 0x47, 0x02]);
+
+      when(() => ocrRepo.renderDocumentPagePreview(
+            fileBytes: any(named: 'fileBytes'),
+            filename: any(named: 'filename'),
+            pageIndex: 0,
+            dpi: any(named: 'dpi'),
+            docId: any(named: 'docId'),
+          )).thenAnswer((_) async => PagePreviewResult(
+            bytes: fakePng0,
+            totalPages: 3,
+            width: 600,
+            height: 800,
+            docId: 'doc-session-xyz',
+          ));
+
+      when(() => ocrRepo.renderDocumentPagePreview(
+            fileBytes: any(named: 'fileBytes'),
+            filename: any(named: 'filename'),
+            pageIndex: 1,
+            dpi: any(named: 'dpi'),
+            docId: any(named: 'docId'),
+          )).thenAnswer((_) async => PagePreviewResult(
+            bytes: fakePng1,
+            totalPages: 3,
+            width: 600,
+            height: 800,
+            docId: 'doc-session-xyz',
+          ));
+
+      when(() => ocrRepo.renderDocumentPagePreview(
+            fileBytes: any(named: 'fileBytes'),
+            filename: any(named: 'filename'),
+            pageIndex: 2,
+            dpi: any(named: 'dpi'),
+            docId: any(named: 'docId'),
+          )).thenAnswer((_) async => PagePreviewResult(
+            bytes: fakePng2,
+            totalPages: 3,
+            width: 600,
+            height: 800,
+            docId: 'doc-session-xyz',
+          ));
+
+      notifier.loadDocument(pdfBytes, 'doc.pdf', pageCount: 3);
+
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+
+      final state = container.read(workstationProvider);
+      expect(state.pages.length, 3);
+      expect(state.pages[0].previewBytes, fakePng0);
+      expect(state.pages[1].previewBytes, fakePng1);
+      expect(state.pages[2].previewBytes, fakePng2);
+      expect(notifier.previewDocId, 'doc-session-xyz');
+      expect(state.isPreviewLoading, isFalse);
+    });
+
+    test('clearDocument increments preload generation and resets previewDocId', () async {
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(workstationProvider.notifier);
+
+      final pdfBytes = Uint8List.fromList([0x25, 0x50, 0x44, 0x46]);
+      final fakePng0 = Uint8List.fromList([0x89, 0x50, 0x4E, 0x47, 0x00]);
+
+      when(() => ocrRepo.renderDocumentPagePreview(
+            fileBytes: any(named: 'fileBytes'),
+            filename: any(named: 'filename'),
+            pageIndex: any(named: 'pageIndex'),
+            dpi: any(named: 'dpi'),
+            docId: any(named: 'docId'),
+          )).thenAnswer((_) async => PagePreviewResult(
+            bytes: fakePng0,
+            totalPages: 3,
+            docId: 'doc-session-123',
+          ));
+
+      notifier.loadDocument(pdfBytes, 'doc.pdf', pageCount: 3);
+      final genBefore = notifier.preloadGeneration;
+
+      await notifier.clearDocument();
+
+      expect(notifier.preloadGeneration, greaterThan(genBefore));
+      expect(notifier.previewDocId, isNull);
+      expect(container.read(workstationProvider).hasDocument, isFalse);
+    });
+
+    test('selectPage loads active page and re-prioritizes background preloader without affecting spinner', () async {
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(workstationProvider.notifier);
+
+      final pdfBytes = Uint8List.fromList([0x25, 0x50, 0x44, 0x46]);
+      final fakePng = Uint8List.fromList([0x89, 0x50, 0x4E, 0x47]);
+
+      when(() => ocrRepo.renderDocumentPagePreview(
+            fileBytes: any(named: 'fileBytes'),
+            filename: any(named: 'filename'),
+            pageIndex: any(named: 'pageIndex'),
+            dpi: any(named: 'dpi'),
+            docId: any(named: 'docId'),
+          )).thenAnswer((_) async => PagePreviewResult(
+            bytes: fakePng,
+            totalPages: 5,
+            docId: 'doc-prioritize',
+          ));
+
+      notifier.loadDocument(pdfBytes, 'multipage.pdf', pageCount: 5);
+
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+
+      notifier.selectPage(3);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+
+      final state = container.read(workstationProvider);
+      expect(state.selectedPageIndex, 3);
+      for (final p in state.pages) {
+        expect(p.previewBytes, isNotNull);
+      }
+      expect(state.isPreviewLoading, isFalse);
+      expect(state.previewError, isNull);
+    });
+
+    test('background preloader requests unrendered pages with forward bias priority', () async {
+      final container = makeContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(workstationProvider.notifier);
+
+      final pdfBytes = Uint8List.fromList([0x25, 0x50, 0x44, 0x46]);
+      final fakePng = Uint8List.fromList([0x89, 0x50, 0x4E, 0x47]);
+
+      final requestSequence = <int>[];
+      final completer = Completer<void>();
+
+      when(() => ocrRepo.renderDocumentPagePreview(
+            fileBytes: any(named: 'fileBytes'),
+            filename: any(named: 'filename'),
+            pageIndex: any(named: 'pageIndex'),
+            dpi: any(named: 'dpi'),
+            docId: any(named: 'docId'),
+          )).thenAnswer((invocation) async {
+        final idx = invocation.namedArguments[#pageIndex] as int;
+        requestSequence.add(idx);
+        if (requestSequence.length == 5 && !completer.isCompleted) {
+          completer.complete();
+        }
+        return PagePreviewResult(
+          bytes: fakePng,
+          totalPages: 5,
+          docId: 'doc-order-test',
+        );
+      });
+
+      notifier.loadDocument(pdfBytes, '5pages.pdf', pageCount: 5);
+
+      await completer.future.timeout(const Duration(seconds: 3));
+
+      // With page 0 as initial selected page, the remaining unrendered pages
+      // should be fetched in forward priority order: 1, 2, 3, 4
+      expect(requestSequence, [0, 1, 2, 3, 4]);
+    });
+  });
 }

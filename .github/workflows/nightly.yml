@@ -9,8 +9,9 @@ name: Nightly slow
 # Cadence: nightly cron at 03:00 UTC plus manual dispatch. Caches the
 # HF Hub snapshot across runs so we don't re-download on every night.
 #
-# Live-LLM tests (`-m live_llm`) are still skipped - they need a real
-# OpenAI-compatible endpoint we don't run in CI.
+# No live LLM endpoint is ever contacted in CI; the `live_llm` marker
+# was removed in Wave 14. Live-model validation is a manual run
+# documented in AGENTS.md.
 
 on:
   schedule:
@@ -57,7 +58,6 @@ jobs:
             hf-surya-
 
       - name: Run slow tests
-        # Live-LLM is still skipped since CI has no model server.
         run: uv run pytest -m slow --no-header -v
 
       - name: Upload results on failure

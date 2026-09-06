@@ -1,8 +1,10 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omniscribe_client/core/theme/app_colors.dart';
 import 'package:omniscribe_client/core/theme/app_typography.dart';
 import 'package:omniscribe_client/data/models/process_settings.dart';
+import 'package:omniscribe_client/data/providers/settings_notifier.dart';
 import 'package:omniscribe_client/data/providers/workstation_notifier.dart';
 import 'package:omniscribe_client/data/providers/workstation_state.dart';
 import 'package:omniscribe_client/presentation/common/app_badge.dart';
@@ -33,10 +35,29 @@ class _WorkstationScreenState extends ConsumerState<WorkstationScreen> {
     if (!wsState.hasDocument) return;
 
     final notifier = ref.read(workstationProvider.notifier);
-    if (settings.useAsync) {
-      await notifier.processOcrAsync(settings: settings);
-    } else {
-      await notifier.processOcrSync(settings: settings);
+    final globalSettings = ref.read(settingsStateProvider);
+    final effectiveUseAsync = settings.useAsync || globalSettings.useAsync;
+    final effectiveSettings = settings.copyWith(useAsync: effectiveUseAsync);
+
+    try {
+      if (effectiveUseAsync) {
+        await notifier.processOcrAsync(settings: effectiveSettings);
+      } else {
+        await notifier.processOcrSync(settings: effectiveSettings);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Processing failed: $e',
+            style: const TextStyle(color: Colors.white),
+          ),
+          backgroundColor: Colors.red.shade800,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 8),
+        ),
+      );
     }
   }
 
@@ -72,111 +93,97 @@ class _WorkstationScreenState extends ConsumerState<WorkstationScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                     child: LayoutBuilder(
                       builder: (context, constraints) {
-                        final isWide = constraints.maxWidth >= 1080;
+                        final isWide = constraints.maxWidth >= 768;
 
                         if (isWide) {
+                          final dockWidth = constraints.maxWidth >= 1100
+                              ? 340.0
+                              : constraints.maxWidth >= 900
+                                  ? 300.0
+                                  : 270.0;
+                          final inspectorWidth = constraints.maxWidth >= 1200
+                              ? 320.0
+                              : 260.0;
+
                           return Row(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              // Left/Center Area: Viewport + PageStrip + Inspector
+                              // Left Vertical Page Strip Rail
+                              if (wsState.pageCount > 1) ...[
+                                const PageStrip(orientation: Axis.vertical),
+                                const SizedBox(width: 12),
+                              ],
+                              // Center: Main Viewport
                               Expanded(
-                                flex: 8,
-                              child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.stretch,
-                                children: [
-                                  // Viewport + Side Inspector Split
-                                  Expanded(
-                                    child: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: [
-                                        // Main Viewport
-                                        Expanded(
-                                          child: DocumentViewport(
-                                            onBBoxSelected: (box) =>
-                                                notifier.selectBBox(box),
-                                          ),
-                                        ),
-
-                                        // Side BBox Inspector (if a box is selected)
-                                        if (selectedBBox != null) ...[
-                                          const SizedBox(width: 12),
-                                          SizedBox(
-                                            width: 320,
-                                            child: BBoxInspector(
-                                              bbox: selectedBBox,
-                                              onClose: () =>
-                                                  notifier.selectBBox(null),
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-
-                                  // Multi-Page Strip (if doc has > 1 page)
-                                  if (wsState.pageCount > 1) ...[
-                                    const SizedBox(height: 12),
-                                    const PageStrip(
-                                        orientation: Axis.horizontal),
-                                  ],
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-
-                            // Right Controls Dock
-                            SizedBox(
-                              width: 340,
-                              child: RightControlDock(
-                                settings: _processSettings,
-                                onSettingsChanged: (s) =>
-                                    setState(() => _processSettings = s),
-                                onProcessRequested: _handleProcessDocument,
-                              ),
-                            ),
-                          ],
-                        );
-                      } else {
-                        // Stacked layout for smaller viewports
-                        return SingleChildScrollView(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              SizedBox(
-                                height: 520,
                                 child: DocumentViewport(
                                   onBBoxSelected: (box) =>
                                       notifier.selectBBox(box),
                                 ),
                               ),
+                              // Side BBox Inspector (if a box is selected)
                               if (selectedBBox != null) ...[
-                                const SizedBox(height: 12),
-                                BBoxInspector(
-                                  bbox: selectedBBox,
-                                  onClose: () => notifier.selectBBox(null),
+                                const SizedBox(width: 12),
+                                SizedBox(
+                                  width: inspectorWidth,
+                                  child: BBoxInspector(
+                                    bbox: selectedBBox,
+                                    onClose: () => notifier.selectBBox(null),
+                                  ),
                                 ),
                               ],
-                              if (wsState.pageCount > 1) ...[
-                                const SizedBox(height: 12),
-                                const PageStrip(
-                                    orientation: Axis.horizontal),
-                              ],
-                              const SizedBox(height: 16),
-                              RightControlDock(
-                                settings: _processSettings,
-                                onSettingsChanged: (s) =>
-                                    setState(() => _processSettings = s),
-                                onProcessRequested: _handleProcessDocument,
+                              const SizedBox(width: 16),
+                              // Right Controls Dock
+                              SizedBox(
+                                width: dockWidth,
+                                child: RightControlDock(
+                                  settings: _processSettings,
+                                  onSettingsChanged: (s) =>
+                                      setState(() => _processSettings = s),
+                                  onProcessRequested: _handleProcessDocument,
+                                ),
                               ),
                             ],
-                          ),
-                        );
-                      }
-                    },
+                          );
+                        } else {
+                          // Stacked layout for smaller viewports (< 768px)
+                          return SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                SizedBox(
+                                  height: math.max(
+                                      360.0, constraints.maxHeight * 0.5),
+                                  child: DocumentViewport(
+                                    onBBoxSelected: (box) =>
+                                        notifier.selectBBox(box),
+                                  ),
+                                ),
+                                if (selectedBBox != null) ...[
+                                  const SizedBox(height: 12),
+                                  BBoxInspector(
+                                    bbox: selectedBBox,
+                                    onClose: () => notifier.selectBBox(null),
+                                  ),
+                                ],
+                                if (wsState.pageCount > 1) ...[
+                                  const SizedBox(height: 12),
+                                  const PageStrip(
+                                      orientation: Axis.horizontal),
+                                ],
+                                const SizedBox(height: 16),
+                                RightControlDock(
+                                  settings: _processSettings,
+                                  onSettingsChanged: (s) =>
+                                      setState(() => _processSettings = s),
+                                  onProcessRequested: _handleProcessDocument,
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+                      },
+                    ),
                   ),
-                ),
           ),
 
           // Live Bottom Progress Dock
@@ -253,10 +260,159 @@ class _WorkstationScreenState extends ConsumerState<WorkstationScreen> {
               ],
             ),
           ),
+          const SizedBox(width: 12),
 
-          // Header Actions (Export, Clear, Status Badge)
-          Row(
-            children: [
+          // Header Actions (Page Navigation, Layer Toggles, Export, Clear, Status Badge)
+          Flexible(
+            flex: 3,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+              // Multi-page navigation (when wsState.pageCount > 1)
+              if (wsState.hasDocument && wsState.pageCount > 1) ...[
+                IconButton(
+                  icon: const Icon(Icons.chevron_left_rounded, size: 20),
+                  tooltip: 'Previous page',
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  color: wsState.selectedPageIndex > 0
+                      ? colors.textPrimary
+                      : colors.textMuted,
+                  onPressed: wsState.selectedPageIndex > 0
+                      ? () => notifier.selectPage(wsState.selectedPageIndex - 1)
+                      : null,
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    'Page ${wsState.selectedPageIndex + 1} of ${wsState.pageCount}',
+                    style: AppTypography.codeSmall(
+                      color: colors.textPrimary,
+                    ).copyWith(fontWeight: FontWeight.w500),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right_rounded, size: 20),
+                  tooltip: 'Next page',
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  color: wsState.selectedPageIndex < wsState.pageCount - 1
+                      ? colors.textPrimary
+                      : colors.textMuted,
+                  onPressed: wsState.selectedPageIndex < wsState.pageCount - 1
+                      ? () => notifier.selectPage(wsState.selectedPageIndex + 1)
+                      : null,
+                ),
+                const SizedBox(width: 8),
+                Container(width: 1, height: 20, color: colors.border),
+                const SizedBox(width: 8),
+              ],
+
+              // Layer toggles (when wsState.hasDocument)
+              if (wsState.hasDocument) ...[
+                Tooltip(
+                  message: wsState.showBBoxes
+                      ? 'Hide bounding boxes'
+                      : 'Show bounding boxes',
+                  child: InkWell(
+                    onTap: () => notifier.toggleBBoxes(),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: wsState.showBBoxes
+                            ? colors.brand.withValues(alpha: 0.15)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: wsState.showBBoxes
+                              ? colors.brand.withValues(alpha: 0.4)
+                              : colors.border,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.crop_free_rounded,
+                            size: 14,
+                            color: wsState.showBBoxes
+                                ? colors.brand
+                                : colors.textMuted,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Boxes',
+                            style: AppTypography.bodySmall(
+                              color: wsState.showBBoxes
+                                  ? colors.brand
+                                  : colors.textMuted,
+                            ).copyWith(
+                                fontSize: 11, fontWeight: FontWeight.w500),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: wsState.showHeatmap
+                      ? 'Disable confidence heatmap'
+                      : 'Enable confidence heatmap',
+                  child: InkWell(
+                    onTap: () => notifier.toggleHeatmap(),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: wsState.showHeatmap
+                            ? colors.success.withValues(alpha: 0.15)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: wsState.showHeatmap
+                              ? colors.success.withValues(alpha: 0.4)
+                              : colors.border,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.gradient_rounded,
+                            size: 14,
+                            color: wsState.showHeatmap
+                                ? colors.success
+                                : colors.textMuted,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Heatmap',
+                            style: AppTypography.bodySmall(
+                              color: wsState.showHeatmap
+                                  ? colors.success
+                                  : colors.textMuted,
+                            ).copyWith(
+                                fontSize: 11, fontWeight: FontWeight.w500),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(width: 1, height: 20, color: colors.border),
+                const SizedBox(width: 8),
+              ],
+
+              // Header Actions (Export, Clear, Status Badge)
               if (wsState.hasDocument) ...[
                 AppButton(
                   text: 'Export',
@@ -288,11 +444,15 @@ class _WorkstationScreenState extends ConsumerState<WorkstationScreen> {
               ],
               AppBadge(
                 label: wsState.hasDocument ? 'LOADED' : 'READY',
-                variant: wsState.hasDocument ? AppBadgeVariant.success : AppBadgeVariant.neutral,
+                variant: wsState.hasDocument
+                    ? AppBadgeVariant.success
+                    : AppBadgeVariant.neutral,
                 size: AppBadgeSize.sm,
               ),
             ],
           ),
+        ),
+      ),
         ],
       ),
     );

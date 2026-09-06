@@ -1,7 +1,8 @@
 import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:omniscribe_client/core/theme/app_colors.dart';
 import 'package:omniscribe_client/core/theme/app_typography.dart';
@@ -54,6 +55,45 @@ class _ExportModalState extends ConsumerState<ExportModal> {
   String? _statusMessage;
   bool _isSuccess = false;
 
+  /// Build a sensible default filename for the export picker: strip any
+  /// existing extension from the current document name and append [ext].
+  String _defaultFilename(String? currentName, String ext) {
+    final base = (currentName != null && currentName.isNotEmpty)
+        ? currentName
+        : 'document';
+    final dot = base.lastIndexOf('.');
+    final stem = dot > 0 ? base.substring(0, dot) : base;
+    return '$stem.$ext';
+  }
+
+  /// Open the system save dialog for [bytes] and update the modal status.
+  /// Matches the existing Searchable-PDF UX: shows the saved path on success
+  /// and a "ready (N KB)" hint if the user cancels or the picker throws.
+  Future<void> _saveWithPicker({
+    required String fileName,
+    required Uint8List bytes,
+    required String formatLabel,
+  }) async {
+    final kb = (bytes.length / 1024).round();
+    try {
+      // Wave 16 / file_picker 12: ``FilePicker.platform`` was removed in favor
+      // of static methods on ``FilePicker`` itself. ``saveFile`` returns a
+      // ``Uri?`` — ``toString()`` keeps the user-facing copy working.
+      final savePath = await FilePicker.saveFile(
+        fileName: fileName,
+        bytes: bytes,
+      );
+      if (savePath != null) {
+        _statusMessage = '$formatLabel saved to $savePath.';
+      } else {
+        _statusMessage = '$formatLabel ready ($kb KB).';
+      }
+    } catch (_) {
+      _statusMessage = '$formatLabel ready ($kb KB).';
+    }
+    _isSuccess = true;
+  }
+
   Future<void> _handleExport() async {
     final wsState = ref.read(workstationProvider);
     final repo = ref.read(featureRepositoryProvider);
@@ -70,29 +110,15 @@ class _ExportModalState extends ConsumerState<ExportModal> {
       switch (_selectedFormat) {
         case ExportFormat.searchablePdf:
           if (wsState.loadedBytes != null) {
-            try {
-              // Wave 16 / file_picker 12: ``FilePicker.platform`` was removed
-              // in favor of static methods on ``FilePicker`` itself. The new
-              // ``saveFile`` returns a ``Uri?`` instead of a ``String?`` —
-              // ``toString()`` keeps the existing user-facing copy working.
-              final savePath = await FilePicker.saveFile(
-                fileName: wsState.filename ?? 'searchable_document.pdf',
-                bytes: wsState.loadedBytes!,
-              );
-              if (savePath != null) {
-                _statusMessage = 'Searchable PDF saved to $savePath.';
-              } else {
-                _statusMessage =
-                    'Searchable PDF ready (${(wsState.loadedBytes!.length / 1024).round()} KB).';
-              }
-            } catch (_) {
-              _statusMessage =
-                  'Searchable PDF ready (${(wsState.loadedBytes!.length / 1024).round()} KB).';
-            }
-            _isSuccess = true;
+            await _saveWithPicker(
+              fileName: wsState.filename ?? 'searchable_document.pdf',
+              bytes: wsState.loadedBytes!,
+              formatLabel: 'Searchable PDF',
+            );
           } else {
             _statusMessage =
                 'PDF not available. Please run OCR processing first.';
+            _isSuccess = false;
           }
           break;
 
@@ -104,8 +130,11 @@ class _ExportModalState extends ConsumerState<ExportModal> {
                   : (wsState.filename ?? 'Document text'),
             ),
           );
-          _statusMessage = 'Exported DOCX successfully (${bytes.length} bytes).';
-          _isSuccess = true;
+          await _saveWithPicker(
+            fileName: _defaultFilename(wsState.filename, 'docx'),
+            bytes: bytes,
+            formatLabel: 'DOCX',
+          );
           break;
 
         case ExportFormat.docxTree:
@@ -117,9 +146,11 @@ class _ExportModalState extends ConsumerState<ExportModal> {
                 textArtifactToken: wsState.textArtifactToken!,
               ),
             );
-            _statusMessage =
-                'Exported DOCX Tree successfully (${bytes.length} bytes).';
-            _isSuccess = true;
+            await _saveWithPicker(
+              fileName: _defaultFilename(wsState.filename, 'docx'),
+              bytes: bytes,
+              formatLabel: 'DOCX Tree',
+            );
           } else {
             _statusMessage =
                 'Text artifact not available. Please run OCR processing first.';
@@ -148,30 +179,39 @@ class _ExportModalState extends ConsumerState<ExportModal> {
           }
           htmlBuffer.writeln('</body></html>');
 
-          await Clipboard.setData(ClipboardData(text: htmlBuffer.toString()));
-          _statusMessage = 'HTML document copied to clipboard!';
-          _isSuccess = true;
+          await _saveWithPicker(
+            fileName: _defaultFilename(wsState.filename, 'html'),
+            bytes: Uint8List.fromList(utf8.encode(htmlBuffer.toString())),
+            formatLabel: 'HTML',
+          );
           break;
 
         case ExportFormat.treeJson:
           final pagesJson = wsState.pages.map((p) => p.toJson()).toList();
-          final formattedJson = const JsonEncoder.withIndent('  ').convert(pagesJson);
-          await Clipboard.setData(ClipboardData(text: formattedJson));
-          _statusMessage = 'Block Tree JSON copied to clipboard!';
-          _isSuccess = true;
+          final formattedJson =
+              const JsonEncoder.withIndent('  ').convert(pagesJson);
+          await _saveWithPicker(
+            fileName: _defaultFilename(wsState.filename, 'json'),
+            bytes: Uint8List.fromList(utf8.encode(formattedJson)),
+            formatLabel: 'Block Tree JSON',
+          );
           break;
 
         case ExportFormat.markdown:
-          await Clipboard.setData(ClipboardData(text: docText));
-          _statusMessage = 'Markdown text copied to clipboard!';
-          _isSuccess = true;
+          await _saveWithPicker(
+            fileName: _defaultFilename(wsState.filename, 'md'),
+            bytes: Uint8List.fromList(utf8.encode(docText)),
+            formatLabel: 'Markdown',
+          );
           break;
 
         case ExportFormat.rawText:
           final rawText = wsState.allBBoxes.map((b) => b.text).join('\n');
-          await Clipboard.setData(ClipboardData(text: rawText));
-          _statusMessage = 'Extracted text copied to clipboard!';
-          _isSuccess = true;
+          await _saveWithPicker(
+            fileName: _defaultFilename(wsState.filename, 'txt'),
+            bytes: Uint8List.fromList(utf8.encode(rawText)),
+            formatLabel: 'Plain text',
+          );
           break;
       }
     } catch (e) {

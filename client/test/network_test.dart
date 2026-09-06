@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscribe_client/core/network/api_client.dart';
@@ -205,6 +207,35 @@ void main() {
       }
       expect(unauthInvocations, equals(0),
           reason: 'onUnauthorized must NOT fire on non-401');
+    });
+
+    test('postMultipartBytes passes receiveTimeout to RequestOptions', () async {
+      Duration? capturedTimeout;
+      final dio = apiClient.rawDio;
+      dio.interceptors.clear();
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            capturedTimeout = options.receiveTimeout;
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: Uint8List.fromList([1, 2, 3]),
+              ),
+            );
+          },
+        ),
+      );
+
+      final response = await apiClient.postMultipartBytes(
+        '/test',
+        formData: FormData.fromMap({'foo': 'bar'}),
+        receiveTimeout: const Duration(minutes: 30),
+      );
+
+      expect(response.statusCode, 200);
+      expect(capturedTimeout, const Duration(minutes: 30));
     });
   });
 }

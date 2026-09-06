@@ -1,7 +1,47 @@
 import 'dart:convert';
+import 'dart:ui' show Size;
 
 import 'package:flutter/foundation.dart';
 import 'bbox_item.dart';
+
+/// Sniffs image dimensions from binary header (PNG, JPEG).
+Size? parseImageDimensions(Uint8List bytes) {
+  if (bytes.length >= 24 &&
+      bytes[0] == 0x89 &&
+      bytes[1] == 0x50 &&
+      bytes[2] == 0x4E &&
+      bytes[3] == 0x47) {
+    final byteData = ByteData.sublistView(bytes);
+    final width = byteData.getUint32(16, Endian.big).toDouble();
+    final height = byteData.getUint32(20, Endian.big).toDouble();
+    if (width > 0 && height > 0) {
+      return Size(width, height);
+    }
+  }
+  if (bytes.length >= 10 && bytes[0] == 0xFF && bytes[1] == 0xD8) {
+    int offset = 2;
+    while (offset < bytes.length - 8) {
+      if (bytes[offset] != 0xFF) break;
+      final marker = bytes[offset + 1];
+      if (marker == 0xC0 || marker == 0xC1 || marker == 0xC2) {
+        final byteData = ByteData.sublistView(bytes);
+        final height = byteData.getUint16(offset + 5, Endian.big).toDouble();
+        final width = byteData.getUint16(offset + 7, Endian.big).toDouble();
+        if (width > 0 && height > 0) {
+          return Size(width, height);
+        }
+        break;
+      } else if (marker == 0xD9 || marker == 0xDA) {
+        break;
+      } else {
+        final byteData = ByteData.sublistView(bytes);
+        final len = byteData.getUint16(offset + 2, Endian.big);
+        offset += 2 + len;
+      }
+    }
+  }
+  return null;
+}
 
 /// Trust and quality analysis metrics extracted from X-Document-Trust header.
 class TrustSummary {
@@ -115,6 +155,12 @@ class PageResult {
     if (width != null && height != null && height! > 0) {
       return width! / height!;
     }
+    if (previewBytes != null && previewBytes!.length >= 24) {
+      final size = parseImageDimensions(previewBytes!);
+      if (size != null && size.height > 0) {
+        return size.width / size.height;
+      }
+    }
     return 8.5 / 11.0;
   }
 
@@ -191,6 +237,23 @@ class PageResult {
         text,
         imageUrl,
       );
+}
+
+/// Rasterized page preview payload from the document preview API.
+class PagePreviewResult {
+  const PagePreviewResult({
+    required this.bytes,
+    this.totalPages = 1,
+    this.width,
+    this.height,
+    this.docId,
+  });
+
+  final Uint8List bytes;
+  final int totalPages;
+  final double? width;
+  final double? height;
+  final String? docId;
 }
 
 /// Confidence distribution statistics.

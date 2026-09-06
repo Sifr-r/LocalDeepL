@@ -2,11 +2,14 @@ name: Tests
 
 # Fast-tier validation on every PR + push to main.
 #
-# Scope: runs `pytest -m "not slow"`. Skips the `slow`
-# marker because those tests load Surya from HF Hub (~500MB download on
-# first run); not worth the CI minutes for routine validation. Skips
-# `live_llm` markers too -- those need a real LLM endpoint we don't have
-# in CI.
+# Scope: runs `pytest -m "not slow and not slow_dataset"`. Skips the
+# `slow` marker because those tests load Surya from HF Hub (~500MB
+# download on first run); not worth the CI minutes for routine
+# validation. Skips the `slow_dataset` marker because those tests
+# depend on full OCR-Quality and KIE-HVQA fixtures that are
+# license-gated (see `scripts/fetch_datasets.py` and the nightly
+# `calibration` job). No live LLM endpoint is ever contacted in CI;
+# the `live_llm` marker was removed in Wave 14.
 #
 # Matrix: Python 3.11 (the floor in pyproject.toml) and 3.13
 # to catch version-specific regressions without quadrupling runtime.
@@ -82,7 +85,33 @@ jobs:
         # value in pyproject.toml. See the pyproject comment for why
         # the floor is 80 (the codebase is at ~82% and the 15
         # under-tested modules need heavy fixtures to bring up).
-        run: uv run pytest -m "not slow and not slow_dataset" --cov=src/omniscribe --cov-fail-under=80 --cov-report=term-missing --cov-report=xml -v
+        #
+        # Phase 5.5 (2026-09-05):
+        # - ``--reruns=2 --reruns-delay=1`` re-runs a test up to 2x
+        #   with a 1s delay before failing. Band-aid for the
+        #   magic-number ``time.sleep(0.05)`` flakiness the audit
+        #   flagged; expect to drop once Phase 3.7's sleep sites
+        #   are gone.
+        # - ``--junitxml=reports/junit.xml`` produces a machine-
+        #   readable test report; the next step uploads it as a
+        #   workflow artifact so flaky runs are inspectable in
+        #   the GitHub UI.
+        run: uv run pytest -m "not slow and not slow_dataset" --cov=src/omniscribe --cov-fail-under=80 --cov-report=term-missing --cov-report=xml --junitxml=reports/junit.xml --reruns=2 --reruns-delay=1 -v
+
+      - name: Upload JUnit test report
+        # Phase 5.5 (2026-09-05): the previous workflow had no
+        # per-test history. With pytest-rerunfailures absorbing
+        # the worst flakiness, a JUnit XML is enough for the
+        # maintainer to spot a test that's been silently rerunning
+        # for a week. The artifact is matrix-free on purpose —
+        # the report is the same content across the matrix.
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: junit-${{ matrix.python }}-${{ matrix.os }}
+          path: reports/junit.xml
+          retention-days: 30
+          if-no-files-found: warn
 
       - name: Render HTML coverage report
         # Sprint 4 / M-4 audit fix: publish an HTML coverage report

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' show Offset;
 
@@ -36,6 +37,23 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
   /// private field at every write site and read it from there in [_cleanup].
   String? _lastChannelId;
 
+  /// Cached server-side document ID for efficient page preview rendering.
+  String? _previewDocId;
+
+  /// Generation counter for background preloading to cancel superseded runs.
+  int _preloadGeneration = 0;
+
+  /// Guard flag to avoid duplicate concurrent preloader loops.
+  bool _isPreloading = false;
+
+  /// Exposes the cached preview document ID for testing.
+  @visibleForTesting
+  String? get previewDocId => _previewDocId;
+
+  /// Exposes current preload generation for testing.
+  @visibleForTesting
+  int get preloadGeneration => _preloadGeneration;
+
   @override
   WorkstationState build() {
     _ocrRepo = ref.watch(ocrRepositoryProvider);
@@ -48,6 +66,9 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
   }
 
   Future<void> _cleanup() async {
+    _preloadGeneration++;
+    _previewDocId = null;
+
     // The StreamSubscription<WsEnvelope>.cancel() future is awaited so we
     // don't drop in-flight frames during teardown.
     await _wsSubscription?.cancel();
@@ -92,11 +113,28 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
       bytes != null || (filePath != null && filePath.isNotEmpty),
       'loadDocument requires either bytes or filePath to be provided',
     );
-    final count = pageCount > 0 ? pageCount : 1;
+    final ext = (filename ?? '').split('.').last.toLowerCase();
+    final isImage =
+        const {'png', 'jpg', 'jpeg', 'webp', 'bmp', 'avif'}.contains(ext);
+    final count = isImage ? 1 : (pageCount > 0 ? pageCount : 1);
+    final imageDimensions =
+        (isImage && bytes != null) ? parseImageDimensions(bytes) : null;
     final initialPages = List<PageResult>.generate(
       count,
-      (index) => PageResult(page: index),
+      (index) => PageResult(
+        page: index,
+        width: (index == 0 && imageDimensions != null)
+            ? imageDimensions.width
+            : null,
+        height: (index == 0 && imageDimensions != null)
+            ? imageDimensions.height
+            : null,
+        previewBytes: (index == 0 && isImage) ? bytes : null,
+      ),
     );
+
+    _previewDocId = null;
+    final generation = ++_preloadGeneration;
 
     state = WorkstationState(
       loadedBytes: bytes,
@@ -116,12 +154,22 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
       stage: 'Idle',
       statusMessage: 'Document loaded',
     );
+
+    if (!isImage && bytes != null && bytes.isNotEmpty) {
+      _loadDocumentPreview(0, generation: generation).then((preview) {
+        if (generation == _preloadGeneration && preview != null) {
+          _previewDocId = preview.docId ?? _previewDocId;
+          if (preview.totalPages > 1) {
+            _startBackgroundPreloader(generation);
+          }
+        }
+      });
+    }
   }
 
   /// Sets the currently active page index (0-indexed). Triggers a
-  /// background fetch for the page preview bytes so the viewport shows
-  /// the underlying raster (not just a placeholder) as soon as the
-  /// server returns it.
+  /// fetch for the page preview bytes if missing and re-prioritizes
+  /// the background preloader around the newly selected page.
   void selectPage(int pageIndex) {
     if (pageIndex < 0 || pageIndex >= state.pageCount) {
       return;
@@ -131,7 +179,16 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
       clearSelectedBBox: true,
       clearHoveredBBox: true,
     );
-    _loadPagePreviewIfMissing(pageIndex);
+    if (pageIndex < state.pages.length &&
+        state.pages[pageIndex].previewBytes == null) {
+      final jobId = _activeJobId();
+      if (jobId != null) {
+        _loadPagePreviewIfMissing(pageIndex);
+      } else {
+        _loadDocumentPreview(pageIndex);
+      }
+    }
+    _startBackgroundPreloader(_preloadGeneration);
   }
 
   Future<void> _loadPagePreviewIfMissing(int pageIndex) async {
@@ -143,22 +200,221 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
       return;
     }
     final jobId = _activeJobId();
-    if (jobId == null) {
+    if (jobId != null) {
+      try {
+        final bytes = await _jobRepo.fetchPagePreview(jobId, pageIndex);
+        if (bytes != null) {
+          setPagePreview(pageIndex, bytes);
+          return;
+        }
+      } catch (e, st) {
+        FlutterError.reportError(
+          FlutterErrorDetails(exception: e, stack: st, library: 'workstation'),
+        );
+      }
+    }
+    if (state.loadedBytes != null && state.loadedBytes!.isNotEmpty) {
+      await _loadDocumentPreview(pageIndex);
+    }
+  }
+
+  Future<PagePreviewResult?> _loadDocumentPreview(
+    int pageIndex, {
+    int? generation,
+  }) async {
+    final fileBytes = state.loadedBytes;
+    if ((fileBytes == null || fileBytes.isEmpty) && _previewDocId == null) {
+      return null;
+    }
+    final targetGeneration = generation ?? _preloadGeneration;
+    final filename = state.filename ?? 'document.pdf';
+
+    state = state.copyWith(
+      isPreviewLoading: true,
+      clearPreviewError: true,
+    );
+
+    try {
+      final preview = await _ocrRepo.renderDocumentPagePreview(
+        fileBytes: fileBytes,
+        filename: filename,
+        pageIndex: pageIndex,
+        docId: _previewDocId,
+      );
+
+      // Race guard: If the document was cleared, replaced, or generation bumped
+      // while the preview fetch was in flight, abort cleanly without mutating state.
+      if (targetGeneration != _preloadGeneration || !state.hasDocument) {
+        if (state.hasDocument && state.isPreviewLoading) {
+          state = state.copyWith(isPreviewLoading: false);
+        }
+        return null;
+      }
+
+      if (preview == null) {
+        state = state.copyWith(
+          isPreviewLoading: false,
+          previewError:
+              'Server could not render preview for page ${pageIndex + 1}',
+        );
+        return null;
+      }
+      if (preview.docId != null) {
+        _previewDocId = preview.docId;
+      }
+
+      final updatedPages = List<PageResult>.from(state.pages);
+      while (updatedPages.length <= pageIndex) {
+        updatedPages.add(PageResult(page: updatedPages.length));
+      }
+      final cur = updatedPages[pageIndex];
+      final imgDimensions = (preview.width == null || preview.height == null)
+          ? parseImageDimensions(preview.bytes)
+          : null;
+      updatedPages[pageIndex] = cur.copyWith(
+        previewBytes: preview.bytes,
+        width: preview.width ?? imgDimensions?.width,
+        height: preview.height ?? imgDimensions?.height,
+      );
+
+      final newCount = math.max(state.pageCount, preview.totalPages);
+      while (updatedPages.length < newCount) {
+        updatedPages.add(PageResult(page: updatedPages.length));
+      }
+
+      state = state.copyWith(
+        pages: updatedPages,
+        pageCount: updatedPages.length,
+        isPreviewLoading: false,
+        clearPreviewError: true,
+      );
+      return preview;
+    } catch (e) {
+      state = state.copyWith(
+        isPreviewLoading: false,
+        previewError: 'Failed to generate page preview: ${e.toString()}',
+      );
+      return null;
+    }
+  }
+
+  /// Priority distance scorer with forward bias:
+  /// current + 1, current + 2, current - 1, current + 3, current - 2...
+  static double _pageDistanceScore(int idx, int current) {
+    if (idx == current) return 0.0;
+    if (idx > current) {
+      return (idx - current).toDouble();
+    } else {
+      return (current - idx) + 1.5;
+    }
+  }
+
+  /// Progressive background preloader fetching remaining unrendered document pages.
+  ///
+  /// Prioritizes pages nearest to [WorkstationState.selectedPageIndex] with forward bias.
+  /// Idempotent, non-blocking, and safely aborts if [generation] no longer matches
+  /// [_preloadGeneration] or if document is cleared.
+  Future<void> _startBackgroundPreloader(int generation) async {
+    if (generation != _preloadGeneration ||
+        !state.hasDocument ||
+        state.pageCount <= 1 ||
+        _isPreloading) {
       return;
     }
+
+    _isPreloading = true;
+    final failedIndices = <int>{};
+
     try {
-      final bytes = await _jobRepo.fetchPagePreview(jobId, pageIndex);
-      if (bytes == null) {
-        return;
+      while (generation == _preloadGeneration &&
+          state.hasDocument &&
+          state.pageCount > 1) {
+        final unrendered = <int>[];
+        final totalCandidatePages =
+            math.max(state.pageCount, state.pages.length);
+        for (int i = 0; i < totalCandidatePages; i++) {
+          if ((i >= state.pages.length ||
+                  state.pages[i].previewBytes == null) &&
+              !failedIndices.contains(i)) {
+            unrendered.add(i);
+          }
+        }
+
+        if (unrendered.isEmpty) {
+          break;
+        }
+
+        final current = state.selectedPageIndex;
+        unrendered.sort((a, b) => _pageDistanceScore(a, current)
+            .compareTo(_pageDistanceScore(b, current)));
+
+        var idx = unrendered.first;
+
+        // If the active page is already being actively fetched by _loadDocumentPreview,
+        // prioritize the next unrendered page so we don't issue duplicate requests.
+        if (idx == state.selectedPageIndex && state.isPreviewLoading) {
+          if (unrendered.length > 1) {
+            idx = unrendered[1];
+          } else {
+            await Future<void>.delayed(const Duration(milliseconds: 50));
+            continue;
+          }
+        }
+
+        if (generation != _preloadGeneration || !state.hasDocument) {
+          break;
+        }
+
+        final filename = state.filename ?? 'document.pdf';
+        final preview = await _ocrRepo.renderDocumentPagePreview(
+          fileBytes: state.loadedBytes,
+          filename: filename,
+          pageIndex: idx,
+          docId: _previewDocId,
+        );
+
+        if (generation != _preloadGeneration || !state.hasDocument) {
+          break;
+        }
+
+        if (preview != null) {
+          _previewDocId = preview.docId ?? _previewDocId;
+          final updatedPages = List<PageResult>.from(state.pages);
+          while (updatedPages.length <= idx) {
+            updatedPages.add(PageResult(page: updatedPages.length));
+          }
+          final cur = updatedPages[idx];
+          final imgDimensions =
+              (preview.width == null || preview.height == null)
+                  ? parseImageDimensions(preview.bytes)
+                  : null;
+          updatedPages[idx] = cur.copyWith(
+            previewBytes: preview.bytes,
+            width: preview.width ?? imgDimensions?.width,
+            height: preview.height ?? imgDimensions?.height,
+          );
+          state = state.copyWith(
+            pages: updatedPages,
+            pageCount: math.max(state.pageCount, updatedPages.length),
+            isPreviewLoading: idx == state.selectedPageIndex ? false : null,
+          );
+        } else {
+          failedIndices.add(idx);
+        }
+
+        await Future<void>.delayed(const Duration(milliseconds: 25));
       }
-      setPagePreview(pageIndex, bytes);
-    } catch (e, st) {
-      // Network/404 paths are normal (older job, no source). Anything
-      // else is logged but never blocks the user.
-      FlutterError.reportError(
-        FlutterErrorDetails(exception: e, stack: st, library: 'workstation'),
-      );
+    } catch (_) {
+      // Deterministic error handling: background preloader swallows errors
+      // without disturbing active UI state.
+    } finally {
+      _isPreloading = false;
     }
+  }
+
+  /// Retries fetching the preview for the given [pageIndex].
+  void retryPagePreview(int pageIndex) {
+    _loadDocumentPreview(pageIndex);
   }
 
   /// Returns the job id whose preview we should request — the active
@@ -311,14 +567,21 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
   void setPagePreview(int page, Uint8List previewBytes) {
     final updatedPages = List<PageResult>.from(state.pages);
     if (page >= 0 && page < updatedPages.length) {
-      updatedPages[page] =
-          updatedPages[page].copyWith(previewBytes: previewBytes);
+      final imgDimensions = parseImageDimensions(previewBytes);
+      final cur = updatedPages[page];
+      updatedPages[page] = cur.copyWith(
+        previewBytes: previewBytes,
+        width: cur.width ?? imgDimensions?.width,
+        height: cur.height ?? imgDimensions?.height,
+      );
       state = state.copyWith(pages: updatedPages);
     }
   }
 
   /// Clears the loaded document and resets state to default.
   Future<void> clearDocument() async {
+    _preloadGeneration++;
+    _previewDocId = null;
     await _cleanup();
     _lastChannelId = null;
     state = WorkstationState();
@@ -436,6 +699,7 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
   Future<void> processOcrSync({
     ProcessSettings? settings,
     void Function(int sent, int total)? onSendProgress,
+    Duration? receiveTimeout,
   }) async {
     if (state.loadedBytes == null && state.filePath == null) {
       state = state.copyWith(error: 'No document loaded to process');
@@ -489,14 +753,24 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
       }
 
       // 2. Execute synchronous OCR call
-      final result = await _ocrRepo.processOcrSync(
-        fileBytes: fileBytes,
-        filename: filename,
-        settings: settings,
-        progressChannel: session?.channelId,
-        progressToken: session?.sessionToken,
-        onSendProgress: onSendProgress,
-      );
+      final result = receiveTimeout != null
+          ? await _ocrRepo.processOcrSync(
+              fileBytes: fileBytes,
+              filename: filename,
+              settings: settings,
+              progressChannel: session?.channelId,
+              progressToken: session?.sessionToken,
+              onSendProgress: onSendProgress,
+              receiveTimeout: receiveTimeout,
+            )
+          : await _ocrRepo.processOcrSync(
+              fileBytes: fileBytes,
+              filename: filename,
+              settings: settings,
+              progressChannel: session?.channelId,
+              progressToken: session?.sessionToken,
+              onSendProgress: onSendProgress,
+            );
 
       state = state.copyWith(
         isProcessing: false,
@@ -701,6 +975,10 @@ class WorkstationNotifier extends Notifier<WorkstationState> {
   /// with default settings (the workstation dock's tweaked values are not
   /// observable from the AppShell key handler in Phase A).
   Future<void> processCurrentDocument() async {
-    await processOcrSync(settings: ProcessSettings.defaultSettings());
+    try {
+      await processOcrSync(settings: ProcessSettings.defaultSettings());
+    } catch (_) {
+      // Error state is already recorded in workstation state by processOcrSync
+    }
   }
 }

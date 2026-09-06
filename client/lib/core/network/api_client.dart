@@ -400,18 +400,27 @@ class ApiClient {
     required FormData formData,
     Map<String, dynamic>? queryParameters,
     Map<String, dynamic>? headers,
+    Options? options,
     CancelToken? cancelToken,
+    Duration? receiveTimeout,
+    Duration? sendTimeout,
     void Function(int sent, int total)? onSendProgress,
   }) async {
     try {
+      final baseOptions = options ?? Options();
+      final effectiveOptions = _mergeOptions(
+        baseOptions.copyWith(
+          responseType: ResponseType.bytes,
+          receiveTimeout: receiveTimeout ?? baseOptions.receiveTimeout,
+          sendTimeout: sendTimeout ?? baseOptions.sendTimeout,
+        ),
+        headers: headers,
+      );
       final response = await _dio.post<List<int>>(
         path,
         data: formData,
         queryParameters: queryParameters,
-        options: _mergeOptions(
-          Options(responseType: ResponseType.bytes),
-          headers: headers,
-        ),
+        options: effectiveOptions,
         cancelToken: cancelToken,
         onSendProgress: onSendProgress,
       );

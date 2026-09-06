@@ -30,6 +30,7 @@ abstract class OcrRepository {
     String? progressChannel,
     String? progressToken,
     void Function(int sent, int total)? onSendProgress,
+    Duration? receiveTimeout,
   });
 
   /// Submit an asynchronous OCR job to the worker queue.
@@ -71,10 +72,16 @@ abstract class OcrRepository {
   /// replaying the ``/api/process/{jobId}/events`` SSE stream until
   /// the ``job_completed`` event fires. This is the out-of-band
   /// channel that pairs with the sync path's ``X-Text-Artifact-Token``
-  /// response header — the unauthenticated
-  /// ``/api/process/status/{jobId}`` + ``/api/jobs`` chain no longer
-  /// returns the token (2026-08-29 audit C-3 / H-3).
   Future<String> getJobArtifactToken(String jobId, {Duration? timeout});
+
+  /// Render any page of an uploaded document as PNG preview bytes.
+  Future<PagePreviewResult?> renderDocumentPagePreview({
+    Uint8List? fileBytes,
+    required String filename,
+    int pageIndex = 0,
+    int dpi = 150,
+    String? docId,
+  });
 }
 
 class OcrRepositoryImpl implements OcrRepository {
@@ -140,6 +147,7 @@ class OcrRepositoryImpl implements OcrRepository {
     String? progressChannel,
     String? progressToken,
     void Function(int sent, int total)? onSendProgress,
+    Duration? receiveTimeout,
   }) async {
     final formData = _buildOcrFormData(
       fileBytes: fileBytes,
@@ -153,6 +161,7 @@ class OcrRepositoryImpl implements OcrRepository {
       ApiConstants.processSync,
       formData: formData,
       onSendProgress: onSendProgress,
+      receiveTimeout: receiveTimeout ?? ApiConstants.defaultOcrReceiveTimeout,
     );
 
     final headers = response.headers;
@@ -350,5 +359,100 @@ class OcrRepositoryImpl implements OcrRepository {
       deadlineTimer?.cancel();
       await subscription.cancel();
     }
+  }
+
+  @override
+  Future<PagePreviewResult?> renderDocumentPagePreview({
+    Uint8List? fileBytes,
+    required String filename,
+    int pageIndex = 0,
+    int dpi = 150,
+    String? docId,
+  }) async {
+    if (fileBytes == null && (docId == null || docId.isEmpty)) {
+      return null;
+    }
+
+    // 1. Lightweight path: if docId is present, try fast rasterization without re-uploading file
+    if (docId != null && docId.isNotEmpty) {
+      try {
+        final map = <String, dynamic>{
+          'page': pageIndex.toString(),
+          'dpi': dpi.toString(),
+          'doc_id': docId,
+        };
+        final formData = FormData.fromMap(map);
+
+        final response = await _apiClient.postMultipartBytes(
+          ApiConstants.documentPreview,
+          formData: formData,
+          receiveTimeout: const Duration(seconds: 30),
+        );
+
+        final totalPages =
+            int.tryParse(response.getHeader(ApiConstants.headerTotalPages) ?? '') ?? 1;
+        final width =
+            double.tryParse(response.getHeader(ApiConstants.headerPageWidth) ?? '');
+        final height =
+            double.tryParse(response.getHeader(ApiConstants.headerPageHeight) ?? '');
+        final responseDocId = response.getHeader(ApiConstants.headerDocumentId) ??
+            response.getHeader('x-document-id') ??
+            response.getHeader('X-Document-Id') ??
+            docId;
+
+        return PagePreviewResult(
+          bytes: response.data,
+          totalPages: totalPages,
+          width: width,
+          height: height,
+          docId: responseDocId,
+        );
+      } catch (_) {
+        // Stale docId or server restarted — fall through to upload fileBytes if available
+        if (fileBytes == null) {
+          return null;
+        }
+      }
+    }
+
+    // 2. Upload path: send file bytes and acquire new docId
+    if (fileBytes != null) {
+      try {
+        final map = <String, dynamic>{
+          'page': pageIndex.toString(),
+          'dpi': dpi.toString(),
+          'file': MultipartFile.fromBytes(fileBytes, filename: filename),
+        };
+        final formData = FormData.fromMap(map);
+
+        final response = await _apiClient.postMultipartBytes(
+          ApiConstants.documentPreview,
+          formData: formData,
+          receiveTimeout: const Duration(seconds: 30),
+        );
+
+        final totalPages =
+            int.tryParse(response.getHeader(ApiConstants.headerTotalPages) ?? '') ?? 1;
+        final width =
+            double.tryParse(response.getHeader(ApiConstants.headerPageWidth) ?? '');
+        final height =
+            double.tryParse(response.getHeader(ApiConstants.headerPageHeight) ?? '');
+        final responseDocId = response.getHeader(ApiConstants.headerDocumentId) ??
+            response.getHeader('x-document-id') ??
+            response.getHeader('X-Document-Id');
+
+        return PagePreviewResult(
+          bytes: response.data,
+          totalPages: totalPages,
+          width: width,
+          height: height,
+          docId: responseDocId,
+        );
+      } catch (_) {
+        return null;
+      }
+    }
+
+    return null;
   }
 }

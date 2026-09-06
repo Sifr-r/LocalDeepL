@@ -8,7 +8,6 @@ import 'package:omniscribe_client/data/models/bbox_item.dart';
 import 'package:omniscribe_client/data/models/document_result.dart';
 import 'package:omniscribe_client/data/providers/workstation_notifier.dart';
 import 'package:omniscribe_client/data/providers/workstation_state.dart';
-import 'package:omniscribe_client/presentation/common/app_badge.dart';
 import 'bbox_painter.dart';
 
 /// GPU-Accelerated Document Viewport with InteractiveViewer zoom/pan,
@@ -31,6 +30,12 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
   final GlobalKey _canvasKey = GlobalKey();
 
   double _currentScale = 1.0;
+  Size _lastViewportSize = Size.zero;
+  Size _lastCanvasSize = Size.zero;
+  double? _lastCanvasAspectRatio;
+  String? _lastDocFilename;
+  int? _lastPageIndex;
+  bool _hasFittedInitial = false;
 
   @override
   void initState() {
@@ -54,20 +59,69 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
     }
   }
 
-  void _zoomIn() {
-    final Matrix4 matrix = _transformController.value.clone();
-    matrix.scaleByDouble(1.25, 1.25, 1.0, 1.0);
-    _transformController.value = matrix;
+  void _zoomBy(double factor) {
+    if (_lastViewportSize.width <= 0 || _lastViewportSize.height <= 0) return;
+    final current = _transformController.value;
+    final currentScale = current.getMaxScaleOnAxis();
+    final targetScale = (currentScale * factor).clamp(0.15, 6.0);
+    if ((targetScale - currentScale).abs() < 0.001) return;
+    final effectiveFactor = targetScale / currentScale;
+
+    final cx = _lastViewportSize.width / 2.0;
+    final cy = _lastViewportSize.height / 2.0;
+    final tx = current.storage[12];
+    final ty = current.storage[13];
+
+    final newTx = cx * (1.0 - effectiveFactor) + tx * effectiveFactor;
+    final newTy = cy * (1.0 - effectiveFactor) + ty * effectiveFactor;
+
+    _transformController.value =
+        Matrix4.diagonal3Values(targetScale, targetScale, 1.0)
+          ..setTranslationRaw(newTx, newTy, 0.0);
   }
 
-  void _zoomOut() {
-    final Matrix4 matrix = _transformController.value.clone();
-    matrix.scaleByDouble(0.8, 0.8, 1.0, 1.0);
-    _transformController.value = matrix;
+  void _zoomIn() => _zoomBy(1.25);
+
+  void _zoomOut() => _zoomBy(0.8);
+
+  void _fitToScreen({Size? viewportSize, Size? canvasSize}) {
+    final vp = viewportSize ?? _lastViewportSize;
+    final cv = canvasSize ?? _lastCanvasSize;
+    if (vp.width <= 0 || vp.height <= 0 || cv.width <= 0 || cv.height <= 0) {
+      _transformController.value = Matrix4.identity();
+      return;
+    }
+
+    const double padding = 28.0;
+    final double availWidth = math.max(60.0, vp.width - padding * 2);
+    final double availHeight = math.max(60.0, vp.height - padding * 2);
+
+    final double scaleX = availWidth / cv.width;
+    final double scaleY = availHeight / cv.height;
+    final double fitScale = math.min(scaleX, scaleY).clamp(0.15, 3.0);
+
+    final double scaledW = cv.width * fitScale;
+    final double scaledH = cv.height * fitScale;
+    final double dx = (vp.width - scaledW) / 2.0;
+    final double dy = (vp.height - scaledH) / 2.0;
+
+    _transformController.value =
+        Matrix4.diagonal3Values(fitScale, fitScale, 1.0)
+          ..setTranslationRaw(dx, dy, 0.0);
   }
 
   void _resetZoom() {
-    _transformController.value = Matrix4.identity();
+    final vp = _lastViewportSize;
+    final cv = _lastCanvasSize;
+    if (vp.width <= 0 || vp.height <= 0 || cv.width <= 0 || cv.height <= 0) {
+      _transformController.value = Matrix4.identity();
+      return;
+    }
+    final double dx = (vp.width - cv.width) / 2.0;
+    final double dy = (vp.height - cv.height) / 2.0;
+    _transformController.value =
+        Matrix4.diagonal3Values(1.0, 1.0, 1.0)
+          ..setTranslationRaw(dx, dy, 0.0);
   }
 
   void _handleTapUp(TapUpDetails details, Size canvasSize,
@@ -137,277 +191,109 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
         border: Border.all(color: colors.border),
         borderRadius: const BorderRadius.all(Radius.circular(8)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // 1. Viewport Top Ribbon / Toolbar
-          _buildTopRibbon(context, wsState, notifier, colors),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.all(Radius.circular(8)),
+        child: LayoutBuilder(
+                builder: (context, viewportConstraints) {
+                  final viewportSize = Size(
+                    viewportConstraints.maxWidth,
+                    viewportConstraints.maxHeight,
+                  );
+                  _lastViewportSize = viewportSize;
 
-          // 2. Interactive Zoomable / Pannable Document Viewport
-          Expanded(
-            child: ClipRRect(
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(8),
-                bottomRight: Radius.circular(8),
-              ),
-              child: Stack(
-                children: [
-                  // Subtle Spatial Grid Background
-                  Positioned.fill(
-                    child: CustomPaint(
-                      painter: _GridBackgroundPainter(
-                        gridColor: colors.border.withValues(alpha: 0.35),
-                      ),
-                    ),
-                  ),
+                  // Determine canvas physical aspect ratio & base size
+                  const double baseWidth = 680.0;
+                  final double aspectRatio =
+                      currentPage?.aspectRatio ?? (8.5 / 11.0);
+                  final double baseHeight = baseWidth / aspectRatio;
+                  final canvasSize = Size(baseWidth, baseHeight);
+                  _lastCanvasSize = canvasSize;
 
-                  // Interactive Viewer Canvas
-                  Positioned.fill(
-                    child: InteractiveViewer(
-                      transformationController: _transformController,
-                      minScale: 0.2,
-                      maxScale: 6.0,
-                      boundaryMargin: const EdgeInsets.all(300),
-                      child: Center(
-                        child: _buildDocumentCanvas(
-                          context,
-                          wsState,
-                          notifier,
-                          currentPage,
-                          bboxes,
-                          colors,
+                  // Auto-fit document to screen whenever document, page, or aspect ratio changes
+                  final docChanged = wsState.filename != _lastDocFilename;
+                  final pageChanged =
+                      wsState.selectedPageIndex != _lastPageIndex;
+                  final aspectChanged = _lastCanvasAspectRatio != null &&
+                      (_lastCanvasAspectRatio! - aspectRatio).abs() > 0.001;
+                  if (wsState.hasDocument &&
+                      (docChanged ||
+                          pageChanged ||
+                          aspectChanged ||
+                          !_hasFittedInitial)) {
+                    _lastDocFilename = wsState.filename;
+                    _lastPageIndex = wsState.selectedPageIndex;
+                    _lastCanvasAspectRatio = aspectRatio;
+                    _hasFittedInitial = true;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) {
+                        _fitToScreen(
+                            viewportSize: viewportSize, canvasSize: canvasSize);
+                      }
+                    });
+                  } else if (!wsState.hasDocument) {
+                    _hasFittedInitial = false;
+                    _lastCanvasAspectRatio = null;
+                  }
+
+                  // Auto-trigger page preview fetch if missing and not currently loading or errored
+                  if (wsState.hasDocument &&
+                      currentPage?.previewBytes == null &&
+                      !wsState.isPreviewLoading &&
+                      wsState.previewError == null) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted &&
+                          currentPage?.previewBytes == null &&
+                          !wsState.isPreviewLoading &&
+                          wsState.previewError == null) {
+                        notifier.retryPagePreview(wsState.selectedPageIndex);
+                      }
+                    });
+                  }
+
+                  return Stack(
+                    children: [
+                      // Subtle Spatial Grid Background
+                      Positioned.fill(
+                        child: CustomPaint(
+                          painter: _GridBackgroundPainter(
+                            gridColor: colors.border.withValues(alpha: 0.35),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
 
-                  // Floating Quick-Action Layer / Zoom Controls (Bottom Right)
-                  Positioned(
-                    right: 16,
-                    bottom: 16,
-                    child: _buildFloatingControls(colors, wsState, notifier),
-                  ),
-                ],
+                      // Interactive Viewer Canvas (Unconstrained so height is not clamped to viewport)
+                      Positioned.fill(
+                        child: InteractiveViewer(
+                          transformationController: _transformController,
+                          constrained: false,
+                          minScale: 0.15,
+                          maxScale: 6.0,
+                          boundaryMargin: const EdgeInsets.all(1200),
+                          child: _buildDocumentCanvas(
+                            context,
+                            wsState,
+                            notifier,
+                            currentPage,
+                            bboxes,
+                            colors,
+                            canvasSize,
+                          ),
+                        ),
+                      ),
+
+                      // Floating Quick-Action Layer / Zoom Controls (Bottom Right)
+                      Positioned(
+                        right: 16,
+                        bottom: 16,
+                        child:
+                            _buildFloatingControls(colors, wsState, notifier),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTopRibbon(
-    BuildContext context,
-    WorkstationState wsState,
-    WorkstationNotifier notifier,
-    AppColorScheme colors,
-  ) {
-    final hasDoc = wsState.hasDocument;
-    final currentPageIndex = wsState.selectedPageIndex;
-    final totalPages = math.max(1, wsState.pageCount);
-
-    return Container(
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: colors.cardRaised,
-        border: Border(bottom: BorderSide(color: colors.border)),
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(8),
-          topRight: Radius.circular(8),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // Left: Document Title & Badge
-          Expanded(
-            child: Row(
-              children: [
-                Icon(
-                  Icons.article_outlined,
-                  size: 18,
-                  color: colors.brand,
-                ),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    'GPU Document Viewport',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.titleSmall(
-                      color: colors.textPrimary,
-                    ),
-                  ),
-                ),
-                if (wsState.filename != null) ...[
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      '• ${wsState.filename!}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.codeSmall(
-                        color: colors.textMuted,
-                      ),
-                    ),
-                  ),
-                ],
-                if (wsState.allBBoxes.isNotEmpty) ...[
-                  const SizedBox(width: 10),
-                  AppBadge(
-                    label: '${wsState.allBBoxes.length} BBOXES',
-                    variant: AppBadgeVariant.brand,
-                    size: AppBadgeSize.sm,
-                  ),
-                ],
-              ],
-            ),
-          ),
-
-          // Right: Page Navigator & Layer Switches
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Page Navigation
-              if (hasDoc && totalPages > 1) ...[
-                IconButton(
-                  icon: const Icon(Icons.chevron_left_rounded, size: 20),
-                  tooltip: 'Previous page',
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 32, minHeight: 32),
-                  color: currentPageIndex > 0
-                      ? colors.textPrimary
-                      : colors.textMuted,
-                  onPressed: currentPageIndex > 0
-                      ? () => notifier.selectPage(currentPageIndex - 1)
-                      : null,
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Text(
-                    'Page ${currentPageIndex + 1} of $totalPages',
-                    style: AppTypography.codeSmall(
-                      color: colors.textPrimary,
-                    ).copyWith(fontWeight: FontWeight.w500),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.chevron_right_rounded, size: 20),
-                  tooltip: 'Next page',
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 32, minHeight: 32),
-                  color: currentPageIndex < totalPages - 1
-                      ? colors.textPrimary
-                      : colors.textMuted,
-                  onPressed: currentPageIndex < totalPages - 1
-                      ? () => notifier.selectPage(currentPageIndex + 1)
-                      : null,
-                ),
-                const SizedBox(width: 12),
-                Container(width: 1, height: 20, color: colors.border),
-                const SizedBox(width: 12),
-              ],
-
-              // Layer Toggles
-              Tooltip(
-                message: wsState.showBBoxes
-                    ? 'Hide bounding boxes'
-                    : 'Show bounding boxes',
-                child: InkWell(
-                  onTap: () => notifier.toggleBBoxes(),
-                  borderRadius: BorderRadius.circular(4),
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: wsState.showBBoxes
-                          ? colors.brand.withValues(alpha: 0.15)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(
-                        color: wsState.showBBoxes
-                            ? colors.brand.withValues(alpha: 0.4)
-                            : colors.border,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.crop_free_rounded,
-                          size: 14,
-                          color: wsState.showBBoxes
-                              ? colors.brand
-                              : colors.textMuted,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Boxes',
-                          style: AppTypography.bodySmall(
-                            color: wsState.showBBoxes
-                                ? colors.brand
-                                : colors.textMuted,
-                          ).copyWith(fontSize: 11, fontWeight: FontWeight.w500),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Tooltip(
-                message: wsState.showHeatmap
-                    ? 'Disable confidence heatmap'
-                    : 'Enable confidence heatmap',
-                child: InkWell(
-                  onTap: () => notifier.toggleHeatmap(),
-                  borderRadius: BorderRadius.circular(4),
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: wsState.showHeatmap
-                          ? colors.success.withValues(alpha: 0.15)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(
-                        color: wsState.showHeatmap
-                            ? colors.success.withValues(alpha: 0.4)
-                            : colors.border,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.gradient_rounded,
-                          size: 14,
-                          color: wsState.showHeatmap
-                              ? colors.success
-                              : colors.textMuted,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Heatmap',
-                          style: AppTypography.bodySmall(
-                            color: wsState.showHeatmap
-                                ? colors.success
-                                : colors.textMuted,
-                          ).copyWith(fontSize: 11, fontWeight: FontWeight.w500),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
+          );
   }
 
   Widget _buildDocumentCanvas(
@@ -417,25 +303,20 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
     PageResult? currentPage,
     List<BBoxItem> bboxes,
     AppColorScheme colors,
+    Size canvasSize,
   ) {
-    // Determine canvas physical aspect ratio & base size
-    const double baseWidth = 680.0;
-    final double aspectRatio = currentPage?.aspectRatio ?? (8.5 / 11.0);
-    final double baseHeight = baseWidth / aspectRatio;
-    final canvasSize = Size(baseWidth, baseHeight);
-
     return Container(
       key: _canvasKey,
-      width: baseWidth,
-      height: baseHeight,
+      width: canvasSize.width,
+      height: canvasSize.height,
       decoration: BoxDecoration(
         color: colors.card,
         borderRadius: BorderRadius.circular(6),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
+            color: Colors.black.withValues(alpha: 0.45),
+            blurRadius: 28,
+            offset: const Offset(0, 10),
           ),
         ],
         border: Border.all(color: colors.borderStrong, width: 1.0),
@@ -457,9 +338,10 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
                   Image.memory(
                     currentPage!.previewBytes!,
                     fit: BoxFit.fill,
+                    gaplessPlayback: true,
                   )
                 else
-                  _buildPagePlaceholder(colors, wsState),
+                  _buildPagePlaceholder(colors, wsState, notifier),
 
                 // 2. Custom Painted Bounding Box Overlays
                 CustomPaint(
@@ -482,7 +364,123 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
   }
 
   Widget _buildPagePlaceholder(
-      AppColorScheme colors, WorkstationState wsState) {
+    AppColorScheme colors,
+    WorkstationState wsState,
+    WorkstationNotifier notifier,
+  ) {
+    if (wsState.hasDocument) {
+      if (wsState.isPreviewLoading) {
+        return Container(
+          color: Colors.white,
+          padding: const EdgeInsets.all(24),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: colors.brand.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Icon(
+                      Icons.auto_awesome_rounded,
+                      size: 22,
+                      color: colors.brand,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Rendering Page ${wsState.selectedPageIndex + 1}...',
+                  style: AppTypography.titleSmall(
+                    color: const Color(0xFF1E293B),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Generating high-resolution raster preview',
+                  style: AppTypography.bodySmall(
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+
+      // Not loading, but previewBytes is still null (e.g. server error, preview unavailable)
+      return Container(
+        color: Colors.white,
+        padding: const EdgeInsets.all(32),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: colors.brand.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Icon(
+                    Icons.picture_as_pdf_outlined,
+                    size: 26,
+                    color: colors.brand,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Page ${wsState.selectedPageIndex + 1} of ${math.max(1, wsState.pageCount)}',
+                style: AppTypography.titleSmall(
+                  color: const Color(0xFF1E293B),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  wsState.previewError ??
+                      'Raster preview not loaded. Click below to load or render this page.',
+                  style: AppTypography.bodySmall(
+                    color: const Color(0xFF64748B),
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () =>
+                    notifier.retryPagePreview(wsState.selectedPageIndex),
+                icon: const Icon(Icons.refresh_rounded, size: 16),
+                label: const Text('Load Preview'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: colors.brand,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  textStyle: AppTypography.bodySmall().copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Container(
       color: colors.card,
       padding: const EdgeInsets.all(32),
@@ -497,18 +495,14 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
             ),
             const SizedBox(height: 12),
             Text(
-              wsState.hasDocument
-                  ? 'Page ${wsState.selectedPageIndex + 1}'
-                  : 'No Document Loaded',
+              'No Document Loaded',
               style: AppTypography.titleMedium(
                 color: colors.textMuted,
               ),
             ),
             const SizedBox(height: 6),
             Text(
-              wsState.hasDocument
-                  ? 'Normalized bbox overlay rendered in GPU viewport'
-                  : 'Drop or select a PDF / image file from the dropzone to start',
+              'Drop or select a PDF / image file from the dropzone to start',
               style: AppTypography.bodySmall(
                 color: colors.textMuted,
               ),
@@ -552,16 +546,19 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
             color: colors.textPrimary,
             onPressed: _zoomOut,
           ),
-          InkWell(
-            onTap: _resetZoom,
-            borderRadius: BorderRadius.circular(4),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              child: Text(
-                '$zoomPercent%',
-                style: AppTypography.codeSmall(
-                  color: colors.brand,
-                ).copyWith(fontWeight: FontWeight.w600),
+          Tooltip(
+            message: 'Reset to Actual Size (100%)',
+            child: InkWell(
+              onTap: _resetZoom,
+              borderRadius: BorderRadius.circular(4),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                child: Text(
+                  '$zoomPercent%',
+                  style: AppTypography.codeSmall(
+                    color: colors.brand,
+                  ).copyWith(fontWeight: FontWeight.w600),
+                ),
               ),
             ),
           ),
@@ -574,17 +571,18 @@ class _DocumentViewportState extends ConsumerState<DocumentViewport> {
             onPressed: _zoomIn,
           ),
           Container(
-              width: 1,
-              height: 16,
-              color: colors.border,
-              margin: const EdgeInsets.symmetric(horizontal: 4)),
+            width: 1,
+            height: 16,
+            color: colors.border,
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+          ),
           IconButton(
-            icon: const Icon(Icons.fit_screen_outlined, size: 16),
-            tooltip: 'Reset Zoom (100%)',
+            icon: const Icon(Icons.fit_screen_rounded, size: 16),
+            tooltip: 'Fit to screen',
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             padding: EdgeInsets.zero,
-            color: colors.textMuted,
-            onPressed: _resetZoom,
+            color: colors.textPrimary,
+            onPressed: () => _fitToScreen(),
           ),
         ],
       ),

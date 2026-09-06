@@ -43,10 +43,23 @@ void _loadDocumentWithBBox(WorkstationNotifier notifier) {
 
 void main() {
   Widget buildWorkstationTest({
+    OcrRepository? ocrRepository,
     List<Override> overrides = const [],
   }) {
+    final mockOcr = ocrRepository ?? _MockOcrRepository();
+    if (ocrRepository == null) {
+      when(() => (mockOcr as _MockOcrRepository).renderDocumentPagePreview(
+            fileBytes: any(named: 'fileBytes'),
+            filename: any(named: 'filename'),
+            pageIndex: any(named: 'pageIndex'),
+          )).thenAnswer((_) async => null);
+    }
+
     return ProviderScope(
-      overrides: overrides,
+      overrides: [
+        ocrRepositoryProvider.overrideWithValue(mockOcr),
+        ...overrides,
+      ],
       child: MaterialApp(
         theme: AppTheme.darkTheme,
         home: const Scaffold(
@@ -132,7 +145,7 @@ void main() {
 
     testWidgets('Renders stacked layout when viewport is narrow',
         (WidgetTester tester) async {
-      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.physicalSize = const Size(600, 1000);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
@@ -156,13 +169,18 @@ void main() {
     testWidgets('Shows BBoxInspector once a bbox is selected',
         (WidgetTester tester) async {
       final ocrRepo = _MockOcrRepository();
+      when(() => ocrRepo.renderDocumentPagePreview(
+            fileBytes: any(named: 'fileBytes'),
+            filename: any(named: 'filename'),
+            pageIndex: any(named: 'pageIndex'),
+          )).thenAnswer((_) async => null);
       tester.view.physicalSize = const Size(1920, 1080);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
       await tester.pumpWidget(buildWorkstationTest(
-        overrides: [ocrRepositoryProvider.overrideWithValue(ocrRepo)],
+        ocrRepository: ocrRepo,
       ));
       await tester.pumpAndSettle();
 
@@ -177,6 +195,140 @@ void main() {
       expect(find.byType(BBoxInspector), findsOneWidget);
       expect(find.text('Bounding Box Inspector'), findsOneWidget);
       expect(find.text('Invoice Title'), findsWidgets);
+    });
+
+    testWidgets(
+        'Unified header bar renders multi-page navigation and switches pages via chevrons',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1920, 1080);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(buildWorkstationTest());
+      await tester.pumpAndSettle();
+
+      final container = ProviderScope.containerOf(
+          tester.element(find.byType(WorkstationScreen)));
+      final notifier = container.read(workstationProvider.notifier);
+      _loadDocumentWithBBox(notifier);
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('Page 1 of 3'), findsWidgets);
+
+      // Tap next page chevron
+      final nextButton = find.byTooltip('Next page');
+      expect(nextButton, findsOneWidget);
+      await tester.tap(nextButton);
+      await tester.pumpAndSettle();
+
+      expect(container.read(workstationProvider).selectedPageIndex, equals(1));
+      expect(find.text('Page 2 of 3'), findsWidgets);
+
+      // Tap previous page chevron
+      final prevButton = find.byTooltip('Previous page');
+      expect(prevButton, findsOneWidget);
+      await tester.tap(prevButton);
+      await tester.pumpAndSettle();
+
+      expect(container.read(workstationProvider).selectedPageIndex, equals(0));
+      expect(find.text('Page 1 of 3'), findsWidgets);
+    });
+
+    testWidgets(
+        'Unified header bar renders layer toggles and toggles showBBoxes and showHeatmap',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1920, 1080);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(buildWorkstationTest());
+      await tester.pumpAndSettle();
+
+      final container = ProviderScope.containerOf(
+          tester.element(find.byType(WorkstationScreen)));
+      final notifier = container.read(workstationProvider.notifier);
+      _loadDocumentWithBBox(notifier);
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('Boxes'), findsOneWidget);
+      expect(find.text('Heatmap'), findsOneWidget);
+
+      // Default state: both showBBoxes and showHeatmap are true
+      expect(container.read(workstationProvider).showBBoxes, isTrue);
+      expect(container.read(workstationProvider).showHeatmap, isTrue);
+
+      // Tap 'Boxes' toggle button
+      await tester.tap(find.text('Boxes'));
+      await tester.pumpAndSettle();
+      expect(container.read(workstationProvider).showBBoxes, isFalse);
+
+      // Tap 'Heatmap' toggle button
+      await tester.tap(find.text('Heatmap'));
+      await tester.pumpAndSettle();
+      expect(container.read(workstationProvider).showHeatmap, isFalse);
+    });
+
+    testWidgets(
+        'Wide layout mounts PageStrip with Axis.vertical on the left rail without layout exceptions',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1920, 1080);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(buildWorkstationTest());
+      await tester.pumpAndSettle();
+
+      final container = ProviderScope.containerOf(
+          tester.element(find.byType(WorkstationScreen)));
+      final notifier = container.read(workstationProvider.notifier);
+      _loadDocumentWithBBox(notifier);
+
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      final pageStripFinder = find.byType(PageStrip);
+      expect(pageStripFinder, findsOneWidget);
+      final pageStrip = tester.widget<PageStrip>(pageStripFinder);
+      expect(pageStrip.orientation, equals(Axis.vertical));
+
+      // Tap on Page 2 thumbnail card (P.2)
+      final p2Finder = find.text('P.2');
+      expect(p2Finder, findsOneWidget);
+      await tester.tap(p2Finder);
+      await tester.pumpAndSettle();
+
+      expect(container.read(workstationProvider).selectedPageIndex, equals(1));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+        'Narrow layout mounts PageStrip with Axis.horizontal beneath viewport',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(600, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(buildWorkstationTest());
+      await tester.pumpAndSettle();
+
+      final container = ProviderScope.containerOf(
+          tester.element(find.byType(WorkstationScreen)));
+      final notifier = container.read(workstationProvider.notifier);
+      _loadDocumentWithBBox(notifier);
+
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      final pageStripFinder = find.byType(PageStrip);
+      expect(pageStripFinder, findsOneWidget);
+      final pageStrip = tester.widget<PageStrip>(pageStripFinder);
+      expect(pageStrip.orientation, equals(Axis.horizontal));
     });
   });
 }

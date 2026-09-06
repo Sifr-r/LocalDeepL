@@ -26,6 +26,8 @@ class WorkstationState {
     this.zoomScale = 1.0,
     this.panOffset = Offset.zero,
     this.filterKind,
+    this.isPreviewLoading = false,
+    this.previewError,
     // OCR & Progress
     this.isProcessing = false,
     this.activeJobId,
@@ -76,6 +78,8 @@ class WorkstationState {
   final double zoomScale;
   final Offset panOffset;
   final String? filterKind;
+  final bool isPreviewLoading;
+  final String? previewError;
 
   // OCR & Progress
   final bool isProcessing;
@@ -212,6 +216,9 @@ class WorkstationState {
     Offset? panOffset,
     String? filterKind,
     bool clearFilterKind = false,
+    bool? isPreviewLoading,
+    String? previewError,
+    bool clearPreviewError = false,
     // OCR & Progress
     bool? isProcessing,
     String? activeJobId,
@@ -259,6 +266,9 @@ class WorkstationState {
       zoomScale: zoomScale ?? this.zoomScale,
       panOffset: panOffset ?? this.panOffset,
       filterKind: clearFilterKind ? null : (filterKind ?? this.filterKind),
+      isPreviewLoading: isPreviewLoading ?? this.isPreviewLoading,
+      previewError:
+          clearPreviewError ? null : (previewError ?? this.previewError),
       isProcessing: isProcessing ?? this.isProcessing,
       activeJobId: clearActiveJobId ? null : (activeJobId ?? this.activeJobId),
       lastSubmittedJobId: clearLastSubmittedJobId

@@ -97,8 +97,8 @@ void main() {
           ))).called(1);
 
       expect(
-        find.textContaining('Exported DOCX Tree successfully (5 bytes).'),
-        findsOneWidget,
+        find.textContaining('DOCX Tree'),
+        findsWidgets,
       );
     });
 

@@ -8,6 +8,7 @@ abstract final class ApiConstants {
   static const Duration defaultConnectTimeout = Duration(seconds: 30);
   static const Duration defaultReceiveTimeout = Duration(minutes: 5);
   static const Duration defaultSendTimeout = Duration(minutes: 5);
+  static const Duration defaultOcrReceiveTimeout = Duration(minutes: 30);
 
   // Health Endpoints
   static const String apiHealth = '/api/health';
@@ -87,6 +88,9 @@ abstract final class ApiConstants {
   static const String glossaryImport = '/api/glossary/import';
   static const String glossaryImportUrl = '/api/glossary/import/url';
 
+  // Document Preview Endpoint
+  static const String documentPreview = '/api/documents/preview';
+
   // Response Header Keys (Exposed by FastAPI CORS middleware)
   static const String headerTextArtifactId = 'x-text-artifact-id';
   static const String headerTextArtifactToken = 'x-text-artifact-token';
@@ -98,4 +102,8 @@ abstract final class ApiConstants {
       'x-document-metadata-artifact-id';
   static const String headerMetadataArtifactToken =
       'x-document-metadata-artifact-token';
+  static const String headerTotalPages = 'x-total-pages';
+  static const String headerPageWidth = 'x-page-width';
+  static const String headerPageHeight = 'x-page-height';
+  static const String headerDocumentId = 'x-document-id';
 }

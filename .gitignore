@@ -30,7 +30,12 @@ MANIFEST
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
+# Phase 4.4 (RFC 001 Option A): ``omniscribe_server.spec`` is the
+# checked-in PyInstaller spec for the Windows server bundle. It MUST
+# be tracked so the build is reproducible from a fresh clone. The
+# blanket ``*.spec`` rule above is overridden for this one file.
 *.spec
+!omniscribe_server.spec
 
 # Installer logs
 pip-log.txt
@@ -244,4 +249,17 @@ redis-password.txt
 # (*.log, .coverage, .hypothesis/, .fallow/, .mavis/ already covered above.)
 *_report.txt
 *_report.json
+/.test-artifacts/
+/omniscribe_artifacts/
+
+# CI JUnit XML output (Phase 5 test hardening). The workflow uploads
+# the XML as an artifact; the local copy never belongs in the tree.
+/reports/
+
+# Debug scratch at the repo root. Phase 4 bundle-build attempts (anyio
+# experiments) left a trail of one-off scripts and rendered page crops;
+/.tmp_*.py
+/temp_*.png
+/scratch_*.png
+
 

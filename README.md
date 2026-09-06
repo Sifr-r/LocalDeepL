@@ -3,8 +3,33 @@
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Web_UI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![License](https://img.shields.io/badge/License-MIT-purple?style=for-the-badge)](LICENSE)
+[![AGPL--3.0 (PyMuPDF)](https://img.shields.io/badge/AGPL--3.0-PyMuPDF-orange?style=for-the-badge)](https://artifex.com/licensing/)
 
-OmniScribe turns scanned PDFs and images into searchable, selectable PDFs using local vision language models. The supported product workflow is the Flutter Client + FastAPI API; the previous in-browser workstation has been deprecated, and advanced document intelligence is delivered through the Flutter client. The `OCRPipeline` class is still importable for in-process programmatic use, but no `omniscribe` script entry is shipped.
+OmniScribe turns scanned PDFs and photos into searchable, selectable PDFs. Everything runs on your machine — no cloud OCR, no signup, no API keys. The local vision model is yours to choose (LM Studio, Ollama, or any OpenAI-compatible server).
+
+## Trust & Privacy
+
+OmniScribe is local-first. By design:
+
+- **No telemetry, no analytics, no phone-home.** The server makes no outbound calls except to the VLM endpoint you configure in `LLM_API_BASE`.
+- **No cloud OCR.** OCR runs against a local VLM (LM Studio, Ollama, or any OpenAI-compatible server) you bring. If you point `OMNISCRIBE_LLM_API_BASE` at a hosted provider, your documents and extracted text leave your machine — see [DEPLOYMENT.md](docs/DEPLOYMENT.md) §"Third-party VLM" for the privacy warning.
+- **No upload, no signup, no API keys from us.** Bearer tokens for the LAN / public-internet profiles are tokens you generate yourself with `python -c 'import secrets; print(secrets.token_urlsafe(32))'`; the server ships with no default.
+- **Open-source under MIT** (this project) + **AGPL-3.0** (the bundled PyMuPDF). See [SECURITY.md](SECURITY.md) for the full threat model and the [Third-Party Software Notices](#third-party-software-notices) below for the PyMuPDF license details.
+
+## Before you start
+
+OmniScribe needs a local **OpenAI-compatible vision model server** — by default, [LM Studio](https://lmstudio.ai). Install it, open the **Search** tab, pick a vision model, then start the local server in the **Developer** tab (it binds to `http://localhost:1234/v1`).
+
+A starting-point model table:
+
+| Hardware tier | Suggested model | Approx. VRAM |
+| --- | --- | --- |
+| 8 GB GPU, no CPU fallback | Qwen2.5-VL-7B-Instruct (Q4) | ~6 GB |
+| 16 GB GPU | Qwen2.5-VL-7B-Instruct (Q8) | ~9 GB |
+| 32 GB GPU | Qwen2.5-VL-72B-Instruct (Q4) | ~24 GB |
+| CPU only (slow) | Qwen2.5-VL-3B-Instruct | ~4 GB RAM |
+
+If you already run an Ollama or other OpenAI-compatible server, set `LLM_API_BASE` in your environment to point at it — OmniScribe will discover the model list automatically.
 
 ## Features
 
@@ -24,6 +49,8 @@ git clone https://github.com/Sifr-r/OmniScribe.git
 cd OmniScribe
 uv sync --extra web --extra preprocessing
 ```
+
+If anything goes wrong, run `make doctor` — it reports Python version, `uv` on PATH, Redis reachability, and whether your VLM endpoint is actually responding on `127.0.0.1:1234`.
 
 For asynchronous translation:
 
@@ -57,6 +84,23 @@ uv sync --extra web --extra preprocessing --extra async-translation --extra memo
 > — empty live store when a backup manifest reports glossaries.
 
 Real OCR requires an OpenAI-compatible VLM endpoint. The local-development default is LM Studio at `http://localhost:1234/v1`.
+
+## Supported platforms
+
+| Platform | Backend (Python) | Frontend (Flutter) | Binary install |
+| --- | --- | --- | --- |
+| Windows 10/11 | ✅ | ✅ Windows desktop | ❌ *deferred to v0.3+* (see [RFC 001](rfcs/2026-09-end-user-install.md)) |
+| macOS 13+ | ✅ | ✅ macOS desktop | ❌ *deferred to v0.3+* |
+| Ubuntu 22.04+ / Debian 12+ | ✅ | ✅ Linux desktop | ❌ *deferred to v0.3+* |
+
+The **source install** above is the supported v0.2.0 path on every platform
+— a single-binary distribution was being scoped for v0.2.0 but is
+deferred to v0.3+ (blocked on a PyInstaller + `anyio` bundling
+issue). The 12-step source install is documented in
+[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) and is the path
+[CONTRIBUTING.md](CONTRIBUTING.md) recommends for new contributors.
+Docker is supported on all three (see [DEPLOYMENT.md](docs/DEPLOYMENT.md)
+Profile 3).
 
 ## Flutter Client
 
@@ -163,6 +207,12 @@ swap to the Apache-2.0 `pypdfium2` backend and stop importing
 `pymupdf`; the OCR pipeline's render-and-embed call sites use a small
 PDF-handling surface that pypdfium2 covers with feature parity.
 
+## For developers
+
+- The supported user workflow is the **Flutter client** + **FastAPI server**. The previous in-browser workstation is deprecated.
+- The `OCRPipeline` class is importable from `omniscribe.core.pipeline` for in-process programmatic use. No `omniscribe` CLI script is shipped — programmatic use is the supported path.
+- See [ARCHITECTURE.md](ARCHITECTURE.md) for the component map and full API surface.
+
 ## See Also
 
 - [CHANGELOG.md](CHANGELOG.md) — version history and breaking changes
@@ -170,5 +220,7 @@ PDF-handling surface that pypdfium2 covers with feature parity.
 - [DEPLOYMENT.md](DEPLOYMENT.md) — local / LAN / public-internet deployment profiles
 - [SECURITY.md](SECURITY.md) — threat model, hardening checklist, vulnerability disclosure
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var reference
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — first-run error guide
+- [rfcs/2026-09-end-user-install.md](rfcs/2026-09-end-user-install.md) — proposed path to a single-binary distribution (Phase 4)
 
-_Last updated: 2026-08-31_
+_Last updated: 2026-09-05_

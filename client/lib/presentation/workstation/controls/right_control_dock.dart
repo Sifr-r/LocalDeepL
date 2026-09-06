@@ -487,6 +487,13 @@ class _RightControlDockState extends ConsumerState<RightControlDock> {
                             ),
                           ],
                         ),
+                        const SizedBox(height: 10),
+                        AppToggle(
+                          label: 'Background Queue (Async)',
+                          value: s.useAsync,
+                          onChanged: (v) => widget
+                              .onSettingsChanged(s.copyWith(useAsync: v)),
+                        ),
                       ],
                     ),
                   ),

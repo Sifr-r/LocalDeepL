@@ -6,19 +6,45 @@ use case.** The local-desktop default is correct for almost every
 user; only step up to LAN / public-internet when you actually need
 to.
 
+> **v0.2.0 install path (2026-09-05):** the supported end-user install
+> is the **source install** (Profile 1 below). The single-binary
+> Windows distribution per
+> [RFC 001 — End-User Install Path](rfcs/2026-09-end-user-install.md)
+> Option A is **deferred to v0.3+** (blocked on a PyInstaller + anyio
+> bundling issue; see
+> [`docs/deployment/windows-bundle.md`](deployment/windows-bundle.md)
+> §"Known build issue"). The bundle infrastructure
+> (`omniscribe_server.spec`, `scripts/build_windows.py`,
+> `scripts/run_server.py`) is kept in tree for the next maintainer
+> to pick up. The v0.2.0 user-facing improvement is the Phase 2
+> first-run affordances — `docs/TROUBLESHOOTING.md` (13 sections)
+> and `make doctor` remediation hints — not the install steps
+> themselves.
+
 ## Profile 1: Local Desktop (Default)
 
-You're running OmniScribe on your own laptop. You open the browser to
-`http://localhost:8000` and use it.
+You're running OmniScribe on your own laptop. The browser landing
+page at `http://localhost:8000` is a status page only — the
+**interactive UI is the Flutter desktop client** under `client/`.
+The in-browser workstation that earlier versions shipped was
+deprecated in 2026-08-28 (audit Domain 3, Critical-1); see
+[RFC 001 — End-User Install Path](rfcs/2026-09-end-user-install.md)
+for the path to a single-binary distribution.
 
 ```bash
+# Backend (Python 3.11+ and uv required)
 uv sync --extra web --extra preprocessing
 uv run omniscribe-server --port 8000
+
+# Frontend (in another terminal)
+cd client
+flutter pub get
+flutter run -d windows   # or: macos / linux
 ```
 
-That's it. No auth, no reverse proxy, no Docker. The Settings tab
-points at `http://localhost:1234/v1` (LM Studio) by default; start
-LM Studio, load a model, OCR.
+That's it for now. No auth, no reverse proxy, no Docker. The
+Settings tab in the Flutter client points at `http://localhost:1234/v1`
+(LM Studio) by default; start LM Studio, load a model, OCR.
 
 **What you get:**
 
@@ -50,7 +76,7 @@ requires re-entering it.
 
 **What changed from profile 1:**
 
-- `OMNISCRIBE_AUTH_TOKEN` is configured for HTTP routes (middleware plugin is deferred in the harness rebuild; see AGENTS.md). The WebSocket handshake uses per-channel session tokens.
+- `OMNISCRIBE_AUTH_TOKEN` gates every HTTP route except the liveness probes (`/api/health`, `/health`, `/healthz`, `/ready`, `/readyz`). The middleware is wired unconditionally in `src/omniscribe/server.py:184-202`; placeholder tokens are rejected on non-loopback binds with a clear `SystemExit`. The WebSocket handshake uses per-channel session tokens on top of the same bearer.
 - `ALLOW_SSRF_LOCAL=false` blocks the URL fetcher from reaching
   `localhost` / private IPs. Only public URLs work.
 - The upload cap drops to 2 GB and the rate limit to 30/min — adjust
@@ -129,6 +155,16 @@ under `/api/translate*`, `/api/extract*`, `/api/export*`,
 `/api/transcribe*`, `/api/models/transcription*`, `/api/config/transcription*`
 require the transcription token. All other routes require the global token.
 
+> **P10 (audit 4.6):** The ASGI Middleware Suite (bearer auth + rate
+> limit + upload size) that enforces these tokens shipped in Waves 11,
+> 13, and 14. The live middleware contract — placeholder-token
+> rejection on non-loopback, per-route scope, constant-time
+> comparison — is documented in
+> [SECURITY.md](SECURITY.md) §"Security Features" and
+> [SECURITY.md](SECURITY.md) §"Per-route token scope". The
+> "deferred-middleware" framing that earlier versions of this doc
+> used is no longer accurate.
+
 ## Third-party VLM (OpenAI / Anthropic / Groq)
 
 To send OCR images to a hosted VLM instead of LM Studio:
@@ -178,20 +214,25 @@ When running the OmniScribe server locally:
 
 ## Backup & Recovery
 
-By default, OmniScribe keeps job and artifact state in process memory
-via `MemoryStateBackend` (`src/omniscribe/plugins/state_backend.py`).
-**A restart loses in-memory history.**
+By default (since 2026-09-05), OmniScribe persists job and artifact
+state to a single SQLite file via
+`SQLiteStateBackend` (`src/omniscribe/plugins/state_backend_sqlite.py`).
+A restart preserves the state. The SQLite database lives at
+`<artifact_dir>/omniscribe-state.db` (WAL mode); artifact binaries are
+stored alongside it under `<artifact_dir>/<id>.bin`. Backing up this
+directory captures all job records and artifacts.
 
-For durable, local-first persistence across restarts, enable the SQLite
-state backend:
+To opt back into the previous in-memory behaviour (every restart loses
+history):
+
 ```bash
-export OMNISCRIBE_STATE_BACKEND=sqlite
-# Optional custom DB path (defaults to <artifact_dir>/omniscribe-state.db):
-# export OMNISCRIBE_STATE_DB_PATH=/path/to/omniscribe-state.db
+export OMNISCRIBE_STATE_BACKEND=memory
 ```
-Artifact binaries are saved under `<artifact_dir>/<id>.bin` and metadata is
-persisted in SQLite (WAL mode). Backing up this directory captures all job
-records and artifacts.
+
+The server logs a `WARN` line at boot to remind you that state is
+ephemeral. See
+[`docs/TROUBLESHOOTING.md`](TROUBLESHOOTING.md#async-translation-result-is-gone-after-restart)
+for the full story.
 
 ## Upgrading
 
@@ -250,4 +291,4 @@ Job artifacts in `/tmp/ocr_*` are removed by the startup sweep
 - [AGENTS.md](AGENTS.md) — contributor guide and full env-var
   reference
 
-_Last updated: 2026-08-31_
+_Last updated: 2026-09-05_
