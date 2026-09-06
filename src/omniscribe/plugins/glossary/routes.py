@@ -14,7 +14,7 @@ import base64
 from typing import Any
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Body, Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -22,6 +22,7 @@ from omniscribe.plugins.glossary.schemas import (
     GlossaryFormat,
     GlossaryImportRequest,
     GlossaryReorderRequest,
+    GlossaryToggleBody,
     GlossaryToggleRequest,
     GlossaryUrlImportBody,
 )
@@ -190,9 +191,26 @@ def build_glossary_router(service: GlossaryImportService) -> APIRouter:
             return _envelope(exc.status_code, exc.error, exc.detail)
         return body
 
+    @router.get("/api/glossary/sources", response_model=None)
+    async def list_sources() -> list[dict[str, Any]] | JSONResponse:
+        try:
+            service.ensure_store_ready()
+            return service.list_library()
+        except GlossaryError as exc:
+            return _envelope(exc.status_code, exc.error, exc.detail)
+
+    @router.delete("/api/glossary/sources/{source_id}", response_model=None)
+    async def delete_source(source_id: str) -> dict[str, Any] | JSONResponse:
+        try:
+            service.ensure_store_ready()
+            return service.delete(source_id)
+        except GlossaryError as exc:
+            return _envelope(exc.status_code, exc.error, exc.detail)
+
     @router.get("/api/glossary/library", response_model=None)
     async def list_library() -> list[dict[str, Any]] | JSONResponse:
         try:
+            service.ensure_store_ready()
             return service.list_library()
         except GlossaryError as exc:
             return _envelope(exc.status_code, exc.error, exc.detail)
@@ -202,7 +220,20 @@ def build_glossary_router(service: GlossaryImportService) -> APIRouter:
         glossary_id: str, req: GlossaryToggleRequest
     ) -> dict[str, Any] | JSONResponse:
         try:
+            service.ensure_store_ready()
             return service.toggle(glossary_id, enabled=req.enabled)
+        except GlossaryError as exc:
+            return _envelope(exc.status_code, exc.error, exc.detail)
+
+    @router.post("/api/glossary/library/{source_id}/toggle", response_model=None)
+    async def toggle_source(
+        source_id: str,
+        body: GlossaryToggleBody | None = Body(None),
+    ) -> dict[str, Any] | JSONResponse:
+        try:
+            service.ensure_store_ready()
+            enabled = body.enabled if body is not None else None
+            return service.toggle(source_id, enabled=enabled)
         except GlossaryError as exc:
             return _envelope(exc.status_code, exc.error, exc.detail)
 
@@ -211,6 +242,7 @@ def build_glossary_router(service: GlossaryImportService) -> APIRouter:
         req: GlossaryReorderRequest,
     ) -> dict[str, Any] | JSONResponse:
         try:
+            service.ensure_store_ready()
             return service.reorder(req.ordered_ids)
         except GlossaryError as exc:
             return _envelope(exc.status_code, exc.error, exc.detail)
@@ -220,6 +252,7 @@ def build_glossary_router(service: GlossaryImportService) -> APIRouter:
         glossary_id: str,
     ) -> dict[str, Any] | JSONResponse:
         try:
+            service.ensure_store_ready()
             return service.delete(glossary_id)
         except GlossaryError as exc:
             return _envelope(exc.status_code, exc.error, exc.detail)
@@ -227,22 +260,51 @@ def build_glossary_router(service: GlossaryImportService) -> APIRouter:
     @router.get("/api/glossary/library/preview", response_model=None)
     async def library_preview() -> dict[str, Any] | JSONResponse:
         try:
+            service.ensure_store_ready()
             return service.library_preview()
+        except GlossaryError as exc:
+            return _envelope(exc.status_code, exc.error, exc.detail)
+
+    @router.get("/api/glossary/library/entries", response_model=None)
+    async def get_library_entries(
+        q: str | None = None,
+        source_id: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> dict[str, Any] | JSONResponse:
+        try:
+            service.ensure_store_ready()
+            return service.entries(
+                glossary_id=source_id,
+                query=q,
+                limit=limit,
+                offset=offset,
+            )
         except GlossaryError as exc:
             return _envelope(exc.status_code, exc.error, exc.detail)
 
     @router.get("/api/glossary/library/{glossary_id}/entries", response_model=None)
     async def library_entries(
         glossary_id: str,
+        q: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> dict[str, Any] | JSONResponse:
         try:
-            return service.entries(glossary_id)
+            service.ensure_store_ready()
+            return service.entries(
+                glossary_id=glossary_id,
+                query=q,
+                limit=limit,
+                offset=offset,
+            )
         except GlossaryError as exc:
             return _envelope(exc.status_code, exc.error, exc.detail)
 
     @router.get("/api/glossary/library/merged", response_model=None)
     async def merged_entries() -> dict[str, Any] | JSONResponse:
         try:
+            service.ensure_store_ready()
             return service.merged()
         except GlossaryError as exc:
             return _envelope(exc.status_code, exc.error, exc.detail)

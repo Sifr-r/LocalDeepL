@@ -109,6 +109,14 @@ class GlossaryToggleRequest(BaseModel):
     enabled: bool
 
 
+class GlossaryToggleBody(BaseModel):
+    """Optional toggle body: if enabled is not provided, the route flips state."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool | None = None
+
+
 class GlossaryReorderRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

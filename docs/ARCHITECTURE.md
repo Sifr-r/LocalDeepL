@@ -76,10 +76,15 @@ cordis.yml
 │                 GET /api/models/transcription (SSRF-guarded endpoint
 │                 discovery with a whisper fallback list)
 ├─ glossary       GlossaryImportService + GlossaryJobRunner (the JobQueue's
-│                 third runner producer): nine /api/glossary* routes —
+│                 third runner producer): /api/glossary* routes —
 │                 dual-shape imports (legacy JSON source envelope or the
-│                 client's multipart / JSON-body shapes), plus library
-│                 CRUD/enable/reorder/entries/preview/merged. Imports above
+│                 client's multipart / JSON-body shapes), library / sources
+│                 CRUD and listing (/api/glossary/sources, /api/glossary/sources/{id},
+│                 /api/glossary/library, /api/glossary/library/{id}), toggling
+│                 (/api/glossary/library/{id}/toggle with optional state flipping,
+│                 /api/glossary/library/{id}/enable), reorder, entries querying
+│                 with case-insensitive filtering and pagination (/api/glossary/library/entries,
+│                 /api/glossary/library/{id}/entries), and preview/merged. Imports above
 │                 the 5,000-entry estimate dispatch on the harness JobQueue;
 │                 the LanceDB lexicon store loads lazily — routes 503 with
 │                 an install hint when the `lexicon` extra is missing
@@ -117,7 +122,7 @@ Protocol (`ctx.inject(JobQueue)`), never by module singleton.
 | `src/omniscribe/core/ocr_quality/` | OCR Quality Trust Layer — watermark detection, script detection, hallucination guard, Platt scaling calibration fit/eval, trust scorer, and orchestrator |
 | `src/omniscribe/core/transcription/` | Speech-to-text audio transcription engines (local Whisper & OpenAI-compatible API backends) |
 | `src/omniscribe/core/lexicon/` | LanceDB-backed canonical glossary / translation lexicon store (Protocol + LanceDB impl + embedding wrapper + helper queries + one-shot migration core). See `docs/lexicon-migration-spec.md`. |
-| `src/omniscribe/core/glossary_sources/` | Terminology import parsers for TBX, CSV, JSON, and web URLs |
+| `src/omniscribe/core/glossary_sources/` | Terminology import parsers for XLIFF (1.2 / 2.0), TBX, TMX, CSV, TSV, JSON pairs, SQL tables, and Git repositories with encoding auto-detection (BOMs, UTF-8/16/32, Windows-1252, and ISO-8859-1 fallbacks) |
 | `src/omniscribe/core/writers/tree_json.py` | Hierarchical block-tree export builder |
 | `src/omniscribe/core/writers/exporter_base.py` | Thin `DocumentExportProtocol` + `BaseDocumentExporter` ABC. **Implementations are co-located with the writers they wrap** (DOCX in `core/writers/docx.py`, tree-DOCX in `core/writers/docx_tree.py`, HTML in `core/writers/html.py`) — the module ships only the abstraction, not the exporters. To add a new format, subclass `BaseDocumentExporter` in the same file as the existing writer, then register it on `PDFHandler` (or the relevant writer) |
 | `src/omniscribe/core/writers/docx_tree.py` | Hierarchical block-tree to `.docx` converter |
@@ -152,7 +157,7 @@ Protocol (`ctx.inject(JobQueue)`), never by module singleton.
 | `src/omniscribe/plugins/documents/` | Documents plugin: `schemas.py` (extraction/export request models reproducing the pre-harness contract), `prompts.py` (extraction prompts re-homed verbatim from the pre-harness `api/services/ai.py`; `PROMPT_VERSION 2026-08-15.v1`; invoice/resume/academic/table/table_extraction/custom templates), `service.py` (LLM extraction runner, text/markdown/json/docling-compatible/mineru-compatible export builders, and on-demand block-tree building from the stored text artifact — no tree sidecars), `routes.py` (`POST /api/extract`, `POST /api/export/document`, `GET|POST /api/export/docx`, `POST /api/export/html`, `POST /api/export/docx-tree`, `POST /api/export/blocktree`, token-bound `GET /api/export/{artifact_id}`, `GET /api/text/{artifact_id}`, `GET /api/metadata/{artifact_id}`), and `plugin.py` (mounts the router; no configurable fields) |
 | `src/omniscribe/plugins/translate/` | Translate plugin: `schemas.py` (translation request models + client response contracts), `service.py` (`TranslationService` — sync single-shot `translate_text` re-home, JobQueue runner (`TranslationJobRunner` seam) that walks the stored text artifact's tree with `translate_tree`, and client status mapping PENDING/PROGRESS/SUCCESS/FAILURE), `routes.py` (`POST /api/translate`, `POST /api/translate/async`, `GET /api/translate/status/{job_id}`, `GET /api/translate/result/{job_id}` token-redeeming fetch, `POST /api/translate/nllb`), and `plugin.py` (mounts the router; no configurable fields) |
 | `src/omniscribe/plugins/transcribe/` | Transcribe plugin: `schemas.py` (form-field and config request models + client response contracts), `service.py` (`TranscriptionService` — sync multipart transcription through the core transcription engines; transcript and metadata serialized JSON using the text-artifact convention and stored as token-bound artifacts), `config_store.py` (always-writable in-memory transcription config store with masked keys; SSRF-guarded endpoint model discovery falling back to the canned whisper list), `routes.py` (`POST /api/transcribe`, `GET|POST /api/config/transcription`, `GET /api/models/transcription`), and `plugin.py` (mounts the router; no configurable fields) |
-| `src/omniscribe/plugins/glossary/` | Glossary plugin: `schemas.py` (import/library request models covering both payload shapes), `service.py` (`GlossaryImportService` — parse → entry-count estimate → sync import or JobQueue dispatch above the 5,000-entry estimate, plus library/toggle/reorder/delete/entries/preview/merged reads against the lexicon store), `store.py` (lazy `LexiconStore` provider — routes 503 with the `uv sync --extra lexicon` install hint when the `lexicon` extra is missing), `http_fetch.py` (SSRF-guarded, IP-pinned URL fetch with manual redirect following for `/api/glossary/import/url`), `routes.py` (the nine `/api/glossary*` routes; dual-shape imports), and `plugin.py` (mounts the router; registers `GlossaryJobRunner`) |
+| `src/omniscribe/plugins/glossary/` | Glossary plugin: `schemas.py` (import/library request models covering dual-shape imports and toggle bodies), `service.py` (`GlossaryImportService` — parse → entry-count estimate → sync import or JobQueue dispatch above the 5,000-entry estimate, plus `ensure_store_ready`, library/sources CRUD, toggle flipping, reorder, and query-filtered/paginated entries), `store.py` (lazy `LexiconStore` provider — routes 503 with the `uv sync --extra lexicon` install hint when the `lexicon` extra is missing), `http_fetch.py` (SSRF-guarded, IP-pinned URL fetch with manual redirect following for `/api/glossary/import/url`), `routes.py` (the /api/glossary* routes; dual-shape imports, sources CRUD, toggle, entries search/pagination, preview/merged), and `plugin.py` (mounts the router; registers `GlossaryJobRunner`) |
 | `src/omniscribe/middleware/auth.py` | ASGI 3.0 bearer authentication middleware enforcing `OMNISCRIBE_AUTH_TOKEN` constant-time verification |
 | `src/omniscribe/middleware/rate_limit.py` | ASGI 3.0 sliding-window rate-limiting middleware enforcing request limits per client IP with Retry-After responses |
 | `src/omniscribe/middleware/upload_limit.py` | ASGI 3.0 request body size limiting middleware enforcing payload limits via Content-Length inspection and streaming accumulation |
@@ -176,6 +181,12 @@ Protocol (`ctx.inject(JobQueue)`), never by module singleton.
 | `tests/core/pdf/test_embedder.py` | Unit tests for searchable PDF embedding (deflation, garbage collection, page indexing, bounds) |
 | `tests/test_config.py` | Unit tests for runtime settings, model inheritance, rate limiting, and CORS normalization |
 | `tests/plugins/test_job_error_sanitization.py` | Unit tests for OCR job error sanitization (`_sanitize_job_error` and `OCRService._status_response`) |
+| `tests/core/transcription/test_transcription_engines.py` | Comprehensive unit and mock tests for `WhisperLocalEngine` and `GenericAudioAPIEngine` (device resolution, missing extras, thread-safe lazy loading, word timestamps, error mappings, transient retries, empty audio) |
+| `tests/core/grounded/test_prompted_grounded_ocr.py` | Comprehensive unit and mock tests for `PromptedGroundedOCR` (prompt building across architectures, multi-page chunking, coordinate normalization and clamping, reading order, JSON repair loop, cancellation handling) |
+| `tests/plugins/test_glossary_http_fetch.py` | Unit and mock tests for glossary HTTP fetching, SSRF blocking, redirect limits, body size guards, and network timeouts |
+| `tests/routers/test_glossary_library_routes.py` | FastAPI route tests for glossary library management (sources listing, deletion, toggle, reordering, entry pagination, merged/preview routes, and 503 fallback when LanceDB lexicon is absent) |
+| `tests/core/glossary_sources/test_encoding_and_xliff.py` | Unit tests for BOM detection, fallback text encodings (UTF-8/16/32, Windows-1252, ISO-8859-1), and robust XLIFF 1.2 / 2.0 parsing |
+| `tests/scripts/test_arrow_substrait_present.py` | Integration test validating `arrow_substrait.dll` presence on Windows when the LanceDB lexicon extra is installed (migrated from `tests/ops/`) |
 | `client/lib/data/providers/features_state.dart` | Immutable state models (`TranslationState`, `TranscriptionState`, `GlossaryState`, `ExtractionState`) with copyWith, equality, and clearError support |
 | `client/lib/data/providers/features_notifier.dart` | Riverpod 2.x `Notifier` controllers (`translationProvider`, `transcriptionProvider`, `glossaryProvider`, `extractionProvider`) for feature operations |
 | `client/lib/data/models/smart_preset.dart` | Immutable `SmartPreset` models, presets catalog (Standard, Receipt, Handwriting, Historical, Fast, Deep), filename heuristics, and ProcessSettings bidirectional mapping |

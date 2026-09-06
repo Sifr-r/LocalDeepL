@@ -25,6 +25,7 @@ import pytest
 
 # Silence Surya's internal tqdm before any module loads it.
 os.environ.setdefault("TQDM_DISABLE", "1")
+os.environ.setdefault("ALLOW_SSRF_LOCAL", "true")
 
 # Repo root, plus the ``sys.path`` mutation that audit D20 wanted
 # scoped. The original was ``sys.path.insert(0, str(ROOT))`` with no

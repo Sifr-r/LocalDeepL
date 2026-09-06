@@ -26,8 +26,13 @@ def parse_xliff(
 ) -> GlossaryImportSummary:
     """Parse XLIFF 1.2 ``trans-unit`` and XLIFF 2 ``unit/segment`` pairs."""
     raw = require_bytes(data)
-    _text, used_encoding, warnings = decode_source(raw, encoding)
-    root = safe_xml_root(raw)
+    text, used_encoding, warnings = decode_source(raw, encoding)
+    try:
+        root = safe_xml_root(raw)
+    except ValueError as exc:
+        if "DTD and external entities" in str(exc):
+            raise
+        root = safe_xml_root(text)
     entries: list[dict[str, object]] = []
 
     for unit in root.iter():
@@ -43,7 +48,7 @@ def parse_xliff(
         for unit in root.iter():
             if local_name(unit.tag) != "unit":
                 continue
-            for segment in unit:
+            for segment in unit.iter():
                 if local_name(segment.tag) != "segment":
                     continue
                 source = _child_text(segment, "source")

@@ -8,6 +8,7 @@ from typing import Any
 
 from . import csv_tsv, git_repo, json_pairs, sql_table, tbx, tmx, xliff
 from .csv_tsv import parse_csv, parse_csv_tsv, parse_tsv
+from .encoding import decode_bytes, detect_encoding, read_text_auto_detect
 from .git_repo import parse_git_glossary
 from .json_pairs import parse_json_pairs
 from .sql_table import parse_sql_table
@@ -19,6 +20,8 @@ from .xliff import parse_xliff
 __all__ = [
     "FormatNotAvailableError",
     "GlossaryImportSummary",
+    "decode_bytes",
+    "detect_encoding",
     "parse",
     "parse_csv",
     "parse_csv_tsv",
@@ -29,6 +32,7 @@ __all__ = [
     "parse_tmx",
     "parse_tsv",
     "parse_xliff",
+    "read_text_auto_detect",
     "redact_dsn",
 ]
 

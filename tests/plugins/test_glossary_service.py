@@ -312,3 +312,105 @@ async def test_run_import_job_rejects_foreign_payload() -> None:
     impl, _store = _service()
     with pytest.raises(ValueError):
         await impl.run_import_job(object())
+
+
+def test_ensure_store_ready() -> None:
+    # 503 when store is missing
+    missing_impl = glossary_service.GlossaryImportServiceImpl(
+        store_provider=lambda: None, queue=None
+    )
+    with pytest.raises(glossary_service.GlossaryError) as excinfo:
+        missing_impl.ensure_store_ready()
+    assert excinfo.value.status_code == 503
+    assert excinfo.value.error == "backend_unavailable"
+
+    # No error when store is present
+    impl, _store = _service()
+    impl.ensure_store_ready()
+
+
+async def test_service_toggle_flips_state() -> None:
+    impl, _store = _service()
+    body = await impl.import_glossary(
+        _json_pairs_source('{"entries": [{"source": "A", "target": "1"}]}', name="T")
+    )
+    gid: str = body["glossary_id"]
+    assert impl.list_library()[0]["enabled"] is True
+
+    # Toggle without enabled parameter -> flips to False
+    toggled = impl.toggle(gid)
+    assert toggled["enabled"] is False
+
+    # Toggle again -> flips back to True
+    toggled_again = impl.toggle(gid)
+    assert toggled_again["enabled"] is True
+
+
+async def test_service_enhanced_entries() -> None:
+    impl, _store = _service()
+    res_1 = await impl.import_glossary(
+        _json_pairs_source(
+            json.dumps(
+                {
+                    "entries": [
+                        {"source": "Hello World", "target": "Hola Mundo"},
+                        {"source": "Apple", "target": "Manzana"},
+                    ]
+                }
+            ),
+            name="G1",
+        )
+    )
+    await impl.import_glossary(
+        _json_pairs_source(
+            json.dumps(
+                {
+                    "entries": [
+                        {"source": "World Cup", "target": "Copa Mundial"},
+                        {"source": "Pineapple", "target": "Piña"},
+                    ]
+                }
+            ),
+            name="G2",
+        )
+    )
+    g1_id: str = res_1["glossary_id"]
+
+    # All entries across all glossaries
+    all_entries = impl.entries()
+    assert all_entries["total"] == 4
+    assert len(all_entries["entries"]) == 4
+
+    # Single glossary
+    g1_entries = impl.entries(g1_id)
+    assert g1_entries["total"] == 2
+    assert g1_entries["id"] == g1_id
+    assert [e["source"] for e in g1_entries["entries"]] == ["Hello World", "Apple"]
+
+    # 404 for unknown glossary_id
+    with pytest.raises(glossary_service.GlossaryError) as excinfo:
+        impl.entries("unknown-id")
+    assert excinfo.value.status_code == 404
+
+    # Query filtering on source (case-insensitive)
+    world_query = impl.entries(query="world")
+    assert world_query["total"] == 2
+    sources = [e["source"] for e in world_query["entries"]]
+    assert "Hello World" in sources
+    assert "World Cup" in sources
+
+    # Query filtering on target (case-insensitive)
+    target_query = impl.entries(query="manzana")
+    assert target_query["total"] == 1
+    assert target_query["entries"][0]["source"] == "Apple"
+
+    # Pagination: limit and offset
+    page_1 = impl.entries(limit=2, offset=0)
+    assert page_1["total"] == 4
+    assert len(page_1["entries"]) == 2
+
+    page_2 = impl.entries(limit=2, offset=2)
+    assert page_2["total"] == 4
+    assert len(page_2["entries"]) == 2
+    assert page_1["entries"] != page_2["entries"]
+

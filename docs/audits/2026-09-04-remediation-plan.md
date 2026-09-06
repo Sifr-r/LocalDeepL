@@ -590,9 +590,9 @@
 
 ### 7.3 QA polish
 
-- Q8: named under-tested modules wave (transcription, grounded, lexicon, glossary_sources, plugins/glossary).
+- Q8: named under-tested modules wave (closed: comprehensive unit & mock test suites added for transcription engines, prompted grounded OCR, glossary HTTP fetch / SSRF, glossary library routes, and encoding / XLIFF sources).
 - Q9: add a parallel test that verifies the `seed=42` actually controls Platt scaling.
-- Q10: merge `tests/ops/` into `tests/scripts/` (or expand into a proper ops-smoke dir).
+- Q10: merge `tests/ops/` into `tests/scripts/` (closed: merged `tests/ops/` into `tests/scripts/`).
 - Q11: chaos / fault-injection tests (timeout during mid-job, Redis drop during progress WS, VLM 503 after 30s).
 - Q12: Flutter `integration_test/` against a real running server.
 - Q13: balance Flutter widget test coverage.
@@ -605,7 +605,7 @@
 - P10: cross-link per-service tokens section to deferred-middleware note (matters less after Phase 1).
 - P11: clarify `omniscribe-migrate-lexicon` script's role in the CLI deprecation narrative.
 - P12: add `## Current focus` header to `outstanding-work.md` (done in Phase 1.2).
-- P13: publish PGP key for security contact.
+- P13: publish PGP key for security contact (closed: policy documented in `docs/SECURITY.md`: sensitive reports request fingerprint out-of-band; no static PGP key published to avoid unmanaged key rot).
 - P14: align `compose.yaml` upload size with the live middleware (done as part of Phase 3.1).
 
 ### 7.5 End-user polish

@@ -232,12 +232,20 @@ class _GlossaryImportPayload:
 class GlossaryImportService(Protocol):
     async def import_glossary(self, source: GlossaryImportSource) -> dict[str, Any]: ...
     async def run_import_job(self, payload: Any) -> JobOutcome: ...
+    def ensure_store_ready(self) -> None: ...
     def list_library(self) -> list[dict[str, Any]]: ...
-    def toggle(self, glossary_id: str, *, enabled: bool) -> dict[str, Any]: ...
+    def toggle(self, glossary_id: str, *, enabled: bool | None = None) -> dict[str, Any]: ...
     def reorder(self, ordered_ids: list[str]) -> dict[str, Any]: ...
     def delete(self, glossary_id: str) -> dict[str, Any]: ...
     def library_preview(self) -> dict[str, Any]: ...
-    def entries(self, glossary_id: str) -> dict[str, Any]: ...
+    def entries(
+        self,
+        glossary_id: str | None = None,
+        *,
+        query: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> dict[str, Any]: ...
     def merged(self) -> dict[str, Any]: ...
 
 
@@ -253,6 +261,10 @@ class GlossaryImportServiceImpl:
         self._queue = queue
 
     # -- store seam ---------------------------------------------------------
+
+    def ensure_store_ready(self) -> None:
+        """Validate that the LexiconStore is available, raising 503 if missing."""
+        self._library()
 
     def _library(self) -> LexiconStore:
         store = self._store_provider()
@@ -391,20 +403,30 @@ class GlossaryImportServiceImpl:
         ).model_dump()
 
     def list_library(self) -> list[dict[str, Any]]:
+        self.ensure_store_ready()
         return [self._serialize_item(i) for i in self._library().list_glossaries()]
 
-    def toggle(self, glossary_id: str, *, enabled: bool) -> dict[str, Any]:
+    def toggle(self, glossary_id: str, *, enabled: bool | None = None) -> dict[str, Any]:
+        self.ensure_store_ready()
         store = self._library()
+        if enabled is None:
+            current = store.get_glossary(glossary_id)
+            if current is None:
+                raise GlossaryError(404, "not_found", "Glossary not found.")
+            target_enabled = not current.enabled
+        else:
+            target_enabled = enabled
         # GlossaryNotFoundError subclasses KeyError; catching the base class
         # avoids importing the lexicon core package (pyarrow) on the
         # web-only fast tier.
         try:
-            meta = store.toggle_glossary(glossary_id, enabled=enabled)
+            meta = store.toggle_glossary(glossary_id, enabled=target_enabled)
         except KeyError as exc:
             raise GlossaryError(404, "not_found", "Glossary not found.") from exc
         return self._serialize_item(meta)
 
     def reorder(self, ordered_ids: list[str]) -> dict[str, Any]:
+        self.ensure_store_ready()
         store = self._library()
         # GlossaryNotFoundError subclasses KeyError; see toggle.
         try:
@@ -416,12 +438,14 @@ class GlossaryImportServiceImpl:
         return {"ok": True}
 
     def delete(self, glossary_id: str) -> dict[str, Any]:
+        self.ensure_store_ready()
         deleted = self._library().delete_glossary(glossary_id)
         if not deleted:
             raise GlossaryError(404, "not_found", "Glossary not found.")
         return {"ok": True, "id": glossary_id}
 
     def library_preview(self) -> dict[str, Any]:
+        self.ensure_store_ready()
         store = self._library()
         from omniscribe.core.lexicon import preview
 
@@ -440,28 +464,66 @@ class GlossaryImportServiceImpl:
             enabled_glossaries=[str(item) for item in enabled_value],
         ).model_dump()
 
-    def entries(self, glossary_id: str) -> dict[str, Any]:
+    def entries(
+        self,
+        glossary_id: str | None = None,
+        *,
+        query: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        self.ensure_store_ready()
         store = self._library()
-        meta = store.get_glossary(glossary_id)
-        if meta is None:
-            raise GlossaryError(404, "not_found", "Glossary not found.")
-        entries = store.list_entries(glossary_id)
-        return {
-            "id": meta.id,
-            "name": meta.name,
-            "format": meta.format,
-            "entries": [
-                {
-                    "source": e.source_text,
-                    "target": e.target_text,
-                    "case_sensitive": e.case_sensitive,
-                    "notes": e.notes,
-                }
-                for e in entries
-            ],
+        meta: Any = None
+        if glossary_id is not None:
+            meta = store.get_glossary(glossary_id)
+            if meta is None:
+                raise GlossaryError(404, "not_found", "Glossary not found.")
+            raw_entries = store.list_entries(glossary_id)
+        else:
+            raw_entries = []
+            for g in store.list_glossaries():
+                raw_entries.extend(store.list_entries(g.id))
+
+        if query:
+            q_lower = query.lower()
+            raw_entries = [
+                e
+                for e in raw_entries
+                if q_lower in getattr(e, "source_text", "").lower()
+                or q_lower in getattr(e, "target_text", "").lower()
+            ]
+
+        total = len(raw_entries)
+        safe_offset = max(0, offset)
+        if limit is not None:
+            safe_limit = max(0, limit)
+            paged = raw_entries[safe_offset : safe_offset + safe_limit]
+        else:
+            paged = raw_entries[safe_offset:]
+
+        formatted_entries = [
+            {
+                "source": getattr(e, "source_text", ""),
+                "target": getattr(e, "target_text", ""),
+                "case_sensitive": getattr(e, "case_sensitive", False),
+                "notes": getattr(e, "notes", ""),
+            }
+            for e in paged
+        ]
+
+        result: dict[str, Any] = {
+            "entries": formatted_entries,
+            "total": total,
         }
+        if meta is not None:
+            result["id"] = meta.id
+            result["name"] = meta.name
+            result["format"] = meta.format
+        return result
 
     def merged(self) -> dict[str, Any]:
+        self.ensure_store_ready()
         store = self._library()
         from omniscribe.core.lexicon import merged_enabled_glossary
 

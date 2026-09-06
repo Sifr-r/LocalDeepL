@@ -45,9 +45,13 @@ and effort.
   fuzzing test suites with `hypothesis` (`json_parse`, `prompt_safety`, `page_range`,
   `whitespace`, `filters`), direct unit & property tests for `core/translate/workflow.py`,
   and canonical PDF fixture re-homing in `tests/fixtures/pdfs/`.
-- **Phase 6 — Long-tail** ✅ (closed 2026-09-05). Cleaned deprecated CORS aliases (D10),
+- **Phase 6 — Long-tail** ✅ (closed 2026-09-05, updated 2026-09-06). Cleaned deprecated CORS aliases (D10),
   hoisted `_DEFAULTS` in processor (D12), single-pass raw_decode `extract_json` (D11),
-  hardened token masking (S8), exact-key sensitive logging redaction (S10).
+  hardened token masking (S8), exact-key sensitive logging redaction (S10),
+  resolved Q8 (under-tested modules wave: 178+ tests covering transcription engines, prompted grounded OCR, glossary HTTP fetch/SSRF, library routes, and encoding/XLIFF),
+  resolved Q10 (merged `tests/ops/` into `tests/scripts/`), and closed P13 as
+  N/A (policy documented in `docs/SECURITY.md`: sensitive reports request
+  fingerprint out-of-band; no static PGP key published to avoid unmanaged key rot).
 
 ---
 
@@ -129,12 +133,20 @@ and effort.
 - Dedicated unit tests for `config.py` (`tests/test_config.py`) (Wave 14).
 - Dedicated unit tests for ASGI middleware triad (`tests/middleware/`) (Waves 11, 13, 14).
 - OpenAPI snapshot drift contract test passes (Wave 13 & 14).
+- Merged single-test `tests/ops/` directory into `tests/scripts/` (Q10 resolved).
+- Under-tested modules wave (Q8 resolved):
+  - Local and API audio transcription engine tests (`tests/core/transcription/test_transcription_engines.py`)
+  - Grounded OCR prompt builder, chunking, coordinate clamping, reading order, and JSON repair tests (`tests/core/grounded/test_prompted_grounded_ocr.py`)
+  - Glossary HTTP fetch, redirect limits, SSRF private IP blocking, body size guards (`tests/plugins/test_glossary_http_fetch.py`)
+  - Glossary library routes, source toggle/reorder, query pagination, and LanceDB 503 fallback (`tests/routers/test_glossary_library_routes.py`)
+  - Glossary source encoding auto-detection and XLIFF 1.2/2.0 parsing (`tests/core/glossary_sources/test_encoding_and_xliff.py`)
 
 ### Domain 5 — DevOps & Config (CLOSED)
 - `.env.example` provides working default `REDIS_PASSWORD` allowing `cp .env.example .env && docker compose up` without failure (Wave 14).
 - `compose.yaml` aligned and verified (Wave 14).
 - Cleaned up stale `# force_run` comment in `nightly.yml` (Wave 14).
 - Pinned toolchain versions and security workflows aligned (Wave 14).
+- Security contact PGP policy documented in `docs/SECURITY.md` (sensitive reports request fingerprint out-of-band; static PGP key omitted to prevent unmanaged key rot; P13 closed / N/A).
 
 ---
 

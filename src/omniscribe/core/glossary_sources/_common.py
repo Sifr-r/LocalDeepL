@@ -147,7 +147,7 @@ def validate_identifier(value: str, field_name: str) -> str:
     return value
 
 
-def safe_xml_root(data: bytes) -> Element:
+def safe_xml_root(data: bytes | str) -> Element:
     """Parse XML while rejecting DTDs, entity declarations, and external refs.
 
     defusedxml drives the parse so the rejection happens at the expat
