@@ -1,6 +1,11 @@
 [project]
 name = "omniscribe"
-version = "0.1.0"
+# Bumped to 0.3.0 at the v0.3.0 release (2026-09-06) — the single-binary
+# Windows distribution ships. The version was stale at "0.1.0" through
+# v0.2.0 because the field was not part of the release checklist; the
+# v0.3.0 commit fixes that. setuptools_scm is NOT used (the version is
+# hand-maintained so a tag is independent of the source bump).
+version = "0.3.0"
 description = "Transform scanned and written documents into fully searchable, selectable PDFs using the power of Local LLM Vision"
 readme = "README.md"
 requires-python = ">=3.11"

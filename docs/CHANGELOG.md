@@ -8,9 +8,9 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### User-visible changes
 
-_See [v0.2.0](#020--2026-09-05) for the most recent release and
-[docs/RELEASE-NOTES-v0.2.0.md](RELEASE-NOTES-v0.2.0.md) for the
-full v0.2.0 release report._
+_See [v0.3.0](#030--2026-09-06) for the most recent release and
+[docs/RELEASE-NOTES-v0.3.0.md](RELEASE-NOTES-v0.3.0.md) for the
+full v0.3.0 release report._
 
 _Nothing yet. New user-visible changes will land here in the order
 they ship: behavior changes, new features, deprecations, config
@@ -18,12 +18,86 @@ defaults, security posture, removed APIs._
 
 ### Maintenance
 
-- **2026-09-06 — Bundle ships in v0.3.0** (Sprint 1 of
-  [RFC 002](rfcs/2026-09-v0.3.0-scope.md) §3). The 14-attempt
-  bundle failure record in `docs/deployment/windows-bundle.md`
+_Nothing yet. New maintenance work will land here in the order it
+ships: dependency upgrades, test refactors, internal cleanups, lint /
+typing cleanups, OpenAPI snapshot regenerations, and other changes
+with no user-visible behavior delta._
+
+## [0.3.0] — 2026-09-06
+
+> **Single-binary Windows distribution ships.** v0.3.0 closes
+> the 2026-09-04 five-lens audit's Phase 4 (single-binary
+> distribution) end-to-end. The bundle is a 307 MB
+> `omniscribe-server.exe` that boots, serves
+> `/api/health -> 200`, `/api/jobs -> 200`, and
+> `/openapi.json -> 200` on Windows 11. Plus the Phase 6
+> long-tail batch 5 closeout (D9 mypy strict for
+> `omniscribe.plugins.*` + `omniscribe.harness.*`; Q9
+> calibration script determinism test). The full release
+> report is at [docs/RELEASE-NOTES-v0.3.0.md](RELEASE-NOTES-v0.3.0.md).
+> The Sprint 1 root-cause analysis that fixed the bundling
+> failure is at
+> [docs/rfcs/2026-09-bundle-sprint-1-findings.md](rfcs/2026-09-bundle-sprint-1-findings.md).
+> The v0.3.0 plan is at
+> [docs/rfcs/2026-09-v0.3.0-scope.md](rfcs/2026-09-v0.3.0-scope.md).
+
+### Bundle & Distribution (Phase 4 — closed)
+
+- **2026-09-06 — Single-binary Windows distribution ships.**
+  307 MB `omniscribe-server.exe` boots and serves
+  `/api/health -> 200` on a Windows 11 dev box. The
+  14-attempt failure record in `docs/deployment/windows-bundle.md`
   was the predictable outcome of four local spec
-  misclassifications, not an upstream PyInstaller bug. Fix is
-  five lines:
+  misclassifications in `omniscribe_server.spec`, not an
+  upstream PyInstaller bug. Fix is five lines:
+  - Remove `"anyio"` from `EXCLUDES` (was actively
+    fighting `collect_submodules("anyio")` on the same
+    file; EXCLUDES wins).
+  - Add `collect_submodules("fastapi")` to
+    `_RUNTIME_SUBMODULES` (was missing —
+    `fastapi.staticfiles` was "not installed" on boot).
+  - Remove `"pydantic-settings"` from `EXCLUDES` and add
+    `collect_submodules("pydantic_settings")` (paired bug;
+    EXCLUDES would have masked even adding the collect
+    call).
+  - Add `import anyio.abc  # noqa: F401` to
+    `scripts/run_server.py` so the static analyzer follows
+    the import edge that FastAPI / Starlette / uvicorn
+    normally carry internally.
+  - Add `"scipy._external.array_api_compat.numpy.fft"` to
+    the manual hiddenimports block (a private
+    underscore-prefixed submodule that
+    `collect_submodules` skips by default; discovered
+    automatically by the new
+    `scripts/iterative_bundle.py`).
+  See [Sprint 1 findings](rfcs/2026-09-bundle-sprint-1-findings.md)
+  for the full root-cause analysis, the minimal reproducer
+  in `repro/`, and the chronological fix log. The minimal
+  reproducer proves the anyio part is local; the other
+  three are well-known PyInstaller static-analysis gaps
+  on deep ML stacks. Closes audit findings **U2, U3, U4,
+  U6, C2**.
+- **2026-09-06 — New `scripts/iterative_bundle.py`** (110 LOC):
+  test-driven "catch the next missing module and add it"
+  tool. Boots the binary, parses the first
+  `ModuleNotFoundError` / `ImportError`, adds the missing
+  module to the spec, rebuilds. Exits when the binary
+  boots successfully. Useful for future maintenance if a
+  new dep tree has a similar gap.
+- **2026-09-06 — New `scripts/smoke_existing.py`** (80 LOC):
+  standalone smoke test for an already-built binary.
+  Boots, hits `/api/health`, asserts 200. Doesn't re-run
+  `uv sync` (which is the part that hits Windows file
+  locks during dev).
+- **2026-09-06 — New `repro/` directory**: minimal 30-line
+  spec + 21-line entry script + 50-line smoke test that
+  proves the anyio bundling bug is local, not upstream.
+  Tracked alongside the main spec so the next maintainer
+  can re-run the minimal build if a regression hits.
+
+### Maintenance
+
+- **2026-09-06 — D9 mypy strict enabled for `omniscribe.plugins.*`
   - Remove `"anyio"` from `EXCLUDES` in `omniscribe_server.spec`
     (was actively fighting `collect_submodules("anyio")` on the
     same file).
@@ -74,8 +148,6 @@ defaults, security posture, removed APIs._
   deterministic on `n_train`, `n_test`, `a`, and `b`. The test would
   have caught a regression where the script "uses the seed once,
   then drifts" via ambient numpy state.
-
-## [0.2.0] — 2026-09-05
 
 ## [0.2.0] — 2026-09-05
 
