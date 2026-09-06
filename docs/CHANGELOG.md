@@ -6,9 +6,27 @@ the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-_Nothing yet. See [v0.2.0](#020--2026-09-05) for the most recent
-release and [docs/RELEASE-NOTES-v0.2.0.md](RELEASE-NOTES-v0.2.0.md)
-for the full v0.2.0 release report._
+### User-visible changes
+
+_See [v0.2.0](#020--2026-09-05) for the most recent release and
+[docs/RELEASE-NOTES-v0.2.0.md](RELEASE-NOTES-v0.2.0.md) for the
+full v0.2.0 release report._
+
+_Nothing yet. New user-visible changes will land here in the order
+they ship: behavior changes, new features, deprecations, config
+defaults, security posture, removed APIs._
+
+### Maintenance
+
+_Nothing yet. New maintenance work will land here in the order it
+ships: dependency upgrades, test refactors, internal cleanups, lint /
+typing cleanups, OpenAPI snapshot regenerations, and other changes
+with no user-visible behavior delta. The "is this user-visible?"
+test is: would a user reading the README, the install guide, or
+the API contract notice? If yes, it goes in the User-visible section
+above; if no, here._
+
+## [0.2.0] — 2026-09-05
 
 ## [0.2.0] — 2026-09-05
 

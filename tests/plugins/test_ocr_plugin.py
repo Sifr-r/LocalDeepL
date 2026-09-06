@@ -434,7 +434,9 @@ async def test_event_buffers_and_done_jobs_are_bounded_and_pruned(
     try:
         service = ctx.inject(ocr_plugin_mod.OCRService)
         assert isinstance(service, OCRServiceImpl)
-        service._max_buffered_jobs = 10
+        # Audit D7: read+write the public surface, not the private
+        # ``_max_buffered_jobs`` attribute.
+        service.max_buffered_jobs = 10
 
         for i in range(25):
             job_id = f"job_{i}"

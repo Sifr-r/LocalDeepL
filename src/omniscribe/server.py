@@ -11,6 +11,7 @@ is disposed in LIFO order on shutdown.
 from __future__ import annotations
 
 import argparse
+import http
 import importlib
 import logging
 import math
@@ -24,12 +25,26 @@ from types import ModuleType
 from typing import Any, Protocol, cast
 
 from dotenv import load_dotenv
+from fastapi import HTTPException
 
 from omniscribe.config import RuntimeSettings, load_settings
 from omniscribe.utils import configure_logging  # noqa: F401  -- re-exported for tests
 from omniscribe.utils.structured_logging import _resolve_log_format
 
 _log = logging.getLogger("omniscribe.server")
+
+
+def _error_code_for_status(status_code: int) -> str:
+    """Map an HTTP status code to the ``error`` field of the v0.2.0
+    error envelope (audit D8). Uses the lower-snake-case
+    ``http.HTTPStatus`` name and falls back to ``"http_<status>"`` for
+    codes that ``HTTPStatus`` doesn't know about (1xx, 2xx, 3xx
+    rarely surface as errors but be safe).
+    """
+    try:
+        return http.HTTPStatus(status_code).name.lower()
+    except ValueError:
+        return f"http_{status_code}"
 
 # Sprint 5 / M-10 audit fix: placeholder auth tokens that the operator
 # might paste from the documentation without replacing. Compared in
@@ -253,6 +268,28 @@ def create_app() -> ASGIApplication:
         return responses.JSONResponse(
             status_code=400,
             content={"error": "bad_request", "detail": _sanitize_value_error(exc)},
+        )
+
+    # Audit D8: every error response across the API surface uses the
+    # same ``{"error": <code>, "detail": <message>}`` envelope. The
+    # catch-all, the ValueError handler, and the CircuitOpenError
+    # handler above all conform. FastAPI's default ``HTTPException``
+    # handler returns ``{"detail": <message>}`` with no ``error``
+    # field — wrap it here so the shape is consistent for clients
+    # that branch on ``error`` first. Status-code -> code map uses
+    # ``http.HTTPStatus`` (canonical name, lower-snake-case) and
+    # falls back to ``"http_<status>"`` for codes without a name
+    # (1xx, 2xx, 3xx rarely surface as errors but be safe).
+    @web_app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Any, exc: HTTPException) -> Any:
+        detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+        return responses.JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "error": _error_code_for_status(exc.status_code),
+                "detail": detail,
+            },
+            headers=exc.headers,
         )
 
     from omniscribe.core.ocr.resilience import CircuitOpenError

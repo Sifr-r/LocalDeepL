@@ -146,6 +146,68 @@ class OCRServiceImpl:
         self._event_notify: dict[str, asyncio.Event] = {}
         self._done_jobs: set[str] = set()
 
+    # -- public surface (audit D7) ---------------------------------------------
+    # Read-only views over the constructor-set state. Tests and operational
+    # tooling (e.g. /api/health inspectors) can read these without poking
+    # at private attributes. The internal ``_event_buffers`` /
+    # ``_event_notify`` / ``_done_jobs`` / ``_submission_to_job`` stay
+    # private — they are mutable mid-job and exposing them would let
+    # callers corrupt the per-job dispatch state.
+
+    @property
+    def settings(self) -> RuntimeSettings:
+        """Active :class:`RuntimeSettings` for this service instance."""
+        return self._settings
+
+    @property
+    def queue(self) -> JobQueue:
+        """The in-process :class:`JobQueue` that runs registered runners."""
+        return self._queue
+
+    @property
+    def artifacts(self) -> ArtifactStore:
+        """The artifact store backing the result fetch endpoints."""
+        return self._artifacts
+
+    @property
+    def progress(self) -> ProgressService | None:
+        """The progress service used to publish per-channel events; ``None`` if disabled."""
+        return self._progress
+
+    @property
+    def max_upload_mb(self) -> int:
+        """Configured upload size cap in MB; enforced by ``MaxUploadSizeMiddleware``."""
+        return self._max_upload_mb
+
+    @property
+    def max_buffered_jobs(self) -> int:
+        """Maximum in-flight + queued jobs before submission is rejected with 429."""
+        return self._max_buffered_jobs
+
+    @max_buffered_jobs.setter
+    def max_buffered_jobs(self, value: int) -> None:
+        # Setter exists for the small set of tests that simulate
+        # backpressure (e.g. ``test_ocr_plugin.py`` drops the cap to 10
+        # and submits 25 requests). Production code never reassigns
+        # the cap after boot; the runtime cap is a constructor
+        # argument and the audit-trail lives in
+        # ``docs/AGENTS.md`` §"Configuration".
+        self._max_buffered_jobs = int(value)
+
+    @property
+    def quality_defaults(self) -> Mapping[str, bool | float | int]:
+        """cordis.yml-seeded defaults for the quality repair loop; applied
+        to uploads whose form omits the corresponding field."""
+        return self._quality_defaults
+
+    @property
+    def config(self) -> dict[str, Any]:
+        """Current effective config dict (``api_base`` / ``api_key`` / ``model``
+        + the form-field defaults). Mutated in place by
+        :meth:`update_config`; treat as read-only from outside.
+        """
+        return self._config
+
     # -- execution ------------------------------------------------------------
 
     async def run_sync(

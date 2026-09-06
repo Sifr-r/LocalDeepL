@@ -116,8 +116,8 @@ async def test_env_override_seeds_quality_defaults(
     try:
         await Loader(ctx).load(SHIPPED_CORDIS_YML)
         service = ctx.inject(OCRService)
-        assert service._quality_defaults["quality_max_retries"] == 4
+        assert service.quality_defaults["quality_max_retries"] == 4
         # Unset fields keep the shipped defaults.
-        assert service._quality_defaults["quality_target"] == 0.85
+        assert service.quality_defaults["quality_target"] == 0.85
     finally:
         await ctx.dispose()

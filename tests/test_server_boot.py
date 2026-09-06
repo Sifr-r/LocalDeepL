@@ -164,3 +164,53 @@ def test_cors_explicit_origins_allow_credentials(
         assert (
             preflight.headers.get("access-control-allow-credentials") == "true"
         )
+
+
+# ---------------------------------------------------------------------------
+# Audit D8: single error envelope
+# ---------------------------------------------------------------------------
+
+
+def test_http_exception_uses_error_envelope(boot_env: None) -> None:
+    """Audit D8: every error response across the API surface uses
+    ``{"error": <code>, "detail": <message>}``. FastAPI's default
+    ``HTTPException`` handler returns only ``{"detail": ...}`` — the
+    global handler in :mod:`omniscribe.server` wraps the response
+    so the shape is consistent. Tested via a route that raises
+    ``HTTPException`` (the OCR plugin's ``/api/process/status/{id}``
+    returns 404 for unknown jobs).
+    """
+    with TestClient(create_app()) as client:  # type: ignore[arg-type]
+        res = client.get("/api/process/status/unknown-job")
+        assert res.status_code == 404
+        body = res.json()
+        # The new envelope includes both fields.
+        assert "error" in body
+        assert "detail" in body
+        # The ``error`` code is derived from the status (lowercased
+        # ``HTTPStatus`` name).
+        assert body["error"] == "not_found"
+        # The original ``detail`` is preserved.
+        assert "unknown" in body["detail"].lower() or "not found" in body["detail"].lower()
+
+
+def test_http_exception_envelope_status_codes(boot_env: None) -> None:
+    """The status-code → ``error`` code map uses the lower-snake-case
+    ``HTTPStatus`` name (``bad_request``, ``unauthorized``,
+    ``forbidden``, ``not_found``, ``unprocessable_entity``,
+    ``rate_limited``-adjacent, etc.). This test exercises the
+    mapping function directly so it doesn't depend on a route that
+    happens to raise the status code we want to verify.
+    """
+    from omniscribe.server import _error_code_for_status
+
+    assert _error_code_for_status(400) == "bad_request"
+    assert _error_code_for_status(401) == "unauthorized"
+    assert _error_code_for_status(403) == "forbidden"
+    assert _error_code_for_status(404) == "not_found"
+    assert _error_code_for_status(422) == "unprocessable_entity"
+    assert _error_code_for_status(429) == "too_many_requests"
+    assert _error_code_for_status(500) == "internal_server_error"
+    assert _error_code_for_status(503) == "service_unavailable"
+    # Unknown codes fall back to ``http_<status>``.
+    assert _error_code_for_status(599) == "http_599"
