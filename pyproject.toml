@@ -2,7 +2,7 @@
 name = "omniscribe"
 version = "0.1.0"
 description = "Transform scanned and written documents into fully searchable, selectable PDFs using the power of Local LLM Vision"
-readme = "docs/README.md"
+readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [
@@ -55,6 +55,15 @@ web = [
     "fastapi>=0.141.1",
     "uvicorn>=0.52.3",
     "websockets>=17.0.1,<18.0",
+    # Phase 4.4 (2026-09-05, re-resolved 2026-09-05): pin anyio to the
+    # 3.x line. anyio 4.x uses ``_lazyimport`` for submodules, which
+    # PyInstaller's static analysis cannot trace — the resulting
+    # onefile bundle ships with ``anyio/__init__.py`` only and fails
+    # on the first ``import anyio.abc`` at runtime. anyio 3.x uses
+    # normal imports and is the LTS line; for a v0.2.0 hobbyist
+    # bundle the trade-off (no 4.x perf wins) is acceptable.
+    # See ``docs/deployment/windows-bundle.md`` §"Known build issue".
+    "anyio>=3.7,<4",
     "python-multipart>=0.0.20",
 ]
 preprocessing = [
@@ -156,7 +165,7 @@ packages = ["src/omniscribe"]
 [tool.hatch.build.targets.sdist]
 include = [
     "src/omniscribe",
-    "docs/README.md",
+    "README.md",
     "LICENSE",
     "pyproject.toml",
 ]
@@ -176,6 +185,21 @@ dev = [
     # Direct `requests` import — only `scripts/ingest_lexicon.py` needs it
     # in this repo. Runtime deps get it transitively via surya-ocr.
     "requests>=2.34.2",
+    # Phase 4.4 (RFC 001 Option A): PyInstaller is the build tool for
+    # the Windows server bundle (``make bundle`` / ``make bundle-smoke``).
+    # Not a runtime dep — it only runs on the maintainer's machine /
+    # in CI. Pinned to 6.x because the 6.20+ line is what fixed the
+    # torch + surya-ocr hidden-imports dance that older 5.x builds
+    # routinely botched.
+    "pyinstaller>=6.20,<7",
+    # Phase 5.5 (2026-09-05): re-runs flaky tests up to 2x with a 1s
+    # delay before giving up. Used by ``.github/workflows/test.yml``
+    # to absorb the time.sleep(0.05) flakiness the audit's QA lens
+    # flagged — see Phase 3.7 in the remediation plan. The reruns are
+    # a band-aid for the test-suite-quality issues that
+    # Phase 5.7 ("replace magic-number sleeps") addresses; expect
+    # to drop the dep once the sleep sites are gone.
+    "pytest-rerunfailures>=15.0",
 ]
 
 [tool.uv]

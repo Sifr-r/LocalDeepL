@@ -13,6 +13,7 @@ import time
 import uuid
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from omniscribe.plugins.state_backend import StateBackend
@@ -153,6 +154,7 @@ def test_translate_sync_unknown_artifact_404(
 def test_translate_async_submit_and_complete(
     api_client: TestClient, monkeypatch: Any
 ) -> None:
+    pytest.importorskip("langgraph")
     _stub_llm(monkeypatch, "traduit")
     artifact_id, token = _seed_text_artifact(api_client, {"0": "Hello world."})
     response = api_client.post(
@@ -185,6 +187,7 @@ def test_translate_async_missing_artifact_400(api_client: TestClient) -> None:
 def test_translate_async_unknown_artifact_404(
     api_client: TestClient, monkeypatch: Any
 ) -> None:
+    pytest.importorskip("langgraph")
     _stub_llm_unreachable(monkeypatch)
     response = api_client.post(
         "/api/translate/async",

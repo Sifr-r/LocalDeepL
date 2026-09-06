@@ -28,7 +28,11 @@ plugins:
   - id: state_backend
     use: omniscribe.plugins.state_backend:plugin
     config:
-      backend: ${OMNISCRIBE_STATE_BACKEND:-memory}
+      # Default flipped to ``sqlite`` in Phase 2.3 (2026-09-05) so job
+      # records and artifact metadata survive a server restart. Set
+      # ``OMNISCRIBE_STATE_BACKEND=memory`` to keep the old in-process
+      # behaviour; the runtime will log a ``WARN`` to that effect.
+      backend: ${OMNISCRIBE_STATE_BACKEND:-sqlite}
       sqlite_path: ${OMNISCRIBE_STATE_DB_PATH:-}
 
   - id: artifacts

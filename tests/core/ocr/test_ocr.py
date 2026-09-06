@@ -626,4 +626,6 @@ class TestChatRetrySingleLayer:
             image_part = next(
                 part for part in user_content if part["type"] == "image_url"
             )
-            assert image_part["image_url"]["url"] == "data:image/jpeg;base64,fakeb64data"
+            assert (
+                image_part["image_url"]["url"] == "data:image/jpeg;base64,fakeb64data"
+            )

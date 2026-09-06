@@ -61,6 +61,18 @@ class StateBackendPlugin(Plugin):
             )
         settings = load_settings()
         if backend_name == "memory":
+            # Phase 2.3 (2026-09-05): the default flipped to ``sqlite``;
+            # anyone still on ``memory`` is opting into ephemeral
+            # state. Make that loud at boot so a server restart
+            # doesn't silently drop job history.
+            _LOGGER.warning(
+                "STATE BACKEND IS IN-MEMORY: a server restart will lose "
+                "all job records, artifact metadata, and progress "
+                "channel state. Set OMNISCRIBE_STATE_BACKEND=sqlite (or "
+                "omit it; sqlite is the default) for durable persistence. "
+                "See docs/TROUBLESHOOTING.md#async-translation-result-is-"
+                "gone-after-restart."
+            )
             backend: StateBackend = MemoryStateBackend()
         else:
             sqlite_path = str(self.config.get("sqlite_path") or "").strip()

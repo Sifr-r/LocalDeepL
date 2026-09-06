@@ -275,13 +275,19 @@ def test_json_formatter_scrubs_sensitive_keys() -> None:
     record.auth_token = "secret-token-12345"
     record.api_key = "sk-1234567890abcdef"
     record.password = "hunter2"
+    record.key = "private"
     record.request_id = "safe-request-id"
+    record.total_tokens = 150
+    record.author = "Alice"
 
     payload = json.loads(formatter.format(record))
     assert payload["auth_token"] == "<redacted>"
     assert payload["api_key"] == "<redacted>"
     assert payload["password"] == "<redacted>"
+    assert payload["key"] == "<redacted>"
     assert payload["request_id"] == "safe-request-id"
+    assert payload["total_tokens"] == 150
+    assert payload["author"] == "Alice"
 
 
 # Helper that returns the current ``sys.exc_info()`` triple so we can

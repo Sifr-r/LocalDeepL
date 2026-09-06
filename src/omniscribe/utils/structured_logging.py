@@ -131,15 +131,23 @@ class JsonFormatter(logging.Formatter):
         }
     )
 
-    _SENSITIVE_KEY_SUBSTRINGS: tuple[str, ...] = (
-        "token",
-        "secret",
-        "password",
-        "api_key",
-        "apikey",
-        "auth",
-        "credential",
-        "private_key",
+    _SENSITIVE_KEYS: frozenset[str] = frozenset(
+        {
+            "password",
+            "token",
+            "auth_token",
+            "secret",
+            "api_key",
+            "apikey",
+            "key",
+            "credential",
+            "credentials",
+            "private_key",
+            "access_token",
+            "refresh_token",
+            "authorization",
+            "client_secret",
+        }
     )
 
     def format(self, record: logging.LogRecord) -> str:
@@ -162,8 +170,7 @@ class JsonFormatter(logging.Formatter):
             if key in payload:
                 # Don't clobber the canonical fields above.
                 continue
-            lower_key = key.lower()
-            if any(sub in lower_key for sub in self._SENSITIVE_KEY_SUBSTRINGS):
+            if key.lower() in self._SENSITIVE_KEYS:
                 payload[key] = "<redacted>"
             else:
                 payload[key] = _jsonable(value)

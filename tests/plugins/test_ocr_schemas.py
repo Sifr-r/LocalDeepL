@@ -350,9 +350,7 @@ async def test_preflight_check_closes_ephemeral_processor(
         async def aclose(self) -> None:
             closed.append(self)
 
-    monkeypatch.setattr(
-        "omniscribe.plugins.ocr.service.OCRProcessor", _StubProcessor
-    )
+    monkeypatch.setattr("omniscribe.plugins.ocr.service.OCRProcessor", _StubProcessor)
     # _list_loaded_model_ids is called after ensure; stub it to return [].
     monkeypatch.setattr(
         "omniscribe.core.ocr.client._list_loaded_model_ids",

@@ -12,8 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import mimetypes
-import re
 import secrets
 import shutil
 import tempfile
@@ -49,6 +47,20 @@ from omniscribe.plugins.ocr.schemas import (
     JobStatusResponse,
     OCRRequest,
 )
+
+# Phase 3.8 (4.8, 2026-09-05): the previous ``service.py`` carried
+# 65 lines of error-sanitization regexes, a content-type sniffing
+# table + helper, and a config-seed catalogue + function — all
+# service-adjacent but not part of the OCR service's actual
+# implementation. Extracted into three focused modules under
+# ``services/`` so this file can focus on the HTTP-onto-pipeline
+# bridge. Imports below expose only the small public surface of
+# each module.
+from omniscribe.plugins.ocr.services import (
+    guess_suffix,
+    sanitize_job_error,
+    seed_config,
+)
 from omniscribe.plugins.progress import ProgressFrame, ProgressService
 from omniscribe.plugins.state_backend import TERMINAL_JOB_STATUSES, JobRecord
 from omniscribe.utils.security import check_ssrf_target_sync
@@ -76,72 +88,12 @@ _TERMINAL_EVENTS: tuple[type, ...] = (JobCompleted, JobFailed, JobCancelled)
 
 SSE_KEEPALIVE_SECONDS = 15.0
 
-_TRACEBACK_MARKERS = ("Traceback (most recent call last):",)
-_TRACEBACK_FILE_PATTERN = re.compile(r'File\s+["\'][^"\']+["\']')
-
-_DB_ERROR_PATTERNS = (
-    "sqlite3.",
-    "syntax error near",
-    "operationalerror",
-    "integrityerror",
-    "databaseerror",
-    "programmingerror",
-)
-
-_AUTH_HEADER_PATTERN = re.compile(
-    r'(?i)\b(authorization\s*:\s*(?:bearer\s+|basic\s+)?)[^\s"\'\,]+'
-)
-_BEARER_PATTERN = re.compile(r'(?i)\b(bearer\s+)[^\s"\'\,]+')
-_SECRET_KEY_PATTERN = re.compile(
-    r'(?i)\b(api[_-]?key|access[_-]?token|auth[_-]?token|secret[_-]?key|secret|token|password)(\s*[:=]\s*)(["\']?)[^\s"\'\,]+(\3)'
-)
-_SK_PATTERN = re.compile(r"\b(?:sk|pk)[-_][a-zA-Z0-9_\-]{16,}\b")
-
-_PATH_PATTERN = re.compile(
-    r'(?:[A-Za-z]:[\\/]|\\\\|/(?:tmp|home|var|usr|etc|opt|root|Users|private)/)[^"\'\s]+'
-)
-
-
-def _replace_path(match: re.Match[str]) -> str:
-    path_str = match.group(0)
-    trailing = ""
-    while path_str and path_str[-1] in ":;,.)]":
-        trailing = path_str[-1] + trailing
-        path_str = path_str[:-1]
-    return f"[path]{trailing}"
-
-
-def _sanitize_job_error(error: str | None) -> str | None:
-    """Sanitize a job error string to prevent leaking internal details.
-
-    Redacts tracebacks, raw database errors, internal filesystem paths,
-    and credentials/tokens, while preserving clean known-safe error
-    messages.
-    """
-    if not error:
-        return error
-
-    # 1. Traceback signatures -> generic internal error
-    if any(
-        marker in error for marker in _TRACEBACK_MARKERS
-    ) or _TRACEBACK_FILE_PATTERN.search(error):
-        return "An internal processing error occurred."
-
-    # 2. Raw database error keywords -> generic storage error
-    lower = error.lower()
-    if any(pat in lower for pat in _DB_ERROR_PATTERNS):
-        return "A storage error occurred."
-
-    # 3. Strip secret / token references
-    sanitized = _AUTH_HEADER_PATTERN.sub(r"\1[redacted]", error)
-    sanitized = _BEARER_PATTERN.sub(r"\1[redacted]", sanitized)
-    sanitized = _SECRET_KEY_PATTERN.sub(r"\1\2\3[redacted]\4", sanitized)
-    sanitized = _SK_PATTERN.sub("[redacted]", sanitized)
-
-    # 4. Scrub internal file paths -> [path]
-    sanitized = _PATH_PATTERN.sub(_replace_path, sanitized)
-
-    return sanitized
+# Phase 3.8 (4.8, 2026-09-05): the error-sanitization regexes,
+# the content-type sniffing table + helper, and the config-seed
+# catalogue + function used to live below this comment. They are
+# now in :mod:`omniscribe.plugins.ocr.services` and imported
+# above. The 65 lines of constants and helpers in this file are
+# now down to four service-implementation concerns.
 
 
 @dataclass(frozen=True)
@@ -161,134 +113,6 @@ class _OcrPayload:
     input_path: Path
     filename: str
     request: OCRRequest
-
-
-#: Canonical set of keys exposed by ``/api/config`` and seeded in :func:`_seed_config`.
-#:
-#: Documents the exposed configuration keys across endpoints, pipeline tunables,
-#: and feature flags:
-#:
-#: 1. ``api_base``: Base URL of the OpenAI-compatible VLM endpoint (e.g. LM Studio, Ollama).
-#: 2. ``api_key``: Authentication key for the VLM endpoint (masked as ``******`` in GET responses).
-#: 3. ``model``: Target VLM model identifier loaded on the inference server.
-#: 4. ``concurrency``: Number of PDF pages rasterized and processed concurrently.
-#: 5. ``dpi``: Target rasterization resolution (DPI) for PDF rendering.
-#: 6. ``dense_mode``: Handling strategy for dense pages ('auto', 'always', 'never').
-#: 7. ``dense_threshold``: Bounding-box threshold above which dense mode activates.
-#: 8. ``max_image_dim``: Maximum pixel dimension for page images fed to the VLM.
-#: 9. ``refine``: Re-align sparse OCR text back to bounding boxes using dynamic programming.
-#: 10. ``verify_model``: Pre-flight check verifying the requested model is loaded on the VLM server.
-#: 11. ``pipeline_mode``: OCR execution pipeline ('hybrid' with Surya or bbox-native 'grounded').
-#: 12. ``self_correction``: Automatic re-prompting pass for low-confidence OCR pages.
-#: 13. ``binarize``: Binarize scanned document images to enhance high-contrast text.
-#: 14. ``dual_engine``: Execute both hybrid and grounded engines in parallel and merge outputs.
-#: 15. ``spellcheck``: Post-OCR dictionary spellcheck mode ('none', 'auto', or ISO language code).
-#: 16. ``cross_page``: Multi-page cross-page text alignment and paragraph flow reconciliation.
-#: 17. ``preprocess_pages``: Master toggle for page preprocessing transforms before OCR.
-#: 18. ``orientation_detection``: Automatic detection and correction of 90/180/270 degree rotation.
-#: 19. ``deskew``: Image deskewing to straighten tilted or rotated scans.
-#: 20. ``denoise``: Noise reduction filtering to eliminate scan artifacts.
-#: 21. ``normalize_contrast``: Dynamic contrast adjustment for low-contrast or faded documents.
-#: 22. ``crop_cleanup``: Margin cropping and border artifact cleanup.
-#: 23. ``quality_routing``: Route pages based on image quality analysis.
-#: 24. ``document_processors``: Enabled post-OCR document analysis processors (e.g. reading order).
-_CONFIG_KEY_SET: frozenset[str] = frozenset(
-    {
-        "api_base",
-        "api_key",
-        "model",
-        "concurrency",
-        "dpi",
-        "dense_mode",
-        "dense_threshold",
-        "max_image_dim",
-        "refine",
-        "verify_model",
-        "pipeline_mode",
-        "self_correction",
-        "binarize",
-        "dual_engine",
-        "spellcheck",
-        "cross_page",
-        "preprocess_pages",
-        "orientation_detection",
-        "deskew",
-        "denoise",
-        "normalize_contrast",
-        "crop_cleanup",
-        "quality_routing",
-        "document_processors",
-    }
-)
-
-
-def _seed_config(settings: RuntimeSettings) -> dict[str, Any]:
-    """Initial ``/api/config`` store: LLM coordinates from settings, the
-    rest at their historical workstation defaults.
-
-    Seeds the canonical configuration keys defined in :data:`_CONFIG_KEY_SET`.
-    See :data:`_CONFIG_KEY_SET` for the detailed description of each exposed key.
-    """
-    return {
-        "api_base": settings.llm_api_base,
-        "api_key": settings.llm_api_key,
-        "model": settings.llm_model,
-        "concurrency": 3,
-        "dpi": 192,
-        "dense_mode": "auto",
-        "dense_threshold": 150,
-        "max_image_dim": 1024,
-        "refine": True,
-        "verify_model": True,
-        "pipeline_mode": "hybrid",
-        "self_correction": False,
-        "binarize": False,
-        "dual_engine": False,
-        "spellcheck": "none",
-        "cross_page": False,
-        "preprocess_pages": False,
-        "orientation_detection": False,
-        "deskew": False,
-        "denoise": False,
-        "normalize_contrast": False,
-        "crop_cleanup": False,
-        "quality_routing": False,
-        "document_processors": [],
-    }
-
-
-_CONTENT_TYPE_TO_SUFFIX: dict[str, str] = {
-    "application/pdf": ".pdf",
-    "image/png": ".png",
-    "image/jpeg": ".jpeg",
-    "image/jpg": ".jpg",
-    "image/webp": ".webp",
-    "image/avif": ".avif",
-    "image/tiff": ".tiff",
-    "image/bmp": ".bmp",
-    "image/gif": ".gif",
-}
-
-
-def _guess_suffix(filename: str, content_type: str | None = None) -> str:
-    """Determine the file extension for an upload.
-
-    Prefers the extension from ``filename`` if present. For extensionless
-    uploads, inspects ``content_type`` (MIME type sniffing) before falling
-    back to ``.pdf``.
-    """
-    suffix = Path(filename).suffix
-    if suffix:
-        return suffix
-    if content_type:
-        mime = content_type.split(";")[0].strip().lower()
-        if mime in _CONTENT_TYPE_TO_SUFFIX:
-            return _CONTENT_TYPE_TO_SUFFIX[mime]
-        if mime not in ("application/octet-stream", "binary/octet-stream"):
-            guessed = mimetypes.guess_extension(mime)
-            if guessed and guessed != ".bin":
-                return guessed
-    return ".pdf"
 
 
 class OCRServiceImpl:
@@ -317,7 +141,7 @@ class OCRServiceImpl:
         )
         self._max_buffered_jobs = max_buffered_jobs
         self._submission_to_job: dict[str, str] = {}
-        self._config: dict[str, Any] = _seed_config(settings)
+        self._config: dict[str, Any] = seed_config(settings)
         self._event_buffers: dict[str, deque[dict[str, Any]]] = {}
         self._event_notify: dict[str, asyncio.Event] = {}
         self._done_jobs: set[str] = set()
@@ -334,7 +158,7 @@ class OCRServiceImpl:
         # Audit 2.8: the sync path also streams the upload to disk before
         # calling ``_execute`` so the worker reuses one file-write instead
         # of holding the bytes on the heap for the OCR duration.
-        suffix = _guess_suffix(filename, content_type)
+        suffix = guess_suffix(filename, content_type)
         work_dir = Path(tempfile.mkdtemp(prefix="omniscribe-ocr-"))
         input_path = work_dir / f"input{suffix}"
         input_path.write_bytes(blob)
@@ -369,7 +193,7 @@ class OCRServiceImpl:
         # payload only carries a path, not the bytes. ``run_job`` reads
         # the file and ``run_sync`` shares the same per-job directory so
         # the worker can re-use the already-written bytes.
-        suffix = _guess_suffix(filename, content_type)
+        suffix = guess_suffix(filename, content_type)
         work_dir = Path(tempfile.mkdtemp(prefix="omniscribe-ocr-"))
         input_path = work_dir / f"input{suffix}"
         input_path.write_bytes(blob)
@@ -510,7 +334,7 @@ class OCRServiceImpl:
         error = record.error
         if record.status == "cancelled":
             error = error or "Job cancelled."
-        error = _sanitize_job_error(error)
+        error = sanitize_job_error(error)
         # Security (2026-08-29 audit C-3 / H-3): the result token is NOT
         # returned here. The unauthenticated /api/process/status + /api/jobs
         # chain would otherwise bypass the constant-time gate at
@@ -521,7 +345,12 @@ class OCRServiceImpl:
             filename=str(record.request_meta.get("filename", "")),
             status=_QUEUE_STATUS_TO_HTTP.get(record.status, "error"),
             created_at=record.created_at,
-            started_at=None,
+            # Phase 3.4 (4.6, 2026-09-05): surface the persisted
+            # ``started_at`` instead of the previous always-``None``
+            # placeholder. ``record.started_at`` is set when the worker
+            # flips the job to ``running`` (``plugins/jobs.py``); it is
+            # ``None`` only for jobs that have not yet started.
+            started_at=record.started_at,
             completed_at=record.updated_at if terminal else None,
             duration_s=(record.updated_at - record.created_at) if terminal else None,
             error=error,
@@ -878,10 +707,13 @@ OCRService = OCRServiceImpl
 
 __all__ = [
     "SSE_KEEPALIVE_SECONDS",
-    "_CONFIG_KEY_SET",
     "OCRService",
     "OCRServiceImpl",
-    "_guess_suffix",
-    "_sanitize_job_error",
     "event_entry",
 ]
+# Phase 3.8 (4.8, 2026-09-05): ``_CONFIG_KEY_SET``, ``_guess_suffix``,
+# and ``_sanitize_job_error`` moved to
+# :mod:`omniscribe.plugins.ocr.services`. Import them from there
+# (or from the top-level :mod:`omniscribe.plugins.ocr.services` for
+# the full re-export). They are no longer in this module's ``__all__``
+# to discourage re-import from ``service`` for new code.

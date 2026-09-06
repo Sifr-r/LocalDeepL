@@ -83,7 +83,7 @@ def _job_from_row(row: Any) -> JobRecord:
         result_artifact_token=row["result_artifact_token"],
         # ``input_path`` was added in a later schema bump; tolerate
         # older callers / synthetic rows that don't include it.
-        input_path=row["input_path"] if "input_path" in row else None,
+        input_path=row["input_path"] if "input_path" in row else None,  # noqa: SIM401
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         error=row["error"],
@@ -398,7 +398,9 @@ class SQLiteStateBackend:
                 if (
                     row is None
                     or row["consumed"]
-                    or not secrets.compare_digest(str(row["session_token"]), session_token)
+                    or not secrets.compare_digest(
+                        str(row["session_token"]), session_token
+                    )
                 ):
                     return None
                 conn.execute(

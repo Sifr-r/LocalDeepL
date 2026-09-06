@@ -43,12 +43,23 @@ EXEMPT_EXACT_PATHS: frozenset[str] = frozenset(
     }
 )
 
-#: Paths whose ``?token=`` query param is the documented channel — the
-#: header is also accepted, but EventSource in the browser cannot send
-#: custom headers so the query-param fallback is required for SSE.
+#: Path prefixes whose ``?token=`` query param is the documented channel
+#: — the ``Authorization: Bearer`` header is also accepted, but the
+#: browser's ``EventSource`` cannot send custom headers, so the
+#: query-param fallback is required for SSE endpoints. The matcher in
+#: :class:`BearerAuthMiddleware` requires the path to also end with
+#: ``/events`` (see ``_matches_query_token_path``), so this tuple is a
+#: prefix gate, not a free pass. Adding a non-SSE route here is a bug
+#: — the URL-borne token would leak into nginx access logs, browser
+#: history, and Referer headers.
+#:
+#: Phase 3.6 (4.2, 2026-09-05): narrowed from
+#: ``("/api/process/", "/api/jobs/")`` to just the SSE prefix. The
+#: previous tuple accepted ``?token=`` on every ``/api/process/*`` and
+#: ``/api/jobs/*`` route (status, result, list, etc.), which is what
+#: the audit caught as Medium (S5).
 QUERY_TOKEN_PATHS: tuple[str, ...] = (
-    "/api/process/",  # SSE event stream for a job
-    "/api/jobs/",  # job status / result download
+    "/api/process/",  # /api/process/{job_id}/events — SSE event stream
 )
 
 #: HTTP methods that do not require auth (CORS preflight).
@@ -96,6 +107,26 @@ def _extract_query_token(query_string: bytes) -> str | None:
     return values[0].strip() or None
 
 
+def _matches_query_token_path(path: str) -> bool:
+    """Return True iff ``path`` is an SSE endpoint that accepts ``?token=``.
+
+    The match is: any prefix in :data:`QUERY_TOKEN_PATHS` **and** the
+    path ends with ``/events``. The two-clause form exists so that
+    ``?token=`` is only accepted on the SSE event stream, not on
+    status / result / list endpoints that share the same prefix. URL-
+    borne tokens leak into nginx access logs, browser history, and
+    ``Referer`` headers; the surface area must be the smallest that
+    still lets ``EventSource`` (which cannot send custom headers)
+    work.
+
+    Phase 3.6 (4.2, 2026-09-05).
+    """
+    return any(
+        path.startswith(prefix) and path.endswith("/events")
+        for prefix in QUERY_TOKEN_PATHS
+    )
+
+
 def _is_exempt(path: str, method: str) -> bool:
     if method.upper() in EXEMPT_METHODS:
         return True
@@ -108,9 +139,7 @@ def _token_matches(expected: str, provided: str) -> bool:
     """Constant-time token comparison (audit 4.13 / 4.16)."""
     if not expected or not provided:
         return False
-    return hmac.compare_digest(
-        expected.encode("utf-8"), provided.encode("utf-8")
-    )
+    return hmac.compare_digest(expected.encode("utf-8"), provided.encode("utf-8"))
 
 
 #: ASGI 3.0 receive / send type aliases for the middleware.
@@ -158,9 +187,11 @@ class BearerAuthMiddleware:
             return
 
         # Prefer the Authorization header; fall back to the SSE query-param
-        # channel on routes that opt in to it.
+        # channel on routes that opt in to it. ``_matches_query_token_path``
+        # requires both the prefix match AND a ``/events`` suffix so
+        # query-param tokens never escape the SSE surface (Phase 3.6).
         token = _extract_bearer(scope.get("headers") or [])
-        if not token and any(path.startswith(prefix) for prefix in QUERY_TOKEN_PATHS):
+        if not token and _matches_query_token_path(path):
             token = _extract_query_token(scope.get("query_string", b""))
 
         if not token or not _token_matches(self._expected, token):
@@ -199,5 +230,6 @@ __all__ = [
     "_extract_bearer",
     "_extract_query_token",
     "_is_exempt",
+    "_matches_query_token_path",
     "_token_matches",
 ]

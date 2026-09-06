@@ -331,7 +331,9 @@ class TestHybridDecodedCache:
         engine = _engine(aligner=aligner, ocr=ocr)
         # Pre-populate the cache with the decoded striped image (so crops
         # have variance to pass the blank-crop guard).
-        engine._decoded_cache[(engine._current_run_id, 0)] = real_decode(_make_tiny_b64_image())
+        engine._decoded_cache[(engine._current_run_id, 0)] = real_decode(
+            _make_tiny_b64_image()
+        )
         images = {0: _make_tiny_b64_image()}
         pages_structured = {0: [([0.1, 0.1, 0.5, 0.2], "")] * 2}
 
@@ -806,9 +808,7 @@ class TestHybridRefinePages:
 
         # 3 pages, all needing decode (no cache hits).
         images_dict = {i: _make_tiny_b64_image() for i in range(3)}
-        pages_structured = {
-            i: [([0.1, 0.1, 0.9, 0.2], "")] for i in range(3)
-        }
+        pages_structured = {i: [([0.1, 0.1, 0.9, 0.2], "")] for i in range(3)}
 
         original = _decode_page_image
         active = 0
@@ -845,9 +845,7 @@ class TestHybridRefinePages:
             _refine_mod._decode_page_image = orig_decode
 
         # Parallel gather -> peak reaches 3. Serial loop -> 1.
-        assert peak == 3, (
-            f"expected parallel decode (peak=3), got {peak}"
-        )
+        assert peak == 3, f"expected parallel decode (peak=3), got {peak}"
 
 
 # ---------------------------------------------------------------------------

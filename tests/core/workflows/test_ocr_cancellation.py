@@ -374,14 +374,50 @@ class TestProcessRouteCancel:
             b"%%EOF\n"
         )
 
-    # ---------------------------------------------------------------------------
-    # The two tests below were removed in Sprint 6 P3 cleanup (audit catalog
-    # P3 dead-code item). They used the deleted ``omniscribe.api.routers.ocr``
-    # module — replaced by the Cordis harness + ``plugins/ocr/service.py`` in
-    # the API rebuild. The new plugin tests in ``tests/routers/`` and
-    # ``tests/plugins/test_ocr_plugin.py`` cover the same contract (cancel
-    # → 409 / 503 propagation; websocket cancel callback wiring). The imports
-    # were guarded by ``pytest.importorskip("omniscribe.api")`` so the tests
-    # silently skipped at collection; the catalog called this out as
-    # silently-inflating test counts without running.
-    # ---------------------------------------------------------------------------
+    async def test_route_returns_503_when_engine_raises_ocrcancelled(
+        self, tiny_pdf: bytes, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import httpx
+        from fastapi import FastAPI
+
+        import omniscribe.plugins.ocr.service as ocr_service_mod
+        from omniscribe.harness.context import Context
+        from omniscribe.plugins import artifacts as art
+        from omniscribe.plugins import jobs, progress, runtime
+        from omniscribe.plugins import state_backend as sb
+        from omniscribe.plugins.ocr.plugin import OCRPlugin
+
+        async def cancel_run(*args, **kwargs):
+            raise OCRCancelled("cancelled from test")
+
+        monkeypatch.setattr(ocr_service_mod, "run_pipeline", cancel_run)
+
+        ctx = Context()
+        await ctx.plugin(runtime.RuntimePlugin(), config={})
+        await ctx.plugin(sb.StateBackendPlugin(), config={"backend": "memory"})
+        await ctx.plugin(art.ArtifactsPlugin(), config={})
+        await ctx.plugin(jobs.JobsPlugin(), config={})
+        await ctx.plugin(progress.ProgressPlugin(), config={})
+        await ctx.plugin(OCRPlugin(), config={})
+
+        app = FastAPI()
+        for router in ctx.routes():
+            app.include_router(router)
+
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post(
+                    "/api/process",
+                    files={"file": ("doc.pdf", tiny_pdf, "application/pdf")},
+                )
+
+            assert response.status_code == 503
+            body = response.json()
+            assert body.get("cancelled") is True
+            assert "error" in body
+            assert "cancelled from test" in body.get("detail", "")
+        finally:
+            await ctx.dispose()
+

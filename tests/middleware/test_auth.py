@@ -86,7 +86,6 @@ def test_is_exempt_lists_exact_paths() -> None:
         assert _is_exempt(path, "GET")
 
 
-
 def test_is_exempt_lists_prefix_paths() -> None:
     for prefix in EXEMPT_PATH_PREFIXES:
         assert _is_exempt(prefix + "anything.css", "GET"), prefix
@@ -203,18 +202,13 @@ async def test_middleware_passes_probes_without_bearer_token() -> None:
         assert recorder.sent_start is None, path
 
 
-
 async def test_middleware_passes_static_assets_without_token() -> None:
-    recorder = await _drive(
-        "secret-123", _scope(path="/static/app.css", method="GET")
-    )
+    recorder = await _drive("secret-123", _scope(path="/static/app.css", method="GET"))
     assert recorder.upstream_called is True
 
 
 async def test_middleware_passes_options_preflight_without_token() -> None:
-    recorder = await _drive(
-        "secret-123", _scope(path="/api/jobs", method="OPTIONS")
-    )
+    recorder = await _drive("secret-123", _scope(path="/api/jobs", method="OPTIONS"))
     assert recorder.upstream_called is True
     assert recorder.sent_start is None
 
@@ -273,6 +267,35 @@ async def test_middleware_rejects_sse_path_with_wrong_query_token() -> None:
     assert recorder.sent_start["status"] == 401
 
 
+async def test_middleware_rejects_query_token_on_non_events_paths() -> None:
+    """Phase 3.6 (4.2, 2026-09-05): ``?token=`` is accepted only on the
+    SSE event stream, not on status / result / list endpoints that
+    share the same prefix. URL-borne tokens leak into nginx access
+    logs, browser history, and ``Referer`` headers — keep the surface
+    small.
+    """
+    # /api/process/{job_id}/status does NOT end with /events.
+    status_path = next(iter(QUERY_TOKEN_PATHS)) + "abc-123/status"
+    recorder = await _drive(
+        "secret-123",
+        _scope(path=status_path, method="GET", query_string=b"token=secret-123"),
+    )
+    assert recorder.upstream_called is False
+    assert recorder.sent_start is not None
+    assert recorder.sent_start["status"] == 401
+
+    # /api/jobs/{job_id}/result does NOT end with /events and is no
+    # longer in QUERY_TOKEN_PATHS at all (removed in Phase 3.6).
+    jobs_path = "/api/jobs/abc-123/result"
+    recorder = await _drive(
+        "secret-123",
+        _scope(path=jobs_path, method="GET", query_string=b"token=secret-123"),
+    )
+    assert recorder.upstream_called is False
+    assert recorder.sent_start is not None
+    assert recorder.sent_start["status"] == 401
+
+
 async def test_middleware_401_body_is_stable_envelope() -> None:
     recorder = await _drive("secret-123", _scope(path="/api/jobs", method="GET"))
     body = b"".join(recorder.sent_bodies)
@@ -309,7 +332,9 @@ def test_compare_digest_is_used_for_token_comparison() -> None:
         middleware = auth_mod.BearerAuthMiddleware(
             (lambda *a, **kw: asyncio.sleep(0)), "expected-token"
         )
-        await middleware(_scope(path="/api/jobs", headers=headers), _noop_recv, _noop_send)
+        await middleware(
+            _scope(path="/api/jobs", headers=headers), _noop_recv, _noop_send
+        )
 
     with patch.object(_hmac, "compare_digest", side_effect=spy):
         asyncio.run(_exercise())

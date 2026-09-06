@@ -329,10 +329,16 @@ def test_auto_migrate_if_needed_fail_open(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_cli_main_dry_run(tmp_path: Path, fake_model: EmbeddingModel, capsys) -> None:
+def test_cli_main_dry_run(
+    tmp_path: Path, fake_model: EmbeddingModel, monkeypatch, capsys
+) -> None:
     """The CLI should accept --dry-run and --artifact-dir."""
     from omniscribe.cli.migrate_lexicon import main as cli_main
 
+    monkeypatch.setattr(
+        "omniscribe.core.lexicon.migration.get_default_embedding_model",
+        lambda: fake_model,
+    )
     _seed_legacy_library(tmp_path)
     rc = cli_main(
         [
@@ -348,13 +354,19 @@ def test_cli_main_dry_run(tmp_path: Path, fake_model: EmbeddingModel, capsys) ->
 
 
 def test_cli_main_verify_only(
-    tmp_path: Path, fake_model: EmbeddingModel, capsys
+    tmp_path: Path, fake_model: EmbeddingModel, monkeypatch, capsys
 ) -> None:
     from omniscribe.cli.migrate_lexicon import main as cli_main
 
+    monkeypatch.setattr(
+        "omniscribe.core.lexicon.migration.get_default_embedding_model",
+        lambda: fake_model,
+    )
     _seed_legacy_library(tmp_path)
     # First migrate for real.
-    cli_main(["--artifact-dir", str(tmp_path)])
+    rc1 = cli_main(["--artifact-dir", str(tmp_path)])
+    assert rc1 == 0
+    capsys.readouterr()
     # Then verify.
     rc = cli_main(["--verify-only", "--artifact-dir", str(tmp_path)])
     assert rc == 0
@@ -364,10 +376,14 @@ def test_cli_main_verify_only(
 
 
 def test_cli_main_refuses_ambiguous(
-    tmp_path: Path, fake_model: EmbeddingModel, capsys
+    tmp_path: Path, fake_model: EmbeddingModel, monkeypatch, capsys
 ) -> None:
     from omniscribe.cli.migrate_lexicon import main as cli_main
 
+    monkeypatch.setattr(
+        "omniscribe.core.lexicon.migration.get_default_embedding_model",
+        lambda: fake_model,
+    )
     _seed_legacy_library(tmp_path)
     LanceDBLexiconStore(path=tmp_path / "lexicon.lance", embedding_model=fake_model)
     rc = cli_main(["--artifact-dir", str(tmp_path)])

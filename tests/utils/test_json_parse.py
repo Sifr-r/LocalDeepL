@@ -38,13 +38,13 @@ def test_extract_json_fenced_without_json_tag() -> None:
 
 
 def test_extract_json_embedded_in_text() -> None:
-    raw = "Here is the model output:\n{\"score\": 0.95, \"details\": {\"a\": 1}}\nHope this helps!"
+    raw = 'Here is the model output:\n{"score": 0.95, "details": {"a": 1}}\nHope this helps!'
     result = extract_json(raw)
     assert result == {"score": 0.95, "details": {"a": 1}}
 
 
 def test_extract_json_embedded_array_in_text() -> None:
-    raw = "Leading text [\"alpha\", \"beta\"] and trailing text"
+    raw = 'Leading text ["alpha", "beta"] and trailing text'
     assert extract_json(raw) == ["alpha", "beta"]
 
 
@@ -58,3 +58,13 @@ def test_extract_json_malformed() -> None:
     assert extract_json("{not valid json}") is None
     assert extract_json("Some text with {unclosed brace") is None
     assert extract_json("No braces or brackets here at all.") is None
+
+
+def test_extract_json_recovers_after_invalid_brace() -> None:
+    raw = 'prefix {broken} then {"valid": 123}'
+    assert extract_json(raw) == {"valid": 123}
+
+
+def test_extract_json_performance_with_many_unmatched_braces() -> None:
+    raw = "{" * 500 + ' ["found"]'
+    assert extract_json(raw) == ["found"]

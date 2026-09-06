@@ -241,9 +241,7 @@ async def test_wal_mode_logs_warning_when_not_wal(
     mock_conn.execute.return_value = mock_cursor
 
     monkeypatch.setattr(sqlite3, "connect", lambda *args, **kwargs: mock_conn)
-    impl = SQLiteStateBackend(
-        db_path=tmp_path / "warn.db", blob_dir=tmp_path / "blobs"
-    )
+    impl = SQLiteStateBackend(db_path=tmp_path / "warn.db", blob_dir=tmp_path / "blobs")
     with caplog.at_level(
         logging.WARNING, logger="omniscribe.plugins.state_backend_sqlite"
     ):

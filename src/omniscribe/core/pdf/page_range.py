@@ -14,6 +14,7 @@ input returns None.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from typing import Final
 
 _PAGE_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\s*(\d+)\s*(?:-\s*(\d+)\s*)?$")
@@ -70,3 +71,47 @@ def parse_page_range_with_total(spec: str, total_pages: int) -> list[int]:
             if 1 <= p <= total_pages:
                 pages.add(p - 1)
     return sorted(pages)
+
+
+def serialize_page_range(pages: Iterable[int]) -> str:
+    """Serialize an iterable of 1-indexed page numbers into a compact range string.
+
+    Consecutive numbers are collapsed into inclusive hyphenated ranges (e.g.
+    ``1-3``), isolated numbers remain single digits, duplicates are removed,
+    and output is sorted in ascending order.
+
+    Examples:
+        serialize_page_range([1, 2, 3, 5, 7, 8, 9]) -> "1-3,5,7-9"
+        serialize_page_range([3, 1, 2]) -> "1-3"
+        serialize_page_range([1, 1, 2]) -> "1-2"
+        serialize_page_range([]) -> ""
+
+    Raises:
+        ValueError: if any page number is less than 1 or not an integer.
+    """
+    cleaned: list[int] = []
+    for p in pages:
+        if not isinstance(p, int) or isinstance(p, bool) or p < 1:
+            raise ValueError(f"Page numbers must be positive integers >= 1, got {p!r}")
+        cleaned.append(p)
+    if not cleaned:
+        return ""
+    sorted_unique = sorted(set(cleaned))
+    ranges: list[tuple[int, int]] = []
+    start = sorted_unique[0]
+    end = start
+    for p in sorted_unique[1:]:
+        if p == end + 1:
+            end = p
+        else:
+            ranges.append((start, end))
+            start = end = p
+    ranges.append((start, end))
+    return ",".join(f"{s}-{e}" if s != e else str(s) for s, e in ranges)
+
+
+__all__ = [
+    "parse_page_range",
+    "parse_page_range_with_total",
+    "serialize_page_range",
+]

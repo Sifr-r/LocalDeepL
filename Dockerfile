@@ -60,10 +60,10 @@ WORKDIR /app
 # Copy dependency manifest first so the install layer is cacheable
 # independent of the source tree. ``--locked`` (audit P1-7) installs
 # exactly the committed uv.lock set instead of re-resolving.
-# ``LICENSE`` and ``docs/README.md`` are required by hatchling during the
+# ``LICENSE`` and ``README.md`` are required by hatchling during the
 # project install (see ``pyproject.toml``: ``license = { file = "LICENSE" }``
-# and ``readme = "docs/README.md"``).
-COPY pyproject.toml uv.lock LICENSE docs/README.md ./
+# and ``readme = "README.md"``).
+COPY pyproject.toml uv.lock LICENSE README.md ./
 RUN mkdir -p /app/src/omniscribe \
  && touch /app/src/omniscribe/__init__.py \
  && uv sync --locked --extra web --extra async-translation --extra preprocessing --extra lexicon --no-install-project

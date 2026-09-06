@@ -67,6 +67,10 @@ class JobRecord:
     input_path: str | None = None
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
+    # Set when the worker flips the job from ``queued`` → ``running``;
+    # surfaced in ``JobStatusResponse.started_at``. ``None`` until the
+    # first ``JobStarted`` event has fired for the job.
+    started_at: float | None = None
     error: str | None = None
 
     __hash__ = None  # type: ignore[assignment]

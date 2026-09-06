@@ -206,9 +206,7 @@ async def test_requests_pass_through_when_below_limit() -> None:
     middleware = RateLimitMiddleware(recorder.downstream, rate_limit_per_min=3)
 
     for _ in range(3):
-        rec = await _drive(
-            middleware, recorder, _scope(client=("1.2.3.4", 1234))
-        )
+        rec = await _drive(middleware, recorder, _scope(client=("1.2.3.4", 1234)))
         assert rec.upstream_called is True
         assert rec.sent_start is not None
         assert rec.sent_start["status"] == 200
@@ -220,17 +218,13 @@ async def test_requests_return_429_when_exceeding_limit() -> None:
 
     # First two requests pass
     for _ in range(2):
-        rec = await _drive(
-            middleware, recorder, _scope(client=("1.2.3.4", 1234))
-        )
+        rec = await _drive(middleware, recorder, _scope(client=("1.2.3.4", 1234)))
         assert rec.upstream_called is True
         assert rec.sent_start is not None
         assert rec.sent_start["status"] == 200
 
     # 3rd request exceeds limit
-    rec3 = await _drive(
-        middleware, recorder, _scope(client=("1.2.3.4", 1234))
-    )
+    rec3 = await _drive(middleware, recorder, _scope(client=("1.2.3.4", 1234)))
     assert rec3.upstream_called is False
     assert rec3.sent_start is not None
     assert rec3.sent_start["status"] == 429
@@ -251,21 +245,15 @@ async def test_rate_limit_per_ip_isolation() -> None:
 
     # Exhaust IP 1
     for _ in range(2):
-        rec = await _drive(
-            middleware, recorder, _scope(client=("10.0.0.1", 1000))
-        )
+        rec = await _drive(middleware, recorder, _scope(client=("10.0.0.1", 1000)))
         assert rec.upstream_called is True
-    rec_blocked = await _drive(
-        middleware, recorder, _scope(client=("10.0.0.1", 1000))
-    )
+    rec_blocked = await _drive(middleware, recorder, _scope(client=("10.0.0.1", 1000)))
     assert rec_blocked.upstream_called is False
     assert rec_blocked.sent_start is not None
     assert rec_blocked.sent_start["status"] == 429
 
     # IP 2 is unaffected and succeeds
-    rec_ip2 = await _drive(
-        middleware, recorder, _scope(client=("10.0.0.2", 2000))
-    )
+    rec_ip2 = await _drive(middleware, recorder, _scope(client=("10.0.0.2", 2000)))
     assert rec_ip2.upstream_called is True
     assert rec_ip2.sent_start is not None
     assert rec_ip2.sent_start["status"] == 200
@@ -276,9 +264,7 @@ async def test_exempt_paths_bypass_rate_limiting() -> None:
     middleware = RateLimitMiddleware(recorder.downstream, rate_limit_per_min=1)
 
     # Exhaust normal route
-    await _drive(
-        middleware, recorder, _scope(path="/api/jobs", client=("1.1.1.1", 10))
-    )
+    await _drive(middleware, recorder, _scope(path="/api/jobs", client=("1.1.1.1", 10)))
     blocked = await _drive(
         middleware, recorder, _scope(path="/api/jobs", client=("1.1.1.1", 10))
     )
@@ -306,7 +292,9 @@ async def test_exempt_paths_bypass_rate_limiting() -> None:
 
     # OPTIONS method bypasses rate limiting
     rec_options = await _drive(
-        middleware, recorder, _scope(path="/api/jobs", method="OPTIONS", client=("1.1.1.1", 10))
+        middleware,
+        recorder,
+        _scope(path="/api/jobs", method="OPTIONS", client=("1.1.1.1", 10)),
     )
     assert rec_options.upstream_called is True
 
@@ -319,15 +307,11 @@ async def test_sliding_window_resets_after_window_elapses() -> None:
 
     with patch("time.monotonic", side_effect=lambda: fake_time):
         # 1st request at t=1000.0 passes
-        rec1 = await _drive(
-            middleware, recorder, _scope(client=("1.2.3.4", 1234))
-        )
+        rec1 = await _drive(middleware, recorder, _scope(client=("1.2.3.4", 1234)))
         assert rec1.upstream_called is True
 
         # 2nd request at t=1000.0 blocked
-        rec2 = await _drive(
-            middleware, recorder, _scope(client=("1.2.3.4", 1234))
-        )
+        rec2 = await _drive(middleware, recorder, _scope(client=("1.2.3.4", 1234)))
         assert rec2.upstream_called is False
         assert rec2.sent_start is not None
         assert rec2.sent_start["status"] == 429
@@ -336,9 +320,7 @@ async def test_sliding_window_resets_after_window_elapses() -> None:
 
         # Advance time by 30 seconds
         fake_time = 1030.0
-        rec3 = await _drive(
-            middleware, recorder, _scope(client=("1.2.3.4", 1234))
-        )
+        rec3 = await _drive(middleware, recorder, _scope(client=("1.2.3.4", 1234)))
         assert rec3.sent_start is not None
         assert rec3.sent_start["status"] == 429
         retry_after_30 = int(dict(rec3.sent_start["headers"])[b"retry-after"])
@@ -346,9 +328,7 @@ async def test_sliding_window_resets_after_window_elapses() -> None:
 
         # Advance past 60-second window
         fake_time = 1061.0
-        rec4 = await _drive(
-            middleware, recorder, _scope(client=("1.2.3.4", 1234))
-        )
+        rec4 = await _drive(middleware, recorder, _scope(client=("1.2.3.4", 1234)))
         assert rec4.upstream_called is True
         assert rec4.sent_start is not None
         assert rec4.sent_start["status"] == 200
@@ -372,6 +352,7 @@ def test_max_tracked_ips_eviction() -> None:
     for i in range(MAX_TRACKED_IPS + 5):
         ip = f"10.99.{i // 256}.{i % 256}"
         import collections
+
         q = collections.deque([now - 120.0])  # expired timestamps
         middleware._records[ip] = q
 
@@ -456,14 +437,17 @@ def test_rate_limit_disabled_test_client() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_create_app_wires_rate_limit_middleware(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_app_wires_rate_limit_middleware(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("OMNISCRIBE_RATE_LIMIT_PER_MIN", "100")
     settings = RuntimeSettings(rate_limit_per_min=100)
     with patch("omniscribe.server.load_settings", return_value=settings):
         app_instance = create_app()
         # Find middleware in user_middleware stack
         has_rate_limit = any(
-            m.cls == RateLimitMiddleware for m in app_instance.user_middleware  # type: ignore[attr-defined]
+            m.cls == RateLimitMiddleware
+            for m in app_instance.user_middleware  # type: ignore[attr-defined]
         )
         assert has_rate_limit is True
 
@@ -476,14 +460,20 @@ def test_create_app_omits_rate_limit_middleware_when_unset(
     with patch("omniscribe.server.load_settings", return_value=settings):
         app_instance = create_app()
         has_rate_limit = any(
-            m.cls == RateLimitMiddleware for m in app_instance.user_middleware  # type: ignore[attr-defined]
+            m.cls == RateLimitMiddleware
+            for m in app_instance.user_middleware  # type: ignore[attr-defined]
         )
         assert has_rate_limit is False
 
 
 def test_sanitize_value_error_preserves_clean_messages() -> None:
-    assert _sanitize_value_error(ValueError("'text' is required")) == "'text' is required"
-    assert _sanitize_value_error(ValueError("max 2 entries allowed")) == "max 2 entries allowed"
+    assert (
+        _sanitize_value_error(ValueError("'text' is required")) == "'text' is required"
+    )
+    assert (
+        _sanitize_value_error(ValueError("max 2 entries allowed"))
+        == "max 2 entries allowed"
+    )
 
 
 def test_sanitize_value_error_sanitizes_paths_and_tracebacks() -> None:
@@ -507,7 +497,9 @@ def test_sanitize_value_error_sanitizes_paths_and_tracebacks() -> None:
     )
     # Tracebacks
     assert (
-        _sanitize_value_error(ValueError("Traceback (most recent call last):\n  File 'a.py'"))
+        _sanitize_value_error(
+            ValueError("Traceback (most recent call last):\n  File 'a.py'")
+        )
         == "Invalid input"
     )
     # Empty

@@ -95,9 +95,7 @@ def resolve_engine_settings(
         "language": _resolve_optional_str(
             request.language, config, "transcription_language"
         ),
-        "prompt": _resolve_optional_str(
-            request.prompt, config, "transcription_prompt"
-        ),
+        "prompt": _resolve_optional_str(request.prompt, config, "transcription_prompt"),
         "temperature": request.temperature,
     }
 

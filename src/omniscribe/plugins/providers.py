@@ -78,9 +78,7 @@ def build_providers_router(manager: ProviderManagerImpl) -> APIRouter:
     ) -> dict[str, Any]:
         if manager.get_provider(provider_id) is None:
             raise HTTPException(status_code=404, detail="unknown provider")
-        resolved_api_key = (
-            x_provider_api_key or _bearer_token(authorization) or api_key
-        )
+        resolved_api_key = x_provider_api_key or _bearer_token(authorization) or api_key
         return await manager.discover_models(
             provider_id, api_base=api_base, api_key=resolved_api_key
         )

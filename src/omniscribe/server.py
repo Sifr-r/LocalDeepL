@@ -17,7 +17,7 @@ import math
 import os
 import re
 import sys
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import ModuleType
@@ -45,9 +45,9 @@ _PLACEHOLDER_AUTH_TOKENS: frozenset[str] = frozenset(
     }
 )
 
-ASGIReceive = Callable[[], Awaitable[dict[str, Any]]]
-ASGISend = Callable[[dict[str, Any]], Awaitable[None]]
-ASGIScope = dict[str, Any]
+ASGIReceive = Callable[[], Awaitable[MutableMapping[str, Any]]]
+ASGISend = Callable[[MutableMapping[str, Any]], Awaitable[None]]
+ASGIScope = MutableMapping[str, Any]
 
 # --- Static files directory ---
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -122,7 +122,6 @@ async def _load_harness(settings: RuntimeSettings) -> Any:
 
 def create_app() -> ASGIApplication:
     """Create the FastAPI app with the plugin-harness lifespan."""
-    load_dotenv()
     settings = load_settings()
     _validate_runtime_settings(settings)
     fastapi = _load_optional_module("fastapi")
@@ -134,6 +133,12 @@ def create_app() -> ASGIApplication:
         from omniscribe.plugins.runtime import RuntimeService
 
         runtime_settings = _validate_runtime_settings(settings)
+        # Phase 2.3 (2026-09-05): surface the active state backend at
+        # boot so operators see the SQLite / memory choice before the
+        # first request lands. The plugin-level ``WARN`` for
+        # ``memory`` is emitted inside the state backend plugin's
+        # ``apply()``; this is the silent default-flip reminder.
+        _log.info("omniscribe state_backend=%s", runtime_settings.state_backend)
         ctx = await _load_harness(runtime_settings)
         web_app.state.context = ctx
         # Routers were registered as effects at plugin apply time; mount
@@ -171,6 +176,10 @@ def create_app() -> ASGIApplication:
             "Content-Disposition",
             "X-Document-Trust",
             "X-Artifact-Token",
+            "X-Document-Id",
+            "X-Total-Pages",
+            "X-Page-Width",
+            "X-Page-Height",
         ],
         max_age=600,
     )
@@ -183,9 +192,7 @@ def create_app() -> ASGIApplication:
     # dev and CI keep working without a token.
     from omniscribe.middleware.auth import BearerAuthMiddleware
 
-    web_app.add_middleware(
-        BearerAuthMiddleware, expected_token=settings.auth_token
-    )
+    web_app.add_middleware(BearerAuthMiddleware, expected_token=settings.auth_token)
 
     # Wave 13: ASGI rate-limiting middleware.
     if settings.rate_limit_per_min is not None:
@@ -202,6 +209,15 @@ def create_app() -> ASGIApplication:
     web_app.add_middleware(UploadSizeLimitMiddleware, max_bytes=max_bytes)
 
     if _STATIC_DIR.is_dir():
+        # S9 (audit 4.13): ``_STATIC_DIR`` MUST be a sealed directory
+        # the operator controls. StaticFiles serves files directly to
+        # any caller who can guess the path (no auth gate) — a
+        # user-writable or symlink-followable path here is a path
+        # traversal. The default path
+        # (``src/omniscribe/static/``) is package-bundled and
+        # operator-read-only; an override via env var or config must
+        # point at a sealed dir, not a user upload dir. See
+        # ``docs/SECURITY.md`` §"Static files" for the full contract.
         web_app.mount(
             "/static",
             staticfiles.StaticFiles(directory=str(_STATIC_DIR)),
@@ -238,7 +254,10 @@ def create_app() -> ASGIApplication:
         seconds = max(1, math.ceil(retry_after))
         return responses.JSONResponse(
             status_code=503,
-            content={"error": "service_unavailable", "detail": "Model circuit breaker is open; retry later"},
+            content={
+                "error": "service_unavailable",
+                "detail": "Model circuit breaker is open; retry later",
+            },
             headers={"Retry-After": str(seconds)},
         )
 
@@ -277,7 +296,23 @@ class LazyASGIApp:
         receive: ASGIReceive,
         send: ASGISend,
     ) -> None:
-        await self._load()(scope, receive, send)
+        try:
+            await self._load()(scope, receive, send)
+        except BaseException as exc:
+            if "cancelled" in exc.__class__.__name__.lower() and scope["type"] == "http":
+                from starlette import responses
+
+                res = responses.JSONResponse(
+                    status_code=503,
+                    content={
+                        "cancelled": True,
+                        "error": "cancelled",
+                        "detail": str(exc) or "OCR run was cancelled before completion.",
+                    },
+                )
+                await res(scope, receive, send)
+                return
+            raise
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._load(), name)
@@ -305,7 +340,9 @@ def _sanitize_value_error(exc: Exception | str) -> str:
         return "Invalid input"
     if re.search(r"[a-zA-Z]:[\\/]|\\\\[^\\/]+[\\/]", raw):
         return "Invalid input"
-    if re.search(r"/(?:home|usr|var|etc|tmp|opt|root|bin|sbin|Users|app|private)/", raw):
+    if re.search(
+        r"/(?:home|usr|var|etc|tmp|opt|root|bin|sbin|Users|app|private)/", raw
+    ):
         return "Invalid input"
     if ".." in raw and ("../" in raw or "..\\" in raw):
         return "Invalid input"

@@ -198,10 +198,14 @@ def test_max_pages_negative_rejected(
 # ---------------------------------------------------------------------------
 
 
-def test_state_backend_defaults_to_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_state_backend_defaults_to_sqlite(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Phase 2.3 (2026-09-05): default flipped from ``memory`` to
+    # ``sqlite`` so job records and artifact metadata survive a
+    # server restart. Operators who want in-memory state can still
+    # set ``OMNISCRIBE_STATE_BACKEND=memory`` explicitly.
     monkeypatch.delenv("OMNISCRIBE_STATE_BACKEND", raising=False)
     settings = RuntimeSettings()
-    assert settings.state_backend == "memory"
+    assert settings.state_backend == "sqlite"
 
 
 def test_state_backend_sqlite_allowed(monkeypatch: pytest.MonkeyPatch) -> None:

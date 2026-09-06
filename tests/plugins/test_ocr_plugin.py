@@ -12,6 +12,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
+from omniscribe.core.workflows.base import OCRCancelled
 from omniscribe.harness.context import Context
 from omniscribe.plugins import artifacts as art
 from omniscribe.plugins import jobs, progress, runtime
@@ -181,6 +182,27 @@ async def test_process_sync_oversized_upload_is_413(fake_pipeline) -> None:
         assert response.status_code == 413
     finally:
         await ctx.dispose()
+
+
+async def test_process_sync_returns_503_when_cancelled(
+    fake_pipeline, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def cancel_run(*args: Any, **kwargs: Any) -> dict[int, list[str]]:
+        raise OCRCancelled("OCR cancelled after refine box 2/73.")
+
+    monkeypatch.setattr(ocr_service_mod, "run_pipeline", cancel_run)
+    ctx, app = await _boot()
+    try:
+        async with _client(app) as client:
+            response = await client.post("/api/process", **_upload())
+        assert response.status_code == 503
+        data = response.json()
+        assert data.get("cancelled") is True
+        assert data.get("error") == "cancelled"
+        assert "OCR cancelled after refine box 2/73." in data.get("detail", "")
+    finally:
+        await ctx.dispose()
+
 
 
 # -- async lifecycle -----------------------------------------------------------
@@ -652,27 +674,30 @@ async def test_cancel_job_terminal_status_behavior(fake_pipeline) -> None:
 
 
 def test_guess_suffix_helper() -> None:
-    """_guess_suffix helper inspects filename and MIME type correctly."""
-    from omniscribe.plugins.ocr.service import _guess_suffix
+    """Phase 3.8 (4.8, 2026-09-05): ``_guess_suffix`` was extracted to
+    :mod:`omniscribe.plugins.ocr.services.content_sniff` and renamed
+    ``guess_suffix``. The test is otherwise unchanged.
+    """
+    from omniscribe.plugins.ocr.services import guess_suffix
 
     # Preserves filename extension when present
-    assert _guess_suffix("doc.pdf") == ".pdf"
-    assert _guess_suffix("doc.PDF") == ".PDF"
-    assert _guess_suffix("photo.png", "image/jpeg") == ".png"
-    assert _guess_suffix("scan.tiff") == ".tiff"
+    assert guess_suffix("doc.pdf") == ".pdf"
+    assert guess_suffix("doc.PDF") == ".PDF"
+    assert guess_suffix("photo.png", "image/jpeg") == ".png"
+    assert guess_suffix("scan.tiff") == ".tiff"
 
     # Sniffs MIME when filename has no extension
-    assert _guess_suffix("extensionless", "image/png") == ".png"
-    assert _guess_suffix("extensionless", "image/jpeg") == ".jpeg"
-    assert _guess_suffix("extensionless", "image/jpg") == ".jpg"
-    assert _guess_suffix("extensionless", "image/webp") == ".webp"
-    assert _guess_suffix("extensionless", "image/avif") == ".avif"
-    assert _guess_suffix("extensionless", "image/png; charset=utf-8") == ".png"
+    assert guess_suffix("extensionless", "image/png") == ".png"
+    assert guess_suffix("extensionless", "image/jpeg") == ".jpeg"
+    assert guess_suffix("extensionless", "image/jpg") == ".jpg"
+    assert guess_suffix("extensionless", "image/webp") == ".webp"
+    assert guess_suffix("extensionless", "image/avif") == ".avif"
+    assert guess_suffix("extensionless", "image/png; charset=utf-8") == ".png"
 
     # Fallback to .pdf when unknown or octet-stream
-    assert _guess_suffix("extensionless", None) == ".pdf"
-    assert _guess_suffix("extensionless", "application/octet-stream") == ".pdf"
-    assert _guess_suffix("extensionless", "unknown/type") == ".pdf"
+    assert guess_suffix("extensionless", None) == ".pdf"
+    assert guess_suffix("extensionless", "application/octet-stream") == ".pdf"
+    assert guess_suffix("extensionless", "unknown/type") == ".pdf"
 
 
 async def test_update_config_change_detection() -> None:
@@ -700,13 +725,143 @@ async def test_update_config_change_detection() -> None:
     )
 
     # Calling update_config with identical coordinates doesn't mutate settings
-    res = service.update_config({
-        "api_base": "http://initial.base",
-        "api_key": "******",
-        "model": "initial-model",
-    })
+    res = service.update_config(
+        {
+            "api_base": "http://initial.base",
+            "api_key": "******",
+            "model": "initial-model",
+        }
+    )
     assert res["model"] == "initial-model"
 
     # Updating with changed model mutates settings
     service.update_config({"model": "new-model"})
     assert settings.llm_model == "new-model"
+
+
+async def test_document_page_preview() -> None:
+    ctx, app = await _boot()
+    import pymupdf as fitz
+
+    doc = fitz.open()
+    p = doc.new_page()
+    p.insert_text((50, 50), "Test Page Preview")
+    pdf_bytes = doc.tobytes()
+
+    async with _client(app) as client:
+        resp = await client.post(
+            "/api/documents/preview",
+            files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+            data={"page": "0", "dpi": "150"},
+        )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/png"
+        assert resp.headers["x-total-pages"] == "1"
+        assert float(resp.headers["x-page-width"]) > 0
+        assert float(resp.headers["x-page-height"]) > 0
+        assert len(resp.content) > 0
+
+
+async def test_document_page_preview_caching_and_boundaries() -> None:
+    ctx, app = await _boot()
+    import pymupdf as fitz
+
+    # Create 2-page doc
+    doc = fitz.open()
+    p1 = doc.new_page()
+    p1.insert_text((50, 50), "Page 1 Content")
+    p2 = doc.new_page()
+    p2.insert_text((50, 50), "Page 2 Content")
+    pdf_bytes = doc.tobytes()
+
+    async with _client(app) as client:
+        # 1. Initial upload (page 0)
+        resp = await client.post(
+            "/api/documents/preview",
+            files={"file": ("multi.pdf", pdf_bytes, "application/pdf")},
+            data={"page": "0", "dpi": "150"},
+        )
+        assert resp.status_code == 200
+        assert resp.headers["x-total-pages"] == "2"
+        doc_id = resp.headers.get("x-document-id")
+        assert doc_id is not None and len(doc_id) == 16
+
+        # 2. Subsequent request using doc_id WITHOUT file upload (page 1)
+        resp2 = await client.post(
+            "/api/documents/preview",
+            data={"doc_id": doc_id, "page": "1", "dpi": "200"},
+        )
+        assert resp2.status_code == 200
+        assert resp2.headers["x-document-id"] == doc_id
+        assert resp2.headers["x-total-pages"] == "2"
+        assert len(resp2.content) > 0
+
+        # 3. Subsequent request using X-Document-Id header without file
+        resp3 = await client.post(
+            "/api/documents/preview",
+            headers={"X-Document-Id": doc_id},
+            data={"page": "0"},
+        )
+        assert resp3.status_code == 200
+        assert resp3.headers["x-document-id"] == doc_id
+
+        # 4. Unknown doc_id without file returns 404
+        resp_404 = await client.post(
+            "/api/documents/preview",
+            data={"doc_id": "nonexistent_doc", "page": "0"},
+        )
+        assert resp_404.status_code == 404
+
+        # 5. Boundary check: negative page returns 400
+        resp_neg = await client.post(
+            "/api/documents/preview",
+            data={"doc_id": doc_id, "page": "-1"},
+        )
+        assert resp_neg.status_code == 400
+
+        # 6. Boundary check: page out of bounds returns 404
+        resp_oob = await client.post(
+            "/api/documents/preview",
+            data={"doc_id": doc_id, "page": "99"},
+        )
+        assert resp_oob.status_code == 404
+
+        # 7. Boundary check: empty file returns 400
+        resp_empty = await client.post(
+            "/api/documents/preview",
+            files={"file": ("empty.pdf", b"", "application/pdf")},
+            data={"page": "0"},
+        )
+        assert resp_empty.status_code == 400
+
+
+async def test_document_page_preview_lru_eviction() -> None:
+    ctx, app = await _boot()
+    import pymupdf as fitz
+    from omniscribe.plugins.ocr.plugin import _preview_doc_cache, _PREVIEW_DOC_CACHE_CAPACITY
+
+    doc_ids = []
+    async with _client(app) as client:
+        # Create and upload 11 distinct documents
+        for i in range(11):
+            doc = fitz.open()
+            p = doc.new_page()
+            p.insert_text((50, 50), f"Doc {i}")
+            b = doc.tobytes()
+            resp = await client.post(
+                "/api/documents/preview",
+                files={"file": (f"doc_{i}.pdf", b, "application/pdf")},
+                data={"page": "0"},
+            )
+            assert resp.status_code == 200
+            d_id = resp.headers.get("x-document-id")
+            assert d_id is not None
+            doc_ids.append(d_id)
+
+        # Cache should be capped at 10
+        assert len(_preview_doc_cache) <= _PREVIEW_DOC_CACHE_CAPACITY
+        # The oldest document (doc_ids[0]) should have been evicted
+        assert doc_ids[0] not in _preview_doc_cache
+        # The newest document should be in cache
+        assert doc_ids[-1] in _preview_doc_cache
+

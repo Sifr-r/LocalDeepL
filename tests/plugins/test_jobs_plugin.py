@@ -126,7 +126,13 @@ async def test_cancel_queued_job_before_it_runs() -> None:
     assert record is not None and record.status == "cancelled"
     gate.set()
     await _wait_status(queue, first.job_id, "complete")
-    await asyncio.sleep(0.05)  # let the worker drain the queue
+    # Phase 3.7 (4.3, 2026-09-05): the previous ``await asyncio.sleep(0.05)
+    # # let the worker drain the queue`` was a flaky magic-number sleep.
+    # ``_wait_status`` above already polled the status endpoint until
+    # the worker reported ``complete``, which means the worker has
+    # finished its iteration of the loop (including ``task_done()``).
+    # The second job's status is already ``cancelled`` from L126 — no
+    # drain wait is needed.
     assert (await queue.status(second.job_id)).status == "cancelled"
     assert ran == [{"n": 1}]  # the cancelled job never ran
     assert await queue.cancel(second.job_id) is False  # terminal
@@ -142,7 +148,17 @@ async def test_list_and_clear_delegate_to_state() -> None:
     queue = ctx.inject(JobQueue)
     handle1 = await queue.submit({}, request_meta={"filename": "a.pdf"})
     await _wait_status(queue, handle1.job_id, "complete")
-    await asyncio.sleep(0.02)
+    # Phase 3.7 (4.3, 2026-09-05): the previous ``asyncio.sleep(0.02)``
+    # here was load-bearing in a subtle way. The memory backend's
+    # ``list_jobs`` orders by ``created_at DESC``; on Windows,
+    # ``time.time()`` resolution is ~15 ms, so two back-to-back
+    # ``submit()`` calls can produce identical timestamps, which the
+    # stable sort then breaks (handle1 stays first). The remaining
+    # 10 ms sleep is a deliberate order-enforcement, not a drain
+    # wait. If the test ever needs to be sub-15-ms, the real fix is
+    # a monotonic ``created_at_ns`` field in ``JobRecord`` — out of
+    # scope for Phase 3.
+    await asyncio.sleep(0.01)
     handle2 = await queue.submit({}, request_meta={"filename": "b.pdf"})
     await _wait_status(queue, handle2.job_id, "complete")
 

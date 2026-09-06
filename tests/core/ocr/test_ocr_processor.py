@@ -226,9 +226,7 @@ class TestProcessorAclose:
     async def test_aclose_invokes_client_aclose(self) -> None:
         from unittest.mock import AsyncMock
 
-        proc = OCRProcessor(
-            api_base="http://test.local/v1", api_key="x", model="mock"
-        )
+        proc = OCRProcessor(api_base="http://test.local/v1", api_key="x", model="mock")
         # Replace the real AsyncOpenAI with a mock that records aclose.
         # Capture the mock locally because ``proc.aclose`` clears the
         # ``client`` attribute on success.
@@ -245,9 +243,7 @@ class TestProcessorAclose:
     async def test_aclose_is_idempotent(self) -> None:
         from unittest.mock import AsyncMock
 
-        proc = OCRProcessor(
-            api_base="http://test.local/v1", api_key="x", model="mock"
-        )
+        proc = OCRProcessor(api_base="http://test.local/v1", api_key="x", model="mock")
         mock_client = AsyncMock()
         mock_client.aclose = AsyncMock()
         proc.client = mock_client
@@ -265,9 +261,7 @@ class TestProcessorAclose:
         assert getattr(proc, "client", None) is None
 
     async def test_init_client_is_none_and_aclose_is_noop(self) -> None:
-        proc = OCRProcessor(
-            api_base="http://test.local/v1", api_key="x", model="mock"
-        )
+        proc = OCRProcessor(api_base="http://test.local/v1", api_key="x", model="mock")
         assert proc.client is None
         await proc.aclose()
         assert proc.client is None
@@ -275,9 +269,7 @@ class TestProcessorAclose:
     async def test_aclose_falls_back_to_close(self) -> None:
         from unittest.mock import AsyncMock
 
-        proc = OCRProcessor(
-            api_base="http://test.local/v1", api_key="x", model="mock"
-        )
+        proc = OCRProcessor(api_base="http://test.local/v1", api_key="x", model="mock")
         # Some client-shaped objects expose only ``close`` (async) — aclose
         # must accept those too.
         mock_client = AsyncMock()
@@ -292,9 +284,7 @@ class TestProcessorAclose:
     async def test_async_context_manager(self) -> None:
         from unittest.mock import AsyncMock
 
-        proc = OCRProcessor(
-            api_base="http://test.local/v1", api_key="x", model="mock"
-        )
+        proc = OCRProcessor(api_base="http://test.local/v1", api_key="x", model="mock")
         mock_client = AsyncMock()
         mock_client.aclose = AsyncMock()
         proc.client = mock_client

@@ -32,10 +32,14 @@ TRANSCRIPTION_FALLBACK_MODELS: list[str] = [
 
 
 def mask_api_key(value: str | None) -> str | None:
-    """Return a ``<first4>...<last4>`` preview of the API key (verbatim)."""
+    """Mask sensitive token or API key to prevent leaking credentials.
+
+    For tokens <= 12 characters, a fixed mask is returned to prevent leaking
+    excessive characters. Longer tokens preview the first and last 4 characters.
+    """
     if not value or value == "lm-studio":
         return value
-    if len(value) <= 8:
+    if len(value) <= 12:
         return "********"
     return f"{value[:4]}...{value[-4:]}"
 

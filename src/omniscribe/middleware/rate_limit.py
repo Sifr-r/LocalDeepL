@@ -183,7 +183,8 @@ class RateLimitMiddleware:
             # Bounded memory: prune stale IP entries if tracking exceeds ceiling
             if len(self._records) > MAX_TRACKED_IPS:
                 stale = [
-                    k for k, q in self._records.items()
+                    k
+                    for k, q in self._records.items()
                     if not q or q[-1] <= window_start
                 ]
                 for k in stale:
@@ -210,7 +211,11 @@ class RateLimitMiddleware:
     async def __call__(
         self, scope: dict[str, Any], receive: ASGIRecv, send: ASGISend
     ) -> None:
-        if scope.get("type") != "http" or self._rate_limit is None or self._rate_limit <= 0:
+        if (
+            scope.get("type") != "http"
+            or self._rate_limit is None
+            or self._rate_limit <= 0
+        ):
             await self._app(scope, receive, send)
             return
 

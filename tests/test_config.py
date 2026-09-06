@@ -11,7 +11,9 @@ from omniscribe.config import (
 
 def test_default_grounded_model_constant(monkeypatch: pytest.MonkeyPatch) -> None:
     assert DEFAULT_GROUNDED_MODEL == "qwen/qwen3-vl-8b"
-    assert RuntimeSettings.model_fields["grounded_model"].default == DEFAULT_GROUNDED_MODEL
+    assert (
+        RuntimeSettings.model_fields["grounded_model"].default == DEFAULT_GROUNDED_MODEL
+    )
     monkeypatch.delenv("LLM_MODEL", raising=False)
     monkeypatch.delenv("OMNISCRIBE_GROUNDED_MODEL", raising=False)
     settings = RuntimeSettings()
@@ -112,6 +114,8 @@ def test_cors_origins_from_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_load_settings_overrides() -> None:
-    settings = load_settings(rate_limit_per_min=15, cors_origins=["http://localhost:3000"])
+    settings = load_settings(
+        rate_limit_per_min=15, cors_origins=["http://localhost:3000"]
+    )
     assert settings.rate_limit_per_min == 15
     assert settings.cors_origins == ["http://localhost:3000"]

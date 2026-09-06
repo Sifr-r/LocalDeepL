@@ -245,12 +245,13 @@ async def test_transcribe_unexpected_error_maps_to_502(
 # ---------------------------------------------------------------------------
 
 
-def test_mask_api_key_matches_old_behavior() -> None:
+def test_mask_api_key() -> None:
     assert config_store.mask_api_key(None) is None
     assert config_store.mask_api_key("") == ""
     assert config_store.mask_api_key("lm-studio") == "lm-studio"
     assert config_store.mask_api_key("short") == "********"
-    assert config_store.mask_api_key("abcd1234wxyz") == "abcd...wxyz"
+    assert config_store.mask_api_key("abcd1234wxyz") == "********"
+    assert config_store.mask_api_key("abcd1234wxyzextra") == "abcd...xtra"
 
 
 def test_config_store_defaults_and_write_through() -> None:

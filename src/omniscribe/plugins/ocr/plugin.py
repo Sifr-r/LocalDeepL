@@ -25,15 +25,19 @@ Protocol + plugin class + route factory.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
+import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from fastapi import APIRouter, Body, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
+from omniscribe.core.workflows.base import OCRCancelled
 from omniscribe.harness.context import Context
 from omniscribe.harness.plugin import Plugin
 from omniscribe.plugins.artifacts import ArtifactStore
@@ -62,6 +66,9 @@ from .service import (
 )
 
 _LOGGER = logging.getLogger("omniscribe.plugins.ocr")
+
+_PREVIEW_DOC_CACHE_CAPACITY = 10
+_preview_doc_cache: dict[str, tuple[bytes, str, float]] = {}
 
 
 @runtime_checkable
@@ -257,16 +264,24 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
     @router.post("/api/process")
     async def process_sync(request: Request) -> Response:
         options, blob, filename, content_type = await _parse_upload(request)
-        return await service.run_sync(
-            options, blob, filename, content_type=content_type
-        )
+        try:
+            return await service.run_sync(
+                options, blob, filename, content_type=content_type
+            )
+        except OCRCancelled as exc:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "cancelled": True,
+                    "error": "cancelled",
+                    "detail": str(exc) or "OCR run was cancelled before completion.",
+                },
+            )
 
     @router.post("/api/process/async", status_code=202)
     async def process_async(request: Request) -> AsyncSubmitResponse:
         options, blob, filename, content_type = await _parse_upload(request)
-        return await service.submit(
-            options, blob, filename, content_type=content_type
-        )
+        return await service.submit(options, blob, filename, content_type=content_type)
 
     @router.get("/api/process/status/{job_id}")
     async def process_status(job_id: str) -> JobStatusResponse:
@@ -338,9 +353,7 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
         return await service.fetch_result(job_id, bearer)
 
     @router.get("/api/jobs/{job_id}/pages/{page_index}/preview", response_model=None)
-    async def page_preview(
-        job_id: str, page_index: int
-    ) -> Response:
+    async def page_preview(job_id: str, page_index: int) -> Response:
         """Render a page of the original upload as PNG bytes.
 
         Used by the workstation viewport to show the underlying page
@@ -357,6 +370,125 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
                 detail="page preview unavailable for this job",
             )
         return Response(content=png_bytes, media_type="image/png")
+
+    @router.post("/api/documents/preview", response_model=None)
+    async def document_page_preview(
+        request: Request,
+        page: int = 0,
+        dpi: int = 150,
+    ) -> Response:
+        """Render any page of an uploaded document (PDF or image) as PNG bytes.
+
+        Used by the workstation viewport to instantly display the page
+        raster when a document is opened before or after processing.
+        """
+        form = await request.form()
+        req_doc_id = (
+            form.get("doc_id")
+            or request.headers.get("X-Document-Id")
+            or request.headers.get("x-document-id")
+        )
+        doc_id: str | None = str(req_doc_id).strip() if req_doc_id else None
+
+        blob: bytes | None = None
+        filetype: str = "pdf"
+
+        if doc_id and doc_id in _preview_doc_cache:
+            blob, filetype, _ = _preview_doc_cache[doc_id]
+            _preview_doc_cache[doc_id] = (blob, filetype, time.time())
+        else:
+            upload = form.get("file")
+            if not upload or not hasattr(upload, "read"):
+                if doc_id:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"document '{doc_id}' not found in preview cache; please re-upload file",
+                    )
+                raise HTTPException(
+                    status_code=400,
+                    detail="file multipart field required",
+                )
+
+            blob = await upload.read()
+            if not blob:
+                raise HTTPException(
+                    status_code=400,
+                    detail="uploaded file is empty",
+                )
+
+            doc_id = hashlib.sha256(
+                blob[:8192] + len(blob).to_bytes(8, "big")
+            ).hexdigest()[:16]
+
+            filename = getattr(upload, "filename", "") or "document.pdf"
+            suffix = Path(filename).suffix.lower()
+            is_pdf = suffix == ".pdf" or blob.startswith(b"%PDF")
+            filetype = "pdf" if is_pdf else (suffix.lstrip(".") or "png")
+
+            if (
+                len(_preview_doc_cache) >= _PREVIEW_DOC_CACHE_CAPACITY
+                and doc_id not in _preview_doc_cache
+            ):
+                oldest_id = min(
+                    _preview_doc_cache,
+                    key=lambda k: _preview_doc_cache[k][2],
+                )
+                del _preview_doc_cache[oldest_id]
+
+            _preview_doc_cache[doc_id] = (blob, filetype, time.time())
+
+        form_page = form.get("page")
+        if form_page is not None:
+            try:
+                page = int(str(form_page))
+            except ValueError:
+                raise HTTPException(status_code=400, detail="page must be an integer")
+        if page < 0:
+            raise HTTPException(status_code=400, detail="page must be >= 0")
+
+        form_dpi = form.get("dpi")
+        if form_dpi is not None:
+            try:
+                dpi = int(str(form_dpi))
+            except ValueError:
+                raise HTTPException(status_code=400, detail="dpi must be an integer")
+        dpi = max(50, min(300, dpi))
+
+        def _render_page() -> tuple[bytes, int, float, float]:
+            import pymupdf as fitz
+
+            try:
+                doc = fitz.open(stream=blob, filetype=filetype)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400, detail=f"Cannot open document: {e}"
+                )
+            try:
+                total_pages = doc.page_count
+                if page >= total_pages:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"page index {page} out of range ({total_pages} total)",
+                    )
+                p = doc[page]
+                rect = p.rect
+                pix = p.get_pixmap(dpi=dpi, alpha=False)
+                png = bytes(pix.tobytes("png"))
+                return png, total_pages, float(rect.width), float(rect.height)
+            finally:
+                doc.close()
+
+        png_bytes, total_pages, w, h = await asyncio.to_thread(_render_page)
+        return Response(
+            content=png_bytes,
+            media_type="image/png",
+            headers={
+                "X-Document-Id": doc_id,
+                "X-Total-Pages": str(total_pages),
+                "X-Page-Width": str(w),
+                "X-Page-Height": str(h),
+            },
+        )
 
     @router.post("/api/jobs/{job_id}/cancel")
     async def cancel_job(job_id: str) -> dict[str, Any]:
@@ -399,12 +531,10 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
         502 with an envelope when the server is unreachable.
         """
         body = body or PreflightRequest()
-        loaded, requested, base, loaded_models, detail = (
-            await service.preflight_check(
-                api_base=body.api_base,
-                api_key=body.api_key,
-                model=body.model,
-            )
+        loaded, requested, base, loaded_models, detail = await service.preflight_check(
+            api_base=body.api_base,
+            api_key=body.api_key,
+            model=body.model,
         )
         if not loaded and detail and "must be configured" in detail:
             return _envelope(400, "bad_request", detail)

@@ -9,6 +9,9 @@
 
   This page exists so the FastAPI server's `/` route still serves a
   sensible HTTP response for health probes / accidental browser hits.
+  Phase 4 (2026-09-05) sharpened the wording to be a clear "what now?"
+  pointer: visit the Flutter client, see the OpenAPI surface, or check
+  /api/health.
 -->
 <html lang="en">
   <head>
@@ -18,20 +21,39 @@
       body { font-family: ui-sans-serif, system-ui, sans-serif; max-width: 720px; margin: 4rem auto; padding: 0 1rem; line-height: 1.5; color: #0b0f19; }
       code { background: #f4f4f5; padding: 0.1em 0.3em; border-radius: 4px; }
       h1 { font-size: 1.4rem; }
+      h2 { font-size: 1.05rem; margin-top: 2rem; }
+      .note { background: #fff8e1; border-left: 3px solid #f59e0b; padding: 0.5rem 0.75rem; margin: 1rem 0; }
+      ul { padding-left: 1.25rem; }
+      li { margin: 0.25rem 0; }
     </style>
   </head>
   <body>
     <h1>OmniScribe API server is running.</h1>
-    <p>The interactive client ships as a Flutter desktop application under
-       <code>client/</code>.  This page exists so the HTTP root
-       (<code>GET /</code>) returns a sensible document instead of a
-       404; see <code>src/omniscribe/server.py</code> for the
-       handler.</p>
-    <p>Operational probes:</p>
+
+    <div class="note">
+      The <strong>interactive UI</strong> is the Flutter desktop client
+      under <code>client/</code>, not this page. The in-browser
+      workstation that earlier versions shipped was deprecated in
+      2026-08 (see the <a href="https://github.com/Sifr-r/OmniScribe/blob/main/docs/SECURITY.md">security model</a>).
+    </div>
+
+    <h2>What's next?</h2>
+    <ol>
+      <li><strong>First time?</strong> Read the <a href="https://github.com/Sifr-r/OmniScribe/blob/main/README.md">README</a> and the <a href="https://github.com/Sifr-r/OmniScribe/blob/main/docs/TROUBLESHOOTING.md">troubleshooting guide</a> — most first-run errors are documented.</li>
+      <li><strong>Run the Flutter client:</strong> <code>cd client &&amp; flutter pub get &amp;&amp; flutter run -d &lt;platform&gt;</code>. Full instructions in <a href="https://github.com/Sifr-r/OmniScribe/blob/main/client/README.md"><code>client/README.md</code></a>.</li>
+      <li><strong>Looking for a single binary?</strong> See <a href="https://github.com/Sifr-r/OmniScribe/blob/main/docs/rfcs/2026-09-end-user-install.md">RFC 001 — End-User Install Path</a>. The PyInstaller bundle is on the v0.2 roadmap.</li>
+    </ol>
+
+    <h2>Operational probes</h2>
     <ul>
-      <li><code>GET /health</code> (alias <code>/healthz</code>) &mdash; liveness</li>
-      <li><code>GET /ready</code> (alias <code>/readyz</code>) &mdash; readiness</li>
+      <li><code>GET /api/health</code> (alias <code>/api/healthz</code>) &mdash; liveness</li>
+      <li><code>GET /api/ready</code> (alias <code>/api/readyz</code>) &mdash; readiness</li>
     </ul>
-    <p>For the full API surface see <code>tests/openapi.json</code>.</p>
+
+    <h2>API surface</h2>
+    <p>Full OpenAPI spec at <code>/openapi.json</code>; the checked-in
+       snapshot is at
+       <a href="https://github.com/Sifr-r/OmniScribe/blob/main/tests/openapi.json"><code>tests/openapi.json</code></a>.
+    </p>
   </body>
 </html>

@@ -41,8 +41,13 @@ EXAMPLE_PDF_NAMES: list[str] = [
 ]
 
 
+FIXTURES_PDFS_DIR: Path = ROOT / "tests" / "fixtures" / "pdfs"
+
+
 @pytest.fixture(scope="session")
 def examples_dir() -> Path:
+    if FIXTURES_PDFS_DIR.is_dir():
+        return FIXTURES_PDFS_DIR
     d = ROOT / "examples"
     assert d.is_dir(), f"examples directory missing: {d}"
     return d
@@ -50,7 +55,16 @@ def examples_dir() -> Path:
 
 @pytest.fixture(scope="session")
 def example_pdfs(examples_dir: Path) -> dict[str, Path]:
-    paths = {n: examples_dir / n for n in EXAMPLE_PDF_NAMES}
+    fallback_dir = ROOT / "examples"
+    paths: dict[str, Path] = {}
+    for n in EXAMPLE_PDF_NAMES:
+        fixture_path = FIXTURES_PDFS_DIR / n
+        if fixture_path.exists():
+            paths[n] = fixture_path
+        elif (fallback_dir / n).exists():
+            paths[n] = fallback_dir / n
+        else:
+            paths[n] = fixture_path
     missing = [n for n, p in paths.items() if not p.exists()]
     if missing:
         pytest.skip(f"example PDFs not found: {missing}")
@@ -95,9 +109,7 @@ class _StubOCR:
             return
         client = self.client
         self.client = None
-        close_method = getattr(client, "aclose", None) or getattr(
-            client, "close", None
-        )
+        close_method = getattr(client, "aclose", None) or getattr(client, "close", None)
         if close_method is None:
             return
         result = close_method()

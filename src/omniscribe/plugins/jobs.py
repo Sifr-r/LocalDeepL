@@ -279,14 +279,24 @@ class InMemoryJobQueue:
         self._payloads.clear()
 
     async def _run(self) -> None:
+        # Phase 3.5 (4.7, 2026-09-05): the previous
+        # ``except Exception: _LOGGER.exception(...)`` block was the
+        # second source of error reporting — it logged but never
+        # emitted ``JobFailed`` to the client, so a runner that
+        # consistently raised (e.g. an LLM provider stuck in a
+        # retry loop) would flood the log and the status response
+        # would silently stay ``processing`` forever. ``_process_one``
+        # already catches ``BaseException`` and emits ``JobFailed``;
+        # removing the worker-level catch makes the inner handler
+        # the single source of truth. An exception escaping
+        # ``_process_one`` is a worker bug, not a job bug, and
+        # killing the worker is the right signal in that case.
         while True:
             job_id = await self._queue.get()
             try:
                 await self._process_one(job_id)
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                _LOGGER.exception("job worker failed for %s", job_id)
             finally:
                 self._queue.task_done()
 
@@ -332,8 +342,17 @@ class InMemoryJobQueue:
         if record is None:
             return
         runner = self._resolve_runner(payload)
+        # Phase 3.4 (4.6, 2026-09-05): persist ``started_at`` so the
+        # status response can surface a real timestamp instead of the
+        # previous ``None`` placeholder. Tracked by ``outstanding-work.md``
+        # §6.84/6.85.
         await self._backend.upsert_job(
-            replace(record, status="running", updated_at=time.time())
+            replace(
+                record,
+                status="running",
+                started_at=time.time(),
+                updated_at=time.time(),
+            )
         )
         await self._ctx.emit(JobStarted(job_id=job_id))
         try:

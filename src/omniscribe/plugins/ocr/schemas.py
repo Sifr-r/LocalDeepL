@@ -114,7 +114,9 @@ class AsyncSubmitResponse(BaseModel):
     """Shape the frontend's ``processOcrAsync`` expects."""
 
     job_id: str
-    status: Literal["pending", "processing", "complete", "error", "cancelled"] = "pending"
+    status: Literal["pending", "processing", "complete", "error", "cancelled"] = (
+        "pending"
+    )
     status_url: str
 
 

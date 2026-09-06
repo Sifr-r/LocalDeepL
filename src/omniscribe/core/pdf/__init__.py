@@ -13,6 +13,11 @@ from omniscribe.core.pdf.embedder_helpers import (
     _split_and_draw_lines,
 )
 from omniscribe.core.pdf.handler import PDFHandler
+from omniscribe.core.pdf.page_range import (
+    parse_page_range,
+    parse_page_range_with_total,
+    serialize_page_range,
+)
 from omniscribe.core.pdf.rasterizer import (
     EMBED_JPEG_QUALITY_IMAGE,
     EMBED_JPEG_QUALITY_PDF,
@@ -52,4 +57,7 @@ __all__ = [
     "convert_generator",
     "convert_pdf_to_images",
     "embed_structured_text",
+    "parse_page_range",
+    "parse_page_range_with_total",
+    "serialize_page_range",
 ]

@@ -116,12 +116,32 @@ def doctor() -> int:
         ("Model server", *_model_server_health(), True),
     )
 
+    # Phase 2.4 (2026-09-05): on every failure (ERROR or WARN), print a
+    # pointer to the matching ``docs/TROUBLESHOOTING.md`` anchor so a
+    # stuck user has one click to the fix. Labels not in the map
+    # (none today) fall through silently.
+    HINTS: Final[dict[str, str]] = {
+        "uv": "uv-is-not-recognized",
+        "Python": "python-311-is-not-installed",
+        "Redis": "make-doctor-says-redis-is-unreachable",
+        "Model server": "ocr-returns-nothing",
+    }
+
     print("Runtime health")
     print("--------------")
     core_healthy = True
     for label, healthy, detail, optional in checks:
         level = "OK" if healthy else "WARN" if optional else "ERROR"
         print(f"{level:5} {label}: {detail}")
+        if not healthy:
+            anchor = HINTS.get(label)
+            if anchor:
+                # ASCII arrow on purpose: the default Windows console
+                # encoding (cp1252) cannot encode U+2192, and this is
+                # the kind of detail that must work in a stuck user's
+                # terminal without ceremony. The TROUBLESHOOTING.md
+                # anchor itself uses proper UTF-8.
+                print(f"      -> see docs/TROUBLESHOOTING.md#{anchor}")
         if not healthy and not optional:
             core_healthy = False
     return 0 if core_healthy else 1

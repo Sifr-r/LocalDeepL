@@ -12,24 +12,36 @@ def extract_json(text: str) -> Any:
         return None
 
     fenced = _FENCED_JSON_RE.match(stripped)
-    candidates = [fenced.group(1).strip()] if fenced else []
-    candidates.append(stripped)
+    candidate = fenced.group(1).strip() if fenced else stripped
 
-    for candidate in candidates:
-        try:
-            parsed = json.loads(candidate)
-            if isinstance(parsed, (dict, list)):
-                return parsed
-        except json.JSONDecodeError:
-            continue
+    try:
+        parsed = json.loads(candidate)
+        if isinstance(parsed, (dict, list)):
+            return parsed
+    except json.JSONDecodeError:
+        pass
 
     decoder = json.JSONDecoder()
-    for start in (i for i, ch in enumerate(stripped) if ch in "{["):
+    idx = 0
+    n = len(stripped)
+    while idx < n:
+        brace_idx = stripped.find("{", idx)
+        bracket_idx = stripped.find("[", idx)
+        if brace_idx == -1 and bracket_idx == -1:
+            break
+        if brace_idx == -1:
+            start = bracket_idx
+        elif bracket_idx == -1:
+            start = brace_idx
+        else:
+            start = min(brace_idx, bracket_idx)
+
         try:
             parsed, _end = decoder.raw_decode(stripped, idx=start)
             if isinstance(parsed, (dict, list)):
                 return parsed
         except json.JSONDecodeError:
-            continue
+            pass
+        idx = start + 1
 
     return None

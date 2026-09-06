@@ -32,9 +32,7 @@ DEFAULT_GROUNDED_MODEL: str = "qwen/qwen3-vl-8b"
 class _DecodeLenientComplexMixin:
     """Allows CSV or non-JSON strings from environment sources for complex list fields."""
 
-    def decode_complex_value(
-        self, field_name: str, field_info: Any, value: Any
-    ) -> Any:
+    def decode_complex_value(self, field_name: str, field_info: Any, value: Any) -> Any:
         if field_name == "cors_origins":
             try:
                 return json.loads(value)
@@ -173,14 +171,16 @@ class RuntimeSettings(BaseSettings):
         default="redis://localhost:6379/0", validation_alias="REDIS_URL"
     )
 
-    # State backend selector (audit A-3, 4.24). ``memory`` keeps every
-    # store in the local process; ``sqlite`` persists to a single SQLite
-    # file via :class:`SQLiteStateBackend` (the local-first default when
-    # persistence matters). ``redis`` is deferred and not yet implemented
-    # in the harness. The selector is validated at startup; unsupported
-    # backends fail fast.
+    # State backend selector (audit A-3, 4.24; Phase 2.3 default flip).
+    # ``sqlite`` is the default since 2026-09-05: it persists job records,
+    # artifact metadata, and progress-channel state across restarts in a
+    # single file at ``<artifact_dir>/omniscribe-state.db`` (WAL mode).
+    # ``memory`` keeps every store in the local process; setting it
+    # explicitly triggers a ``WARN`` log at boot. ``redis`` is deferred
+    # and not yet implemented in the harness. The selector is validated
+    # at startup; unsupported backends fail fast.
     state_backend: str = Field(
-        default="memory",
+        default="sqlite",
         validation_alias="OMNISCRIBE_STATE_BACKEND",
     )
     # Path to the SQLite file when ``state_backend="sqlite"``.
@@ -223,12 +223,17 @@ class RuntimeSettings(BaseSettings):
     )
     cors_origins: list[str] = Field(
         default_factory=list,
-        validation_alias=AliasChoices(
-            "OMNISCRIBE_CORS_ORIGINS", "cors_origins", "cors_origins_raw"
-        ),
+        validation_alias="OMNISCRIBE_CORS_ORIGINS",
     )
     max_upload_mb: int = Field(
-        default=10_240,
+        # Phase 3.1 (2026-09-05): default lowered from 10 GB to 1 GB.
+        # The old 10 GB let a LAN caller (with bearer auth) pin 10 GB
+        # of memory and disk per request; the cap was enforced, just
+        # generous. The 1 GB default matches the DEPLOYMENT.md LAN
+        # recipe (which sets 2 GB); operators who genuinely process
+        # 5-10 GB batches can raise it explicitly via env var or
+        # compose override.
+        default=1_024,
         validation_alias="OMNISCRIBE_MAX_UPLOAD_MB",
     )
     rate_limit_per_min: int | None = Field(
@@ -240,7 +245,7 @@ class RuntimeSettings(BaseSettings):
     @classmethod
     def _normalize_max_upload_mb(cls, value: object) -> int:
         if value is None or (isinstance(value, str) and not value.strip()):
-            return 10_240
+            return 1_024
         try:
             return int(str(value).strip())
         except (TypeError, ValueError):
@@ -326,7 +331,9 @@ class RuntimeSettings(BaseSettings):
             return self
         # Only inherit when grounded_model is still at its default value,
         # i.e. the user did not provide an explicit grounded override.
-        if self.grounded_model == DEFAULT_GROUNDED_MODEL and os.environ.get("LLM_MODEL"):
+        if self.grounded_model == DEFAULT_GROUNDED_MODEL and os.environ.get(
+            "LLM_MODEL"
+        ):
             object.__setattr__(self, "grounded_model", self.llm_model)
         return self
 

@@ -307,6 +307,28 @@ def build_progress_router(
         return {"cancelled": cancelled}
 
     async def _handle_ws(websocket: WebSocket, channel_id: str) -> None:
+        # S14 (audit 4.14): WebSocket origin check. The check is
+        # deny-by-default against the operator-supplied
+        # ``OMNISCRIBE_CORS_ORIGINS`` allowlist — but it has three
+        # *fall-through* cases that intentionally allow the request
+        # through to the auth layer:
+        #
+        #   1. ``origin`` is None / empty — non-browser clients
+        #      (Flutter desktop, curl, the bundled binary) do not
+        #      send an Origin header at all. The auth frame that
+        #      follows the upgrade is the only gate for them.
+        #   2. ``cors_origins`` is empty — operator opted out of
+        #      cross-origin restrictions entirely (loopback dev
+        #      profile; the only guard is the loopback bind itself).
+        #   3. ``*`` is in ``cors_origins`` — operator chose the
+        #      wildcard, which the audit's C2 finding flagged
+        #      because it does not combine with credentials, so
+        #      this is a "trusted environment" signal.
+        #
+        # The cross-origin check is *first*, before auth, so a
+        # browser-origin mismatch is rejected without consuming a
+        # session token. See ``docs/SECURITY.md`` §"WebSocket origin
+        # check" for the full threat model.
         origin = websocket.headers.get("origin")
         cors_origins = settings.cors_origins
         if (

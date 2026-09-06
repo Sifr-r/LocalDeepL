@@ -70,6 +70,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Map lowercase instance attr -> class-level default name for __getattr__ fallback.
+_DEFAULTS: dict[str, str] = {
+    "page_timeout_s": "PAGE_TIMEOUT_S",
+    "crop_timeout_s": "CROP_TIMEOUT_S",
+    "max_retries": "MAX_RETRIES",
+    "retry_base_delay_s": "RETRY_BASE_DELAY_S",
+    "retry_max_delay_s": "RETRY_MAX_DELAY_S",
+    "page_max_tokens": "PAGE_MAX_TOKENS",
+    "crop_max_tokens": "CROP_MAX_TOKENS",
+}
+
 
 class OCRProcessor:
     """LLM-based OCR processor over an OpenAI-compatible async client.
@@ -224,16 +235,6 @@ class OCRProcessor:
         ``__init__``-set values still win in production. The fallback
         list mirrors the attributes ``__init__`` sets.
         """
-        # Map lowercase instance attr -> class-level default name.
-        _DEFAULTS: dict[str, str] = {
-            "page_timeout_s": "PAGE_TIMEOUT_S",
-            "crop_timeout_s": "CROP_TIMEOUT_S",
-            "max_retries": "MAX_RETRIES",
-            "retry_base_delay_s": "RETRY_BASE_DELAY_S",
-            "retry_max_delay_s": "RETRY_MAX_DELAY_S",
-            "page_max_tokens": "PAGE_MAX_TOKENS",
-            "crop_max_tokens": "CROP_MAX_TOKENS",
-        }
         class_attr = _DEFAULTS.get(name)
         if class_attr is not None and hasattr(self.__class__, class_attr):
             return getattr(self.__class__, class_attr)

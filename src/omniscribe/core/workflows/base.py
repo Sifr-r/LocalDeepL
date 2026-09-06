@@ -163,7 +163,7 @@ class EngineBase:
     def _reset_run_state(self) -> None:
         """Clear run-scoped state. Call at the top of every ``execute``."""
         self.last_document_result = None
-        self.last_failed_pages = []
+        self.last_failed_pages.clear()
 
     async def _apply_trust(
         self,

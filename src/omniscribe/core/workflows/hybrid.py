@@ -168,14 +168,18 @@ class HybridEngine(EngineBase):
         Sub-stage handlers (converter: ``HybridConverter``,
         layout: ``HybridLayoutDetector``, runner: ``HybridOcrRunner``,
         refiner: ``HybridRefiner``) maintain no unreset mutable state
-        across executions (§4.38); stage dependencies are stateless or
-        re-injected per run, and runner page failure tracking is reset via
-        ``ocr_runner.last_failed_pages``.
+        across executions (§4.38). Stage dependencies are set once in
+        ``__init__`` and not re-pushed per run (Phase 3.3, 4.5). The
+        ``last_failed_pages`` list is shared by reference between
+        ``HybridEngine`` and ``HybridOcrRunner``, so in-place
+        mutations are visible without re-injection. Subclasses that
+        reassign ``self.last_failed_pages`` must also update
+        ``self.ocr_runner.last_failed_pages`` explicitly.
         """
         super()._reset_run_state()
+        self.ocr_runner.last_failed_pages = self.last_failed_pages
         self._decoded_cache = OrderedDict()
         self._current_run_id = uuid.uuid4().hex
-        self.ocr_runner.last_failed_pages = self.last_failed_pages
 
     async def execute(
         self,
@@ -260,7 +264,6 @@ class HybridEngine(EngineBase):
             on_warning=on_warning,
             cancel_check=cancel_check,
             decoded_get=decoded_get,
-            trust_images_dict=images_dict.copy() if images_dict is not None else None,
         )
 
         # --- Phase 4: refine empty boxes on the sparse pages ---
@@ -322,8 +325,9 @@ class HybridEngine(EngineBase):
         progress: ProgressCallback | None,
         rasterize_batch_size: int = 8,
     ) -> tuple[dict[int, str], list[int], dict[int, dict[str, object]]]:
-        self.converter.pdf_handler = self.pdf_handler
-        self.converter.page_preprocessor = self.page_preprocessor
+        # Phase 3.3 (4.5): removed ``self.converter.pdf_handler = self.pdf_handler``
+        # and ``self.converter.page_preprocessor = self.page_preprocessor``.
+        # The constructor passes both to ``HybridConverter`` (L111-114).
         return await self.converter.convert_pages(
             input_path=input_path,
             dpi=dpi,
@@ -350,9 +354,10 @@ class HybridEngine(EngineBase):
         # a clean phase driver.
         if cancel_check is not None and cancel_check():
             raise OCRCancelled("OCR cancelled before layout detection.")
-        self.layout_detector.aligner = self.aligner
-        self.layout_detector.recall_booster = self.recall_booster
-        self.layout_detector.text_layer_recall = self.text_layer_recall
+        # Phase 3.3 (4.5): removed three re-injections. The constructor
+        # passes ``aligner``, ``recall_booster``, and ``text_layer_recall``
+        # to ``HybridLayoutDetector`` (L115-119) — re-pushing per
+        # ``detect_layout()`` call is decorative.
         tl = self.text_layer_recall
         tl_open = False
         if tl is not None and input_path:
@@ -378,7 +383,7 @@ class HybridEngine(EngineBase):
         decoded_get: Callable[[int], Image.Image | None] | None = None,
         decoded_put: Callable[[int, Image.Image], None] | None = None,
     ) -> tuple[list[list[BBox]], int, int]:
-        self.layout_detector.recall_booster = self.recall_booster
+        # Phase 3.3 (4.5): removed re-injection of ``recall_booster``.
         return await self.layout_detector.apply_recall(
             chunk_pages=chunk_pages,
             images_dict=images_dict,
@@ -393,7 +398,7 @@ class HybridEngine(EngineBase):
         chunk_pages: Sequence[int],
         chunk_boxes: list[list[BBox]],
     ) -> tuple[list[list[BBox]], int, int]:
-        self.layout_detector.text_layer_recall = self.text_layer_recall
+        # Phase 3.3 (4.5): removed re-injection of ``text_layer_recall``.
         return await self.layout_detector.apply_text_layer_recall(
             chunk_pages=chunk_pages,
             chunk_boxes=chunk_boxes,
@@ -429,13 +434,18 @@ class HybridEngine(EngineBase):
         on_warning: WarningCallback | None,
         cancel_check: CancelCheck | None = None,
         decoded_get: Callable[[int], Image.Image | None] | None = None,
-        trust_images_dict: dict[int, str] | None = None,
     ) -> None:
-        self.ocr_runner.aligner = self.aligner
-        self.ocr_runner.ocr_processor = self.ocr_processor
-        self.ocr_runner.block_callbacks = self.block_callbacks
-        self.ocr_runner.last_failed_pages = self.last_failed_pages
-        _ = trust_images_dict
+        # Phase 3.3 (4.5): removed four re-injections. The constructor
+        # passes ``aligner``, ``ocr_processor``, ``block_callbacks``,
+        # and ``last_failed_pages`` (by reference) to ``HybridOcrRunner``
+        # (L120-124). The list is shared by reference; in-place
+        # mutations are visible without re-pushing.
+        #
+        # Phase 6 (D15, audit 4.15/6.45): removed the dead
+        # ``trust_images_dict`` parameter that was accepted here only
+        # to be discarded. The trust layer decodes page images
+        # inside ``_apply_trust`` (see ``base.py``) when needed;
+        # ``_ocr_pages`` never uses them.
         return await self.ocr_runner.ocr_pages(
             images_dict=images_dict.copy() if images_dict is not None else {},
             pages_structured=pages_structured,
@@ -462,7 +472,7 @@ class HybridEngine(EngineBase):
         dual_engine: bool = False,
         page_image: Image.Image | None = None,
     ) -> PageBoxes:
-        self.ocr_runner.ocr_processor = self.ocr_processor
+        # Phase 3.3 (4.5): removed re-injection of ``ocr_processor``.
         return await self.ocr_runner.ocr_per_box(
             image_b64=image_b64,
             structured=structured,
@@ -488,7 +498,7 @@ class HybridEngine(EngineBase):
         cancel_check: CancelCheck | None = None,
         decoded_get: Callable[[int], Image.Image | None] | None = None,
     ) -> None:
-        self.refiner.ocr_processor = self.ocr_processor
+        # Phase 3.3 (4.5): removed re-injection of ``ocr_processor``.
         return await self.refiner.refine_pages(
             pages_structured=pages_structured,
             images_dict=images_dict,
@@ -515,7 +525,7 @@ class HybridEngine(EngineBase):
         cancel_check: CancelCheck | None = None,
         decoded_get: Callable[[int], Image.Image | None] | None = None,
     ) -> None:
-        self.refiner.ocr_processor = self.ocr_processor
+        # Phase 3.3 (4.5): removed re-injection of ``ocr_processor``.
         return await self.refiner.refine_uncertain(
             sparse_structured=sparse_structured,
             images_dict=images_dict,

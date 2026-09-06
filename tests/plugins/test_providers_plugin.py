@@ -283,9 +283,7 @@ def test_router_catalog_details_and_models() -> None:
 
 
 def test_provider_models_accepts_x_provider_api_key_header() -> None:
-    manager, http = _manager(
-        FakeHttpClient({"data": [{"id": "model-a"}]})
-    )
+    manager, http = _manager(FakeHttpClient({"data": [{"id": "model-a"}]}))
     app = FastAPI()
     app.include_router(build_providers_router(manager))
     with TestClient(app) as client:
@@ -301,9 +299,7 @@ def test_provider_models_accepts_x_provider_api_key_header() -> None:
 
 
 def test_provider_models_accepts_authorization_bearer_header() -> None:
-    manager, http = _manager(
-        FakeHttpClient({"data": [{"id": "model-a"}]})
-    )
+    manager, http = _manager(FakeHttpClient({"data": [{"id": "model-a"}]}))
     app = FastAPI()
     app.include_router(build_providers_router(manager))
     with TestClient(app) as client:
@@ -320,7 +316,9 @@ def test_provider_models_accepts_authorization_bearer_header() -> None:
 
 def test_provider_models_passes_resolved_key_to_discover_models() -> None:
     manager, _ = _manager()
-    manager.discover_models = AsyncMock(return_value={"models": ["mock-m"], "error": None})  # type: ignore[method-assign]
+    manager.discover_models = AsyncMock(
+        return_value={"models": ["mock-m"], "error": None}
+    )  # type: ignore[method-assign]
     app = FastAPI()
     app.include_router(build_providers_router(manager))
     with TestClient(app) as client:

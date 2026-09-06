@@ -81,7 +81,9 @@ async def fetch_url_bytes(url: str, *, timeout: float = 30.0) -> bytes:
 
         parsed_target = urlparse(current_url)
         target_host = parsed_target.hostname or ""
-        transport = _PinnedIPTransport(target_host=target_host, resolved_ip=check.resolved_ip)
+        transport = _PinnedIPTransport(
+            target_host=target_host, resolved_ip=check.resolved_ip
+        )
         client = httpx.AsyncClient(
             transport=transport,
             timeout=timeout,
