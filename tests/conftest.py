@@ -26,8 +26,20 @@ import pytest
 # Silence Surya's internal tqdm before any module loads it.
 os.environ.setdefault("TQDM_DISABLE", "1")
 
+# Repo root, plus the ``sys.path`` mutation that audit D20 wanted
+# scoped. The original was ``sys.path.insert(0, str(ROOT))`` with no
+# explanation; the intent (now documented) is to make ``tests`` a
+# resolvable package so cross-test imports like
+# ``from tests.plugins.test_glossary_service import FakeLexiconStore``
+# in ``tests/routers/test_glossary_routes.py`` work. ``tests/`` is a
+# PEP 420 namespace package — it has no ``__init__.py`` at the root
+# but the subpackages (``tests/plugins/__init__.py``,
+# ``tests/routers/__init__.py``, etc.) do — so the repo root has to
+# be on ``sys.path`` to anchor the package. Insert only if not
+# already present, so repeated ``conftest`` imports are idempotent.
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 # Canonical list of on-disk example PDF filenames. Add a new file here

@@ -21,7 +21,7 @@ from fastapi import HTTPException
 
 from omniscribe.config import RuntimeSettings
 from omniscribe.core.callbacks import BlockCallbackSet
-from omniscribe.core.document import DenseMode, SpellcheckMode
+from omniscribe.core.document import SpellcheckMode
 from omniscribe.core.imaging.page_preprocess import (
     PagePreprocessingOptions,
     PagePreprocessor,
@@ -125,7 +125,7 @@ def resolve_run_kwargs(
 
     kwargs: dict[str, Any] = {
         "pages": request.pages,
-        "dense_mode": DenseMode(request.dense_mode_normalized),
+        "dense_mode": request.dense_mode,
         "spellcheck": spellcheck,
         "repair_options": repair_options,
     }

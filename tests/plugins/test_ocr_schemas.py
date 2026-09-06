@@ -49,12 +49,14 @@ def test_parses_frontend_form_data_field_set() -> None:
 
 
 def test_dense_mode_aliases_map_onto_core_spellings() -> None:
-    assert OCRRequest(dense_mode="on").dense_mode_normalized == "always"
-    assert OCRRequest(dense_mode="off").dense_mode_normalized == "never"
-    assert OCRRequest(dense_mode="auto").dense_mode_normalized == "auto"
-    assert OCRRequest(dense_mode="always").dense_mode_normalized == "always"
+    from omniscribe.core.document import DenseMode
+
+    assert OCRRequest(dense_mode="on").dense_mode == DenseMode.ALWAYS
+    assert OCRRequest(dense_mode="off").dense_mode == DenseMode.NEVER
+    assert OCRRequest(dense_mode="auto").dense_mode == DenseMode.AUTO
+    assert OCRRequest(dense_mode="always").dense_mode == DenseMode.ALWAYS
     # unknown values fall back to auto rather than failing the upload
-    assert OCRRequest(dense_mode="bogus").dense_mode_normalized == "auto"
+    assert OCRRequest(dense_mode="bogus").dense_mode == DenseMode.AUTO
 
 
 def test_unknown_document_processor_is_rejected() -> None:

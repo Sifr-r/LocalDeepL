@@ -204,7 +204,6 @@ async def test_process_sync_returns_503_when_cancelled(
         await ctx.dispose()
 
 
-
 # -- async lifecycle -----------------------------------------------------------
 
 
@@ -740,7 +739,7 @@ async def test_update_config_change_detection() -> None:
 
 
 async def test_document_page_preview() -> None:
-    ctx, app = await _boot()
+    _ctx, app = await _boot()
     import pymupdf as fitz
 
     doc = fitz.open()
@@ -763,7 +762,7 @@ async def test_document_page_preview() -> None:
 
 
 async def test_document_page_preview_caching_and_boundaries() -> None:
-    ctx, app = await _boot()
+    _ctx, app = await _boot()
     import pymupdf as fitz
 
     # Create 2-page doc
@@ -836,9 +835,13 @@ async def test_document_page_preview_caching_and_boundaries() -> None:
 
 
 async def test_document_page_preview_lru_eviction() -> None:
-    ctx, app = await _boot()
+    _ctx, app = await _boot()
     import pymupdf as fitz
-    from omniscribe.plugins.ocr.plugin import _preview_doc_cache, _PREVIEW_DOC_CACHE_CAPACITY
+
+    from omniscribe.plugins.ocr.plugin import (
+        _PREVIEW_DOC_CACHE_CAPACITY,
+        _preview_doc_cache,
+    )
 
     doc_ids = []
     async with _client(app) as client:
@@ -864,4 +867,3 @@ async def test_document_page_preview_lru_eviction() -> None:
         assert doc_ids[0] not in _preview_doc_cache
         # The newest document should be in cache
         assert doc_ids[-1] in _preview_doc_cache
-

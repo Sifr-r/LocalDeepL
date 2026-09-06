@@ -322,6 +322,24 @@ def build_ocr_router(service: OCRServiceImpl) -> APIRouter:
 
     @router.get("/api/jobs")
     async def list_jobs() -> list[JobListItemResponse]:
+        # Audit finding S15 (doc): on the loopback dev profile (Profile 1)
+        # this endpoint is unauthenticated. Any local process can enumerate
+        # the job list (and from there, the per-job ``id``, the SSE
+        # ``progress_channel``, and the ``progress_token`` exposed on
+        # ``JobListItemResponse``). The result ``token`` is intentionally
+        # NOT on this response (audit C-3 / H-3 fix in
+        # ``plugins/ocr/schemas.py:145``), so a local attacker cannot
+        # fetch another user's OCR'd PDF via the ``list → id → token →
+        # /api/jobs/{id}/result`` chain — the constant-time gate at
+        # ``fetch_result`` blocks it. They CAN, however, list the job
+        # IDs and watch real-time progress via the SSE endpoint (also
+        # unauthenticated on loopback per Profile 1). This is
+        # documented and intentional: Profile 1 is a single-user,
+        # trusted-environment default; the v0.2.0 install / dev loop
+        # requires it. Operators on Profile 2 (LAN) or Profile 3
+        # (public) must set ``OMNISCRIBE_AUTH_TOKEN`` (the Bearer
+        # AuthMiddleware on Profile 2+ rejects the unauthenticated
+        # ``GET /api/jobs`` request before this handler runs).
         records = await service._queue.list_jobs()
         return [service.job_list_item(record) for record in records]
 

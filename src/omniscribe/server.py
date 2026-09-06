@@ -299,7 +299,10 @@ class LazyASGIApp:
         try:
             await self._load()(scope, receive, send)
         except BaseException as exc:
-            if "cancelled" in exc.__class__.__name__.lower() and scope["type"] == "http":
+            if (
+                "cancelled" in exc.__class__.__name__.lower()
+                and scope["type"] == "http"
+            ):
                 from starlette import responses
 
                 res = responses.JSONResponse(
@@ -307,7 +310,8 @@ class LazyASGIApp:
                     content={
                         "cancelled": True,
                         "error": "cancelled",
-                        "detail": str(exc) or "OCR run was cancelled before completion.",
+                        "detail": str(exc)
+                        or "OCR run was cancelled before completion.",
                     },
                 )
                 await res(scope, receive, send)

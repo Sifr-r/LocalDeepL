@@ -12,6 +12,22 @@ Exempt paths:
 When the limit is exceeded, returns HTTP 429 JSONResponse:
     ``{"error": "rate_limited", "detail": "Rate limit exceeded"}``
 with a ``Retry-After: <seconds>`` header.
+
+Per-worker multiplier (audit finding S7):
+    The sliding window is **per process**. The state is in-memory
+    only, so when the server runs N uvicorn workers (or when a single
+    process is restarted mid-window) each worker enforces the limit
+    independently. The effective global limit is
+    ``rate_limit_per_min * N``. Set ``rate_limit_per_min`` with this
+    in mind: a value of 30/min on a 4-worker deployment gives an
+    effective global ceiling of 120/min per IP. The audit's
+    "consider Redis-backed sliding window" recommendation is a future
+    story; the in-memory implementation is correct for the v0.2.0
+    single-worker default (Profile 1) and good enough for the
+    Profile 2 LAN bind with a small worker count. Multi-worker
+    operators who need exact per-IP enforcement should set
+    ``rate_limit_per_min`` lower than their actual target and
+    monitor the 429 rate in the structured log.
 """
 
 from __future__ import annotations

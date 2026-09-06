@@ -1341,6 +1341,58 @@
         ]
       }
     },
+    "/api/documents/preview": {
+      "post": {
+        "description": "Render any page of an uploaded document (PDF or image) as PNG bytes.\n\nUsed by the workstation viewport to instantly display the page\nraster when a document is opened before or after processing.",
+        "operationId": "document_page_preview_api_documents_preview_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dpi",
+            "required": false,
+            "schema": {
+              "default": 150,
+              "title": "Dpi",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Document Page Preview",
+        "tags": [
+          "ocr"
+        ]
+      }
+    },
     "/api/export/blocktree": {
       "post": {
         "operationId": "export_blocktree_api_export_blocktree_post",

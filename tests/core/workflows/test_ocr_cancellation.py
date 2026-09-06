@@ -420,4 +420,3 @@ class TestProcessRouteCancel:
             assert "cancelled from test" in body.get("detail", "")
         finally:
             await ctx.dispose()
-

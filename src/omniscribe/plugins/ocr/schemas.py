@@ -12,17 +12,17 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from omniscribe.core.document import DenseMode
 from omniscribe.utils.env import parse_bool
 
 PipelineMode = Literal["hybrid", "grounded"]
 
-#: Frontend dense toggles ("on"/"off") plus the core enum spellings.
-_DENSE_MODE_ALIASES = {
-    "on": "always",
-    "off": "never",
-    "auto": "auto",
-    "always": "always",
-    "never": "never",
+#: Frontend dense toggles ("on"/"off") are still accepted at the HTTP
+#: edge for backwards compatibility, but the aliasing now lives in
+#: the ``_parse_dense_mode`` validator below (one place, audit D14).
+_DENSE_MODE_ALIASES: dict[str, DenseMode] = {
+    "on": DenseMode.ALWAYS,
+    "off": DenseMode.NEVER,
 }
 
 _VALID_PROCESSORS = {
@@ -39,6 +39,26 @@ def _parse_bool(value: Any, default: bool = False) -> Any:
     return parse_bool(value, default=default)
 
 
+def _parse_dense_mode(value: object) -> DenseMode:
+    """Coerce an HTTP form-field string into a :class:`DenseMode`.
+
+    Accepts the canonical ``"auto" | "always" | "never"`` spellings plus
+    the legacy ``"on" / "off"`` aliases (front-end convention). Unknown
+    values fall back to :attr:`DenseMode.AUTO` rather than failing the
+    upload — the same fall-back the previous ``dense_mode_normalized``
+    property implemented.
+    """
+    if isinstance(value, DenseMode):
+        return value
+    text = str(value).strip().lower()
+    if text in _DENSE_MODE_ALIASES:
+        return _DENSE_MODE_ALIASES[text]
+    try:
+        return DenseMode(text)
+    except ValueError:
+        return DenseMode.AUTO
+
+
 class OCRRequest(BaseModel):
     """One OCR upload's options, parsed from multipart form fields."""
 
@@ -46,7 +66,7 @@ class OCRRequest(BaseModel):
     api_base: str | None = None
     api_key: str | None = None
     pipeline_mode: PipelineMode = "hybrid"
-    dense_mode: str = "auto"
+    dense_mode: DenseMode = DenseMode.AUTO
     spellcheck: str | None = None
     document_processors: list[str] = Field(default_factory=list)
     pages: str | None = None
@@ -89,10 +109,10 @@ class OCRRequest(BaseModel):
             return _parse_bool(value)
         return value
 
-    @property
-    def dense_mode_normalized(self) -> str:
-        """Map the frontend toggle onto the core DenseMode spellings."""
-        return _DENSE_MODE_ALIASES.get(str(self.dense_mode).strip().lower(), "auto")
+    @field_validator("dense_mode", mode="before")
+    @classmethod
+    def _validate_dense_mode(cls, value: object) -> DenseMode:
+        return _parse_dense_mode(value)
 
     @property
     def preprocessing_enabled(self) -> bool:

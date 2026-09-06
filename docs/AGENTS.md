@@ -106,6 +106,21 @@ If a change touches **any** core path, run the full fast gate. If it is peripher
 - Keep bboxes normalized as `[x0, y0, x1, y1]` in `0..1` until `PDFHandler.embed_structured_text`.
 - Treat image inputs as first-class inputs. PDF and image paths share the output writer.
 - OmniScribe is Web UI/API-first. The user-facing `omniscribe` CLI script has been deprecated; do not add or restore it. `OCRPipeline` is still importable for in-process programmatic use (e.g. an embedded workflow), but no script entry is shipped.
+  - **One exception:** `omniscribe-migrate-lexicon` (audit P11) is a
+    deliberately-shipped one-shot migration tool that lives under
+    `omniscribe.cli.migrate_lexicon:main` and is registered as a
+    console script in `pyproject.toml`. It exists to migrate legacy
+    ChromaDB-backed `glossary_library/library.json` +
+    `chroma_db/lanes_lexicon` stores to the canonical LanceDB
+    store; it is **not** a re-introduction of the deprecated
+    `omniscribe` CLI, and the Web UI / API surface remains the
+    supported user workflow. Run it once per legacy install with
+    `uv run omniscribe-migrate-lexicon --dry-run` first; the full
+    flag matrix (`--dry-run`, `--verify-only`, `--strict`,
+    `--yes`) is in `DEPLOYMENT.md` §"Upgrading from a pre-LanceDB
+    Glossary". After the migration the script is a no-op and
+    should be considered deprecated alongside the underlying
+    `chroma_db/` on-disk layout.
 - Keep local document processors selectable through web/API `document_processors`. Current names are `reading_order`, `quality_analysis`, `structure_analysis`, `section_analysis`, `layout_enrichment`, and `table_extraction`; defaults run no processors.
 
 ## Pipeline Paths
